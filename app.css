@@ -50,3 +50,4 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .codebox .c{font-family:var(--label);font-size:40px;letter-spacing:.3em;margin:6px 0}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;color:#fff;font-family:var(--label);font-size:14px;padding:12px 20px;border-radius:20px;z-index:30}
 @media (max-width:760px){.office{grid-template-columns:1fr}.side{display:none}.main{padding:22px 18px}}
+.cn{font-family:var(--head);font-weight:500;font-size:17px}.cx td{background:#faf8f1}.cpanel{padding:8px 4px}.cpanel .addrow{margin:10px 0}.caud{font-family:var(--label);font-size:13px;line-height:1.7;margin-top:6px;max-height:220px;overflow:auto}
