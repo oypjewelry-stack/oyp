@@ -62,3 +62,11 @@ body.soft .top{background:#f6f6f4;border-bottom-color:#ecebe7}
 .grey.sm{font-size:13px;margin-top:6px}
 .tph{margin-bottom:14px}
 .specs2{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-family:var(--label);font-size:15px}.specs2 dt{color:#8a8a8a}.specs2 dd{color:#111}
+/* shop item links + share */
+a.tile{display:block;text-decoration:none;color:inherit}
+.tile .th{position:relative}
+.shr{background:rgba(255,255,255,.92);border:0;border-radius:50%;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.tile .shr{position:absolute;top:8px;right:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.shr.big{width:auto;height:auto;border-radius:20px;padding:8px 14px;gap:6px;border:1.5px solid #111;background:#fff;font-family:var(--label);font-weight:500;font-size:13px;flex-shrink:0}
+.ttl{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+a.back{display:inline-block;text-decoration:none}
