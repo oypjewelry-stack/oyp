@@ -16,6 +16,9 @@ function photo(jo, fid, size) {
   if (!photoCache[k]) photoCache[k] = window.OYP.call('jobPhoto', { jo, file_id: fid, size }).then(r => (r && r.ok && r.src) || '');
   return photoCache[k];
 }
+const locChip = j => { const { esc } = window.OYP;
+  return j.location === 'archived' ? '<span class="chip arch" title="JO on record, no physical piece">Archived</span>'
+    : j.location ? `<span class="chip dark">${esc(locLabel(j.location))}</span>` : '<span class="chip gold">Needs location</span>'; };
 const locLabel = k => (S.locations.find(l => l[0] === k) || [k, k])[1];
 const views = {
   noloc: ['Needs location', j => !j.location],
@@ -36,6 +39,24 @@ async function render(main, u) {
   draw(main);
 }
 
+function otherHits() {
+  const { esc } = window.OYP, f = S.found;
+  if (!f || f.q !== S.q.trim().toUpperCase().replace(/\s+/g, ' ') || S.q.trim().length < 2) return '';
+  const inList = new Set(S.jobs.map(j => j.jo)), L = f.jobs.filter(j => !inList.has(j.jo));
+  return `<div class="rvother"><div class="dtitle"><span class="lab">Other JOs matching “${esc(S.q.trim())}”</span><span class="lab">${L.length}${f.total > 50 ? ' of ' + f.total : ''}</span></div>${L.map(j => `
+    <div class="rvrow oth"><span></span><span></span><div class="rvi"><div class="kjo">${esc(j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}</div>
+      <div class="kd">${esc(j.description || (j.client ? j.client.name : '') || 'No details')}${j.description && j.client ? ' · ' + esc(j.client.name) : ''}</div>
+      <div class="kf">${locChip(j)}${j.review_state === 'reviewed' ? '<span class="chip">Reviewed</span>' : ''}</div></div></div>`).join('') || '<p class="muted rvnone">No other JOs.</p>'}</div>`;
+}
+function searchAll(main) {
+  clearTimeout(searchAll.t); const q = S.q.trim();
+  if (q.length < 2) { S.found = null; return; }
+  searchAll.t = setTimeout(async () => {
+    const r = await window.OYP.call('jobSearch', { q });
+    if (r && r.ok && S.q.trim() === q) { S.found = r; const a = document.activeElement, pos = a && a.id === 'rvQ' ? a.selectionStart : null; draw(main);
+      if (pos != null) { const el = main.querySelector('#rvQ'); el.focus(); el.setSelectionRange(pos, pos); } }
+  }, 350);
+}
 function shown() { const f = views[S.filter][1], q = S.q.trim().toUpperCase(); return S.jobs.filter(j => f(j) && (!q || j.jo.includes(q) || (j.client && j.client.name.toUpperCase().includes(q)) || j.description.toUpperCase().includes(q))); }
 
 function draw(main) {
@@ -59,10 +80,11 @@ function draw(main) {
         <div class="th" data-th="${esc(j.jo)}|${esc(j.pages[0] ? j.pages[0].file_id : '')}"></div>
         <div class="rvi"><div class="kjo">${esc(j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}</div>
           <div class="kd">${esc(j.description || (j.client ? j.client.name : '') || 'No details yet')}</div>
-          <div class="kf">${j.location ? `<span class="chip dark">${esc(locLabel(j.location))}</span>` : '<span class="chip gold">Needs location</span>'}
+          <div class="kf">${locChip(j)}
           ${j.missing.filter(m => m !== 'location').length ? `<span class="chip">${j.missing.filter(m => m !== 'location').length} missing</span>` : '<span class="chip">Details ✓</span>'}
           <span class="chip">${j.pages.length} pg</span></div></div>
       </div>`).join('') || `<p class="muted rvnone">${S.jobs.length ? 'Nothing in this view.' : 'Nothing to review. New scans show up here.'}</p>`}</div>
+    ${otherHits()}
   </div>
   <div class="rvpanel" id="rvPanel">${S.open ? panel(S.jobs.find(j => j.jo === S.open)) : '<div class="rvempty"><span class="lab">Pick a card on the left</span></div>'}</div>
   </div><div id="rvBig" class="rvbig hidden"></div>`;
@@ -76,9 +98,9 @@ function panel(j) {
   const fld = (k, lab, input) => `<div class="fsec ${fcls(k)}" data-f1="${k}"><div class="flab"><span class="lab">${esc(lab)}</span>${cf[k] ? flag(k) : ''}</div>${input}</div>`;
   return `<div class="rvp">
     <button class="lnk rvback" data-back>‹ All cards</button>
-    <div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
+    <div class="dhead"><h2>JO ${esc(j.jo)}${j.location === 'archived' ? ' <span class="chip arch big" title="JO on record, no physical piece">Archived</span>' : ''}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
     <div class="shots">${j.pages.map(p => `<button class="shot" data-big="${esc(p.file_id)}"><span class="ph" data-ph="${esc(j.jo)}|${esc(p.file_id)}"></span><span class="lab">Page ${p.page}</span></button>`).join('') || '<span class="muted">No photos</span>'}</div>
-    <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>
+    <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
       <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(l[1])}</button>`).join('')}</div></div>
     <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">What is it?</span>${flag('item_type')}</div>
       <div class="kinds">${S.itemTypes.map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}</div></div>
@@ -114,7 +136,7 @@ function panel(j) {
 function wire(main) {
   const { call, esc, toast } = window.OYP, $ = s => main.querySelector(s);
   main.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; draw(main); });
-  $('#rvQ').oninput = e => { S.q = e.target.value; const pos = e.target.selectionStart; draw(main); const q = main.querySelector('#rvQ'); q.focus(); q.setSelectionRange(pos, pos); };
+  $('#rvQ').oninput = e => { S.q = e.target.value; searchAll(main); const pos = e.target.selectionStart; draw(main); const q = main.querySelector('#rvQ'); q.focus(); q.setSelectionRange(pos, pos); };
   main.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); draw(main); });
   $('#rvAll').onchange = e => { shown().forEach(j => e.target.checked ? S.sel.add(j.jo) : S.sel.delete(j.jo)); draw(main); };
   $('#rvBulk').onclick = async () => {

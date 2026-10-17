@@ -128,3 +128,7 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .esum .yp{margin:12px 0 4px}.eq{margin-top:16px;border-top:1px solid #eee;padding-top:10px}
 @media (max-width:899px){.est{grid-template-columns:1fr}.eside{position:static}.etop{grid-template-columns:1fr}
   .er3{grid-template-columns:1fr 1fr 24px}.er3>select{grid-column:1/-1}.er.eh{display:none}.er3{padding-bottom:8px;border-bottom:1px solid #f0f0f0}.er5{grid-template-columns:1fr 1fr 1fr;row-gap:6px}.er5.eh{display:none}.er5>:first-child{grid-column:1/-1}.er5{padding-bottom:8px;border-bottom:1px solid #f0f0f0}.es{padding:14px 12px}}
+/* archived (JO on record, no piece) */
+.chip.arch{background:#fff;border:1px dashed #888;color:#666}.chip.arch.big{font-size:12px;vertical-align:middle;margin-left:8px;transform:translateY(-3px)}
+.lc.arch{opacity:.75;border-style:dashed}.archnote{margin:8px 0 0!important}
+.rvother{margin-top:18px}.rvother .dtitle{display:flex;justify-content:space-between;margin-bottom:6px}.rvrow.oth{cursor:default;grid-template-columns:0 0 1fr;gap:0}

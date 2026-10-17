@@ -29,8 +29,8 @@ async function render(main, u) {
 
   if (r.locations) {
     const unset = r.locations.find(l => l.key === 'unset');
-    h += `<section class="dcard"><div class="dtitle"><h3>Location</h3><span class="lab">All JOs</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
-      `<div class="lc ${l.key === 'working' ? 'cur' : ''}"><b>${l.count}</b><span class="lab">${esc(l.label)}</span></div>`).join('')}${unset && unset.count ? `<a class="lc gold" href="#/review"><b>${unset.count}</b><span class="lab">No location yet ›</span></a>` : ''}</div></section>`;
+    h += `<section class="dcard"><div class="dtitle"><h3>Location</h3><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
+      `<div class="lc ${l.key === 'working' ? 'cur' : ''}${l.key === 'archived' ? ' arch' : ''}"${l.key === 'archived' ? ' title="JO on record, no physical piece · not counted as on hand"' : ''}><b>${l.count}</b><span class="lab">${esc(l.label)}</span></div>`).join('')}${unset && unset.count ? `<a class="lc gold" href="#/review"><b>${unset.count}</b><span class="lab">No location yet ›</span></a>` : ''}</div></section>`;
   }
 
   if (can.sales) {
