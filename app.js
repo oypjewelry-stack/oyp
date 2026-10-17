@@ -69,7 +69,7 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const { SCANNER, NAV, ROLE_LABEL, scannerLink } = window.OYPNav; // nav.js: same menu in the scanner
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
-const DONE = { dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
+const DONE = { prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
 
 function show(id) { ['vLogin', 'vStaff', 'vOffice'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
 function route() {
@@ -93,6 +93,7 @@ function route() {
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
+  if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
   if (page === 'users') return usersPage();
   if (page === 'customers') return customersPage();
   if (page === 'shop') return shopPage();

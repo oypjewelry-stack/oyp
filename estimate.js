@@ -47,7 +47,8 @@ let S = { est: blank(), rates: null, map: null, exec: false, markups: [], quotes
 async function render(main, u) {
   const { call, esc } = window.OYP; S.u = u;
   main.innerHTML = '<h2>Cost estimator</h2><p class="muted">Loading rates…</p>';
-  const r = await call('costRates');
+  const [r, pg] = await Promise.all([call('costRates'), call('priceGet')]); // priceGet: Prices.gs (absent before that paste -> no notes)
+  S.price = pg && pg.ok ? pg : null;
   if (!r || !r.ok) {
     const msg = r && r.error === 'Unknown action' ? 'The server has not been updated for the cost estimator yet.' : (r && r.error) || 'Could not load rates';
     main.innerHTML = `<h2>Cost estimator</h2><p class="muted">${esc(msg)}</p>`; return;
@@ -70,13 +71,13 @@ function draw(main) {
       <div class="eshd"><h3>${title}</h3><span class="lab">Raw cost <b>${peso(cost)}</b>${S.exec ? ` &nbsp;× ${num(mult)} = <b class="gold">${peso(R.srp[key])}</b>` : ''}</span></div>
       <div class="erows">${head}${rows}</div><button class="lnk eadd" data-add="${key}">+ ${add}</button></section>`;
   const mat = e.materials.map((m, i) => `<div class="er er3"><select data-k="materials.${i}.code">${opts('material', m.code, 'g')}</select>
-      <input data-k="materials.${i}.grams" inputmode="decimal" placeholder="grams" value="${esc(m.grams)}"><span class="ec">${peso(lineCost('materials', i, R))}</span><button class="ex" data-del="materials.${i}" aria-label="Remove">×</button></div>`).join('');
+      <input data-k="materials.${i}.grams" inputmode="decimal" placeholder="grams" value="${esc(m.grams)}"><span class="ec">${peso(lineCost('materials', i, R))}</span><button class="ex" data-del="materials.${i}" aria-label="Remove">×</button></div>${matNote(m.code)}`).join('');
   const lab = e.labor.map((l, i) => `<div class="er er3"><select data-k="labor.${i}.code">${opts('labor', l.code, 'h')}</select>
       <input data-k="labor.${i}.hours" inputmode="decimal" placeholder="hours" value="${esc(l.hours)}"><span class="ec">${peso(lineCost('labor', i, R))}</span><button class="ex" data-del="labor.${i}" aria-label="Remove">×</button></div>`).join('');
   const st = e.stones.map((s, i) => `<div class="er er5"><input data-k="stones.${i}.code" placeholder="Stone code (D10C…)" value="${esc(s.code)}">
       <input data-k="stones.${i}.qty" inputmode="numeric" placeholder="qty" title="Pieces" value="${esc(s.qty)}"><input data-k="stones.${i}.ct" inputmode="decimal" placeholder="ct each" title="Carat per piece" value="${esc(s.ct)}">
       <input data-k="stones.${i}.usd_per_ct" inputmode="decimal" placeholder="$${num(S.map.stone.diamond_usd_ct)}/ct" title="USD per carat" value="${esc(s.usd_per_ct)}"><input data-k="stones.${i}.fx" inputmode="decimal" placeholder="₱${num(S.map.fx.usd_php)}/$" title="USD → PHP" value="${esc(s.fx)}">
-      <span class="ec">${peso(lineCost('stones', i, R))}</span><button class="ex" data-del="stones.${i}" aria-label="Remove">×</button></div>`).join('');
+      <span class="ec">${peso(lineCost('stones', i, R))}</span><button class="ex" data-del="stones.${i}" aria-label="Remove">×</button></div>${stoneNote(s, i)}`).join('');
   const hd3 = (a, b) => `<div class="er er3 eh"><span class="lab">${a}</span><span class="lab">${b}</span><span class="lab ec">Cost</span><span></span></div>`;
   const hd5 = `<div class="er er5 eh"><span class="lab">Stone code</span><span class="lab">Qty</span><span class="lab">Ct each</span><span class="lab">USD / ct</span><span class="lab">USD → ₱</span><span class="lab ec">Cost</span><span></span></div>`;
   const sum = S.exec ? `<div class="esum">
@@ -95,17 +96,36 @@ function draw(main) {
       <p class="muted fnote">Selling price and margin are set by an executive from these costs.</p></div>`;
   const q = S.quotes ? `<div class="eq"><span class="lab">Saved on JO ${esc(S.quotes.jo)}</span>${S.quotes.quotes.length ? S.quotes.quotes.map(x =>
       `<div class="sr sm"><span>v${x.version} · ${esc(x.created_by)} · ${esc(String(x.created_at).slice(0, 10))}</span><span>cost ${peso(x.cost_total)}${S.exec && x.quote_amount != null ? ' · price ' + peso(x.quote_amount) : ''}</span></div>`).join('') : '<p class="muted">None yet</p>'}</div>` : '';
-  main.innerHTML = `<h2>Cost estimator</h2><p class="muted">Rates from the Rates tab${S.exec ? '' : ' · raw costs only'}</p>
+  main.innerHTML = `<h2>Cost estimator</h2><p class="muted">Rates from <a href="#/prices">Material prices</a>${S.exec ? '' : ' · raw costs only'}</p>
     <div class="est"><div class="ein">
       <div class="etop"><label class="fsec"><span class="lab">JO number (to save on)</span><input data-k="jo" placeholder="26-001" value="${esc(e.jo)}" autocapitalize="characters"></label>
       <div class="fsec"><span class="lab">Kind</span><div class="seg"><button data-kind="stock" class="${R.kind === 'stock' ? 'on' : ''}">Stock / order</button><button data-kind="repair" class="${R.kind === 'repair' ? 'on' : ''}">Repair</button></div></div></div>
       ${sec('materials', 'Materials', hd3('Metal', 'Grams'), mat, 'Add metal', R.cost.materials, mk.materials)}
       ${sec('labor', 'Labor', hd3('Who', 'Hours'), lab, 'Add labor', R.cost.labor, mk.labor)}
-      ${sec('stones', 'Stones', e.stones.length ? hd5 : '', st, 'Add stones', R.cost.stones, mk.stones)}
+      ${sec('stones', 'Stones', e.stones.length ? hd5 : '', st + fxNote(), 'Add stones', R.cost.stones, mk.stones)}
     </div><aside class="eside">${sum}
       <div class="fbtns"><button class="pill" id="eSave"${S.busy ? ' disabled' : ''}>${S.exec ? 'SAVE QUOTE ON JO' : 'SAVE COSTS ON JO'}</button><button class="lnk" id="eClear">Clear</button></div>
-      ${R.missing_rates.length ? `<p class="fnote flag c">No rate yet for ${esc(R.missing_rates.map(c => (S.rates.find(x => x.code === c) || { label: c }).label).join(', '))} · enter it in the Rates tab</p>` : ''}${q}</aside></div>`;
+      ${R.missing_rates.length ? `<p class="fnote flag c">No rate yet for ${esc(R.missing_rates.map(c => (S.rates.find(x => x.code === c) || { label: c }).label).join(', '))} · set it in <a href="#/prices">Material prices</a></p>` : ''}${q}</aside></div>`;
   wire(main);
+}
+/* notes from Material prices (Prices.gs): where each rate comes from, for comparison only */
+const shortDay = d => { const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; const [, m, dd] = String(d).split('-').map(Number); return M[m - 1] + ' ' + dd; };
+const sgn = p => (p > 0 ? '+' : p < 0 ? '−' : '±') + num(Math.abs(p)) + '%';
+function matNote(code) {
+  const m = S.price && S.price.metals.find(x => x.code === code); if (!m) return '';
+  const esc = window.OYP.esc, bits = [];
+  if (m.last_bought) bits.push(`Last bought <b>${peso(m.last_bought.unit_price_php)}</b> · ${esc(m.last_bought.supplier)} · ${shortDay(m.last_bought.date)}`);
+  if (m.spot_php_g) bits.push(`spot <b>${peso(m.spot_php_g)}</b>${m.vs_spot_pct != null ? ' (rate ' + sgn(m.vs_spot_pct) + ')' : ''}${S.price.spot.stale ? ' · stale' : ''}`);
+  return bits.length ? `<div class="enote">${bits.join(' · ')}</div>` : '';
+}
+function stoneNote(s, i) {
+  const L = S.price ? S.price.stones.filter(x => x.unit !== 'PHP/pc' && x.rate != null) : []; if (L.length < 2) return '';
+  return `<div class="enote">Price from <select data-stype="${i}"><option value="">choose stone…</option>${L.map(x => `<option value="${x.rate}"${String(s.usd_per_ct) === String(x.rate) ? ' selected' : ''}>${window.OYP.esc(x.label.replace(/ \(.*\)$/, ''))} · $${num(x.rate)}/ct</option>`).join('')}</select></div>`;
+}
+function fxNote() {
+  if (!S.price || !S.price.fx || !S.price.fx.rate) return '';
+  const f = S.price.fx, pcs = S.price.stones.filter(x => x.unit === 'PHP/pc');
+  return `<div class="enote">USD → ₱ <b>${num(f.rate)}</b> · ${f.mode === 'auto' ? 'daily feed' + (f.feed_at ? ' · ' + shortDay(new Date(Date.parse(f.feed_at) + 8 * 36e5).toISOString().slice(0, 10)) : '') : 'set by hand'}${pcs.length ? ' · per-piece stones (not in this calculator yet): ' + pcs.map(x => window.OYP.esc(x.label.replace(/ \(.*\)$/, '')) + ' ' + peso(x.rate)).join(', ') : ''}</div>`;
 }
 function lineCost(key, i, R) { // the calc drops empty rows; map back by position among filled rows
   const rows = S.est[key], used = r => key === 'materials' ? Number(r.grams) > 0 : key === 'labor' ? Number(r.hours) > 0 : Number(r.qty) > 0 && Number(r.ct) > 0;
@@ -122,6 +142,7 @@ function wire(main) {
       refresh(main);
     });
   });
+  main.querySelectorAll('[data-stype]').forEach(el => el.onchange = () => { S.est.stones[+el.dataset.stype].usd_per_ct = el.value; draw(main); });
   main.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { S.est.kind = b.dataset.kind; draw(main); });
   main.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
     const k = b.dataset.add, first = c => (S.rates.find(x => x.category === c) || {}).code || '';
