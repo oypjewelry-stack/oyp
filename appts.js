@@ -8,8 +8,8 @@
 const PASTE_NOTE = 'This page needs the Appointments paste in Apps Script (see the instructions).';
 const DN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const TYPES = [['fitting', 'Fitting'], ['pickup', 'Pickup'], ['appraisal', 'Appraisal'], ['repair', 'Repair']];
-const tLab = t => (TYPES.find(x => x[0] === t) || [t, t])[1];
+let ALLT = [['fitting', 'Fitting'], ['pickup', 'Pickup'], ['appraisal', 'Appraisal'], ['repair', 'Repair']], TYPES = ALLT; // the server's list (Settings) replaces these
+const tLab = t => (ALLT.find(x => x[0] === t) || [t, t])[1];
 const pad = n => String(n).padStart(2, '0');
 const hm = m => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
 const toMin = s => { const [h, m] = String(s).split(':').map(Number); return h * 60 + m; };
@@ -25,7 +25,10 @@ const monday = day => addD(day, -((dow(day) + 6) % 7));
 const dLab = (day, long) => DN[dow(day)] + (long ? ', ' : ' ') + MN[Number(day.slice(5, 7)) - 1] + ' ' + Number(day.slice(8)) + (long && day.slice(0, 4) !== todayPH().slice(0, 4) ? ', ' + day.slice(0, 4) : '');
 const narrow = () => innerWidth < 760;
 const $ = id => document.getElementById(id);
-const isWe = day => dow(day) === 0 || dow(day) === 6;
+const isWe = day => S.r && S.r.hours && S.r.hours.days ? !S.r.hours.days.includes(dow(day)) : dow(day) === 0 || dow(day) === 6; // closed weekday (Settings: open days)
+const DN3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const daysTxt = h => { const d = (h && h.days || [1, 2, 3, 4, 5]).slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)); return d.join() === '1,2,3,4,5' ? 'Mon–Fri' : d.map(x => DN3[x]).join(', '); };
+const hrsTxt = h => daysTxt(h) + ' · ' + clock(h.open, true) + '–' + clock(h.close, true);
 const hol = day => (S.r && S.r.holidays || []).find(x => x.day === day) || null; // {name, status: pending / closed / open}
 const shut = day => isWe(day) || (hol(day) && hol(day).status === 'closed'); // closed day: weekend or store holiday
 const holAsk = day => !!hol(day) && hol(day).status !== 'open'; // closed or not decided: booking needs the confirm
@@ -43,7 +46,7 @@ function range() {
 async function load(force) {
   const [from, to] = range(), key = from + to;
   if (!force && S.r && S.key === key) return S.r;
-  const r = await window.OYP.call('apptList', { from, to }); if (r && r.ok) { S.r = r; S.key = key; } return r;
+  const r = await window.OYP.call('apptList', { from, to }); if (r && r.ok) { S.r = r; S.key = key; if (r.types && r.types.length) { ALLT = r.types; TYPES = ALLT.filter(t => !(r.types_off || {})[t[0]]); } } return r;
 }
 async function render(main, u) {
   const { esc } = window.OYP, live = window.OYP.here(); U = u;
@@ -75,7 +78,7 @@ function draw(main) {
       <div class="apnav"><button class="apar" data-go="-1" aria-label="Previous">‹</button><b class="aplab">${esc(lab)}</b><button class="apar" data-go="1" aria-label="Next">›</button>
       <button class="lnk aptoday" data-go="0">Today</button></div></div>
     ${staffChips}
-    <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span class="muted">Store hours Mon–Fri · 9 AM–4 PM</span></div>
+    <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span class="muted">Store hours ${hrsTxt(S.r.hours)}</span></div>
     ${body}
   </div>${S.open ? sheet(S.open) : ''}${S.form ? formSheet() : ''}`;
   wire(main);
@@ -171,7 +174,7 @@ function dayList(list) { // phone: the day as a list with the free hours in betw
   const free = (a, b) => { for (let m = a; m + 60 <= b; m += 60) { if (d === todayPH() && m < nowMinPH()) continue; if (d < todayPH()) continue; out.push(`<button class="apfree" data-slot="${d}|" data-min="${m}"><span>${clock(m)}</span><b>+ Free · book</b></button>`); } };
   if (!shut(d)) { L.filter(a => a.status !== 'cancelled').forEach(a => { free(Math.min(t, h.close), Math.min(a.start_min, h.close)); t = Math.max(t, a.start_min + a.minutes); }); free(Math.min(t, h.close), h.close); }
   const items = L.map(a => [a.start_min, card(a)]).concat(out.map(x => [Number((x.match(/data-min="(\d+)"/) || [])[1]), x])).sort((a, b) => a[0] - b[0]).map(x => x[1]);
-  return `<div class="aplist">${isWe(d) ? '<p class="muted apempty">Weekend: the store is closed. Visits booked anyway are listed here.</p>' : hol(d) ? `<p class="muted apempty aphold">Holiday: ${window.OYP.esc(hol(d).name)} · ${hol(d).status === 'closed' ? 'store closed' : hol(d).status === 'open' ? 'store open' : 'not decided yet (bookings need a confirm)'}</p>` : ''}${L.length ? '' : '<p class="muted apempty">Nothing booked yet.</p>'}${items.join('')}</div>${past && !L.length && d < todayPH() ? '' : ''}`;
+  return `<div class="aplist">${isWe(d) ? `<p class="muted apempty">${dow(d) === 0 || dow(d) === 6 ? 'Weekend' : 'Closed day'}: the store is closed. Visits booked anyway are listed here.</p>` : hol(d) ? `<p class="muted apempty aphold">Holiday: ${window.OYP.esc(hol(d).name)} · ${hol(d).status === 'closed' ? 'store closed' : hol(d).status === 'open' ? 'store open' : 'not decided yet (bookings need a confirm)'}</p>` : ''}${L.length ? '' : '<p class="muted apempty">Nothing booked yet.</p>'}${items.join('')}</div>${past && !L.length && d < todayPH() ? '' : ''}`;
 }
 function weekList(list) { // phone week: a list per day
   const mon = monday(S.day);
@@ -268,7 +271,7 @@ function formSheet() {
       <label class="fsec"><span class="lab">Staff</span><select id="apS"><option value="">Pick…</option>${S.r.staff.map(s => `<option value="${esc(s.username)}" ${s.username === f.staff ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label></div>
     <div class="fgrid"><label class="fsec"><span class="lab">Start</span><select id="apT">${starts.map(m => `<option value="${m}" ${m === f.start ? 'selected' : ''}>${clock(m)}${m < h.open || m >= h.close ? ' · outside hours' : ''}</option>`).join('')}</select></label>
       <label class="fsec"><span class="lab">Length${f.type === 'appraisal' ? ' · any' : ''}</span><select id="apL">${L.map(m => `<option value="${m}" ${m === f.minutes ? 'selected' : ''}>${dur(m)}${m === 60 ? ' (usual)' : ''}</option>`).join('')}</select></label></div>
-    <p class="apend">Until ${clock(f.start + f.minutes)}${offHrs({ day: f.day, start_min: f.start, minutes: f.minutes }, h) ? ` · <span class="apoffn">${isWe(f.day) ? 'weekend, ' : hol(f.day) ? esc(hol(f.day).name) + ', ' : ''}outside store hours (Mon–Fri 9–4): you will be asked to confirm</span>` : ''}${f.start + f.minutes > hi ? ' · <span class="red">past 6:00 PM</span>' : ''}</p>
+    <p class="apend">Until ${clock(f.start + f.minutes)}${offHrs({ day: f.day, start_min: f.start, minutes: f.minutes }, h) ? ` · <span class="apoffn">${isWe(f.day) ? 'weekend, ' : hol(f.day) ? esc(hol(f.day).name) + ', ' : ''}outside store hours (${hrsTxt(h)}): you will be asked to confirm</span>` : ''}${f.start + f.minutes > hi ? ` · <span class="red">past ${clock(hi)}</span>` : ''}</p>
     <div class="fgrid"><label class="fsec"><span class="lab">JO · optional</span><input id="apJ" value="${esc(f.jo)}" placeholder="26-101"></label>
       <label class="fsec"><span class="lab">Notes · staff only</span><input id="apNo" value="${esc(f.notes)}" placeholder="not in the invite"></label></div>
     <div id="apWarn">${warn}</div>

@@ -69,7 +69,7 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const { SCANNER, NAV, ROLE_LABEL, scannerLink } = window.OYPNav; // nav.js: same menu in the scanner
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
-const DONE = { appts: true, home: true, prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
+const DONE = { settings: true, appts: true, home: true, prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
   payments: true, quotes: true, balances: true, clients: true }; // pay.js: payments, quotes, balances, clients
 
 // Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
@@ -99,6 +99,7 @@ function route() {
     + `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
     <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
   const title = nav.find(n => n[0] === page)[1];
+  if (page === 'settings' && window.OYPSettings) return window.OYPSettings.render($('main'), u); // settings.js (admin only: only the admin menu has it)
   if (page === 'appts' && window.OYPAppts) return window.OYPAppts.render($('main'), u); // appts.js
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
@@ -319,7 +320,7 @@ async function shopPage() {
   $('slist').outerHTML = r.items.length ? `<table><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">Price</span></th><th><span class="lab">JO</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${r.items.map(i => `<tr><td><b class="cn">${esc(i.title)}</b><br><span class="muted">${esc(i.item_code)} · ${esc(i.category)}</span></td><td>${i.price_php ? '₱' + Number(i.price_php).toLocaleString() : '—'}</td><td>${esc(i.jo)}</td><td><span class="chip ${i.status === 'listed' ? 'gold' : ''}">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nothing listed yet.</p>';
 }
 
-window.OYP = { call, esc, toast, user, ROLE_LABEL, here }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js
+window.OYP = { call, esc, toast, user, ROLE_LABEL, here }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js
 drawDots(); route();
 // re-check the session with the server on load (catches resets / deactivation)
 // redraw only if the role or name changed, so a page opened meanwhile (e.g. the estimator mid-typing) is not reset
