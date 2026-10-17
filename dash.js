@@ -29,7 +29,7 @@ async function render(main, u) {
 
   if (r.locations) {
     const unset = r.locations.find(l => l.key === 'unset');
-    h += `<section class="dcard"><div class="dtitle"><h3>Where pieces are</h3><span class="lab">All JOs by location</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
+    h += `<section class="dcard"><div class="dtitle"><h3>Location</h3><span class="lab">All JOs</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
       `<div class="lc ${l.key === 'working' ? 'cur' : ''}"><b>${l.count}</b><span class="lab">${esc(l.label)}</span></div>`).join('')}${unset && unset.count ? `<a class="lc gold" href="#/review"><b>${unset.count}</b><span class="lab">No location yet ›</span></a>` : ''}</div></section>`;
   }
 

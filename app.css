@@ -70,7 +70,7 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
   .kanban{grid-template-columns:repeat(7,78%);scroll-snap-type:x mandatory}.kcol{scroll-snap-align:start}.dt .hm{display:none}.bars{height:140px;gap:8px}}
 @media (max-width:760px){.kpi:last-child:nth-child(odd){grid-column:1/-1}.dt td{padding:9px 6px;font-size:14px}.dt td:nth-child(2){white-space:nowrap}.dtitle .lab{font-size:10px;text-align:right}}
 .dt .chip{white-space:nowrap}
-/* where pieces are (dashboard) */
+/* location counts (dashboard) */
 .locrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
 .lc{border:1px solid #eee;border-radius:12px;padding:12px 14px;text-decoration:none;color:#111;display:block}.lc b{display:block;font-family:var(--head);font-weight:500;font-size:28px;line-height:1.1}
 .lc.cur{border-color:#111}.lc.gold{border-color:var(--gold);background:#fffdf6}.lc.gold b{color:#a8861c}
