@@ -86,7 +86,7 @@ function route() {
   const want = nav.some(n => n[0] === cur) ? cur : ALIAS[cur] && nav.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
   const page = want || nav[0][0];
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  $('side').innerHTML = nav.map(([k, t]) => k === 'scanner' ? `<a href="${scanUrl()}" target="_blank" rel="noopener">${esc(t)} ↗</a>`
+  $('side').innerHTML = nav.map(([k, t]) => k === 'scanner' ? `<a href="${scanUrl()}">${esc(t)}</a>`
     : `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`).join('')
     + `<div class="who"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><button class="pill outline" data-logout>LOG OUT</button></div>`;
   const title = nav.find(n => n[0] === page)[1];
