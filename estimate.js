@@ -1,7 +1,9 @@
 /* OYP back office: Cost estimator (#/estimate). Rates come from the Sheet's Rates tab (Costing.gs).
    Everyone allowed here (admin + production manager) enters materials, labor and stones and sees raw costs.
    Markups, SRP, Your price and margins appear only for executives; the server sends them only to executives
-   and recomputes everything when a quote is saved. */
+   and recomputes everything when a quote is saved.
+   Locked cost (Prices.gs): once a quote on the JO is accepted (job start), typing that JO shows the locked cost with the rates of
+   that moment (read-only); today's rates are not used for it. Executives mark a saved quote accepted here. */
 (() => {
 'use strict';
 const r2 = x => Math.round((Number(x) || 0) * 100) / 100;
@@ -42,7 +44,7 @@ function calc(est, rates, withPrices) {
 const peso = n => '₱' + (Number(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const num = n => (Number(n) || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 });
 const blank = () => ({ jo: '', kind: 'stock', materials: [{ code: '', grams: '' }], labor: [{ code: '', hours: '' }], stones: [], your_price: '' });
-let S = { est: blank(), rates: null, map: null, exec: false, markups: [], quotes: null, busy: false };
+let S = { est: blank(), rates: null, map: null, exec: false, markups: [], quotes: null, busy: false, lock: null, lockView: false, saved: null };
 
 async function render(main, u) {
   const { call, esc } = window.OYP; S.u = u;
@@ -62,11 +64,30 @@ async function render(main, u) {
   if (!S.est.labor[0].code) { const f = r.rates.find(x => x.category === 'labor'); if (f) S.est.labor[0].code = f.code; }
   draw(main);
 }
-const opts = (cat, sel, unit) => S.rates.filter(x => x.category === cat).map(x =>
-  `<option value="${x.code}"${x.code === sel ? ' selected' : ''}>${window.OYP.esc(x.label)}${x.rate != null ? ' · ' + peso(x.rate) + '/' + unit : ' · no rate yet'}</option>`).join('');
+const opts = (cat, sel, unit) => S.rates.filter(x => x.category === cat).map(x => { const rate = S.lockView ? (lockMap()[cat] || {})[x.code] : x.rate;
+  return `<option value="${x.code}"${x.code === sel ? ' selected' : ''}>${window.OYP.esc(x.label)}${rate != null ? ' · ' + peso(rate) + '/' + unit : ' · no rate yet'}</option>`; }).join('');
+/* locked cost of the JO typed above (priceJobCost); lockView = show it read-only with the rates of that moment */
+const L = () => S.lock && S.lock.locked;
+const lockMap = () => { const l = L(); return { material: l.rates.material, labor: l.rates.labor, stone: l.rates.stone, fx: l.rates.fx, markup: l.markups || S.map.markup }; };
+const estFromLock = l => ({ jo: S.est.jo, kind: l.kind, your_price: l.quote_amount != null ? String(l.quote_amount) : '',
+  materials: l.materials.map(m => ({ code: m.code, grams: String(m.grams), rate: m.rate })), labor: l.labor.map(x => ({ code: x.code, hours: String(x.hours), rate: x.rate })),
+  stones: l.stones.map(x => ({ code: x.code, qty: String(x.qty), ct: String(x.ct), usd_per_ct: String(x.usd_per_ct), fx: String(x.fx) })) });
+const isEmpty = e => !e.materials.some(m => Number(m.grams) > 0) && !e.labor.some(l => Number(l.hours) > 0) && !e.stones.length;
+function showLock(on) {
+  if (on && L() && !S.lockView) { S.saved = S.est; S.est = estFromLock(L()); S.lockView = true; }
+  else if (!on && S.lockView) { S.est = Object.assign(S.saved || blank(), { jo: S.est.jo }); S.saved = null; S.lockView = false; }
+}
+async function loadJo(main, auto) {
+  const { call } = window.OYP, jo = S.est.jo.trim(); if (!jo) { S.quotes = S.lock = null; showLock(false); return refresh(main); }
+  const [q, j] = await Promise.all([call('costQuotes', { jo }), call('priceJobCost', { jo })]); // priceJobCost: Prices.gs (absent before that paste)
+  if (S.est.jo.trim() !== jo) return;
+  S.quotes = q && q.ok ? q : null; const was = S.lockView; showLock(false); S.lock = j && j.ok ? j : null;
+  if (L() && (was || (auto && isEmpty(S.est)))) showLock(true);
+  refresh(main);
+}
 
 function draw(main) {
-  const { esc } = window.OYP, e = S.est, R = calc(e, S.map, S.exec), mk = R.markup || {};
+  const { esc } = window.OYP, e = S.est, R = calc(e, S.lockView ? lockMap() : S.map, S.exec), mk = R.markup || {};
   const sec = (key, title, head, rows, add, cost, mult) => `<section class="es">
       <div class="eshd"><h3>${title}</h3><span class="lab">Raw cost <b>${peso(cost)}</b>${S.exec ? ` &nbsp;× ${num(mult)} = <b class="gold">${peso(R.srp[key])}</b>` : ''}</span></div>
       <div class="erows">${head}${rows}</div><button class="lnk eadd" data-add="${key}">+ ${add}</button></section>`;
@@ -94,25 +115,34 @@ function draw(main) {
       <div class="sr sm"><span>Materials</span><span>${peso(R.cost.materials)}</span></div><div class="sr sm"><span>Labor</span><span>${peso(R.cost.labor)}</span></div>
       <div class="sr sm"><span>Stones</span><span>${peso(R.cost.stones)}</span></div><div class="sr big"><span class="lab">Raw cost</span><b>${peso(R.cost.total)}</b></div>
       <p class="muted fnote">Selling price and margin are set by an executive from these costs.</p></div>`;
+  const cur = L() ? L().quote_id : '', canLock = S.exec && S.lock; // priceJobCost answered = Prices.gs is pasted
   const q = S.quotes ? `<div class="eq"><span class="lab">Saved on JO ${esc(S.quotes.jo)}</span>${S.quotes.quotes.length ? S.quotes.quotes.map(x =>
-      `<div class="sr sm"><span>v${x.version} · ${esc(x.created_by)} · ${esc(String(x.created_at).slice(0, 10))}</span><span>cost ${peso(x.cost_total)}${S.exec && x.quote_amount != null ? ' · price ' + peso(x.quote_amount) : ''}</span></div>`).join('') : '<p class="muted">None yet</p>'}</div>` : '';
-  main.innerHTML = `<h2>Cost estimator</h2><p class="muted">Rates from <a href="#/prices">Material prices</a>${S.exec ? '' : ' · raw costs only'}</p>
-    <div class="est"><div class="ein">
+      `<div class="sr sm"><span>v${x.version} · ${esc(x.created_by)} · ${esc(String(x.created_at).slice(0, 10))}${x.status && x.status !== 'draft' ? `<span class="qst ${x.quote_id === cur ? 'acc' : ''}">${esc(x.quote_id === cur ? 'accepted · locked' : x.status)}</span>` : ''}</span><span>cost ${peso(x.cost_total)}${S.exec && x.quote_amount != null ? ' · price ' + peso(x.quote_amount) : ''}</span></div>
+      ${canLock && x.quote_id !== cur ? `<button class="lnk qacc" data-acc="${esc(x.quote_id)}" data-v="${x.version}">Mark accepted / job started</button>` : ''}`).join('') : '<p class="muted">None yet</p>'}</div>` : '';
+  const lk = L() ? (S.lockView ? window.OYPPrices.lockedHtml(S.lock, { exec: S.exec, lines: false })
+      : `<div class="elock"><b>${esc(window.OYPPrices.lockHeadline(L()))}</b><br>This JO's job has started; its cost is locked. <button class="lnk" id="eLockOn">Show locked cost</button></div>`) : '';
+  const banner = S.lockView ? `<div class="elock"><b>${esc(window.OYPPrices.lockHeadline(L()))}</b> · JO ${esc(S.lock.jo)}<br>Showing the locked cost: the rates of the moment quote v${L().quote_version} was accepted, not today's rates. Read-only.
+      <button class="lnk" id="eLockOff">Back to estimating</button></div>` : '';
+  main.innerHTML = `<h2>Cost estimator</h2><p class="muted">Rates from <a href="#/prices">Material prices</a>${S.exec ? '' : ' · raw costs only'}</p>${banner}
+    <div class="est${S.lockView ? ' locked' : ''}"><div class="ein">
       <div class="etop"><label class="fsec"><span class="lab">JO number (to save on)</span><input data-k="jo" placeholder="26-001" value="${esc(e.jo)}" autocapitalize="characters"></label>
       <div class="fsec"><span class="lab">Kind</span><div class="seg"><button data-kind="stock" class="${R.kind === 'stock' ? 'on' : ''}">Stock / order</button><button data-kind="repair" class="${R.kind === 'repair' ? 'on' : ''}">Repair</button></div></div></div>
       ${sec('materials', 'Materials', hd3('Metal', 'Grams'), mat, 'Add metal', R.cost.materials, mk.materials)}
       ${sec('labor', 'Labor', hd3('Who', 'Hours'), lab, 'Add labor', R.cost.labor, mk.labor)}
       ${sec('stones', 'Stones', e.stones.length ? hd5 : '', st + fxNote(), 'Add stones', R.cost.stones, mk.stones)}
     </div><aside class="eside">${sum}
-      <div class="fbtns"><button class="pill" id="eSave"${S.busy ? ' disabled' : ''}>${S.exec ? 'SAVE QUOTE ON JO' : 'SAVE COSTS ON JO'}</button><button class="lnk" id="eClear">Clear</button></div>
-      ${R.missing_rates.length ? `<p class="fnote flag c">No rate yet for ${esc(R.missing_rates.map(c => (S.rates.find(x => x.code === c) || { label: c }).label).join(', '))} · set it in <a href="#/prices">Material prices</a></p>` : ''}${q}</aside></div>`;
+      ${S.lockView ? '' : `<div class="fbtns"><button class="pill" id="eSave"${S.busy ? ' disabled' : ''}>${S.exec ? 'SAVE QUOTE ON JO' : 'SAVE COSTS ON JO'}</button><button class="lnk" id="eClear">Clear</button></div>`}
+      ${lk}${!S.lockView && R.missing_rates.length ? `<p class="fnote flag c">No rate yet for ${esc(R.missing_rates.map(c => (S.rates.find(x => x.code === c) || { label: c }).label).join(', '))} · set it in <a href="#/prices">Material prices</a></p>` : ''}${q}</aside></div>`;
   wire(main);
 }
 /* notes from Material prices (Prices.gs): where each rate comes from, for comparison only */
 const shortDay = d => { const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; const [, m, dd] = String(d).split('-').map(Number); return M[m - 1] + ' ' + dd; };
 const sgn = p => (p > 0 ? '+' : p < 0 ? '−' : '±') + num(Math.abs(p)) + '%';
 function matNote(code) {
-  const m = S.price && S.price.metals.find(x => x.code === code); if (!m) return '';
+  const m = S.price && S.price.metals.find(x => x.code === code);
+  if (S.lockView) { const lr = (lockMap().material || {})[code], now = m ? m.rate : (S.map.material || {})[code];
+    return lr != null ? `<div class="enote">Locked <b>${peso(lr)}/g</b>${now != null && now !== lr ? ' · today ' + peso(now) + '/g (not used)' : ''}</div>` : ''; }
+  if (!m) return '';
   const esc = window.OYP.esc, bits = [];
   if (m.last_bought) bits.push(`Last bought <b>${peso(m.last_bought.unit_price_php)}</b> · ${esc(m.last_bought.supplier)} · ${shortDay(m.last_bought.date)}`);
   if (m.spot_php_g) bits.push(`spot <b>${peso(m.spot_php_g)}</b>${m.vs_spot_pct != null ? ' (rate ' + sgn(m.vs_spot_pct) + ')' : ''}${S.price.spot.stale ? ' · stale' : ''}`);
@@ -134,8 +164,19 @@ function lineCost(key, i, R) { // the calc drops empty rows; map back by positio
 }
 function wire(main) {
   const { call, toast } = window.OYP;
+  const on = (sel, fn) => { const el = main.querySelector(sel); if (el) el.onclick = fn; };
+  on('#eLockOn', () => { showLock(true); draw(main); }); on('#eLockOff', () => { showLock(false); draw(main); });
+  main.querySelectorAll('[data-acc]').forEach(b => b.onclick = async () => {
+    if (!confirm('Mark quote v' + b.dataset.v + ' on JO ' + S.quotes.jo + ' as accepted?\n\nThe client accepted it and the job starts now: the JO\'s cost locks at today\'s rates. Later rate changes won\'t change it.')) return;
+    const r = await call('priceAccept', { quote_id: b.dataset.acc }); if (!r || !r.ok) return toast((r && r.error) || 'Could not save');
+    toast('Accepted · cost locked'); S.lockView = false; S.saved = null; S.lock = null; await loadJo(main, false); showLock(true); draw(main);
+  });
+  const joIn = main.querySelector('[data-k=jo]'); // typing a JO: after a pause, load its saved quotes + locked cost
+  joIn.addEventListener('input', () => { S.est.jo = joIn.value; clearTimeout(S.joT); S.joT = setTimeout(() => loadJo(main, true), 600); });
+  if (S.lockView) { main.querySelectorAll('.ein input, .ein select, .eside input').forEach(el => { if (el !== joIn) el.disabled = true; }); main.querySelectorAll('[data-add],[data-del],[data-kind]').forEach(b => b.disabled = true); return; }
   main.querySelectorAll('[data-k]').forEach(el => {
     const ev = el.tagName === 'SELECT' ? 'change' : 'input';
+    if (el.dataset.k === 'jo') return el.addEventListener('input', () => refresh(main));
     el.addEventListener(ev, () => {
       const p = el.dataset.k.split('.'); let o = S.est; while (p.length > 1) o = o[p.shift()]; o[p[0]] = el.value;
       if (el.tagName === 'SELECT') return draw(main);
@@ -150,7 +191,7 @@ function wire(main) {
     draw(main);
   });
   main.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const [k, i] = b.dataset.del.split('.'); S.est[k].splice(+i, 1); draw(main); });
-  main.querySelector('#eClear').onclick = () => { S.est = blank(); S.quotes = null; render(main, S.u); };
+  main.querySelector('#eClear').onclick = () => { S.est = blank(); S.quotes = null; S.lock = null; S.lockView = false; render(main, S.u); };
   main.querySelector('#eSave').onclick = async () => {
     const e = S.est; if (!e.jo.trim()) { toast('Type the JO number first'); return main.querySelector('[data-k=jo]').focus(); }
     S.busy = true; draw(main);
@@ -159,7 +200,7 @@ function wire(main) {
     const r = await call('costSave', { jo: e.jo, estimate: est }); S.busy = false;
     if (!r || !r.ok) { draw(main); return toast((r && r.error) || 'Could not save'); }
     toast('Saved as v' + r.version + ' on JO ' + r.jo);
-    S.quotes = await call('costQuotes', { jo: r.jo }); draw(main);
+    S.est.jo = r.jo; await loadJo(main, false);
   };
 }
 function refresh(main) { // keep focus while typing: redraw, then put the cursor back

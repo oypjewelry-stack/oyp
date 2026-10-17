@@ -143,5 +143,30 @@ async function historyPage(main, code) {
       <div class="kd">${esc(when(h.at))}${h.kind === 'purchase' ? ' · ' + esc(h.source) : h.kind === 'rate' ? ' · ' + esc(SRC[h.source] || h.source) : ''}${h.by && !['daily', 'setup'].includes(h.by) && h.kind !== 'purchase' ? ' · ' + esc(h.by) : ''}${h.kind === 'purchase' && h.by ? ' · logged by ' + esc(h.by) : ''}</div>
       <div class="kf"><span class="chip ${h.kind === 'rate' ? 'dark' : h.kind === 'purchase' ? '' : h.kind === 'spot' || h.kind === 'feed' ? 'gold' : ''}">${esc(KIND[h.kind] || h.kind)}</span>${h.note ? `<span class="chip">${esc(h.note)}</span>` : ''}</div></div><span></span></div>`).join('') || '<p class="muted rvnone">No history yet.</p>'}</div></div>`;
 }
-window.OYPPrices = { render, get: () => P };
+/* Locked JO cost (Prices.gs priceJobCost): drawn on the JO card and in the cost estimator. The server leaves out price / SRP / markups
+   for non-executives. j = { locked, history }. */
+function lockHeadline(l) {
+  const mats = (l.materials || []).filter(m => m.rate != null);
+  return 'Cost locked ' + day(new Date(Date.parse(l.locked_at) + 8 * 36e5).toISOString().slice(0, 10)) +
+    (mats.length ? ' at ' + mats.map(m => peso(m.rate) + '/g' + (mats.length > 1 ? ' ' + (m.label || m.code) : '')).join(', ') : '');
+}
+function lockedHtml(j, opt = {}) {
+  const esc = window.OYP.esc, l = j && j.locked;
+  if (!l) return `<div class="plock none"><span class="lab">Cost</span><p class="muted fnote">Not locked yet. The cost locks when the client accepts a quote (job start)${opt.exec ? ': on the cost estimator, tap “Mark accepted / job started” on a saved quote' : ''}.</p></div>`;
+  const diff = l.today_cost_total - l.cost.total, row = (a, b, c = '') => `<div class="sr sm ${c}"><span>${a}</span><span>${b}</span></div>`;
+  const lines = [].concat(
+    l.materials.map(m => row(esc(m.label || m.code) + ' · ' + num(m.grams) + ' g × ' + peso(m.rate), peso(m.cost))),
+    l.labor.map(x => row(esc(x.label || x.code) + ' · ' + num(x.hours) + ' h × ' + peso(x.rate), peso(x.cost))),
+    l.stones.map(x => row(esc(x.code || 'Stones') + ' · ' + num(x.qty, 0) + ' × ' + num(x.ct, 3) + ' ct × $' + num(x.usd_per_ct) + ' × ' + num(x.fx), peso(x.cost))));
+  const earlier = (j.history || []).slice(1);
+  return `<div class="plock"><div class="plh"><span class="chip dark">Locked</span><b>${esc(lockHeadline(l))}</b></div>
+    <p class="muted fnote">Quote v${l.quote_version} accepted ${esc(when(l.locked_at))} by ${esc(l.locked_by)}. Rates of that moment; later rate changes don't change this JO.</p>
+    ${opt.lines === false ? '' : `<div class="plines">${lines.join('')}</div>`}
+    ${row('Materials', peso(l.cost.materials))}${row('Labor', peso(l.cost.labor))}${row('Stones', peso(l.cost.stones))}
+    <div class="sr big"><span class="lab">Locked cost</span><b>${peso(l.cost.total)}</b></div>
+    ${l.quote_amount !== undefined ? `${l.srp != null ? row('SRP (locked markups)', peso(l.srp)) : ''}${row('Price agreed', '<b>' + peso(l.quote_amount) + '</b>')}${l.margin != null ? row('Margin', peso(l.margin) + (l.quote_amount ? ' · ' + num(l.margin / l.quote_amount * 100, 1) + '%' : '')) : ''}` : ''}
+    ${Math.abs(diff) >= 0.01 ? `<p class="muted fnote">At today's rates the same job would cost ${peso(l.today_cost_total)} (${diff > 0 ? '+' : '−'}${peso(Math.abs(diff))}). Not used.</p>` : ''}
+    ${earlier.length ? `<p class="muted fnote">Earlier locks (history): ${earlier.map(h => 'v' + h.quote_version + ' ' + esc(when(h.locked_at)) + ' · cost ' + peso(h.cost_total) + (h.quote_amount != null ? ' · price ' + peso(h.quote_amount) : '')).join('; ')}</p>` : ''}</div>`;
+}
+window.OYPPrices = { render, get: () => P, lockedHtml, lockHeadline };
 })();
