@@ -142,3 +142,11 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .pportal .cpanel{padding:4px 0 0}
 @media (max-width:899px){.ptab thead{display:none}.ptab tr{display:block;border-bottom:1px solid #eee;padding:8px 0}.ptab td{display:inline-block;border:0;padding:3px 10px 3px 0}
   .ptab td:first-child{display:block}.ptab tr.cx td{display:block;padding:0}.pgrid{grid-template-columns:1fr}.addrow label,.addrow input{width:100%}.dhead .pill.sm{padding:8px 14px}}
+/* client contact on JOs (JobContact.gs) */
+.ccsum{font-size:13px;color:#555;margin:-6px 0 12px}.ccsum .chip{margin-right:4px}
+.row2.one{grid-template-columns:1fr}.cnew .muted.sm{display:block;margin-top:6px;font-size:12px}
+.row2.cc2{grid-template-columns:1fr 1fr}.cc2 label,.cc2>div{display:flex;flex-direction:column;gap:4px;min-width:0}.cc2 .lab.sm{font-size:10px;color:#777}
+.onfile{border:1px solid #e6e6e6;border-radius:10px;padding:10px 12px;background:#fafafa;font-size:14px;color:#2d7a3e}
+.chip.nocc{white-space:nowrap}.kf .chip.nocc{font-size:10px}
+@media (max-width:560px){.row2.cc2{grid-template-columns:1fr}}
+.kpilink{color:inherit;text-decoration:none;display:block}

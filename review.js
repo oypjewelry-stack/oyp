@@ -9,7 +9,12 @@ const SPECIFIC = ['metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade',
 const TYPES = [['new', 'New job'], ['repair', 'Repair'], ['revision', 'Revision']];
 const STATUS = [['', 'Automatic (from location)'], ['draft', 'Draft'], ['active', 'Active'], ['done', 'Done'], ['picked_up', 'Picked up'], ['cancelled', 'Cancelled']];
 const photoCache = {};
-let S = { jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '' };
+let S = { jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {} };
+// Client phone/email live on the client linked to the JO (JobContact.gs). Before that paste, contactList is unknown and the section just explains.
+const noContact = jo => !!(S.contact && S.contact[jo] && !S.contact[jo].has_contact && S.contact[jo].location !== 'archived');
+const fmtPhone = v => { const t = String(v || '').trim(), d = t.replace(/\D/g, ''); let m = /^63\d{10}$/.test(d) ? d.slice(2) : /^0\d{10}$/.test(d) ? d.slice(1) : d;
+  return /^9\d{9}$/.test(m) && !/^\+(?!63)/.test(t) ? '0' + m.slice(0, 3) + ' ' + m.slice(3, 6) + ' ' + m.slice(6) : t; };
+const ccChip = jo => noContact(jo) ? '<span class="chip gold nocc" title="No mobile or email on file: the client can\'t use Track my order">No client contact</span>' : '';
 
 function photo(jo, fid, size) {
   const k = fid + '|' + (size || 'thumb');
@@ -23,13 +28,18 @@ const locLabel = k => (S.locations.find(l => l[0] === k) || [k, k])[1];
 const views = {
   noloc: ['Needs location', j => !j.location],
   details: ['Missing details', j => j.missing.some(m => m !== 'location')],
+  nocontact: ['No client contact', j => noContact(j.jo)],
   all: ['All to review', () => true]
 };
 
 async function render(main, u) {
   const { call, esc } = window.OYP;
   main.innerHTML = '<h2>To review</h2><p class="muted">Loading…</p>';
-  const r = await call('jobReviewList');
+  const [r, cc] = await Promise.all([call('jobReviewList'), call('contactList')]);
+  S.cc = cc && cc.ok ? cc : null; S.contact = S.cc ? Object.fromEntries(cc.jobs.map(x => [x.jo, x])) : null;
+  S.ccState = S.cc ? 'on' : cc && cc.code === 'FORBIDDEN' ? 'forbidden' : 'old';
+  try { const f = sessionStorage.getItem('oypReviewFilter'); if (f) { sessionStorage.removeItem('oypReviewFilter'); if (views[f]) S.filter = f; } } catch (_) {}
+  if (!S.cc && S.filter === 'nocontact') S.filter = 'noloc';
   if (!r || !r.ok) {
     main.innerHTML = `<h2>To review</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for card reviews yet.' : (r && r.error) || 'Could not load')}</p>`; return;
   }
@@ -46,7 +56,7 @@ function otherHits() {
   return `<div class="rvother"><div class="dtitle"><span class="lab">Other JOs matching “${esc(S.q.trim())}”</span><span class="lab">${L.length}${f.total > 50 ? ' of ' + f.total : ''}</span></div>${L.map(j => `
     <div class="rvrow oth"><span></span><span></span><div class="rvi"><div class="kjo">${esc(j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}</div>
       <div class="kd">${esc(j.description || (j.client ? j.client.name : '') || 'No details')}${j.description && j.client ? ' · ' + esc(j.client.name) : ''}</div>
-      <div class="kf">${locChip(j)}${j.review_state === 'reviewed' ? '<span class="chip">Reviewed</span>' : ''}</div></div></div>`).join('') || '<p class="muted rvnone">No other JOs.</p>'}</div>`;
+      <div class="kf">${locChip(j)}${j.review_state === 'reviewed' ? '<span class="chip">Reviewed</span>' : ''}${ccChip(j.jo)}</div></div></div>`).join('') || '<p class="muted rvnone">No other JOs.</p>'}</div>`;
 }
 function searchAll(main) {
   clearTimeout(searchAll.t); const q = S.q.trim();
@@ -67,7 +77,8 @@ function draw(main) {
   <div class="rvlist">
     <div class="dhead"><h2>To review</h2><span class="lab">${S.jobs.length} from scans</span></div>
     <p class="muted">Cards that were scanned but not checked yet. Pick where each piece is, fill in what you can, then save.</p>
-    <div class="rvchips">${Object.keys(views).map(k => `<button class="fchip ${S.filter === k ? 'on' : ''}" data-f="${k}">${esc(views[k][0])} <b>${count(k)}</b></button>`).join('')}</div>
+    ${S.cc && S.cc.missing ? `<p class="ccsum"><span class="chip gold">${S.cc.missing}</span> of ${S.cc.total} JOs (all, not only these) have no client mobile or email, so those clients can't track their order.</p>` : ''}
+    <div class="rvchips">${Object.keys(views).filter(k => k !== 'nocontact' || S.contact).map(k => `<button class="fchip ${S.filter === k ? 'on' : ''}" data-f="${k}">${esc(views[k][0])} <b>${count(k)}</b></button>`).join('')}</div>
     <input id="rvQ" class="rvq" placeholder="Search JO, client or description" value="${esc(S.q)}">
     <div class="bulk ${S.sel.size ? 'on' : ''}">
       <label class="ck"><input type="checkbox" id="rvAll" ${L.length && L.every(j => S.sel.has(j.jo)) ? 'checked' : ''}><span>${S.sel.size ? S.sel.size + ' selected' : 'Select all'}</span></label>
@@ -82,7 +93,7 @@ function draw(main) {
           <div class="kd">${esc(j.description || (j.client ? j.client.name : '') || 'No details yet')}</div>
           <div class="kf">${locChip(j)}
           ${j.missing.filter(m => m !== 'location').length ? `<span class="chip">${j.missing.filter(m => m !== 'location').length} missing</span>` : '<span class="chip">Details ✓</span>'}
-          <span class="chip">${j.pages.length} pg</span></div></div>
+          <span class="chip">${j.pages.length} pg</span>${ccChip(j.jo)}</div></div>
       </div>`).join('') || `<p class="muted rvnone">${S.jobs.length ? 'Nothing in this view.' : 'Nothing to review. New scans show up here.'}</p>`}</div>
     ${otherHits()}
   </div>
@@ -108,7 +119,8 @@ function panel(j) {
       <div class="fsec full ${fcls('client') || fcls('client_id')}"><div class="flab"><span class="lab">Client</span>${flag('client') || flag('client_id')}</div>
         <div id="fClient" class="cpick">${j.client ? `<div class="csel"><b>${esc(j.client.name)}</b>${j.client.phone ? ` <span class="muted">${esc(j.client.phone)}</span>` : ''}<button class="lnk" data-cclear>Change</button></div>` : ''}
         <div class="csearch ${j.client ? 'hidden' : ''}"><input id="fCq" placeholder="Search a client by name${S.canPhone ? ' or phone' : ''}" autocomplete="off"><div id="fCres" class="cres"></div>
-          <div class="cnew"><span class="lab">or add a new client</span><div class="row2"><input id="fNn" placeholder="Name"><input id="fNp" placeholder="Phone" inputmode="tel"></div></div></div></div></div>
+          <div class="cnew"><span class="lab">or add a new client</span><div class="row2 ${S.cc ? 'one' : ''}"><input id="fNn" placeholder="Name">${S.cc ? '' : '<input id="fNp" placeholder="Phone" inputmode="tel">'}</div>${S.cc ? '<span class="muted sm">Type their mobile or email under Client contact.</span>' : ''}</div></div></div></div>
+      ${contactSec(j)}
       <div class="fsec ${fcls('due_date')}"><div class="flab"><span class="lab">Due date</span>${flag('due_date')}</div><input type="date" id="f_due_date" value="${esc(j.due_date)}"></div>
       <div class="fsec ${fcls('type')}"><div class="flab"><span class="lab">Type</span>${flag('type')}</div><div class="seg">${TYPES.map(t => `<button class="${j.type === t[0] ? 'on' : ''}" data-type="${t[0]}">${esc(t[1])}</button>`).join('')}</div></div>
       <div class="fsec full kindsec" data-for="metal,karat,size,stone_type,stone_size,grade,material,weight_g"><div class="kindgrid">
@@ -131,6 +143,20 @@ function panel(j) {
     <div class="fbtns"><button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button><button class="pill outline" id="fSave">SAVE</button><button class="lnk" id="fNext">Next card ›</button></div>
     <p class="muted fnote">${j.scanned_at ? 'Scanned ' + esc(new Date(j.scanned_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + ' PHT · ' : ''}Saving never replaces something another person changed in the meantime.</p>
   </div>`;
+}
+
+function contactSec(j) {
+  const { esc } = window.OYP, cf = S.conflicts, d = S.ccDraft[j.jo] || {};
+  if (S.ccState === 'forbidden') return '';
+  const head = (extra = '') => `<div class="flab"><span class="lab">Client contact</span>${extra}</div>`;
+  if (!S.cc) return `<div class="fsec full ccsec">${head()}<p class="muted fnote">Client mobile and email fields turn on after the JobContact update in Apps Script.</p></div>`;
+  const c = S.contact[j.jo] || { has_contact: false }, admin = S.cc.can_see_contact, miss = noContact(j.jo);
+  const flag = cf.phone || cf.email ? `<span class="flag c">Changed by someone${cf.phone && admin ? ': mobile now “' + esc(cf.phone) + '”' : ''}${cf.email && admin ? ': email now “' + esc(cf.email) + '”' : ''}</span>` : miss ? '<span class="flag">No client contact</span>' : '';
+  const inp = (k, lab, type, ph, cur, onFile) => !admin && onFile ? `<div><span class="lab sm">${lab}</span><div class="onfile">On file ✓</div></div>`
+    : `<label><span class="lab sm">${lab}</span><input id="fc_${k}" type="${type}" ${k === 'phone' ? 'inputmode="tel" autocomplete="tel"' : 'autocomplete="email"'} placeholder="${ph}" value="${esc(d[k] != null ? d[k] : cur || '')}"></label>`;
+  return `<div class="fsec full ccsec ${cf.phone || cf.email ? 'conf' : miss ? 'miss' : ''}">${head(flag)}
+    <div class="row2 cc2">${inp('phone', 'Client mobile', 'tel', '0917 123 4567', c.phone, c.phone_on_file)}${inp('email', 'Client email', 'email', 'name@email.com', c.email, c.email_on_file)}</div>
+    <p class="muted fnote">${c.via_portal && !c.phone_on_file && !c.email_on_file ? 'Has a customer account linked, so they can track it. ' : ''}Saved on the client${c.client_name ? ' (' + esc(c.client_name) + ')' : ''}. The client types this mobile or email with the JO number to track their order.${!admin && (c.phone_on_file || c.email_on_file) ? ' Only an admin can change a saved one.' : ''}${!c.client_linked ? ' No client yet: if nobody has this number, type their name under Client.' : ''}</p></div>`;
 }
 
 function wire(main) {
@@ -189,18 +215,42 @@ function wire(main) {
     $('#fCres').innerHTML = r.clients.map(c => `<button class="cr" data-cid="${esc(c.client_id)}" data-cn="${esc(c.name)}"><b>${esc(c.name)}</b>${c.phone ? ` <span class="muted">${esc(c.phone)}</span>` : ''}</button>`).join('') || (q.length > 1 ? '<span class="muted">No match. Add a new client below.</span>' : '');
     main.querySelectorAll('[data-cid]').forEach(b => b.onclick = () => { st.client_id = b.dataset.cid; $('#fCq').value = b.dataset.cn; $('#fCres').innerHTML = `<span class="chip dark">Picked: ${esc(b.dataset.cn)}</span>`; filled(b.closest('.fsec') ? $('#fCq') : $('#fCq')); });
   }, 250); };
+  const fcp = $('#fc_phone'); if (fcp) fcp.addEventListener('blur', () => { fcp.value = fmtPhone(fcp.value); });
   const save = async mark => {
     const set = { location: st.location, item_type: st.item_type, type: st.type, client_id: st.client_id };
     ['due_date', 'description'].concat(kindFields(st.item_type)).forEach(k => { set[k] = $('#f_' + k).value; }); // hidden fields are left as they are
     if ($('#f_status').value) set.status = $('#f_status').value;
     const seen = {}; Object.keys(set).forEach(k => { seen[k] = j[k] == null ? '' : j[k]; });
-    const nn = $('#fNn').value.trim(), np = $('#fNp').value.trim();
+    const nn = $('#fNn').value.trim(), np = $('#fNp') ? $('#fNp').value.trim() : '';
     const body = { jo: j.jo, set, seen, mark_reviewed: mark };
-    if (nn || np) { body.new_client = { name: nn, phone: np }; delete set.client_id; }
-    const r = await call('jobReviewSave', body);
+    // contact typed? (only what changed from what the card showed)
+    const c0 = (S.contact && S.contact[j.jo]) || {}, cc = {};
+    [['phone', '#fc_phone'], ['email', '#fc_email']].forEach(([k, id]) => { const el = $(id); if (el && el.value.trim() !== String(c0[k] || '').trim()) cc[k] = k === 'phone' ? fmtPhone(el.value) : el.value.trim(); });
+    const ccOn = Object.keys(cc).length > 0, picked = !!st.client_id && st.client_id !== j.client_id;
+    const newClient = !!(nn || np) && !(ccOn && !j.client_id && !picked); // with a contact typed on a JO with no client, JobContact matches or adds the client
+    const ccFirst = ccOn && !picked && !newClient; // same client: save the contact first, so a problem there saves nothing
+    if (newClient) { body.new_client = { name: nn, phone: np }; delete set.client_id; }
+    if (ccOn) S.ccDraft[j.jo] = Object.assign({}, cc);
+    const ccFail = async (cr, saved) => {
+      if (cr.code === 'CONFLICT') { S.conflicts = {}; (cr.conflicts || []).forEach(c => { S.conflicts[c.field] = c.now; }); }
+      S.open = j.jo; toast((saved ? 'Card saved, but the contact was not: ' : '') + cr.error); await render(main, S.u);
+      if (cr.code === 'NEED_NAME') { const n = main.querySelector('#fNn'), cs = main.querySelector('.csearch'); if (cs) cs.classList.remove('hidden'); if (n) n.focus(); }
+    };
+    const saveCC = cid => call('contactSave', Object.assign({ jo: j.jo, client_name: nn, seen: { client_id: cid, phone: c0.phone || '', email: c0.email || '' } }, cc));
+    if (ccFirst) {
+      const cr = await saveCC(j.client_id || ''); if (!cr.ok) return ccFail(cr, false);
+      delete S.ccDraft[j.jo]; delete set.client_id; if (cr.contact) S.contact[j.jo] = cr.contact;
+    }
+    const later = ccOn && !ccFirst; if (later) body.mark_reviewed = false; // mark reviewed only once the contact is saved too
+    let r = await call('jobReviewSave', body);
     if (!r.ok) {
       if (r.code === 'CONFLICT') { S.conflicts = {}; r.conflicts.forEach(c => { S.conflicts[c.field] = c.now; }); await render(main, S.u); toast(r.error); return; }
       return toast(r.error);
+    }
+    if (later) {
+      const cr = await saveCC((r.job && r.job.client_id) || ''); if (!cr.ok) return ccFail(cr, true);
+      delete S.ccDraft[j.jo];
+      if (mark) { const r2 = await call('jobReviewSave', { jo: j.jo, set: {}, seen: {}, mark_reviewed: true }); if (r2.ok) r = r2; else return toast(r2.error); }
     }
     S.conflicts = {}; const idx = S.jobs.findIndex(x => x.jo === j.jo);
     toast(mark ? 'JO ' + j.jo + ' reviewed' : 'Saved');

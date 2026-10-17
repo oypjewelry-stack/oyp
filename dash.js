@@ -12,7 +12,8 @@ const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 async function render(main, u) {
   const { call, esc } = window.OYP;
   main.innerHTML = '<h2>Dashboard</h2><p class="muted">Loading…</p>';
-  const r = await call('dashboard');
+  const [r, cc] = await Promise.all([call('dashboard'), call('contactList')]); // contactList: JobContact.gs (absent before that paste -> no tile)
+  const noCC = new Set(cc && cc.ok ? cc.missing_jos : []);
   if (!r || !r.ok) {
     main.innerHTML = `<h2>Dashboard</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for the dashboard yet.' : (r && r.error) || 'Could not load')}</p>`; return;
   }
@@ -25,7 +26,8 @@ async function render(main, u) {
   ${tile('Pending work', c.pending_work, pendNote, c.pending_work ? 'warn' : '')}
   ${can.consign ? tile('Consigned out', c.consigned_out, plural(new Set((r.consignments || []).map(x => x.consignee)).size, 'consignee')) : ''}
   ${can.consign ? tile('Overdue', c.overdue_consignments, 'out over ' + r.overdue_days + ' days', c.overdue_consignments ? 'gold' : '') : ''}
-  ${can.sales ? tile(monthName(r.sales.month) + ' sales', peso(c.month_sales), 'confirmed payments') : ''}</div>`;
+  ${can.sales ? tile(monthName(r.sales.month) + ' sales', peso(c.month_sales), 'confirmed payments') : ''}
+  ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>`;
 
   if (r.locations) {
     const unset = r.locations.find(l => l.key === 'unset');
@@ -43,7 +45,7 @@ async function render(main, u) {
     <div class="kcol"><div class="khead"><span class="lab">${esc(col.label)}</span><span class="kn">${col.count}</span></div>${col.cards.map(j => `
       <div class="kcard${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
       <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
-      <div class="kf">${j.due ? `<span class="chip ${j.late ? 'gold' : ''}">${j.late ? 'Late · ' : 'Due '}${esc(day(j.due))}</span>` : ''}${j.type === 'repair' ? '<span class="chip">Repair</span>' : ''}${j.review ? '<span class="chip">Review</span>' : ''}</div></div>`).join('') || '<div class="kempty">—</div>'}</div>`).join('')}</div></section>`;
+      <div class="kf">${j.due ? `<span class="chip ${j.late ? 'gold' : ''}">${j.late ? 'Late · ' : 'Due '}${esc(day(j.due))}</span>` : ''}${j.type === 'repair' ? '<span class="chip">Repair</span>' : ''}${j.review ? '<span class="chip">Review</span>' : ''}${noCC.has(j.jo) ? '<span class="chip nocc" title="No client mobile or email">No contact</span>' : ''}</div></div>`).join('') || '<div class="kempty">—</div>'}</div>`).join('')}</div></section>`;
 
   if (can.consign) {
     const L = r.consignments || [];
@@ -65,6 +67,7 @@ async function render(main, u) {
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u);
+  const nc = main.querySelector('#dNoCC'); if (nc) nc.onclick = () => { try { sessionStorage.setItem('oypReviewFilter', 'nocontact'); } catch (_) {} };
 }
 window.OYPDash = { render };
 })();
