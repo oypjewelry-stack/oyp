@@ -18,11 +18,12 @@ function calc(est, rates, withPrices) {
     const rate = has(l.rate) ? Number(l.rate) : (rates.labor || {})[l.code];
     return { code: l.code || '', label: l.label || '', hours: Number(l.hours), rate: rate == null ? null : Number(rate), cost: line(l.hours, rate) };
   });
-  const stones = (est.stones || []).filter(s => Number(s.carats) > 0).map(s => {
+  const stones = (est.stones || []).filter(s => Number(s.qty) > 0 && Number(s.ct) > 0).map(s => {
     const usd = has(s.usd_per_ct) ? Number(s.usd_per_ct) : (rates.stone || {}).diamond_usd_ct;
     const fx = has(s.fx) ? Number(s.fx) : (rates.fx || {}).usd_php;
-    return { label: s.label || 'Diamond', pcs: Number(s.pcs) || 0, carats: Number(s.carats), usd_per_ct: Number(usd) || 0, fx: Number(fx) || 0,
-      cost: r2(Number(s.carats) * (Number(usd) || 0) * (Number(fx) || 0)) };
+    const qty = Number(s.qty), ct = Number(s.ct);
+    return { code: String(s.code || '').trim(), qty, ct, total_ct: Math.round(qty * ct * 1000) / 1000, usd_per_ct: Number(usd) || 0, fx: Number(fx) || 0,
+      cost: r2(qty * ct * (Number(usd) || 0) * (Number(fx) || 0)) };
   });
   const sum = a => r2(a.reduce((t, x) => t + x.cost, 0));
   const out = { kind: est.kind === 'repair' ? 'repair' : 'stock', materials: mats, labor, stones, cost: { materials: sum(mats), labor: sum(labor), stones: sum(stones) } };
@@ -72,12 +73,12 @@ function draw(main) {
       <input data-k="materials.${i}.grams" inputmode="decimal" placeholder="grams" value="${esc(m.grams)}"><span class="ec">${peso(lineCost('materials', i, R))}</span><button class="ex" data-del="materials.${i}" aria-label="Remove">×</button></div>`).join('');
   const lab = e.labor.map((l, i) => `<div class="er er3"><select data-k="labor.${i}.code">${opts('labor', l.code, 'h')}</select>
       <input data-k="labor.${i}.hours" inputmode="decimal" placeholder="hours" value="${esc(l.hours)}"><span class="ec">${peso(lineCost('labor', i, R))}</span><button class="ex" data-del="labor.${i}" aria-label="Remove">×</button></div>`).join('');
-  const st = e.stones.map((s, i) => `<div class="er er5"><input data-k="stones.${i}.label" placeholder="Diamond, VVS…" value="${esc(s.label)}">
-      <input data-k="stones.${i}.pcs" inputmode="numeric" placeholder="pcs" value="${esc(s.pcs)}"><input data-k="stones.${i}.carats" inputmode="decimal" placeholder="total ct" value="${esc(s.carats)}">
+  const st = e.stones.map((s, i) => `<div class="er er5"><input data-k="stones.${i}.code" placeholder="Stone code (D10C…)" value="${esc(s.code)}">
+      <input data-k="stones.${i}.qty" inputmode="numeric" placeholder="qty" title="Pieces" value="${esc(s.qty)}"><input data-k="stones.${i}.ct" inputmode="decimal" placeholder="ct each" title="Carat per piece" value="${esc(s.ct)}">
       <input data-k="stones.${i}.usd_per_ct" inputmode="decimal" placeholder="$${num(S.map.stone.diamond_usd_ct)}/ct" title="USD per carat" value="${esc(s.usd_per_ct)}"><input data-k="stones.${i}.fx" inputmode="decimal" placeholder="₱${num(S.map.fx.usd_php)}/$" title="USD → PHP" value="${esc(s.fx)}">
       <span class="ec">${peso(lineCost('stones', i, R))}</span><button class="ex" data-del="stones.${i}" aria-label="Remove">×</button></div>`).join('');
   const hd3 = (a, b) => `<div class="er er3 eh"><span class="lab">${a}</span><span class="lab">${b}</span><span class="lab ec">Cost</span><span></span></div>`;
-  const hd5 = `<div class="er er5 eh"><span class="lab">Stone</span><span class="lab">Pcs</span><span class="lab">Total ct</span><span class="lab">USD / ct</span><span class="lab">USD → ₱</span><span class="lab ec">Cost</span><span></span></div>`;
+  const hd5 = `<div class="er er5 eh"><span class="lab">Stone code</span><span class="lab">Qty</span><span class="lab">Ct each</span><span class="lab">USD / ct</span><span class="lab">USD → ₱</span><span class="lab ec">Cost</span><span></span></div>`;
   const sum = S.exec ? `<div class="esum">
       <div class="sr"><span class="lab">Raw cost</span><b>${peso(R.cost.total)}</b></div>
       <div class="sr sm"><span>Materials ${peso(R.cost.materials)} × ${num(mk.materials)}</span><span>${peso(R.srp.materials)}</span></div>
@@ -103,13 +104,13 @@ function draw(main) {
       ${sec('stones', 'Stones', e.stones.length ? hd5 : '', st, 'Add stones', R.cost.stones, mk.stones)}
     </div><aside class="eside">${sum}
       <div class="fbtns"><button class="pill" id="eSave"${S.busy ? ' disabled' : ''}>${S.exec ? 'SAVE QUOTE ON JO' : 'SAVE COSTS ON JO'}</button><button class="lnk" id="eClear">Clear</button></div>
-      ${R.missing_rates.length ? `<p class="fnote flag c">No rate yet for: ${esc(R.missing_rates.join(', '))}</p>` : ''}${q}</aside></div>`;
+      ${R.missing_rates.length ? `<p class="fnote flag c">No rate yet for ${esc(R.missing_rates.map(c => (S.rates.find(x => x.code === c) || { label: c }).label).join(', '))} · enter it in the Rates tab</p>` : ''}${q}</aside></div>`;
   wire(main);
 }
 function lineCost(key, i, R) { // the calc drops empty rows; map back by position among filled rows
-  const rows = S.est[key], f = key === 'materials' ? 'grams' : key === 'labor' ? 'hours' : 'carats';
-  if (!(Number(rows[i][f]) > 0)) return 0;
-  const idx = rows.slice(0, i).filter(r => Number(r[f]) > 0).length; return R[key][idx].cost;
+  const rows = S.est[key], used = r => key === 'materials' ? Number(r.grams) > 0 : key === 'labor' ? Number(r.hours) > 0 : Number(r.qty) > 0 && Number(r.ct) > 0;
+  if (!used(rows[i])) return 0;
+  const idx = rows.slice(0, i).filter(used).length; return R[key][idx].cost;
 }
 function wire(main) {
   const { call, toast } = window.OYP;
@@ -124,7 +125,7 @@ function wire(main) {
   main.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { S.est.kind = b.dataset.kind; draw(main); });
   main.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
     const k = b.dataset.add, first = c => (S.rates.find(x => x.category === c) || {}).code || '';
-    S.est[k].push(k === 'materials' ? { code: first('material'), grams: '' } : k === 'labor' ? { code: first('labor'), hours: '' } : { label: 'Diamond', pcs: '', carats: '', usd_per_ct: '', fx: '' });
+    S.est[k].push(k === 'materials' ? { code: first('material'), grams: '' } : k === 'labor' ? { code: first('labor'), hours: '' } : { code: '', qty: '1', ct: '', usd_per_ct: '', fx: '' });
     draw(main);
   });
   main.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const [k, i] = b.dataset.del.split('.'); S.est[k].splice(+i, 1); draw(main); });
