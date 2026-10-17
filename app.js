@@ -285,7 +285,7 @@ async function custAct(a, id) {
 /* ---------- admin: shop listings ---------- */
 async function shopPage() {
   const m = $('main');
-  m.innerHTML = `<h2>Shop listings</h2><p class="muted">Pieces on the public <a href="shop/" target="_blank">shop page</a>. The JO number stays private; customers only see the item code.</p>
+  m.innerHTML = `<h2>Shop listings</h2><p class="muted">Pieces on the public <a href="https://oypjewelry.com/shop/" target="_blank" rel="noopener">shop page</a>. The JO number stays private; customers only see the item code.</p>
     <div class="addrow"><label><span class="lab">Item code</span><input id="siC" placeholder="OYP-R001" size="10"></label><label><span class="lab">Title</span><input id="siT"></label>
     <label><span class="lab">Type</span><input id="siK" placeholder="Ring" size="8"></label><label><span class="lab">Metal</span><input id="siM" size="9"></label><label><span class="lab">Price ₱</span><input id="siP" inputmode="numeric" size="8"></label>
     <label><span class="lab">JO (private)</span><input id="siJ" size="8"></label><label><span class="lab">Photo file IDs</span><input id="siF" placeholder="Drive ids, comma" size="14"></label>
