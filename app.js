@@ -69,7 +69,7 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const { SCANNER, NAV, ROLE_LABEL, scannerLink } = window.OYPNav; // nav.js: same menu in the scanner
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
-const DONE = { dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
+const DONE = { prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
 
 // Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
 // reply for a page the user already left (e.g. the dashboard still loading) never draws over the page they are on now.
@@ -98,6 +98,7 @@ function route() {
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
+  if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
   if (page === 'users') return usersPage();
   if (page === 'customers') return customersPage();
   if (page === 'shop') return shopPage();

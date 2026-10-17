@@ -181,6 +181,7 @@ function panel(j) {
     <datalist id="dlMat"><option>Gold scrap</option><option>Gold grain</option><option>Silver scrap</option><option>Silver grain</option><option>Platinum</option><option>Findings</option><option>Chain</option></datalist>
     <datalist id="dlMetal"><option>Gold</option><option>Silver</option><option>Platinum</option><option>Palladium</option><option>Two-tone</option><option>Other</option></datalist>
     <datalist id="dlKarat"><option>24k</option><option>22k</option><option>18k</option><option>14k</option><option>10k</option><option>925</option><option>999</option></datalist>
+    <div id="rvCost"></div>
     <div class="fbtns">${ext && j.review_state !== 'draft' ? '' : '<button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button>'}<button class="pill outline" id="fSave">SAVE</button>${ext ? '' : '<button class="lnk" id="fNext">Next card ›</button>'}</div>
     <p class="muted fnote">${j.scanned_at ? 'Scanned ' + esc(new Date(j.scanned_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + ' PHT · ' : ''}Saving never replaces something another person changed in the meantime.</p>
   </div>`;
@@ -200,6 +201,15 @@ function contactSec(j) {
     <p class="muted fnote">${c.via_portal && !c.phone_on_file && !c.email_on_file ? 'Has a customer account linked, so they can track it. ' : ''}Saved on the client${c.client_name ? ' (' + esc(c.client_name) + ')' : ''}. The client types this mobile or email with the JO number to track their order.${!admin && (c.phone_on_file || c.email_on_file) ? ' Only an admin can change a saved one.' : ''}${!c.client_linked ? ' No client yet: if nobody has this number, type their name under Client.' : ''}</p></div>`;
 }
 
+// Locked cost (Prices.gs priceJobCost): fetched per JO; hidden for roles without access or before that paste.
+const costCache = {};
+function costBox(main, jo) {
+  if (!window.OYPPrices || !window.OYPPrices.lockedHtml) return;
+  if (!costCache[jo]) costCache[jo] = window.OYP.call('priceJobCost', { jo });
+  const live = window.OYP.here(); // route token: never draw into a page the user left
+  costCache[jo].then(r => { const el = main.querySelector('#rvCost'); if (!live() || !el || S.open !== jo) return;
+    el.innerHTML = r && r.ok ? window.OYPPrices.lockedHtml(r, { exec: r.exec }) : ''; });
+}
 function wire(main) {
   const { call, esc, toast } = window.OYP, $ = s => main.querySelector(s), live = window.OYP.here();
   const rerender = async () => { if (live()) await render(main, S.u); }; // after a save: redraw only if the user is still here
@@ -224,6 +234,7 @@ function wire(main) {
   main.querySelectorAll('[data-th],[data-ph]').forEach(el => io.observe(el));
   const db = $('[data-dback]'); if (db) db.onclick = () => { const h = S.back.hash; S.back = null; S.ext = null; S.open = null; location.hash = h; };
   const j = cur(); if (!j || j.stub) return;
+  costBox(main, j.jo);
   const isExt = S.ext && S.ext.jo === j.jo;
   const st = { location: j.location, type: j.type, client_id: j.client_id, item_type: j.item_type, newClient: null };
   const kindFields = k => { const t = S.itemTypes.find(x => x[0] === k); return t ? t[2].concat(KIND_EXTRA[k] || []) : []; };
@@ -307,5 +318,5 @@ function wire(main) {
   if ($('#fDone')) $('#fDone').onclick = () => save(true); $('#fSave').onclick = () => save(false);
   if ($('#fNext')) $('#fNext').onclick = () => { const L = shown(), i = L.findIndex(x => x.jo === j.jo); const nx = L[i + 1] || L[0]; if (nx) { S.open = nx.jo; S.conflicts = {}; draw(main); } };
 }
-window.OYPReview = { render: (main, u) => { S.back = null; S.ext = null; return render(main, u); } }; // a fresh visit forgets a dashboard JO (dash.js hands one over via sessionStorage)
+window.OYPReview = { render: (main, u) => { Object.keys(costCache).forEach(k => delete costCache[k]); S.back = null; S.ext = null; return render(main, u); } }; // a fresh visit forgets a dashboard JO (dash.js hands one over via sessionStorage)
 })();
