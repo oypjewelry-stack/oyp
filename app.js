@@ -91,9 +91,11 @@ function route() {
   const want = nav.some(n => n[0] === cur) ? cur : ALIAS[cur] && nav.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
   const page = want || nav[0][0];
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  $('side').innerHTML = nav.map(([k, t]) => k === 'scanner' ? `<a href="${scanUrl()}">${esc(t)}</a>`
-    : `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`).join('')
-    + `<div class="who"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><button class="pill outline" data-logout>LOG OUT</button></div>`;
+  // desktop sidebar: menu items scroll inside; the name block stays at the bottom and opens a small account menu (Log out; room for Settings)
+  $('side').innerHTML = '<div class="sidenav">' + nav.map(([k, t]) => k === 'scanner' ? `<a href="${scanUrl()}">${esc(t)}</a>`
+    : `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`).join('') + '</div>'
+    + `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
+    <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
   const title = nav.find(n => n[0] === page)[1];
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
@@ -107,6 +109,14 @@ function route() {
   $('main').innerHTML = `<h2>${esc(title)}</h2><p class="muted">Signed in as ${esc(u.display_name)} · ${esc(ROLE_LABEL[u.role])}</p><div class="soonbox">Coming soon</div>`;
 }
 window.addEventListener('hashchange', route);
+/* desktop account menu (sidebar name block) */
+function whoMenu(open) {
+  const m = $('whoMenu'), b = $('whoBtn'); if (!m || !b) return;
+  open = open === undefined ? m.classList.contains('hidden') : open;
+  m.classList.toggle('hidden', !open); b.classList.toggle('open', open); b.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+document.addEventListener('click', e => { if (e.target.closest('#whoBtn')) whoMenu(); else if (!e.target.closest('#whoMenu')) whoMenu(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') whoMenu(false); });
 $('btnMenu').onclick = () => {
   const u = user(), m = $('menu');
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
