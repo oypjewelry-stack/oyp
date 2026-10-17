@@ -8,7 +8,7 @@ const peso = n => '₱' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleStr
 const day = d => { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).split('-').map(Number); return MON[m - 1] + ' ' + dd + (y !== new Date().getFullYear() ? ', ' + y : ''); };
 const when = d => { if (!d) return ''; const t = new Date(d); if (isNaN(t)) return day(d);
   return t.toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
-const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+const plural = (n, w, many) => n + ' ' + (n === 1 ? w : many || w + 's');
 const num = n => (Math.round((Number(n) || 0) * 1000) / 1000).toLocaleString('en-PH', { maximumFractionDigits: 3 });
 const STAGE = { intake: 'Intake', quote_deposit: 'Quote & deposit', receive_inspect: 'Receive & inspect', diagnose_quote: 'Diagnose & quote', repair_intake: 'Repair intake',
   assess: 'Assessing', design: 'Design', approval: 'Waiting for approval', stone_sourcing: 'Sourcing stones', model: 'Model / wax', casting: 'Casting', bench: 'Bench work',
@@ -100,7 +100,7 @@ function ivCard(j, can) {
 function ivSheet(j) { // read-only details (roles that can't open the JO card)
   if (!j) return ''; const { esc } = window.OYP;
   const f = (lab, v) => v ? `<div class="ivf"><span class="lab">${esc(lab)}</span><b>${esc(v)}</b></div>` : '';
-  return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ Back to Inventory</button>
+  return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
     <div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">View only</span></div>
     <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
     <p class="kd">${esc(j.description || 'No details')}</p>
@@ -120,7 +120,7 @@ function ivWire(main) {
   main.querySelectorAll('.ivcard').forEach(el => el.onclick = () => {
     const j = IV.r.jobs.find(x => x.jo === el.dataset.jo); if (!j) return;
     if (!(IV.r.can || {}).open) { IV.open = j.jo; ivDraw(main); return; }
-    try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'Back to Inventory',
+    try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'BACK',
       row: { description: j.description, client: j.client, location: j.location, stage_label: stageLabel(j.stage), due: j.due, late: j.late } })); } catch (_) {}
     location.hash = '#/review';
   });
@@ -141,21 +141,23 @@ async function ivThumbs(main, L) { // piece photos only (server never sends JO c
 
 /* =================== Materials (#/inventory) =================== */
 const MS = { r: null, view: 'all', q: '', open: null, adding: false, kind: 'metal', mode: 'in', hist: {}, editing: false, err: '', draft: {} };
-const MVIEWS = { all: 'All', metal: 'Metals', stone: 'Loose stones', pearl: 'Pearls', finding: 'Findings', other: 'Other', low: 'Low stock', archived: 'Archived' };
+const MVIEWS = { all: 'All', metal: 'Metals', stone: 'Loose stones', pearl: 'Pearls', finding: 'Findings', other: 'Other', supply: 'Supplies (non-job)', low: 'Low stock', archived: 'Archived' };
+const isJob = m => m.job !== false && m.kind !== 'supply'; // Supplies (non-job): tools, packaging, consumables
 const MFIELDS = { // what each kind asks for (karat is never required)
   metal: [['metal', 'Metal', 'Gold, Silver, Platinum'], ['karat', 'Karat (optional)', '18k'], ['color', 'Color (optional)', 'Yellow, White, Rose']],
   stone: [['stone_type', 'Stone', 'Sapphire, Diamond'], ['shape', 'Shape', 'Oval, Round'], ['size', 'Size', '7x5 mm, 0.30 ct'], ['color', 'Color', 'Blue'], ['grade', 'Grade', 'AA, VS1']],
   pearl: [['stone_type', 'Pearl', 'South Sea, Freshwater'], ['size', 'Size', '9-10 mm'], ['color', 'Color', 'White, Golden'], ['grade', 'Grade', 'AAA']],
   finding: [['metal', 'Metal', 'Gold, Silver'], ['karat', 'Karat (optional)', '14k'], ['size', 'Size', '4 mm, 18 in']],
-  other: [['size', 'Size (optional)', '']]
+  other: [['size', 'Size (optional)', '']],
+  supply: [['size', 'Size / pack (optional)', 'Box of 100']]
 };
-const UNIT_DEF = { metal: 'g', stone: 'ct', pearl: 'pc', finding: 'pc', other: 'pc' };
+const UNIT_DEF = { metal: 'g', stone: 'ct', pearl: 'pc', finding: 'pc', other: 'pc', supply: 'pc' };
 const MOVE = { add: 'Added', in: 'Stock in', out: 'Stock out', count: 'Count', edit: 'Edited', archive: 'Archived', restore: 'Restored' };
 const mspec = m => [[kar(m.karat), m.metal ? m.color : '', m.metal].filter(Boolean).join(' '), [m.stone_type, m.shape].filter(Boolean).join(' '), m.size, m.metal ? '' : m.color, m.grade].filter(Boolean).join(' · ');
 const kindLab = k => ((MS.r && MS.r.kinds || []).find(x => x[0] === k) || [k, k])[1];
 function mShown() {
   const toks = MS.q.trim().toLowerCase().split(/\s+/).filter(Boolean), v = MS.view;
-  return MS.r.items.filter(m => (v === 'archived' ? !m.active : m.active && (v === 'all' || (v === 'low' ? m.low : m.kind === v)))
+  return MS.r.items.filter(m => (v === 'archived' ? !m.active : m.active && (v === 'all' ? isJob(m) : v === 'low' ? m.low : m.kind === v))
     && (!toks.length || (h => toks.every(t => h.includes(t)))([m.name, m.metal, kar(m.karat), m.stone_type, m.shape, m.size, m.color, m.grade, m.location, m.supplier, m.notes, kindLab(m.kind)].join(' ').toLowerCase())));
 }
 async function renderMats(main, u) {
@@ -171,12 +173,12 @@ async function renderMats(main, u) {
 async function mHist(id, fresh) { if (!MS.hist[id] || fresh) { const h = await window.OYP.call('matHistory', { mat_id: id }); MS.hist[id] = h && h.ok ? h.moves : []; } }
 function mDraw(main) {
   const { esc } = window.OYP, r = MS.r, can = r.can || {}, L = mShown(), act = r.items.filter(m => m.active);
-  const cnt = k => k === 'archived' ? r.items.length - act.length : k === 'all' ? act.length : k === 'low' ? act.filter(m => m.low).length : act.filter(m => m.kind === k).length;
-  const tot = act.reduce((t, m) => t + (Number(m.stock_cost) || 0), 0);
+  const cnt = k => k === 'archived' ? r.items.length - act.length : k === 'all' ? act.filter(isJob).length : k === 'low' ? act.filter(m => m.low).length : act.filter(m => m.kind === k).length;
+  const sup = act.filter(m => !isJob(m)).length, tot = act.filter(isJob).reduce((t, m) => t + (Number(m.stock_cost) || 0), 0);
   main.innerHTML = `<div class="rv mats ${MS.open || MS.adding ? 'has-open' : ''}"><div class="rvlist">
     <div class="dhead"><h2>Materials</h2>${can.edit ? '<button class="pill sm tap" id="mAdd">+ ADD STOCK</button>' : ''}</div>
-    <p class="muted">Raw stock: metals, loose stones, pearls and findings. Quantities change only through Stock in, Stock out or Count, and every change is kept in the history.</p>
-    <p class="ivsum">${esc(plural(act.length, 'stock item'))}${cnt('low') ? ` · <b class="gold">${cnt('low')} low</b>` : ''}${can.cost ? ' · stock at last cost ' + esc(peso(tot)) : ''}</p>
+    <p class="muted">Job stock: metals, loose stones, pearls and findings. Stock out always goes to a JO. Supplies (non-job) are tools, packaging and consumables, kept separately. Quantities change only through Stock in, Stock out or Count, and every change is kept in the history.</p>
+    <p class="ivsum">${esc(plural(act.length - sup, 'job stock item'))}${sup ? ' · ' + esc(plural(sup, 'supply', 'supplies')) : ''}${cnt('low') ? ` · <b class="gold">${cnt('low')} low</b>` : ''}${can.cost ? ' · job stock at last cost ' + esc(peso(tot)) : ''}</p>
     ${!r.setup ? '<p class="ccsum">No stock yet. The Materials and MaterialMoves tabs are made in the Sheet when the first item is saved.</p>' : ''}
     ${r.missing_cols && r.missing_cols.length ? `<p class="ccsum">Columns missing in the Sheet (not saved): ${esc(r.missing_cols.join(', '))}</p>` : ''}
     <div class="rvchips">${Object.keys(MVIEWS).filter(k => cnt(k) || k === 'all' || k === MS.view).map(k => `<button class="fchip tap ${MS.view === k ? 'on' : ''}" data-mv="${k}">${esc(MVIEWS[k])} <b>${cnt(k)}</b></button>`).join('')}</div>
@@ -195,8 +197,8 @@ function mAddPanel() {
   const { esc } = window.OYP, k = MS.kind, d = MS.draft, can = MS.r.can || {};
   return `<div class="rvp"><button class="lnk rvback" data-mx>‹ All materials</button><div class="dhead"><h2>New stock item</h2></div>
     <div class="fsec"><span class="lab">Kind</span><div class="seg mkinds">${MS.r.kinds.map(([c, t]) => `<button class="${c === k ? 'on' : ''}" data-mk="${c}">${esc(t)}</button>`).join('')}</div></div>
-    ${inp('maName', 'Name', d.name, { metal: '18k yellow gold casting grain', stone: 'Blue sapphire, oval', pearl: 'South Sea pearl', finding: 'Lobster clasp', other: 'Item name' }[k])}
-    <div class="fgrid">${MFIELDS[k].map(([f, lab, ph]) => inp('ma_' + f, lab, d[f], ph)).join('')}${unitSel('maUnit', d.unit || UNIT_DEF[k])}
+    ${inp('maName', 'Name', d.name, { metal: '18k yellow gold casting grain', stone: 'Blue sapphire, oval', pearl: 'South Sea pearl', finding: 'Lobster clasp', other: 'Item name', supply: 'Polishing compound, ring boxes, saw blades' }[k])}
+    ${k === 'supply' ? '<p class="muted fnote">Supplies never become part of a piece. Their stock out needs no JO.</p>' : ''}<div class="fgrid">${MFIELDS[k].map(([f, lab, ph]) => inp('ma_' + f, lab, d[f], ph)).join('')}${unitSel('maUnit', d.unit || UNIT_DEF[k])}
       ${inp('maQty', 'Opening quantity', d.qty, '0', 'inputmode="decimal"')}${can.cost ? inp('maCost', 'Cost per unit ₱ (optional)', d.unit_cost, '', 'inputmode="decimal"') : ''}
       ${inp('maSup', 'Supplier (optional)', d.supplier, '')}${locIn('maLoc', d.location)}${inp('maMin', 'Low-stock alert at (optional)', d.min_qty, '', 'inputmode="decimal"')}
       <div class="full">${inp('maNotes', 'Notes (optional)', d.notes, '')}</div></div>
@@ -221,13 +223,16 @@ function mPanel(m) {
     ${can.edit && m.active ? `<div class="mmove"><div class="seg">${[['in', 'Stock in'], ['out', 'Stock out'], ['count', 'Count']].map(([k, t]) => `<button class="${md === k ? 'on' : ''}" data-mm="${k}">${t}</button>`).join('')}</div>
       <div class="fgrid">${inp('mvQty', md === 'count' ? 'Counted quantity (' + m.unit + ')' : 'Quantity (' + m.unit + ')', '', md === 'count' ? num(m.qty) : '0', 'inputmode="decimal"')}
       ${md === 'in' && can.cost ? inp('mvCost', 'Cost per ' + m.unit + ' ₱', '', m.last_cost != null ? String(m.last_cost) : '', 'inputmode="decimal"') : ''}
-      ${md === 'in' ? inp('mvSup', 'Supplier', m.supplier, '') : ''}${md === 'out' ? inp('mvJo', 'For JO (optional)', '', '26-103') : ''}
-      <div class="full">${inp('mvNote', md === 'count' ? 'Why (required)' : 'Note (optional)', '', md === 'count' ? 'Monthly count' : md === 'out' ? 'Given to setter' : 'Receipt no.')}</div></div>
+      ${md === 'in' ? inp('mvSup', 'Supplier', m.supplier, '') : ''}${md === 'out' && isJob(m) ? inp('mvJo', 'For JO (required)', '', '26-103', 'required autocomplete="off" autocapitalize="characters"') : ''}
+      <div class="full">${inp('mvNote', md === 'count' ? 'Why (required)' : md === 'out' && !isJob(m) ? 'Reason' : 'Note (optional)', md === 'out' && !isJob(m) ? 'Used / consumed' : '', md === 'count' ? 'Monthly count' : md === 'out' ? (isJob(m) ? 'Given to setter' : 'Used / consumed') : 'Receipt no.')}</div>
+      ${md === 'out' ? `<p class="muted fnote full">${isJob(m) ? 'Job stock always goes out to a JO that is already in the system.' : 'Supplies (non-job): no JO needed.'}</p>` : ''}</div>
       <p class="err" id="mErr">${esc(MS.err)}</p><div class="fbtns"><button class="pill tap" id="mvSave">${{ in: 'ADD TO STOCK', out: 'TAKE OUT', count: 'SAVE COUNT' }[md]}</button></div></div>` : ''}
     ${can.edit ? `<details class="medit" ${MS.editing ? 'open' : ''}><summary><span class="lab">Edit details</span></summary>
       ${inp('meName', 'Name', m.name, '')}<div class="fgrid">${(MFIELDS[m.kind] || MFIELDS.other).map(([f, lab, ph]) => inp('me_' + f, lab, m[f], ph)).join('')}${unitSel('meUnit', m.unit)}
       ${inp('meSup', 'Supplier', m.supplier, '')}${locIn('meLoc', m.location)}${inp('meMin', 'Low-stock alert at', m.min_qty, '', 'inputmode="decimal"')}<div class="full">${inp('meNotes', 'Notes', m.notes, '')}</div></div>
-      <div class="fbtns"><button class="pill outline tap" id="meSave">SAVE DETAILS</button><button class="lnk" id="meArch">${m.active ? 'Archive (hide)' : 'Restore'}</button></div></details>` : ''}
+      <div class="fbtns"><button class="pill outline tap" id="meSave">SAVE DETAILS</button><button class="lnk" id="meArch">${m.active ? 'Archive (hide)' : 'Restore'}</button></div>
+      <p class="muted fnote">Stock items are never deleted. Archive hides it from the lists; Restore brings it back. ${H.some(x => x.jo) ? 'Its history and the JOs it went to stay.' : 'Its history stays.'}</p></details>` : ''}
+    ${!m.active ? `<p class="ccsum">Archived: hidden from the lists, nothing deleted.${can.edit ? ' Open Edit details and tap Restore to use it again.' : ''}</p>` : ''}
     <div class="mhist"><div class="dtitle"><span class="lab">History · ${H.length}</span><span class="lab">newest first</span></div>${H.map(row).join('') || '<p class="muted rvnone">No movements yet.</p>'}</div></div>`;
 }
 function mWire(main) {
@@ -241,14 +246,17 @@ function mWire(main) {
     d.unit = val('#maUnit'); d.qty = val('#maQty'); d.unit_cost = val('#maCost'); d.supplier = val('#maSup'); d.location = val('#maLoc'); d.min_qty = val('#maMin'); d.notes = val('#maNotes'); };
   main.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => { keep(); MS.kind = b.dataset.mk; MS.draft.unit = UNIT_DEF[MS.kind]; mDraw(main); });
   const done = async (r, msg) => {
-    if (!r || !r.ok) { MS.err = (r && r.error) || 'Could not save'; if (r && r.code === 'CONFLICT') { await renderMats(main, MS.u); MS.err = r.error; mDraw(main); } else { const e = $('#mErr'); if (e) e.textContent = MS.err; else toast(MS.err); } return; }
+    if (!r || !r.ok) { MS.err = (r && r.error) || 'Could not save'; if (r && r.code === 'CONFLICT') { await renderMats(main, MS.u); MS.err = r.error; mDraw(main); } else { const e = $('#mErr'); if (e) e.textContent = MS.err; else toast(MS.err); ['#mvSave', '#maSave', '#meSave'].forEach(k => { if ($(k)) $(k).disabled = false; }); } return; } // fix and try again
     MS.err = ''; toast(msg); if (r.item) MS.open = r.item.mat_id; if (msg === 'Archived' || msg === 'Restored') MS.view = 'all'; MS.adding = false; delete MS.hist[MS.open]; await renderMats(main, MS.u);
   };
   if ($('#maSave')) $('#maSave').onclick = async e => { keep(); const d = MS.draft, item = { kind: MS.kind, name: d.name, unit: d.unit, supplier: d.supplier, location: d.location, min_qty: d.min_qty, notes: d.notes };
     MFIELDS[MS.kind].forEach(([f]) => { item[f] = d[f]; }); item.qty = d.qty; item.unit_cost = d.unit_cost;
     e.target.disabled = true; await done(await call('matSave', { item }), 'Stock item added'); };
   main.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => { MS.mode = b.dataset.mm; MS.err = ''; mDraw(main); });
-  if ($('#mvSave')) $('#mvSave').onclick = async e => { e.target.disabled = true;
+  if ($('#mvSave')) $('#mvSave').onclick = async e => {
+    const cur = MS.r.items.find(x => x.mat_id === MS.open);
+    if (MS.mode === 'out' && cur && isJob(cur) && !val('#mvJo')) { MS.err = 'Type the JO number this was used for (e.g. 26-103). Job stock always goes out to a JO.'; $('#mErr').textContent = MS.err; $('#mvJo').focus(); return; }
+    e.target.disabled = true;
     await done(await call('matMove', { mat_id: MS.open, move: MS.mode, qty: val('#mvQty'), unit_cost: val('#mvCost'), supplier: val('#mvSup'), jo: val('#mvJo'), note: val('#mvNote') }),
       { in: 'Added to stock', out: 'Taken out of stock', count: 'Count saved' }[MS.mode]); };
   const m = MS.r.items.find(x => x.mat_id === MS.open);
