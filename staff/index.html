@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#ffffff">
+<meta name="robots" content="noindex,nofollow"><title>OYP Jewelry · Staff</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@500&family=Bodoni+Moda:opsz,wght@6..96,400&family=Inter:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../app.css?v=8">
+<link rel="icon" type="image/png" href="../favicon.png"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
+</head><body>
+<header class="top">
+  <button id="btnMenu" class="icon" aria-label="Menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
+  <span id="title" class="title">OYP Jewelry</span>
+  <img class="logo" src="../logo.png" alt="OYP Jewelry">
+</header>
+<div id="menu" class="menu hidden"></div>
+
+<!-- sign in -->
+<section id="vLogin" class="view login hidden">
+  <img class="biglogo" src="../logo.png" alt="">
+  <label class="lab" for="uName">NAME</label>
+  <input id="uName" class="name" autocomplete="username" autocapitalize="words" spellcheck="false" placeholder="First name">
+  <div class="lab">CODE</div>
+  <div id="dots" class="dots" aria-live="polite"><i></i><i></i><i></i><i></i></div>
+  <div id="pad" class="pad"></div>
+  <p id="loginErr" class="err" role="alert"></p>
+  <button id="btnSignIn" class="pill wide">SIGN IN</button>
+</section>
+
+<!-- staff home -->
+<section id="vStaff" class="view staff hidden">
+  <h1 id="hi"></h1>
+  <a class="pill big" id="lnkScan" href="https://oypjewelry-stack.github.io/jo-scanner/">SCAN JO CARD</a>
+  <button class="pill big soon" data-soon="My jobs">MY JOBS</button>
+  <button class="pill big soon" data-soon="Product photo">PRODUCT PHOTO</button>
+  <button class="pill big outline" data-logout>LOG OUT</button>
+</section>
+
+<!-- back office -->
+<section id="vOffice" class="office hidden">
+  <nav id="side" class="side"></nav>
+  <main id="main" class="main"></main>
+</section>
+
+<div id="toast" class="toast hidden"></div>
+<script src="../dash.js?v=5"></script>
+<script src="../review.js?v=3"></script>
+<script src="../estimate.js?v=1"></script>
+<script src="../nav.js?v=1"></script>
+<script src="../app.js?v=7"></script>
+</body></html>

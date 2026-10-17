@@ -42,3 +42,23 @@ body.soft .top{background:#f6f6f4;border-bottom-color:#ecebe7}
   .cwrap.wide{max-width:1080px}.grid{grid-template-columns:repeat(4,1fr)}
   .detail2{display:grid;grid-template-columns:1fr 1fr;gap:44px;align-items:start}.detail2 .hero{margin:0}
 }
+/* customer menu + landing */
+.menu .soon{font-size:10px;color:#9a9a9a;letter-spacing:.06em;margin-left:6px}
+.menu .strong{border-top:1px solid #eee;margin-top:4px}
+.landing{text-align:center}
+.landing .biglogo{height:64px;margin:26px auto 14px;display:block}
+.landing .tag{font-family:var(--body);font-size:17px;color:#555;margin:0 auto 26px;max-width:340px;line-height:1.5}
+.landing .card{text-align:left}
+.landing h2{font-family:var(--head);font-weight:500;font-size:24px;margin:0 0 4px}
+.or{display:flex;align-items:center;gap:12px;color:#aaa;font-family:var(--label);font-size:12px;letter-spacing:.1em;margin:26px 0 14px}.or:before,.or:after{content:'';flex:1;border-top:1px solid #e3e2dd}
+.pill.ghost{background:#fff;color:#111;border:1.5px solid #111}
+.trk{margin-top:18px;text-align:left}
+.trk h3{font-family:var(--head);font-weight:500;font-size:22px;margin:2px 0}
+.homelinks{display:flex;gap:12px;justify-content:center;margin-top:26px}
+.pays{list-style:none;font-family:var(--label);font-size:15px;background:#fff;border-radius:16px;padding:4px 14px}
+.trk .pays{background:#f6f6f4}
+.pays li{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #eee;color:#555}.pays li:last-child{border:0}
+.pays b{font-family:var(--head);font-weight:500;color:#111;white-space:nowrap}.pays li.bal{color:#111;font-weight:600}.pays li.bal b{font-size:20px}
+.grey.sm{font-size:13px;margin-top:6px}
+.tph{margin-bottom:14px}
+.specs2{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-family:var(--label);font-size:15px}.specs2 dt{color:#8a8a8a}.specs2 dd{color:#111}

@@ -14,8 +14,17 @@ let jobs = [];
 async function busy(btn, fn) { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } }
 function err(t) { document.getElementById('err').textContent = t || ''; }
 
+function start() { // signed out: track one order by JO + mobile/email, or sign in
+  history.replaceState(null, '', location.pathname + location.search);
+  app.innerHTML = `<h1>My orders</h1><p class="grey">Track an order, or sign in to see all your pieces.</p>
+  <section class="card" id="track" style="margin-top:20px"></section>
+  <div class="or">OR</div><button class="pill ghost wide" id="toIn">SIGN IN</button>
+  <p class="grey" style="margin-top:10px;text-align:center">New here? <button class="lk" id="toUp">Create an account</button></p>`;
+  OYPTrack.mount(document.getElementById('track'));
+  document.getElementById('toIn').onclick = () => signIn(); document.getElementById('toUp').onclick = signUp;
+}
 function signIn(msg) {
-  app.innerHTML = `<h1>Welcome back</h1><p class="grey">Sign in to see how your pieces are coming along.</p>
+  app.innerHTML = `<button class="back" id="bk">‹ Back</button><h1>Welcome back</h1><p class="grey">Sign in to see how your pieces are coming along.</p>
   <div class="card" style="margin-top:20px">${field('em', 'Email', 'email', `autocomplete="email" value="${esc(localStorage.getItem(K.email) || '')}"`)}${pinField('pin', '4-digit PIN')}
   <p id="err" class="err" role="alert"></p><button id="go" class="pill wide">SIGN IN</button>
   <div class="links"><button class="lk" id="toUp">Create account</button><button class="lk" id="toForgot">Forgot PIN?</button></div></div>
@@ -28,6 +37,7 @@ function signIn(msg) {
   });
   document.getElementById('pin').onkeydown = e => { if (e.key === 'Enter') go.click(); };
   document.getElementById('toUp').onclick = signUp; document.getElementById('toForgot').onclick = forgot;
+  document.getElementById('bk').onclick = start;
 }
 function signUp() {
   app.innerHTML = `<button class="back" id="bk">‹ Back</button><h1>Create account</h1><p class="grey">Use the email and mobile number you gave us, so we can find your orders.</p>
@@ -73,6 +83,7 @@ async function home(flag) {
   const r = await call('custJobs', {}, sess());
   if (!r.ok) { if (r.code === 'NO_SESSION') { clear(); return signIn(); } app.innerHTML = `<p class="err">${esc(r.error)}</p>`; return; }
   jobs = r.jobs; const c = r.customer;
+  if (r.safe_photos !== true) jobs.forEach(j => { j.photos = 0; }); // older server: show no photos at all
   app.innerHTML = `<p class="lab">Hello</p><h1>${esc(c.full_name)}</h1><p class="grey">${esc(c.mobile)}</p>
   ${!jobs.length ? `<p class="note">${c.status === 'pending' || flag === 'pending' ? 'Thanks for signing up! We couldn\'t match your account to an order yet. We\'ll link your orders shortly.' : 'No orders yet.'}</p>` : ''}
   <div class="list">${jobs.map((j, i) => `<button class="row" data-i="${i}"><span class="th" data-jo="${esc(j.jo)}"></span><span><b>${esc(j.description || 'Order ' + j.jo)}</b>
@@ -80,7 +91,7 @@ async function home(flag) {
   <div style="text-align:center;margin-top:30px"><button class="lk" id="out">Sign out</button></div>`;
   app.querySelectorAll('.row').forEach(b => b.onclick = () => detail(jobs[b.dataset.i]));
   jobs.forEach(j => j.photos && photo(j.jo).then(src => { const el = app.querySelector(`.th[data-jo="${CSS.escape(j.jo)}"]`); if (el && src) el.style.backgroundImage = `url("${src}")`; }));
-  document.getElementById('out').onclick = async () => { await call('custLogout', {}, sess()); clear(); signIn(); };
+  document.getElementById('out').onclick = async () => { await call('custLogout', {}, sess()); clear(); start(); };
 }
 const cache = {};
 function photo(jo) { return cache[jo] || (cache[jo] = call('custPhoto', { jo }, sess()).then(r => r.ok ? r.src : '')); }
@@ -88,14 +99,16 @@ function detail(j) {
   app.classList.add('wide'); window.scrollTo(0, 0);
   const specs = [j.metal && j.karat ? `${j.metal} · ${j.karat}` : j.metal, j.size && 'Size ' + j.size, j.due_date && 'Due ' + j.due_date].filter(Boolean);
   app.innerHTML = `<button class="back" id="bk">‹ My orders</button><div class="detail2"><div id="hero"></div><div>
-  <h1>${esc(j.description || 'Order ' + j.jo)}</h1><p class="grey">Order ${esc(j.jo)}</p>
-  ${specs.length ? `<p class="sec">Details</p><ul class="specs">${specs.map(s => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
+  <h1>${esc(j.description || 'Order ' + j.jo)}</h1><p class="grey">Order ${esc(j.jo)}${j.item_type ? ' · ' + esc(j.item_type) : ''}</p>
+  ${j.specs ? OYPTrack.specs(j) : specs.length ? `<p class="sec">Details</p><ul class="specs">${specs.map(s => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
   <p class="sec">Progress</p><ul class="steps">${(j.stages.length ? j.stages : [{ label: j.stage || 'In progress', status: 'doing' }]).map(s => `<li class="${esc(s.status)}"><i></i>${esc(s.label)}${s.status === 'doing' ? ' — in progress' : ''}</li>`).join('')}</ul>
-  ${j.total != null ? `<div class="buy"><div class="amt"><small>Balance due</small>${peso(j.balance)}</div><div class="grey" style="text-align:right;font-size:13px">Paid ${peso(j.paid)}<br>of ${peso(j.total)}</div></div>` : ''}
+  ${OYPTrack.money(j)}
   <div class="buy" style="margin-top:18px"><button class="blk" id="rf" style="max-width:none">REFRESH</button></div></div></div>`;
   slides(document.getElementById('hero'), j.photos, () => photo(j.jo));
   document.getElementById('bk').onclick = () => home();
-  document.getElementById('rf').onclick = async () => { delete cache[j.jo]; const r = await call('custJobs', {}, sess()); const n = r.ok && r.jobs.find(x => x.jo === j.jo); if (n) { detail(n); toast('Up to date'); } else home(); };
+  document.getElementById('rf').onclick = async () => { delete cache[j.jo]; const r = await call('custJobs', {}, sess()); const n = r.ok && r.jobs.find(x => x.jo === j.jo); if (n && r.safe_photos !== true) n.photos = 0; if (n) { detail(n); toast('Up to date'); } else home(); };
 }
-sess() ? home() : signIn();
+const first = () => sess() ? home() : location.hash === '#signin' ? signIn() : location.hash === '#signup' ? signUp() : start();
+window.addEventListener('hashchange', () => { if (!sess() && /^#sign(in|up)$/.test(location.hash)) first(); });
+first();
 })();
