@@ -132,3 +132,13 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .chip.arch{background:#fff;border:1px dashed #888;color:#666}.chip.arch.big{font-size:12px;vertical-align:middle;margin-left:8px;transform:translateY(-3px)}
 .lc.arch{opacity:.75;border-style:dashed}.archnote{margin:8px 0 0!important}
 .rvother{margin-top:18px}.rvother .dtitle{display:flex;justify-content:space-between;margin-bottom:6px}.rvrow.oth{cursor:default;grid-template-columns:0 0 1fr;gap:0}
+/* customers (merged clients + portal) */
+.ptab{max-width:1200px}.ptab td{vertical-align:top;padding-top:12px;padding-bottom:12px}.ptab tr.on td{background:#faf8f1}
+.ptag{font-family:var(--label);font-weight:500;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#888;white-space:nowrap}.ptag.on{color:#111}
+.ptab tr.psec td{padding:16px 0 4px;border-bottom:1px solid #eee;background:none}.pq{max-width:520px}.padd{border:1.5px solid #111;border-radius:14px;padding:16px 18px;margin:0 0 18px;max-width:1200px}
+.pgrid{display:grid;grid-template-columns:2fr 1fr;gap:20px}.pjos{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.addrow label.grow{flex:1;min-width:220px}.addrow label.grow input{width:100%}.addrow label.conf input{border-color:#b3261e}.addrow label.conf .lab{color:#b3261e}
+.pportal{border-top:1px solid #e8e2cf;margin-top:10px;padding-top:10px}.pportal summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:center}.pportal summary::before{content:'▸';font-size:12px}.pportal[open] summary::before{content:'▾'}
+.pportal .cpanel{padding:4px 0 0}
+@media (max-width:899px){.ptab thead{display:none}.ptab tr{display:block;border-bottom:1px solid #eee;padding:8px 0}.ptab td{display:inline-block;border:0;padding:3px 10px 3px 0}
+  .ptab td:first-child{display:block}.ptab tr.cx td{display:block;padding:0}.pgrid{grid-template-columns:1fr}.addrow label,.addrow input{width:100%}.dhead .pill.sm{padding:8px 14px}}

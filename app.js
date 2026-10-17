@@ -69,9 +69,9 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Job orders'], ['scanner', 'Scanner'], ['inventory', 'Inventory'], ['prices', 'Material prices'], ['clients', 'Clients'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
-  production_manager: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Job orders'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Inventory'], ['prices', 'Material prices']],
-  accounting: [['dashboard', 'Dashboard'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Job orders (view)']]
+  admin: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
+  production_manager: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials'], ['prices', 'Material prices']],
+  accounting: [['dashboard', 'Dashboard'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Inventory (view)']]
 };
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
 const DONE = { dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
@@ -86,7 +86,10 @@ function route() {
   }
   show('vOffice'); $('title').textContent = 'Back office';
   const nav = NAV[u.role], cur = (location.hash.match(/^#\/(\w+)/) || [])[1];
-  const page = nav.some(n => n[0] === cur) ? cur : nav[0][0];
+  const ALIAS = { clients: 'customers', joborders: 'jos', materials: 'inventory' }; // old / friendly links keep working
+  const want = nav.some(n => n[0] === cur) ? cur : ALIAS[cur] && nav.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
+  const page = want || nav[0][0];
+  if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
   $('side').innerHTML = nav.map(([k, t]) => k === 'scanner' ? `<a href="${SCANNER}" target="_blank" rel="noopener">${esc(t)} ↗</a>`
     : `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`).join('')
     + `<div class="who"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><button class="pill outline" data-logout>LOG OUT</button></div>`;
@@ -144,11 +147,102 @@ function showCode(un, c) {
     <span class="muted">Give it to them privately. They sign in with their first name and this code.</span></div>`;
 }
 
-/* ---------- admin: customers (portal accounts) ---------- */
+/* ---------- admin: customers = every client (Clients tab) + portal account if any (Customers tab) ---------- */
 const CST = { active: ['Active', ''], pending: ['Needs approval', 'gold'], unverified: ['Email not confirmed', ''], off: ['Off', ''] };
+const PV = { all: 'All', pending: 'Needs approval', portal: 'Portal', offline: 'Offline only' };
+let PS = { view: 'all', q: '', open: null, extra: null, adding: false, conflicts: {} };
+const pkey = p => p.client_id || 'u:' + p.portal[0].customer_id;
+const pending = p => p.portal.some(a => a.status === 'pending');
 async function customersPage(open, extra) {
+  if (open !== undefined) PS.open = open; PS.extra = extra || null;
   const m = $('main');
-  m.innerHTML = `<h2>Customers</h2><p class="muted">People who signed up on the customer page. Approve new sign-ups, link their JOs, reset PINs.</p>
+  if (!m.querySelector('#plist')) m.innerHTML = '<h2>Customers</h2><p class="muted">Loading…</p>';
+  const r = await call('pplList');
+  if (!r.ok && r.error === 'Unknown action') return portalOnlyPage();
+  if (!r.ok) { m.innerHTML = `<h2>Customers</h2><p class="muted">${esc(r.error)}</p>`; return; }
+  PS.r = r; drawPeople();
+}
+function drawPeople() {
+  const m = $('main'), r = PS.r, q = PS.q.trim().toLowerCase();
+  const inView = p => PS.view === 'all' || (PS.view === 'pending' ? pending(p) : PS.view === 'portal' ? p.portal.length : !p.portal.length);
+  const hit = p => !q || [p.name, p.aliases, p.phone, p.email, p.jos.map(j => j.jo).join(' '), p.portal.map(a => a.email + ' ' + a.full_name).join(' ')].join(' ').toLowerCase().includes(q);
+  const L = r.people.filter(p => inView(p) && hit(p)).sort((a, b) => pending(b) - pending(a) || String(a.name).localeCompare(b.name));
+  const cnt = { all: r.counts.all, pending: r.counts.needs_approval, portal: r.counts.portal, offline: r.counts.offline };
+  const tag = p => p.portal.length ? `<span class="ptag on" title="Has a website (portal) account">☑ Portal</span>${p.portal.map(a => ` <span class="chip ${(CST[a.status] || [])[1] || ''}">${esc((CST[a.status] || [a.status])[0])}</span>${a.locked ? ' <span class="chip gold">Locked</span>' : ''}`).join('')}`
+    : '<span class="ptag" title="Offline only: no website account">☐ Offline</span>';
+  const row = p => { const k = pkey(p), o = PS.open === k; return `<tr class="${o ? 'on' : ''}"><td><b class="cn">${esc(p.name)}</b>${p.aliases ? ` <span class="muted">(${esc(p.aliases)})</span>` : ''}${p.unmatched ? '<br><span class="chip gold">Sign-up · no client yet</span>' : ''}</td>
+      <td>${esc(p.phone) || '<span class="muted">—</span>'}</td><td>${esc(p.email) || '<span class="muted">—</span>'}</td>
+      <td>${p.jos.length ? p.jos.slice(0, 3).map(j => esc(j.jo)).join(', ') + (p.jos.length > 3 ? ` <span class="muted">+${p.jos.length - 3}</span>` : '') : '<span class="muted">—</span>'}</td>
+      <td>${tag(p)}</td><td><button class="lnk" data-popen="${esc(k)}">${o ? 'Close' : 'Open'}</button></td></tr>${o ? `<tr class="cx"><td colspan="6">${personPanel(p)}</td></tr>` : ''}`; };
+  const pend = PS.view === 'all' && !q ? L.filter(pending) : [], rest = pend.length ? L.filter(p => !pending(p)) : L;
+  const head = '<thead><tr><th><span class="lab">Name</span></th><th><span class="lab">Phone</span></th><th><span class="lab">Email</span></th><th><span class="lab">JOs</span></th><th><span class="lab">Portal</span></th><th></th></tr></thead>';
+  m.innerHTML = `<div class="dhead"><h2>Customers</h2><button class="pill sm" id="pAdd">+ ADD CLIENT</button></div>
+    <p class="muted">Everyone: walk-ins and people who signed up on the website. <b>Portal</b> is ticked when they have a website account.</p>
+    ${PS.adding ? addPanel() : ''}
+    <div class="rvchips">${Object.keys(PV).map(k => `<button class="fchip ${PS.view === k ? 'on' : ''}" data-pv="${k}">${PV[k]} <b>${cnt[k]}</b></button>`).join('')}</div>
+    <input id="pq" class="rvq pq" placeholder="Search name, phone, email or JO" value="${esc(PS.q)}">
+    <div id="plist">${L.length ? `<table class="ptab">${head}<tbody>${pend.length ? `<tr class="psec"><td colspan="6"><span class="lab">Needs approval · ${pend.length}</span></td></tr>${pend.map(row).join('')}<tr class="psec"><td colspan="6"><span class="lab">Everyone else</span></td></tr>` : ''}${rest.map(row).join('')}</tbody></table>` : '<p class="muted">Nobody here.</p>'}</div>`;
+  wirePeople();
+}
+function addPanel() {
+  return `<div class="cpanel padd"><span class="lab">New client (offline · no website account is created)</span>
+    <div class="addrow"><label><span class="lab">Name</span><input id="naN" placeholder="Full name"></label><label><span class="lab">Phone</span><input id="naP" inputmode="tel" placeholder="0917 …"></label>
+    <label><span class="lab">Email</span><input id="naE" placeholder="optional"></label><label><span class="lab">Aliases</span><input id="naA" placeholder="Nickname, optional"></label></div>
+    <div class="addrow"><label class="grow"><span class="lab">Notes</span><input id="naO" placeholder="optional"></label><button class="pill" id="naSave">SAVE CLIENT</button><button class="lnk" id="naX">Cancel</button></div></div>`;
+}
+function personPanel(p) {
+  const cf = PS.conflicts, f = (k, lab, ph) => `<label class="${cf[k] != null ? 'conf' : ''}"><span class="lab">${lab}${cf[k] != null ? ` · now “${esc(cf[k])}”` : ''}</span><input id="pe_${k}" value="${esc(p[k])}" placeholder="${ph || ''}"></label>`;
+  return `<div class="cpanel"><div class="pgrid">
+    <div><span class="lab">${p.unmatched ? 'Signed up on the website · not matched to a client yet' : 'Client details'}</span>
+      <div class="addrow">${f('name', 'Name')}${f('phone', 'Phone')}${f('email', 'Email')}${f('aliases', 'Aliases', 'Nickname')}</div>
+      <div class="addrow"><label class="grow"><span class="lab">Notes</span><input id="pe_notes" value="${esc(p.notes)}"></label>
+      <button class="pill outline" id="peSave">${p.unmatched ? 'MAKE CLIENT FROM SIGN-UP' : 'SAVE'}</button></div>
+      ${p.unmatched ? '<p class="muted fnote">Or type an existing client’s ID in the portal section below and press Save there.</p>' : ''}</div>
+    <div><span class="lab">JOs</span><div class="pjos">${p.jos.length ? p.jos.map(j => `<span class="chip ${j.location === 'archived' ? 'arch' : ''}" title="${esc(j.description)}">${esc(j.jo)}${j.location === 'archived' ? ' · Archived' : ''}</span>`).join(' ') : '<span class="muted">None yet</span>'}</div>
+      ${p.client_id ? `<p class="muted fnote">Client ID ${esc(p.client_id)}</p>` : ''}</div></div>
+    ${p.portal.length ? p.portal.map(a => `<details class="pportal" ${PS.portalOpen !== false ? 'open' : ''}><summary><span class="lab">Portal account · ${esc(a.email)}</span> <span class="chip ${(CST[a.status] || [])[1] || ''}">${esc((CST[a.status] || [a.status])[0])}</span></summary>${custPanel(a, PS.extra)}</details>`).join('')
+      : '<div class="pportal off"><span class="lab">Portal</span> <span class="muted">☐ No website account. (Invite to portal: planned, not yet.)</span></div>'}</div>`;
+}
+function wirePeople() {
+  const m = $('main'), p = PS.r.people.find(x => pkey(x) === PS.open);
+  m.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { PS.view = b.dataset.pv; drawPeople(); });
+  $('pq').oninput = e => { PS.q = e.target.value; const pos = e.target.selectionStart; drawPeople(); const el = $('pq'); el.focus(); el.setSelectionRange(pos, pos); };
+  m.querySelectorAll('[data-popen]').forEach(b => b.onclick = () => { PS.open = PS.open === b.dataset.popen ? null : b.dataset.popen; PS.extra = null; PS.conflicts = {}; drawPeople(); });
+  $('pAdd').onclick = () => { PS.adding = !PS.adding; drawPeople(); if (PS.adding) $('naN').focus(); };
+  if (PS.adding) {
+    $('naX').onclick = () => { PS.adding = false; drawPeople(); };
+    $('naSave').onclick = async () => {
+      const set = { name: $('naN').value, phone: $('naP').value, email: $('naE').value, aliases: $('naA').value, notes: $('naO').value };
+      let r = await call('pplSave', { set });
+      if (r.code === 'DUPLICATE' && confirm('Already a client with that phone or email: ' + r.matches.map(x => x.name).join(', ') + '. Add a new client anyway?')) r = await call('pplSave', { set, force: true });
+      if (!r.ok) return r.code === 'DUPLICATE' ? null : toast(r.error);
+      toast('Client added'); PS.adding = false; customersPage(r.client_id);
+    };
+  }
+  if (!p) return;
+  m.querySelectorAll('[data-ca]').forEach(b => b.onclick = () => custAct(b.dataset.ca, b.closest('.pportal') ? p.portal[[...m.querySelectorAll('.pportal')].indexOf(b.closest('.pportal'))].customer_id : null));
+  const aud = m.querySelectorAll('.pportal .caud');
+  p.portal.forEach((a, i) => call('admCustAudit', { customer_id: a.customer_id }).then(x => { if (aud[i] && x.ok) aud[i].innerHTML = x.log.slice(0, 20).map(l => `<div><span class="muted">${esc(new Date(l.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }))} PHT</span> · ${esc(l.action.replace(/_/g, ' '))}</div>`).join('') || '—'; }));
+  $('peSave').onclick = async () => {
+    const set = {}; ['name', 'phone', 'email', 'aliases', 'notes'].forEach(k => set[k] = $('pe_' + k).value);
+    let r;
+    if (p.unmatched) {
+      r = await call('pplSave', { set, from_customer: p.portal[0].customer_id });
+      if (r.code === 'DUPLICATE' && confirm('Already a client with that phone or email: ' + r.matches.map(x => x.name + ' (' + x.client_id + ')').join(', ') + '.\nOK = make a new client anyway. Cancel = keep it, then type that client ID in the portal section.')) r = await call('pplSave', { set, from_customer: p.portal[0].customer_id, force: true });
+      if (r.ok) { toast('Client made and sign-up linked'); return customersPage(r.client_id); }
+    } else {
+      const seen = {}; ['name', 'phone', 'email', 'aliases', 'notes'].forEach(k => seen[k] = p[k]);
+      r = await call('pplSave', { client_id: p.client_id, set, seen });
+      if (r.code === 'CONFLICT') { PS.conflicts = r.conflicts; toast('Someone changed this client meanwhile: nothing saved, check the red fields'); return customersPage(); }
+      if (r.ok) { PS.conflicts = {}; toast(r.changed.length ? 'Saved' : 'No changes'); return customersPage(); }
+    }
+    if (r && !r.ok && r.code !== 'DUPLICATE') toast(r.error);
+  };
+}
+/* before the server has People.gs: the old portal-only list */
+async function portalOnlyPage(open, extra) {
+  const m = $('main');
+  m.innerHTML = `<h2>Customers</h2><p class="muted">Portal sign-ups only. Walk-in clients will show here too once the server is updated.</p>
     <div class="addrow"><input id="cq" placeholder="Search name, phone or email" style="min-width:280px"><select id="cf"><option value="">All</option><option value="pending">Needs approval</option><option value="active">Active</option><option value="locked">Locked</option><option value="off">Off</option></select></div>
     <div id="clist" class="muted">Loading…</div>`;
   const r = await call('admCustList'); if (!r.ok) { $('clist').textContent = r.error; return; }
@@ -161,9 +255,9 @@ async function customersPage(open, extra) {
       return `<tr><td><b class="cn">${esc(c.full_name)}</b><br><span class="muted">${esc(c.mobile)}</span></td><td>${esc(c.email)}</td><td>${c.jos.map(esc).join(', ') || '<span class="muted">—</span>'}</td>
       <td><span class="chip ${st[1]}">${esc(st[0])}</span>${c.locked ? ' <span class="chip gold">Locked</span>' : ''}</td><td><button class="lnk" data-open="${esc(c.customer_id)}">Open</button></td></tr>
       ${open === c.customer_id ? `<tr class="cx"><td colspan="5">${custPanel(c, extra)}</td></tr>` : ''}`; }).join('')}</tbody></table>` : '<p class="muted">No customers yet.</p>'}</div>`;
-    m.querySelectorAll('[data-open]').forEach(b => b.onclick = () => customersPage(open === b.dataset.open ? null : b.dataset.open));
+    m.querySelectorAll('[data-open]').forEach(b => b.onclick = () => portalOnlyPage(open === b.dataset.open ? null : b.dataset.open));
     m.querySelectorAll('[data-ca]').forEach(b => b.onclick = () => custAct(b.dataset.ca, open));
-    if (open) call('admCustAudit', { customer_id: open }).then(a => { const el = $('caud'); if (el && a.ok) el.innerHTML = a.log.slice(0, 20).map(l => `<div><span class="muted">${esc(new Date(l.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }))} PHT</span> · ${esc(l.action.replace(/_/g, ' '))} <span class="muted">${esc(l.actor.startsWith('cust:') ? '' : 'by ' + l.actor)} ${esc(l.detail)}</span></div>`).join('') || '—'; });
+    if (open) call('admCustAudit', { customer_id: open }).then(a => { const el = $('caud'); if (el && a.ok) el.innerHTML = a.log.slice(0, 20).map(l => `<div><span class="muted">${esc(new Date(l.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }))} PHT</span> · ${esc(l.action.replace(/_/g, ' '))}</div>`).join('') || '—'; });
   };
   $('cq').oninput = draw; $('cf').onchange = draw; draw();
 }
@@ -181,7 +275,7 @@ function custPanel(c, extra) {
   <span class="lab">Activity</span><div id="caud" class="caud muted">Loading…</div></div>`;
 }
 async function custAct(a, id) {
-  let r, extra;
+  let r, extra; const scope = document.querySelector(PS.r ? '.pportal[open] .cpanel, .pportal .cpanel' : '#main'), $ = i => (scope && scope.querySelector('#' + i)) || document.getElementById(i);
   if (a === 'save') r = await call('admCustUpdate', { customer_id: id, full_name: $('ceN').value, mobile: $('ceM').value, email: $('ceE').value, client_id: $('ceC').value });
   else if (a === 'approve') r = await call('admCustApprove', { customer_id: id, client_id: $('ceC').value });
   else if (a === 'link') r = await call('admCustLink', { customer_id: id, jo: $('ceJ').value });
@@ -190,7 +284,7 @@ async function custAct(a, id) {
   else if (a === 'unlock') r = await call('admCustUnlock', { customer_id: id });
   else if (a === 'off' || a === 'on') { if (a === 'off' && !confirm('Turn this account off? They are signed out.')) return; r = await call('admCustSetActive', { customer_id: id, active: a === 'on' }); }
   if (!r.ok) return toast(r.error);
-  toast(a === 'approve' ? 'Approved · ' + r.linked + ' JO(s) linked' : 'Saved'); customersPage(id, extra);
+  toast(a === 'approve' ? 'Approved · ' + r.linked + ' JO(s) linked' : 'Saved'); PS.r ? customersPage(PS.open, extra) : portalOnlyPage(id, extra);
 }
 /* ---------- admin: shop listings ---------- */
 async function shopPage() {
