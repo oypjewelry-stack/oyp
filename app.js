@@ -71,8 +71,13 @@ const { SCANNER, NAV, ROLE_LABEL, scannerLink } = window.OYPNav; // nav.js: same
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
 const DONE = { dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
 
+// Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
+// reply for a page the user already left (e.g. the dashboard still loading) never draws over the page they are on now.
+let routeSeq = 0;
+const here = () => { const my = routeSeq; return () => my === routeSeq; };
 function show(id) { ['vLogin', 'vStaff', 'vOffice'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
 function route() {
+  routeSeq++;
   $('menu').classList.add('hidden');
   if (location.hash === '#/logout') { history.replaceState(null, '', location.pathname); if (user()) return logout(); } // Log out from the scanner menu
   const u = user();
@@ -111,7 +116,7 @@ document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu'
 
 /* ---------- admin: staff logins ---------- */
 async function usersPage(shown) {
-  const m = $('main');
+  const m = $('main'), live = here();
   m.innerHTML = `<h2>Staff logins</h2><p class="muted">Add people and give them a code. A new code is shown only once, so write it down before leaving this page.</p>
     <div id="codeShown"></div>
     <div class="addrow"><label><span class="lab">First name</span><input id="nuName" placeholder="Thea" maxlength="24"></label>
@@ -122,9 +127,9 @@ async function usersPage(shown) {
   $('nuAdd').onclick = async () => {
     const name = $('nuName').value.trim(); if (!name) return $('nuName').focus();
     const r = await call('createUser', { username: name, display_name: name, role: $('nuRole').value });
-    if (!r.ok) return toast(r.error); usersPage(r);
+    if (!r.ok) return toast(r.error); if (live()) usersPage(r);
   };
-  const r = await call('listUsers');
+  const r = await call('listUsers'); if (!live()) return;
   if (!r.ok) { $('ulist').textContent = r.error; return; }
   $('ulist').outerHTML = `<table><thead><tr><th><span class="lab">Name</span></th><th><span class="lab">Role</span></th><th><span class="lab">Status</span></th><th></th></tr></thead><tbody>${
     r.users.map(u => `<tr><td>${esc(u.display_name)} <span class="muted">(${esc(u.username)})</span></td><td>${esc(ROLE_LABEL[u.role] || u.role)}</td>
@@ -135,7 +140,7 @@ async function usersPage(shown) {
     const a = b.dataset.act, un = b.dataset.u;
     if (a === 'resetCode' && !confirm('Make a new code for ' + un + '? Their old code stops working and their phones are signed out.')) return;
     const r = await call(a, { username: un, active: !!b.dataset.on });
-    if (!r.ok) return toast(r.error); usersPage(r.code ? r : null);
+    if (!r.ok) return toast(r.error); if (live()) usersPage(r.code ? r : null);
   });
 }
 function showCode(un, c) {
@@ -151,9 +156,9 @@ const pkey = p => p.client_id || 'u:' + p.portal[0].customer_id;
 const pending = p => p.portal.some(a => a.status === 'pending');
 async function customersPage(open, extra) {
   if (open !== undefined) PS.open = open; PS.extra = extra || null;
-  const m = $('main');
+  const m = $('main'), live = here();
   if (!m.querySelector('#plist')) m.innerHTML = '<h2>Customers</h2><p class="muted">Loading…</p>';
-  const r = await call('pplList');
+  const r = await call('pplList'); if (!live()) return;
   if (!r.ok && r.error === 'Unknown action') return portalOnlyPage();
   if (!r.ok) { m.innerHTML = `<h2>Customers</h2><p class="muted">${esc(r.error)}</p>`; return; }
   PS.r = r; drawPeople();
@@ -208,11 +213,11 @@ function wirePeople() {
   if (PS.adding) {
     $('naX').onclick = () => { PS.adding = false; drawPeople(); };
     $('naSave').onclick = async () => {
-      const set = { name: $('naN').value, phone: $('naP').value, email: $('naE').value, aliases: $('naA').value, notes: $('naO').value };
+      const set = { name: $('naN').value, phone: $('naP').value, email: $('naE').value, aliases: $('naA').value, notes: $('naO').value }, live = here();
       let r = await call('pplSave', { set });
       if (r.code === 'DUPLICATE' && confirm('Already a client with that phone or email: ' + r.matches.map(x => x.name).join(', ') + '. Add a new client anyway?')) r = await call('pplSave', { set, force: true });
       if (!r.ok) return r.code === 'DUPLICATE' ? null : toast(r.error);
-      toast('Client added'); PS.adding = false; customersPage(r.client_id);
+      toast('Client added'); PS.adding = false; if (live()) customersPage(r.client_id);
     };
   }
   if (!p) return;
@@ -221,16 +226,16 @@ function wirePeople() {
   p.portal.forEach((a, i) => call('admCustAudit', { customer_id: a.customer_id }).then(x => { if (aud[i] && x.ok) aud[i].innerHTML = x.log.slice(0, 20).map(l => `<div><span class="muted">${esc(new Date(l.at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }))} PHT</span> · ${esc(l.action.replace(/_/g, ' '))}</div>`).join('') || '—'; }));
   $('peSave').onclick = async () => {
     const set = {}; ['name', 'phone', 'email', 'aliases', 'notes'].forEach(k => set[k] = $('pe_' + k).value);
-    let r;
+    let r; const live = here(), again = id => live() ? customersPage(id) : undefined;
     if (p.unmatched) {
       r = await call('pplSave', { set, from_customer: p.portal[0].customer_id });
       if (r.code === 'DUPLICATE' && confirm('Already a client with that phone or email: ' + r.matches.map(x => x.name + ' (' + x.client_id + ')').join(', ') + '.\nOK = make a new client anyway. Cancel = keep it, then type that client ID in the portal section.')) r = await call('pplSave', { set, from_customer: p.portal[0].customer_id, force: true });
-      if (r.ok) { toast('Client made and sign-up linked'); return customersPage(r.client_id); }
+      if (r.ok) { toast('Client made and sign-up linked'); return again(r.client_id); }
     } else {
       const seen = {}; ['name', 'phone', 'email', 'aliases', 'notes'].forEach(k => seen[k] = p[k]);
       r = await call('pplSave', { client_id: p.client_id, set, seen });
-      if (r.code === 'CONFLICT') { PS.conflicts = r.conflicts; toast('Someone changed this client meanwhile: nothing saved, check the red fields'); return customersPage(); }
-      if (r.ok) { PS.conflicts = {}; toast(r.changed.length ? 'Saved' : 'No changes'); return customersPage(); }
+      if (r.code === 'CONFLICT') { PS.conflicts = r.conflicts; toast('Someone changed this client meanwhile: nothing saved, check the red fields'); return again(); }
+      if (r.ok) { PS.conflicts = {}; toast(r.changed.length ? 'Saved' : 'No changes'); return again(); }
     }
     if (r && !r.ok && r.code !== 'DUPLICATE') toast(r.error);
   };
@@ -241,7 +246,7 @@ async function portalOnlyPage(open, extra) {
   m.innerHTML = `<h2>Customers</h2><p class="muted">Portal sign-ups only. Walk-in clients will show here too once the server is updated.</p>
     <div class="addrow"><input id="cq" placeholder="Search name, phone or email" style="min-width:280px"><select id="cf"><option value="">All</option><option value="pending">Needs approval</option><option value="active">Active</option><option value="locked">Locked</option><option value="off">Off</option></select></div>
     <div id="clist" class="muted">Loading…</div>`;
-  const r = await call('admCustList'); if (!r.ok) { $('clist').textContent = r.error; return; }
+  const live = here(); const r = await call('admCustList'); if (!live()) return; if (!r.ok) { $('clist').textContent = r.error; return; }
   const draw = () => {
     const q = $('cq').value.trim().toLowerCase(), f = $('cf').value;
     const L = r.customers.filter(c => (!q || (c.full_name + ' ' + c.mobile + ' ' + c.email).toLowerCase().includes(q)) && (!f || (f === 'locked' ? c.locked : c.status === f)))
@@ -271,7 +276,7 @@ function custPanel(c, extra) {
   <span class="lab">Activity</span><div id="caud" class="caud muted">Loading…</div></div>`;
 }
 async function custAct(a, id) {
-  let r, extra; const scope = document.querySelector(PS.r ? '.pportal[open] .cpanel, .pportal .cpanel' : '#main'), $ = i => (scope && scope.querySelector('#' + i)) || document.getElementById(i);
+  const live = here(); let r, extra; const scope = document.querySelector(PS.r ? '.pportal[open] .cpanel, .pportal .cpanel' : '#main'), $ = i => (scope && scope.querySelector('#' + i)) || document.getElementById(i);
   if (a === 'save') r = await call('admCustUpdate', { customer_id: id, full_name: $('ceN').value, mobile: $('ceM').value, email: $('ceE').value, client_id: $('ceC').value });
   else if (a === 'approve') r = await call('admCustApprove', { customer_id: id, client_id: $('ceC').value });
   else if (a === 'link') r = await call('admCustLink', { customer_id: id, jo: $('ceJ').value });
@@ -280,24 +285,25 @@ async function custAct(a, id) {
   else if (a === 'unlock') r = await call('admCustUnlock', { customer_id: id });
   else if (a === 'off' || a === 'on') { if (a === 'off' && !confirm('Turn this account off? They are signed out.')) return; r = await call('admCustSetActive', { customer_id: id, active: a === 'on' }); }
   if (!r.ok) return toast(r.error);
-  toast(a === 'approve' ? 'Approved · ' + r.linked + ' JO(s) linked' : 'Saved'); PS.r ? customersPage(PS.open, extra) : portalOnlyPage(id, extra);
+  toast(a === 'approve' ? 'Approved · ' + r.linked + ' JO(s) linked' : 'Saved'); if (!live()) return; PS.r ? customersPage(PS.open, extra) : portalOnlyPage(id, extra);
 }
 /* ---------- admin: shop listings ---------- */
 async function shopPage() {
-  const m = $('main');
+  const m = $('main'), live = here();
   m.innerHTML = `<h2>Shop listings</h2><p class="muted">Pieces on the public <a href="https://oypjewelry.com/shop/" target="_blank" rel="noopener">shop page</a>. The JO number stays private; customers only see the item code.</p>
     <div class="addrow"><label><span class="lab">Item code</span><input id="siC" placeholder="OYP-R001" size="10"></label><label><span class="lab">Title</span><input id="siT"></label>
     <label><span class="lab">Type</span><input id="siK" placeholder="Ring" size="8"></label><label><span class="lab">Metal</span><input id="siM" size="9"></label><label><span class="lab">Price ₱</span><input id="siP" inputmode="numeric" size="8"></label>
     <label><span class="lab">JO (private)</span><input id="siJ" size="8"></label><label><span class="lab">Photo file IDs</span><input id="siF" placeholder="Drive ids, comma" size="14"></label>
     <select id="siS"><option value="listed">Listed</option><option value="hidden">Hidden</option><option value="sold">Sold</option></select><button id="siAdd" class="pill">SAVE</button></div>
     <div id="slist" class="muted">Loading…</div>`;
-  $('siAdd').onclick = async () => { const r = await call('admShopSave', { item_code: $('siC').value, title: $('siT').value, category: $('siK').value, metal: $('siM').value, price_php: $('siP').value, jo: $('siJ').value, photo_file_ids: $('siF').value, status: $('siS').value }); if (!r.ok) return toast(r.error); toast('Saved'); shopPage(); };
-  const r = await call('admShopList'); if (!r.ok) { $('slist').textContent = r.error; return; }
+  $('siAdd').onclick = async () => { const r = await call('admShopSave', { item_code: $('siC').value, title: $('siT').value, category: $('siK').value, metal: $('siM').value, price_php: $('siP').value, jo: $('siJ').value, photo_file_ids: $('siF').value, status: $('siS').value }); if (!r.ok) return toast(r.error); toast('Saved'); if (live()) shopPage(); };
+  const r = await call('admShopList'); if (!live()) return; if (!r.ok) { $('slist').textContent = r.error; return; }
   $('slist').outerHTML = r.items.length ? `<table><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">Price</span></th><th><span class="lab">JO</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${r.items.map(i => `<tr><td><b class="cn">${esc(i.title)}</b><br><span class="muted">${esc(i.item_code)} · ${esc(i.category)}</span></td><td>${i.price_php ? '₱' + Number(i.price_php).toLocaleString() : '—'}</td><td>${esc(i.jo)}</td><td><span class="chip ${i.status === 'listed' ? 'gold' : ''}">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nothing listed yet.</p>';
 }
 
-window.OYP = { call, esc, toast, user, ROLE_LABEL }; // shared with dash.js
+window.OYP = { call, esc, toast, user, ROLE_LABEL, here }; // here(): route token, see route() // shared with dash.js
 drawDots(); route();
 // re-check the session with the server on load (catches resets / deactivation)
-if (user()) call('me').then(r => { if (r.ok) { localStorage.setItem(K.u, JSON.stringify(r.user)); route(); } });
+// redraw only if the role or name changed, so a page opened meanwhile (e.g. the estimator mid-typing) is not reset
+if (user()) call('me').then(r => { if (r.ok) { const was = user() || {}; localStorage.setItem(K.u, JSON.stringify(r.user)); if (was.role !== r.user.role || was.display_name !== r.user.display_name) route(); } });
 })();

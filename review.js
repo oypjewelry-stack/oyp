@@ -35,9 +35,10 @@ const views = {
 };
 
 async function render(main, u) {
-  const { call, esc } = window.OYP;
+  const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
   main.innerHTML = '<h2>To review</h2><p class="muted">Loading…</p>';
   const [r, cc] = await Promise.all([call('jobReviewList'), call('contactList')]);
+  if (!live()) return;
   S.cc = cc && cc.ok ? cc : null; S.contact = S.cc ? Object.fromEntries(cc.jobs.map(x => [x.jo, x])) : null;
   S.ccState = S.cc ? 'on' : cc && cc.code === 'FORBIDDEN' ? 'forbidden' : 'old';
   try { const f = sessionStorage.getItem('oypReviewFilter'); if (f) { sessionStorage.removeItem('oypReviewFilter'); if (views[f]) S.filter = f; } } catch (_) {}
@@ -49,7 +50,7 @@ async function render(main, u) {
   let ask = null; try { const o = sessionStorage.getItem('oypReviewOpen'); if (o) { sessionStorage.removeItem('oypReviewOpen'); ask = JSON.parse(o); } } catch (_) {}
   if (ask && ask.jo) { S.open = ask.jo; S.back = ask.back ? { hash: ask.back, label: ask.label || 'Back' } : null; S.ext = { jo: ask.jo, stub: true, row: ask.row || {} }; S.conflicts = {}; }
   if (S.ext && S.ext.jo === S.open && !S.jobs.some(j => j.jo === S.open)) { // not a draft: fetch the full JO (needs DashboardDrill.gs)
-    const g = await call('dashDrill', { what: 'job', jo: S.open });
+    const g = await call('dashDrill', { what: 'job', jo: S.open }); if (!live()) return;
     if (g && g.ok && g.job) S.ext = g.job; else if (!S.ext.stub) S.ext = { jo: S.open, stub: true, row: S.ext, err: g && g.error }; else S.ext.err = g && g.error;
   } else if (S.ext && S.jobs.some(j => j.jo === S.ext.jo)) S.ext = null; // it is a draft: the normal card
   if (S.open && !cur()) S.open = null;
@@ -69,9 +70,10 @@ function otherHits() {
 function searchAll(main) {
   clearTimeout(searchAll.t); const q = S.q.trim();
   if (q.length < 2) { S.found = null; return; }
+  const live = window.OYP.here();
   searchAll.t = setTimeout(async () => {
     const r = await window.OYP.call('jobSearch', { q });
-    if (r && r.ok && S.q.trim() === q) { S.found = r; const a = document.activeElement, pos = a && a.id === 'rvQ' ? a.selectionStart : null; draw(main);
+    if (live() && r && r.ok && S.q.trim() === q) { S.found = r; const a = document.activeElement, pos = a && a.id === 'rvQ' ? a.selectionStart : null; draw(main);
       if (pos != null) { const el = main.querySelector('#rvQ'); el.focus(); el.setSelectionRange(pos, pos); } }
   }, 350);
 }
@@ -178,7 +180,8 @@ function contactSec(j) {
 }
 
 function wire(main) {
-  const { call, esc, toast } = window.OYP, $ = s => main.querySelector(s);
+  const { call, esc, toast } = window.OYP, $ = s => main.querySelector(s), live = window.OYP.here();
+  const rerender = async () => { if (live()) await render(main, S.u); }; // after a save: redraw only if the user is still here
   main.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; draw(main); });
   $('#rvQ').oninput = e => { S.q = e.target.value; searchAll(main); const pos = e.target.selectionStart; draw(main); const q = main.querySelector('#rvQ'); q.focus(); q.setSelectionRange(pos, pos); };
   main.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); draw(main); });
@@ -190,7 +193,7 @@ function wire(main) {
     if (r.kept.length && confirm(r.kept.length + ' of these already have another location (' + r.kept.slice(0, 5).map(k => k.jo + ': ' + locLabel(k.location)).join(', ') + (r.kept.length > 5 ? '…' : '') + '). Change them to ' + locLabel(loc) + ' too?')) {
       const r2 = await call('jobBulkLocation', { jos: r.kept.map(k => k.jo), location: loc, overwrite: true }); if (r2.ok) r.set = r.set.concat(r2.set);
     }
-    toast(r.set.length + ' set to ' + locLabel(loc)); S.sel.clear(); render(main, S.u);
+    toast(r.set.length + ' set to ' + locLabel(loc)); S.sel.clear(); rerender();
   };
   main.querySelectorAll('.rvrow').forEach(row => row.onclick = () => { if (!row.dataset.jo) return; S.back = null; S.open = row.dataset.jo; S.conflicts = {}; draw(main); if (innerWidth < 900) scrollTo(0, 0); });
   // lazy thumbnails
@@ -253,7 +256,7 @@ function wire(main) {
     if (ccOn) S.ccDraft[j.jo] = Object.assign({}, cc);
     const ccFail = async (cr, saved) => {
       if (cr.code === 'CONFLICT') { S.conflicts = {}; (cr.conflicts || []).forEach(c => { S.conflicts[c.field] = c.now; }); }
-      S.open = j.jo; toast((saved ? 'Card saved, but the contact was not: ' : '') + cr.error); await render(main, S.u);
+      S.open = j.jo; toast((saved ? 'Card saved, but the contact was not: ' : '') + cr.error); await rerender();
       if (cr.code === 'NEED_NAME') { const n = main.querySelector('#fNn'), cs = main.querySelector('.csearch'); if (cs) cs.classList.remove('hidden'); if (n) n.focus(); }
     };
     const saveCC = cid => call('contactSave', Object.assign({ jo: j.jo, client_name: nn, seen: { client_id: cid, phone: c0.phone || '', email: c0.email || '' } }, cc));
@@ -264,7 +267,7 @@ function wire(main) {
     const later = ccOn && !ccFirst; if (later) body.mark_reviewed = false; // mark reviewed only once the contact is saved too
     let r = await call('jobReviewSave', body);
     if (!r.ok) {
-      if (r.code === 'CONFLICT') { S.conflicts = {}; r.conflicts.forEach(c => { S.conflicts[c.field] = c.now; }); await render(main, S.u); toast(r.error); return; }
+      if (r.code === 'CONFLICT') { S.conflicts = {}; r.conflicts.forEach(c => { S.conflicts[c.field] = c.now; }); await rerender(); toast(r.error); return; }
       return toast(r.error);
     }
     if (later) {
@@ -276,7 +279,7 @@ function wire(main) {
     toast(mark ? 'JO ' + j.jo + ' reviewed' : 'Saved');
     if (isExt) S.ext = r.job; // opened from the dashboard: stay on it
     else if (mark) { const nx = shown().filter(x => x.jo !== j.jo)[0]; S.open = nx ? nx.jo : null; } else S.jobs[idx] = r.job;
-    render(main, S.u);
+    rerender();
   };
   if ($('#fDone')) $('#fDone').onclick = () => save(true); $('#fSave').onclick = () => save(false);
   if ($('#fNext')) $('#fNext').onclick = () => { const L = shown(), i = L.findIndex(x => x.jo === j.jo); const nx = L[i + 1] || L[0]; if (nx) { S.open = nx.jo; S.conflicts = {}; draw(main); } };

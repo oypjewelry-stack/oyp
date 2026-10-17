@@ -20,11 +20,12 @@ const ago = d => { if (!d) return ''; const n = Math.round((Date.now() - Date.pa
 const D = { r: null, cc: null, x: null, at: 0 };
 
 async function render(main, u, fresh) {
-  const { call, esc } = window.OYP;
+  const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
   const drill = (location.hash.match(/^#\/dashboard\/(\w+)(?:\/([\w-]+))?/) || []).slice(1);
   if (drill[0] && D.r && !fresh && Date.now() - D.at < 5 * 60e3) return drillPage(main, u, drill[0], drill[1] || '');
   main.innerHTML = '<h2>Dashboard</h2><p class="muted">Loading…</p>';
   const [r, cc] = await Promise.all([call('dashboard'), call('contactList')]); // contactList: JobContact.gs (absent before that paste -> no tile)
+  if (!live()) return; // the user went to another page while this loaded: leave it alone
   if (r && r.ok) { D.r = r; D.cc = cc; D.x = null; D.at = Date.now(); }
   if (drill[0] && r && r.ok) return drillPage(main, u, drill[0], drill[1] || '');
   const noCC = new Set(cc && cc.ok ? cc.missing_jos : []);
@@ -112,6 +113,7 @@ async function drillPage(main, u, kind, key) {
   const allBoard = () => r.board.reduce((a, col) => a.concat(col.cards.map(j => boardRow(j, col))), []);
   const capped = cols => cols.filter(c => c.count > c.cards.length).map(c => c.label + ': first ' + c.cards.length + ' of ' + c.count).join(' · ');
   let title = '', sub = '', chips = [], groups = null, rows = [], note = '', body = '', show = { loc: true, stage: true };
+  const live = window.OYP.here();
   main.innerHTML = '<p class="muted">Loading…</p>';
 
   if (kind === 'active' || kind === 'stage') {
@@ -172,6 +174,7 @@ async function drillPage(main, u, kind, key) {
       groups.push(['JOs marked Consigned', x ? x.jobs.filter(j => j.location === 'consigned' && !out.has(j.jo)) : []]); if (!x) body = needsPaste(); }
     groups = groups.filter(g => g[1].length); rows = groups.reduce((a, g) => a.concat(g[1]), []);
   } else { location.hash = '#/dashboard'; return; }
+  if (!live()) return; // a list (extra()) still loading after the user moved on
 
   const open = canOpen(u);
   const row = x => {

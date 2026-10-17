@@ -45,9 +45,10 @@ const blank = () => ({ jo: '', kind: 'stock', materials: [{ code: '', grams: '' 
 let S = { est: blank(), rates: null, map: null, exec: false, markups: [], quotes: null, busy: false };
 
 async function render(main, u) {
-  const { call, esc } = window.OYP; S.u = u;
+  const { call, esc } = window.OYP, live = window.OYP.here(); S.u = u; // live(): still on this route (app.js)
   main.innerHTML = '<h2>Cost estimator</h2><p class="muted">Loading rates…</p>';
   const r = await call('costRates');
+  if (!live()) return;
   if (!r || !r.ok) {
     const msg = r && r.error === 'Unknown action' ? 'The server has not been updated for the cost estimator yet.' : (r && r.error) || 'Could not load rates';
     main.innerHTML = `<h2>Cost estimator</h2><p class="muted">${esc(msg)}</p>`; return;
@@ -132,13 +133,13 @@ function wire(main) {
   main.querySelector('#eClear').onclick = () => { S.est = blank(); S.quotes = null; render(main, S.u); };
   main.querySelector('#eSave').onclick = async () => {
     const e = S.est; if (!e.jo.trim()) { toast('Type the JO number first'); return main.querySelector('[data-k=jo]').focus(); }
-    S.busy = true; draw(main);
+    S.busy = true; draw(main); const live = window.OYP.here();
     const est = { kind: e.kind, materials: e.materials, labor: e.labor, stones: e.stones };
     if (S.exec && e.your_price !== '') est.your_price = e.your_price;
     const r = await call('costSave', { jo: e.jo, estimate: est }); S.busy = false;
-    if (!r || !r.ok) { draw(main); return toast((r && r.error) || 'Could not save'); }
+    if (!r || !r.ok) { if (live()) draw(main); return toast((r && r.error) || 'Could not save'); }
     toast('Saved as v' + r.version + ' on JO ' + r.jo);
-    S.quotes = await call('costQuotes', { jo: r.jo }); draw(main);
+    S.quotes = await call('costQuotes', { jo: r.jo }); if (live()) draw(main);
   };
 }
 function refresh(main) { // keep focus while typing: redraw, then put the cursor back
