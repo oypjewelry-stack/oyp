@@ -26,7 +26,10 @@ const dLab = (day, long) => DN[dow(day)] + (long ? ', ' : ' ') + MN[Number(day.s
 const narrow = () => innerWidth < 760;
 const $ = id => document.getElementById(id);
 const isWe = day => dow(day) === 0 || dow(day) === 6;
-const offHrs = (a, h) => isWe(a.day) || a.start_min < h.open || a.start_min + a.minutes > h.close; // outside store hours (booked after a confirm)
+const hol = day => (S.r && S.r.holidays || []).find(x => x.day === day) || null; // {name, status: pending / closed / open}
+const shut = day => isWe(day) || (hol(day) && hol(day).status === 'closed'); // closed day: weekend or store holiday
+const holAsk = day => !!hol(day) && hol(day).status !== 'open'; // closed or not decided: booking needs the confirm
+const offHrs = (a, h) => isWe(a.day) || holAsk(a.day) || a.start_min < h.open || a.start_min + a.minutes > h.close; // outside store hours (booked after a confirm)
 let G = { open: 540, close: 960 }; // the hours the grid shows: store hours, stretched to fit visits booked outside them
 const S = { view: null, day: null, staff: '', r: null, key: '', open: null, form: null, back: null, busy: false };
 let U = null;
@@ -96,7 +99,7 @@ function wire(main) {
     const [day, st] = b.dataset.slot.split('|'); let start;
     if (b.dataset.y) { const box = b.getBoundingClientRect(), y = e.clientY - box.top; start = G.open + Math.floor(y / box.height * (G.close - G.open) / 30) * 30; }
     else start = Number(b.dataset.min);
-    newForm({ day, start: Math.max(r.hours.earliest || 420, Math.min(start, (r.hours.latest || 1260) - 60)), staff: st || '' }); draw(main);
+    newForm({ day, start: Math.max(r.hours.earliest || 420, Math.min(start, (r.hours.latest || 1080) - 60)), staff: st || '' }); draw(main);
   });
   const nb = $('apNew'); if (nb) nb.onclick = () => { newForm({ day: S.view === 'day' ? S.day : openDay(S.day < todayPH() ? todayPH() : S.day) }); draw(main); };
   const bk = $('apBack'); if (bk) bk.onclick = () => { S.view = S.back.view; S.day = S.back.day; S.back = null; reload(main); };
@@ -137,21 +140,21 @@ function nowLine(day) {
 }
 function weekGrid(list) {
   const { esc } = window.OYP, h = G, mon = monday(S.day), days = shown(mon), H = (h.close - h.open) / 60 * PX;
-  return `<div class="apgrid wk" style="--n:${days.length}"><div class="aphd"><span></span>${days.map(d => `<button class="apdh ${d === todayPH() ? 'today' : ''} ${isWe(d) ? 'we' : ''}" data-day="${d}"><span class="lab">${DN[dow(d)]}${isWe(d) ? ' · closed' : ''}</span><b>${Number(d.slice(8))}</b><small>${list.filter(a => a.day === d && a.status !== 'cancelled').length || ''}</small></button>`).join('')}</div>
+  return `<div class="apgrid wk" style="--n:${days.length}"><div class="aphd"><span></span>${days.map(d => `<button class="apdh ${d === todayPH() ? 'today' : ''} ${isWe(d) || holAsk(d) ? 'we' : ''}" data-day="${d}"><span class="lab">${DN[dow(d)]}${isWe(d) ? ' · closed' : ''}</span>${hol(d) ? `<span class="aphol ${hol(d).status}">${esc(hol(d).name)} · ${hol(d).status === 'pending' ? 'not decided' : hol(d).status}</span>` : ''}<b>${Number(d.slice(8))}</b><small>${list.filter(a => a.day === d && a.status !== 'cancelled').length || ''}</small></button>`).join('')}</div>
     <div class="apbody">${hoursCol()}${days.map(d => `<div class="apcol ${d < todayPH() ? 'past' : ''}" data-slot="${d}|" data-y="1" style="height:${H}px">${lines(d)}${lanes(list.filter(a => a.day === d)).map(block).join('')}${nowLine(d)}</div>`).join('')}</div></div>
-    <p class="muted apnote">Tap an empty time to book it. Tap a visit to see, move or cancel it.</p>`;
+    <p class="muted apnote">Tap an empty time to book it. Tap a visit to see, move or cancel it. Changes made in Google Calendar show here within 5 minutes.</p>`;
 }
 function lines(day) { // half-hour lines; outside store hours shaded
   const h = G, st = S.r.hours, y = m => (m - h.open) / 60 * PX; let s = '';
   for (let m = h.open + 30; m < h.close; m += 30) s += `<i class="apln ${m % 60 ? 'half' : ''}" style="top:${y(m)}px"></i>`;
   const off = (a, b) => b > a ? `<i class="apoff" style="top:${y(a)}px;height:${y(b) - y(a)}px"></i>` : '';
-  return s + (isWe(day) ? off(h.open, h.close) : off(h.open, st.open) + off(st.close, h.close));
+  return s + (isWe(day) || holAsk(day) ? off(h.open, h.close) : off(h.open, st.open) + off(st.close, h.close));
 }
 function dayGrid(list) {
   const { esc } = window.OYP, h = G, H = (h.close - h.open) / 60 * PX, d = S.day;
   const staff = S.staff ? S.r.staff.filter(s => s.username === S.staff) : S.r.staff.filter(s => list.some(a => a.day === d && a.staff === s.username)).concat(S.r.staff.filter(s => !list.some(a => a.day === d && a.staff === s.username)));
   const gone = [...new Set(list.filter(a => a.day === d && !S.r.staff.some(s => s.username === a.staff)).map(a => a.staff))];
-  const cols = staff.map(s => [s.username, s.name]).concat(gone.map(x => [x, x + ' (off)']));
+  const cols = staff.map(s => [s.username, s.name]).concat(gone.map(x => [x, x ? x + ' (off)' : 'Unassigned']));
   return `<div class="apgrid dy" style="--n:${cols.length}"><div class="aphd"><span></span>${cols.map(([k, n]) => `<div class="apdh st"><b>${esc(n)}</b><small>${list.filter(a => a.day === d && a.staff === k && a.status !== 'cancelled').length || ''}</small></div>`).join('')}</div>
     <div class="apbody">${hoursCol()}${cols.map(([k]) => `<div class="apcol ${d < todayPH() ? 'past' : ''}" data-slot="${d}|${esc(k)}" data-y="1" style="height:${H}px">${lines(d)}${lanes(list.filter(a => a.day === d && a.staff === k)).map(block).join('')}${nowLine(d)}</div>`).join('')}</div></div>
     <p class="muted apnote">One column per staff member. Tap an empty time to book it for them.</p>`;
@@ -166,9 +169,9 @@ function dayList(list) { // phone: the day as a list with the free hours in betw
   const h = S.r.hours, d = S.day, L = list.filter(a => a.day === d).sort((a, b) => a.start_min - b.start_min), out = [];
   let t = h.open; const past = d < todayPH() || (d === todayPH());
   const free = (a, b) => { for (let m = a; m + 60 <= b; m += 60) { if (d === todayPH() && m < nowMinPH()) continue; if (d < todayPH()) continue; out.push(`<button class="apfree" data-slot="${d}|" data-min="${m}"><span>${clock(m)}</span><b>+ Free · book</b></button>`); } };
-  if (!isWe(d)) { L.filter(a => a.status !== 'cancelled').forEach(a => { free(Math.min(t, h.close), Math.min(a.start_min, h.close)); t = Math.max(t, a.start_min + a.minutes); }); free(Math.min(t, h.close), h.close); }
+  if (!shut(d)) { L.filter(a => a.status !== 'cancelled').forEach(a => { free(Math.min(t, h.close), Math.min(a.start_min, h.close)); t = Math.max(t, a.start_min + a.minutes); }); free(Math.min(t, h.close), h.close); }
   const items = L.map(a => [a.start_min, card(a)]).concat(out.map(x => [Number((x.match(/data-min="(\d+)"/) || [])[1]), x])).sort((a, b) => a[0] - b[0]).map(x => x[1]);
-  return `<div class="aplist">${isWe(d) ? '<p class="muted apempty">Weekend: the store is closed. Visits booked anyway are listed here.</p>' : ''}${L.length ? '' : '<p class="muted apempty">Nothing booked yet.</p>'}${items.join('')}</div>${past && !L.length && d < todayPH() ? '' : ''}`;
+  return `<div class="aplist">${isWe(d) ? '<p class="muted apempty">Weekend: the store is closed. Visits booked anyway are listed here.</p>' : hol(d) ? `<p class="muted apempty aphold">Holiday: ${window.OYP.esc(hol(d).name)} · ${hol(d).status === 'closed' ? 'store closed' : hol(d).status === 'open' ? 'store open' : 'not decided yet (bookings need a confirm)'}</p>` : ''}${L.length ? '' : '<p class="muted apempty">Nothing booked yet.</p>'}${items.join('')}</div>${past && !L.length && d < todayPH() ? '' : ''}`;
 }
 function weekList(list) { // phone week: a list per day
   const mon = monday(S.day);
@@ -181,7 +184,7 @@ function monthView(list) {
   const n = narrow(), K = list.some(a => a.day >= from && a.day <= to && isWe(a.day) && a.status !== 'cancelled') ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4];
   return `<div class="apmonth ${n ? 'ph' : ''}" style="--n:${K.length}"><div class="apmh">${K.map(k => `<span class="lab">${DN[(k + 1) % 7]}</span>`).join('')}</div>
     ${weeks.map(w => `<div class="apmw">${K.map(k => { const d = addD(w, k), L = list.filter(a => a.day === d && a.status !== 'cancelled').sort((a, b) => a.start_min - b.start_min);
-      return `<button class="apmd ${isWe(d) ? 'we' : ''} ${d.slice(0, 7) !== m ? 'out' : ''} ${d === todayPH() ? 'today' : ''} ${d < todayPH() ? 'past' : ''}" data-day="${d}"><span class="apmn">${Number(d.slice(8))}</span>
+      return `<button class="apmd ${isWe(d) || holAsk(d) ? 'we' : ''} ${d.slice(0, 7) !== m ? 'out' : ''} ${d === todayPH() ? 'today' : ''} ${d < todayPH() ? 'past' : ''}" data-day="${d}"><span class="apmn">${Number(d.slice(8))}</span>${hol(d) ? `<span class="aphol ${hol(d).status}">${n ? '●' : esc(hol(d).name) + (hol(d).status === 'closed' ? ' · closed' : hol(d).status === 'open' ? ' · open' : ' · not decided')}</span>` : ''}
         ${n ? `<span class="apmdots">${L.slice(0, 6).map(a => `<i class="apdot t-${a.type}"></i>`).join('')}</span>${L.length ? `<small>${L.length}</small>` : ''}`
           : L.slice(0, 3).map(a => `<span class="apmi"><i class="apdot t-${a.type}"></i>${clock(a.start_min, true)} ${esc(a.client_name.split(' ')[0])}</span>`).join('') + (L.length > 3 ? `<span class="apmore">+${L.length - 3} more</span>` : '')}</button>`; }).join('')}</div>`).join('')}
   </div><p class="muted apnote">${K.length === 7 ? 'Sat / Sun are shown because a visit is booked on a weekend.' : 'Weekends are closed, so only Monday to Friday are shown.'} Tap a day to open it.</p>`;
@@ -191,7 +194,7 @@ function monthView(list) {
 function sheet(a) {
   const { esc } = window.OYP, can = a.status !== 'cancelled' && S.r.setup;
   return `<div class="ivsheet" id="apSheet"><div class="ivsbox apsbox"><button class="lnk dback" id="apSX">‹ BACK</button>
-    <div class="apsh t-${a.type}"><span class="chip">${esc(tLab(a.type))}</span>${offHrs(a, S.r.hours) ? ' <span class="chip gold">Outside store hours</span>' : ''}${a.status === 'cancelled' ? ' <span class="chip">Cancelled</span>' : ''}${a.source === 'telegram' ? ' <span class="chip">Telegram</span>' : ''}
+    <div class="apsh t-${a.type}"><span class="chip">${esc(tLab(a.type))}</span>${offHrs(a, S.r.hours) ? ' <span class="chip gold">Outside store hours</span>' : ''}${a.status === 'cancelled' ? ' <span class="chip">Cancelled</span>' : ''}${a.source === 'telegram' ? ' <span class="chip">Telegram</span>' : ''}${a.source === 'calendar' ? ' <span class="chip">Added in Google Calendar</span>' : a.updated_by === 'calendar' ? ' <span class="chip">Changed in Google Calendar</span>' : ''}${!a.staff ? ' <span class="chip red">No staff: pick one</span>' : ''}
     <h3>${esc(a.client_name)}</h3><p class="apwhen">${dLab(a.day, true)} · ${clock(a.start_min)}–${clock(a.start_min + a.minutes)} <span class="muted">(${dur(a.minutes)})</span></p></div>
     <div class="ivfs"><div class="ivf"><span class="lab">Staff</span><b>${esc(a.staff_name)}</b></div><div class="ivf"><span class="lab">JO</span><b>${esc(a.jo) || '—'}</b></div>
     <div class="ivf"><span class="lab">Mobile</span><b>${esc(a.client_phone) || '—'}</b></div><div class="ivf"><span class="lab">Email</span><b class="apem">${esc(a.client_email) || '—'}</b></div></div>
@@ -227,13 +230,13 @@ function newForm(o) {
   const st = S.r.staff.some(s => s.username === (o.staff || U.username)) ? (o.staff || U.username) : '';
   let start = o.start != null ? o.start : 600;
   if (o.day === todayPH() && start <= nowMinPH()) start = Math.ceil((nowMinPH() + 1) / 30) * 30;
-  S.form = { id: '', type: '', day: o.day, start: Math.min(start, S.r.hours.close - 60), minutes: S.r.default_min, staff: st, jo: '', notes: '', client: null, q: '', hits: null, newc: null, warn: null, force: false };
+  S.form = { id: '', type: '', day: o.day, start: Math.min(start, (S.r.hours.latest || 1080) - 60), minutes: S.r.default_min, staff: st, jo: '', notes: '', client: null, q: '', hits: null, newc: null, warn: null, force: false };
   S.open = null;
 }
 function lens(type) { const min = (S.r.min_min || {})[type] || 60, out = []; for (let m = min; m <= 420; m += min < 60 ? 15 : 30) out.push(m); if (type === 'appraisal') return out; return out.filter(m => m >= 60); }
 function formSheet() {
   const { esc } = window.OYP, f = S.form, h = S.r.hours, c = f.client;
-  const starts = [], lo = h.earliest || 420, hi = h.latest || 1260; for (let m = lo; m < hi; m += h.step) starts.push(m);
+  const starts = [], lo = h.earliest || 420, hi = h.latest || 1080; for (let m = lo; m < hi; m += h.step) starts.push(m);
   const L = lens(f.type || 'fitting');
   const cl = c ? `<div class="apclient"><div><b class="cn">${esc(c.name)}</b>${c.client_id ? '' : ' <span class="chip gold">New client</span>'}
       <div class="aps">${esc(c.phone || '')}${c.phone && c.email ? ' · ' : ''}${esc(c.email || '')}</div></div>${f.locked ? '' : '<button class="lnk" id="apCChange">Change</button>'}</div>
@@ -265,7 +268,7 @@ function formSheet() {
       <label class="fsec"><span class="lab">Staff</span><select id="apS"><option value="">Pick…</option>${S.r.staff.map(s => `<option value="${esc(s.username)}" ${s.username === f.staff ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label></div>
     <div class="fgrid"><label class="fsec"><span class="lab">Start</span><select id="apT">${starts.map(m => `<option value="${m}" ${m === f.start ? 'selected' : ''}>${clock(m)}${m < h.open || m >= h.close ? ' · outside hours' : ''}</option>`).join('')}</select></label>
       <label class="fsec"><span class="lab">Length${f.type === 'appraisal' ? ' · any' : ''}</span><select id="apL">${L.map(m => `<option value="${m}" ${m === f.minutes ? 'selected' : ''}>${dur(m)}${m === 60 ? ' (usual)' : ''}</option>`).join('')}</select></label></div>
-    <p class="apend">Until ${clock(f.start + f.minutes)}${offHrs({ day: f.day, start_min: f.start, minutes: f.minutes }, h) ? ` · <span class="apoffn">${isWe(f.day) ? 'weekend, ' : ''}outside store hours (Mon–Fri 9–4): you will be asked to confirm</span>` : ''}${f.start + f.minutes > hi ? ' · <span class="red">past 9:00 PM</span>' : ''}</p>
+    <p class="apend">Until ${clock(f.start + f.minutes)}${offHrs({ day: f.day, start_min: f.start, minutes: f.minutes }, h) ? ` · <span class="apoffn">${isWe(f.day) ? 'weekend, ' : hol(f.day) ? esc(hol(f.day).name) + ', ' : ''}outside store hours (Mon–Fri 9–4): you will be asked to confirm</span>` : ''}${f.start + f.minutes > hi ? ' · <span class="red">past 6:00 PM</span>' : ''}</p>
     <div class="fgrid"><label class="fsec"><span class="lab">JO · optional</span><input id="apJ" value="${esc(f.jo)}" placeholder="26-101"></label>
       <label class="fsec"><span class="lab">Notes · staff only</span><input id="apNo" value="${esc(f.notes)}" placeholder="not in the invite"></label></div>
     <div id="apWarn">${warn}</div>
@@ -315,7 +318,7 @@ async function save(main, force) {
   if (f.newc && !f.newc.name.trim()) return toast('Type the new client’s name');
   if (f.newc && !f.newc.email.trim() && !f.newc.mobile.trim()) return toast('New client: add their email or mobile');
   if (!f.staff) return toast('Pick the staff member');
-  if (f.start + f.minutes > (S.r.hours.latest || 1260)) return toast('That runs past 9:00 PM. Pick an earlier start or a shorter length.');
+  if (f.start + f.minutes > (S.r.hours.latest || 1080)) return toast('That runs past 6:00 PM. Pick an earlier start or a shorter length.');
   if (S.busy) return; S.busy = true; const live = window.OYP.here(); const b = $('apSave'); if (b) b.disabled = true;
   const r = await window.OYP.call('apptSave', payload(force, false)); S.busy = false;
   if (!live() || S.form !== f) return;

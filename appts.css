@@ -62,3 +62,5 @@
 .apoff{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#f6f6f6 0 6px,#fdfdfd 6px 12px);pointer-events:none;z-index:0}
 .apblk{z-index:1}.apdh.we .lab,.apmd.we .apmn{color:#a0782c}.apmd.we{background:#fcfbf7}
 .apinv.off{color:#8a6d1f;margin-right:8px}.apoffn{color:#8a6d1f}
+.aphol{display:block;font-size:10.5px;line-height:1.25;color:#a0782c;font-family:var(--label);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aphol.open{color:#5c7d5c}.aphol.pending{color:#b3261e}.apmd .aphol{margin:1px 0 2px}.aphold{color:#8a6d1f}.chip.red{color:#b3261e;border-color:#b3261e}
