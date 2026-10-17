@@ -197,12 +197,12 @@ async function drillPage(main, u, kind, key) {
   const list = () => {
     if (body) return body;
     const G = groups || [[null, rows]];
-    const out = G.map(([lab, L, href]) => { L = L.filter(hit); if (!L.length && lab) return ''; return (lab ? `<div class="dgrp">${href ? `<a href="${href}" class="lab">${esc(lab)} ›</a>` : `<span class="lab">${esc(lab)}</span>`}<span class="kn">${L.length}</span></div>` : '') + L.map(row).join(''); }).join('');
+    const out = G.map(([lab, L, href]) => { L = L.filter(hit); if (!L.length && lab) return ''; return (lab ? `<div class="dgrp">${href ? `<a href="${href}" class="lab">${esc(lab)} ›</a>` : `<span class="lab">${esc(lab)}</span>`}<span class="kn">${esc(plural(L.length, 'item'))}</span></div>` : '') + L.map(row).join(''); }).join('');
     return out || `<p class="muted rvnone">${q() ? 'No match.' : 'Nothing here.'}</p>`;
   };
   const n = new Set(rows.map(x => x.jo || x.item)).size;
   main.innerHTML = `<div class="drill"><a class="lnk dback tap" href="#/dashboard">‹ Dashboard</a>
-    <div class="dhead"><h2>${esc(title)}</h2><span class="lab">${body && !rows.length ? '' : esc(plural(n, kind === 'consigned' || kind === 'overdue' ? 'item' : 'JO'))}</span></div>
+    <div class="dhead"><h2>${esc(title)}</h2><span class="lab">${body && !rows.length ? '' : esc(plural(n, 'item'))}</span></div>
     <p class="muted">${esc(sub)}</p>
     ${chips.length ? `<div class="rvchips">${chips.map(([h, lab, cnt, on]) => `<a class="fchip tap ${on ? 'on' : ''}" href="${h}">${esc(lab)} <b>${esc(cnt)}</b></a>`).join('')}</div>` : ''}
     ${rows.length > 6 ? '<input id="drQ" class="rvq" placeholder="Search JO, client or description">' : ''}
