@@ -18,9 +18,30 @@ const fmtPhone = v => { const t = String(v || '').trim(), d = t.replace(/\D/g, '
   return /^9\d{9}$/.test(m) && !/^\+(?!63)/.test(t) ? '0' + m.slice(0, 3) + ' ' + m.slice(3, 6) + ' ' + m.slice(6) : t; };
 const ccChip = jo => noContact(jo) ? '<span class="chip gold nocc" title="No mobile or email on file: the client can\'t use Track my order">No client contact</span>' : '';
 
+// JO card scans are shown landscape. Older scans (uploaded before the scanner turned pages) are portrait: the card was
+// shot on its side, usually 90° counter-clockwise, so a portrait page is turned 90° clockwise. If a page was shot the other
+// way, ROTATE in the photo viewer turns it and this device remembers that turn for the page (thumbnails too).
+// Display only: the Drive files are never changed. Only the JO card scan set (jobPhoto) passes through here.
+const ROT_KEY = 'oypCardRot', rawCache = {};
+const extraTurn = fid => { try { return (JSON.parse(localStorage.getItem(ROT_KEY) || '{}')[fid] || 0) % 360; } catch (_) { return 0; } };
+function setExtraTurn(fid, deg) { try { const m = JSON.parse(localStorage.getItem(ROT_KEY) || '{}'); if (deg % 360) m[fid] = deg % 360; else delete m[fid]; localStorage.setItem(ROT_KEY, JSON.stringify(m)); } catch (_) {} }
+function turn(src, extra) {
+  if (!src) return Promise.resolve(src);
+  return new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      const w = im.naturalWidth, h = im.naturalHeight, d = ((h > w ? 90 : 0) + extra) % 360; if (!d) return res(src);
+      try { const c = document.createElement('canvas'), side = d % 180 !== 0; c.width = side ? h : w; c.height = side ? w : h;
+        const x = c.getContext('2d'); x.translate(c.width / 2, c.height / 2); x.rotate(d * Math.PI / 180); x.drawImage(im, -w / 2, -h / 2);
+        res(c.toDataURL('image/jpeg', 0.9)); } catch (_) { res(src); }
+    };
+    im.onerror = () => res(src); im.src = src;
+  });
+}
 function photo(jo, fid, size) {
-  const k = fid + '|' + (size || 'thumb');
-  if (!photoCache[k]) photoCache[k] = window.OYP.call('jobPhoto', { jo, file_id: fid, size }).then(r => (r && r.ok && r.src) || '');
+  const r = fid + '|' + (size || 'thumb'), e = extraTurn(fid), k = r + '|' + e;
+  if (!rawCache[r]) rawCache[r] = window.OYP.call('jobPhoto', { jo, file_id: fid, size }).then(x => (x && x.ok && x.src) || '');
+  if (!photoCache[k]) photoCache[k] = rawCache[r].then(src => turn(src, e));
   return photoCache[k];
 }
 const locChip = j => { const { esc } = window.OYP;
@@ -225,10 +246,12 @@ function wire(main) {
   const back = $('[data-back]'); if (back) back.onclick = () => { S.open = null; draw(main); };
   main.querySelectorAll('[data-big]').forEach(b => b.onclick = async () => {
     const big = main.querySelector('#rvBig'); big.innerHTML = '<span class="lab">Loading photo…</span>'; big.classList.remove('hidden');
-    const src = await photo(j.jo, b.dataset.big, 'full'); big.innerHTML = src ? `<img src="${src}" alt=""><button class="pill sm rot">ROTATE</button>` : '<span class="lab">Photo not found</span>';
-    let deg = 0; const rot = big.querySelector('.rot');
-    if (rot) rot.onclick = e => { e.stopPropagation(); deg = (deg + 90) % 360; big.querySelector('img').style.transform = `rotate(${deg}deg)`; };
-    big.onclick = () => big.classList.add('hidden');
+    const fid = b.dataset.big, src = await photo(j.jo, fid, 'full'); big.innerHTML = src ? `<img src="${src}" alt=""><button class="pill sm rot">ROTATE</button>` : '<span class="lab">Photo not found</span>';
+    let turned = false; const rot = big.querySelector('.rot');
+    if (rot) rot.onclick = async e => { e.stopPropagation(); setExtraTurn(fid, extraTurn(fid) + 90); turned = true; // remembered on this device
+      const s2 = await photo(j.jo, fid, 'full'), im = big.querySelector('img'); if (im && s2) im.src = s2; };
+    big.onclick = () => { big.classList.add('hidden'); if (turned) { const ph = main.querySelector(`.shot [data-ph$="|${CSS.escape(fid)}"]`), th = document.querySelector(`.rvrow [data-th$="|${CSS.escape(fid)}"]`);
+      [ph, th].forEach(el => el && photo(j.jo, fid).then(s3 => { if (s3) el.style.backgroundImage = `url("${s3}")`; })); } };
   });
   main.querySelectorAll('[data-loc]').forEach(b => b.onclick = () => { st.location = b.dataset.loc; main.querySelectorAll('[data-loc]').forEach(x => x.classList.toggle('on', x === b)); filled(b); });
   main.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { st.type = st.type === b.dataset.type ? '' : b.dataset.type; main.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x.dataset.type === st.type)); if (st.type) filled(b); });
