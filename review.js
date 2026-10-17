@@ -9,7 +9,9 @@ const SPECIFIC = ['metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade',
 const TYPES = [['new', 'New job'], ['repair', 'Repair'], ['revision', 'Revision']];
 const STATUS = [['', 'Automatic (from location)'], ['draft', 'Draft'], ['active', 'Active'], ['done', 'Done'], ['picked_up', 'Picked up'], ['cancelled', 'Cancelled']];
 const photoCache = {};
-let S = { jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {} };
+// A JO opened from a dashboard list (dash.js) that is not a draft: shown in the same panel, fetched with dashDrill {what:'job'} (DashboardDrill.gs).
+const cur = () => S.open ? (S.jobs.find(j => j.jo === S.open) || (S.ext && S.ext.jo === S.open ? S.ext : null)) : null;
+let S = { ext: null, back: null, jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {} };
 // Client phone/email live on the client linked to the JO (JobContact.gs). Before that paste, contactList is unknown and the section just explains.
 const noContact = jo => !!(S.contact && S.contact[jo] && !S.contact[jo].has_contact && S.contact[jo].location !== 'archived');
 const fmtPhone = v => { const t = String(v || '').trim(), d = t.replace(/\D/g, ''); let m = /^63\d{10}$/.test(d) ? d.slice(2) : /^0\d{10}$/.test(d) ? d.slice(1) : d;
@@ -44,7 +46,13 @@ async function render(main, u) {
     main.innerHTML = `<h2>To review</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for card reviews yet.' : (r && r.error) || 'Could not load')}</p>`; return;
   }
   S.jobs = r.jobs; S.locations = r.locations; S.itemTypes = r.item_types || []; S.canPhone = r.can_see_phone; S.u = u;
-  if (S.open && !S.jobs.some(j => j.jo === S.open)) S.open = null;
+  let ask = null; try { const o = sessionStorage.getItem('oypReviewOpen'); if (o) { sessionStorage.removeItem('oypReviewOpen'); ask = JSON.parse(o); } } catch (_) {}
+  if (ask && ask.jo) { S.open = ask.jo; S.back = ask.back ? { hash: ask.back, label: ask.label || 'Back' } : null; S.ext = { jo: ask.jo, stub: true, row: ask.row || {} }; S.conflicts = {}; }
+  if (S.ext && S.ext.jo === S.open && !S.jobs.some(j => j.jo === S.open)) { // not a draft: fetch the full JO (needs DashboardDrill.gs)
+    const g = await call('dashDrill', { what: 'job', jo: S.open });
+    if (g && g.ok && g.job) S.ext = g.job; else if (!S.ext.stub) S.ext = { jo: S.open, stub: true, row: S.ext, err: g && g.error }; else S.ext.err = g && g.error;
+  } else if (S.ext && S.jobs.some(j => j.jo === S.ext.jo)) S.ext = null; // it is a draft: the normal card
+  if (S.open && !cur()) S.open = null;
   if (!S.open && innerWidth >= 900) { const f = shown()[0]; if (f) S.open = f.jo; } // desktop: show the first card right away
   draw(main);
 }
@@ -97,18 +105,28 @@ function draw(main) {
       </div>`).join('') || `<p class="muted rvnone">${S.jobs.length ? 'Nothing in this view.' : 'Nothing to review. New scans show up here.'}</p>`}</div>
     ${otherHits()}
   </div>
-  <div class="rvpanel" id="rvPanel">${S.open ? panel(S.jobs.find(j => j.jo === S.open)) : '<div class="rvempty"><span class="lab">Pick a card on the left</span></div>'}</div>
+  <div class="rvpanel" id="rvPanel">${S.open ? panel(cur()) : '<div class="rvempty"><span class="lab">Pick a card on the left</span></div>'}</div>
   </div><div id="rvBig" class="rvbig hidden"></div>`;
   wire(main);
 }
 
+function backBtn() { const { esc } = window.OYP; return S.back ? `<button class="lnk rvback dback" data-dback>‹ ${esc(S.back.label)}</button>` : '<button class="lnk rvback" data-back>‹ All cards</button>'; }
+function stubPanel(j) { // pre-paste: what the dashboard knew, read-only
+  const { esc } = window.OYP, r = j.row || {};
+  return `<div class="rvp">${backBtn()}<div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">From the dashboard</span></div>
+    <p class="kd">${esc(r.description || 'No details')}${r.client ? ' · ' + esc(r.client) : ''}</p>
+    <div class="kf">${r.location ? `<span class="chip dark">${esc(locLabel(r.location))}</span>` : ''}${r.stage_label ? `<span class="chip">${esc(r.stage_label)}</span>` : ''}${r.due ? `<span class="chip ${r.late ? 'gold' : ''}">${r.late ? 'Late · ' : 'Due '}${esc(r.due)}</span>` : ''}</div>
+    <p class="muted fnote">${esc(j.err === 'Unknown action' || !j.err ? 'The full JO (photos and editing) opens here once DashboardDrill is pasted in Apps Script.' : j.err)}</p></div>`;
+}
 function panel(j) {
+  if (j.stub) return stubPanel(j);
+  const ext = S.ext && S.ext.jo === j.jo;
   const { esc } = window.OYP, miss = k => j.missing.includes(k), cf = S.conflicts;
   const flag = k => (cf[k] ? `<span class="flag c">Changed by someone: now “${esc(cf[k])}”</span>` : miss(k) ? '<span class="flag">Missing</span>' : '');
   const fcls = k => (cf[k] ? 'conf' : miss(k) ? 'miss' : '');
   const fld = (k, lab, input) => `<div class="fsec ${fcls(k)}" data-f1="${k}"><div class="flab"><span class="lab">${esc(lab)}</span>${cf[k] ? flag(k) : ''}</div>${input}</div>`;
   return `<div class="rvp">
-    <button class="lnk rvback" data-back>‹ All cards</button>
+    ${backBtn()}
     <div class="dhead"><h2>JO ${esc(j.jo)}${j.location === 'archived' ? ' <span class="chip arch big" title="JO on record, no physical piece">Archived</span>' : ''}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
     <div class="shots">${j.pages.map(p => `<button class="shot" data-big="${esc(p.file_id)}"><span class="ph" data-ph="${esc(j.jo)}|${esc(p.file_id)}"></span><span class="lab">Page ${p.page}</span></button>`).join('') || '<span class="muted">No photos</span>'}</div>
     <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
@@ -140,7 +158,7 @@ function panel(j) {
     <datalist id="dlMat"><option>Gold scrap</option><option>Gold grain</option><option>Silver scrap</option><option>Silver grain</option><option>Platinum</option><option>Findings</option><option>Chain</option></datalist>
     <datalist id="dlMetal"><option>Gold</option><option>Silver</option><option>Platinum</option><option>Palladium</option><option>Two-tone</option><option>Other</option></datalist>
     <datalist id="dlKarat"><option>24k</option><option>22k</option><option>18k</option><option>14k</option><option>10k</option><option>925</option><option>999</option></datalist>
-    <div class="fbtns"><button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button><button class="pill outline" id="fSave">SAVE</button><button class="lnk" id="fNext">Next card ›</button></div>
+    <div class="fbtns">${ext && j.review_state !== 'draft' ? '' : '<button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button>'}<button class="pill outline" id="fSave">SAVE</button>${ext ? '' : '<button class="lnk" id="fNext">Next card ›</button>'}</div>
     <p class="muted fnote">${j.scanned_at ? 'Scanned ' + esc(new Date(j.scanned_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + ' PHT · ' : ''}Saving never replaces something another person changed in the meantime.</p>
   </div>`;
 }
@@ -174,13 +192,15 @@ function wire(main) {
     }
     toast(r.set.length + ' set to ' + locLabel(loc)); S.sel.clear(); render(main, S.u);
   };
-  main.querySelectorAll('.rvrow').forEach(row => row.onclick = () => { S.open = row.dataset.jo; S.conflicts = {}; draw(main); if (innerWidth < 900) scrollTo(0, 0); });
+  main.querySelectorAll('.rvrow').forEach(row => row.onclick = () => { if (!row.dataset.jo) return; S.back = null; S.open = row.dataset.jo; S.conflicts = {}; draw(main); if (innerWidth < 900) scrollTo(0, 0); });
   // lazy thumbnails
   const io = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; io.unobserve(e.target);
     const [jo, fid] = (e.target.dataset.th || e.target.dataset.ph).split('|'); if (!fid) return;
     photo(jo, fid).then(src => { if (src) e.target.style.backgroundImage = `url("${src}")`; }); }), { rootMargin: '200px' });
   main.querySelectorAll('[data-th],[data-ph]').forEach(el => io.observe(el));
-  const j = S.open && S.jobs.find(x => x.jo === S.open); if (!j) return;
+  const db = $('[data-dback]'); if (db) db.onclick = () => { const h = S.back.hash; S.back = null; S.ext = null; S.open = null; location.hash = h; };
+  const j = cur(); if (!j || j.stub) return;
+  const isExt = S.ext && S.ext.jo === j.jo;
   const st = { location: j.location, type: j.type, client_id: j.client_id, item_type: j.item_type, newClient: null };
   const kindFields = k => { const t = S.itemTypes.find(x => x[0] === k); return t ? t[2].concat(KIND_EXTRA[k] || []) : []; };
   const flagged = k => { const t = S.itemTypes.find(x => x[0] === st.item_type); return !!t && t[2].includes(k); };
@@ -254,11 +274,12 @@ function wire(main) {
     }
     S.conflicts = {}; const idx = S.jobs.findIndex(x => x.jo === j.jo);
     toast(mark ? 'JO ' + j.jo + ' reviewed' : 'Saved');
-    if (mark) { const nx = shown().filter(x => x.jo !== j.jo)[0]; S.open = nx ? nx.jo : null; } else S.jobs[idx] = r.job;
+    if (isExt) S.ext = r.job; // opened from the dashboard: stay on it
+    else if (mark) { const nx = shown().filter(x => x.jo !== j.jo)[0]; S.open = nx ? nx.jo : null; } else S.jobs[idx] = r.job;
     render(main, S.u);
   };
-  $('#fDone').onclick = () => save(true); $('#fSave').onclick = () => save(false);
-  $('#fNext').onclick = () => { const L = shown(), i = L.findIndex(x => x.jo === j.jo); const nx = L[i + 1] || L[0]; if (nx) { S.open = nx.jo; S.conflicts = {}; draw(main); } };
+  if ($('#fDone')) $('#fDone').onclick = () => save(true); $('#fSave').onclick = () => save(false);
+  if ($('#fNext')) $('#fNext').onclick = () => { const L = shown(), i = L.findIndex(x => x.jo === j.jo); const nx = L[i + 1] || L[0]; if (nx) { S.open = nx.jo; S.conflicts = {}; draw(main); } };
 }
-window.OYPReview = { render };
+window.OYPReview = { render: (main, u) => { S.back = null; S.ext = null; return render(main, u); } }; // a fresh visit forgets a dashboard JO (dash.js hands one over via sessionStorage)
 })();
