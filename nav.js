@@ -7,10 +7,10 @@ const STAFF = 'https://oypjewelry.com/staff/';
 const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
 const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
+  admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['production', 'Production'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
   production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Inventory (view)']],
-  staff: [['home', 'Home'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments opens in the back office
+  staff: [['home', 'Home'], ['production', 'Production'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Production + Appointments open in the back office
 };
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
 // link to the scanner that tells it whose menu to show (the role only picks menu items; every page still checks the sign-in)
