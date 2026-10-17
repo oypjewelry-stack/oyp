@@ -18,14 +18,20 @@ async function render(main, u) {
   }
   const c = r.counts, can = r.can, pb = c.pending_breakdown;
   const when = new Date(r.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const pendNote = [pb.reviews && plural(pb.reviews, 'to review'), pb.past_due && pb.past_due + ' past due', pb.payments && plural(pb.payments, 'payment') + ' to confirm'].filter(Boolean).join(' · ') || 'All clear';
+  const pendNote = [pb.reviews && pb.reviews + ' to review', pb.past_due && pb.past_due + ' past due', pb.payments && plural(pb.payments, 'payment') + ' to confirm'].filter(Boolean).join(' · ') || 'All clear';
   const tile = (lab, val, note, cls = '') => `<div class="kpi ${cls}"><span class="lab">${esc(lab)}</span><b>${esc(val)}</b><small>${esc(note || '')}</small></div>`;
   let h = `<div class="dhead"><h2>Dashboard</h2><button class="lnk" id="dRef">Refresh</button></div><p class="muted">${esc(when)} PHT</p>
-  <div class="kpis">${tile('Active jobs', c.active_jobs, plural(r.board.reduce((s, b) => s + b.count, 0), 'open job'))}
+  <div class="kpis">${tile('Active jobs', c.active_jobs, r.locations ? 'being worked on' : plural(r.board.reduce((s, b) => s + b.count, 0), 'open job'))}
   ${tile('Pending work', c.pending_work, pendNote, c.pending_work ? 'warn' : '')}
   ${can.consign ? tile('Consigned out', c.consigned_out, plural(new Set((r.consignments || []).map(x => x.consignee)).size, 'consignee')) : ''}
   ${can.consign ? tile('Overdue', c.overdue_consignments, 'out over ' + r.overdue_days + ' days', c.overdue_consignments ? 'gold' : '') : ''}
   ${can.sales ? tile(monthName(r.sales.month) + ' sales', peso(c.month_sales), 'confirmed payments') : ''}</div>`;
+
+  if (r.locations) {
+    const unset = r.locations.find(l => l.key === 'unset');
+    h += `<section class="dcard"><div class="dtitle"><h3>Where pieces are</h3><span class="lab">All JOs by location</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
+      `<div class="lc ${l.key === 'working' ? 'cur' : ''}"><b>${l.count}</b><span class="lab">${esc(l.label)}</span></div>`).join('')}${unset && unset.count ? `<a class="lc gold" href="#/review"><b>${unset.count}</b><span class="lab">No location yet ›</span></a>` : ''}</div></section>`;
+  }
 
   if (can.sales) {
     const max = Math.max(1, ...r.sales.months.map(m => m.total));
@@ -33,7 +39,7 @@ async function render(main, u) {
       `<div class="bar${i === a.length - 1 ? ' cur' : ''}"><span class="v">${esc(short(m.total))}</span><i style="height:${Math.max(2, Math.round(m.total / max * 100))}%"></i><span class="lab">${esc(monthName(m.month))}</span></div>`).join('')}</div></section>`;
   }
 
-  h += `<section class="dcard"><div class="dtitle"><h3>Job board</h3><span class="lab">By stage · late first</span></div><div class="kanban">${r.board.map(col => `
+  h += `<section class="dcard"><div class="dtitle"><h3>Job board</h3><span class="lab">${r.locations ? 'Being worked on · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
     <div class="kcol"><div class="khead"><span class="lab">${esc(col.label)}</span><span class="kn">${col.count}</span></div>${col.cards.map(j => `
       <div class="kcard${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
       <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}

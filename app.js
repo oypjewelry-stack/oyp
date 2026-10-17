@@ -69,12 +69,12 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['jos', 'Job orders'], ['scanner', 'Scanner'], ['inventory', 'Inventory'], ['prices', 'Material prices'], ['clients', 'Clients'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
-  production_manager: [['dashboard', 'Dashboard'], ['jos', 'Job orders'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Inventory'], ['prices', 'Material prices']],
+  admin: [['dashboard', 'Dashboard'], ['review', 'To review'], ['jos', 'Job orders'], ['scanner', 'Scanner'], ['inventory', 'Inventory'], ['prices', 'Material prices'], ['clients', 'Clients'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
+  production_manager: [['dashboard', 'Dashboard'], ['review', 'To review'], ['jos', 'Job orders'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Inventory'], ['prices', 'Material prices']],
   accounting: [['dashboard', 'Dashboard'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Job orders (view)']]
 };
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
-const DONE = { dashboard: true, users: true, scanner: true, customers: true, shop: true };
+const DONE = { dashboard: true, review: true, users: true, scanner: true, customers: true, shop: true };
 
 function show(id) { ['vLogin', 'vStaff', 'vOffice'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
 function route() {
@@ -92,6 +92,7 @@ function route() {
     + `<div class="who"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><button class="pill outline" data-logout>LOG OUT</button></div>`;
   const title = nav.find(n => n[0] === page)[1];
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
+  if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
   if (page === 'users') return usersPage();
   if (page === 'customers') return customersPage();
   if (page === 'shop') return shopPage();
