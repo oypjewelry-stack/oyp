@@ -67,22 +67,18 @@ document.addEventListener('click', e => {
 });
 
 /* ---------- role menus ---------- */
-const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
-const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
-  production_manager: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials'], ['prices', 'Material prices']],
-  accounting: [['dashboard', 'Dashboard'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Inventory (view)']]
-};
-const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
+const { SCANNER, NAV, ROLE_LABEL, scannerLink } = window.OYPNav; // nav.js: same menu in the scanner
+const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
 const DONE = { dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
 
 function show(id) { ['vLogin', 'vStaff', 'vOffice'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
 function route() {
   $('menu').classList.add('hidden');
+  if (location.hash === '#/logout') { history.replaceState(null, '', location.pathname); if (user()) return logout(); } // Log out from the scanner menu
   const u = user();
   if (!u) { show('vLogin'); $('title').textContent = 'Sign in'; return; }
   if (u.role === 'staff' || !NAV[u.role]) {
-    show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; return;
+    show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
   }
   show('vOffice'); $('title').textContent = 'Back office';
   const nav = NAV[u.role], cur = (location.hash.match(/^#\/(\w+)/) || [])[1];
@@ -90,7 +86,7 @@ function route() {
   const want = nav.some(n => n[0] === cur) ? cur : ALIAS[cur] && nav.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
   const page = want || nav[0][0];
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  $('side').innerHTML = nav.map(([k, t]) => k === 'scanner' ? `<a href="${SCANNER}" target="_blank" rel="noopener">${esc(t)} ↗</a>`
+  $('side').innerHTML = nav.map(([k, t]) => k === 'scanner' ? `<a href="${scanUrl()}" target="_blank" rel="noopener">${esc(t)} ↗</a>`
     : `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`).join('')
     + `<div class="who"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><button class="pill outline" data-logout>LOG OUT</button></div>`;
   const title = nav.find(n => n[0] === page)[1];
@@ -107,8 +103,8 @@ $('btnMenu').onclick = () => {
   const u = user(), m = $('menu');
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
   m.innerHTML = !u ? `<a href="${SCANNER}">Card scanner</a>`
-    : (u.role === 'staff' || !NAV[u.role] ? `<a href="${SCANNER}">Scan JO card</a>`
-      : NAV[u.role].map(([k, t]) => `<a href="${k === 'scanner' ? SCANNER : '#/' + k}">${esc(t)}</a>`).join('')) + '<button data-logout>Log out</button>';
+    : (u.role === 'staff' || !NAV[u.role] ? `<a href="${scanUrl()}">Scan JO card</a>`
+      : NAV[u.role].map(([k, t]) => `<a href="${k === 'scanner' ? scanUrl() : '#/' + k}">${esc(t)}</a>`).join('')) + '<button data-logout>Log out</button>';
   m.classList.remove('hidden');
 };
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu')) $('menu').classList.add('hidden'); });
