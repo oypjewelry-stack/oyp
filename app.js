@@ -69,7 +69,7 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const { SCANNER, NAV, ROLE_LABEL, scannerLink } = window.OYPNav; // nav.js: same menu in the scanner
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
-const DONE = { prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true };
+const DONE = { prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true };
 
 // Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
 // reply for a page the user already left (e.g. the dashboard still loading) never draws over the page they are on now.
@@ -99,6 +99,8 @@ function route() {
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
   if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
+  if (page === 'jos' && window.OYPInv) return window.OYPInv.renderJos($('main'), u); // inv.js: Inventory (all JOs / pieces)
+  if (page === 'inventory' && window.OYPInv) return window.OYPInv.renderMats($('main'), u); // inv.js: Materials (raw stock)
   if (page === 'users') return usersPage();
   if (page === 'customers') return customersPage();
   if (page === 'shop') return shopPage();
@@ -302,7 +304,7 @@ async function shopPage() {
   $('slist').outerHTML = r.items.length ? `<table><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">Price</span></th><th><span class="lab">JO</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${r.items.map(i => `<tr><td><b class="cn">${esc(i.title)}</b><br><span class="muted">${esc(i.item_code)} · ${esc(i.category)}</span></td><td>${i.price_php ? '₱' + Number(i.price_php).toLocaleString() : '—'}</td><td>${esc(i.jo)}</td><td><span class="chip ${i.status === 'listed' ? 'gold' : ''}">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nothing listed yet.</p>';
 }
 
-window.OYP = { call, esc, toast, user, ROLE_LABEL, here }; // here(): route token, see route() // shared with dash.js
+window.OYP = { call, esc, toast, user, ROLE_LABEL, here }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js
 drawDots(); route();
 // re-check the session with the server on load (catches resets / deactivation)
 // redraw only if the role or name changed, so a page opened meanwhile (e.g. the estimator mid-typing) is not reset
