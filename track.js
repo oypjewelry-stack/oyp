@@ -31,7 +31,7 @@ function mount(el) {
     b.disabled = true; b.textContent = 'CHECKING…';
     const r = await call('custTrack', { jo, contact: who });
     b.disabled = false; b.textContent = 'TRACK';
-    if (!r.ok) return err(r.error || 'We couldn\'t find that order');
+    if (!r.ok) return err(r.code === 'NO_SESSION' ? 'Order tracking is not switched on yet. Please try again later, or sign in.' : r.error || 'We couldn\'t find that order');
     const j = r.job, safe = r.safe_photos === true, steps = j.stages && j.stages.length ? j.stages : [{ label: j.stage || 'In progress', status: 'doing' }];
     $('tOut').innerHTML = `<div class="trk">${safe && j.photos ? '<div class="tph"></div>' : ''}<p class="lab">Order ${esc(j.jo)}</p><h3>${esc(j.description || j.item_type || 'Your piece')}</h3>${j.item_type && j.description ? `<p class="grey">${esc(j.item_type)}</p>` : ''}
     <span class="chipg">${esc(j.status === 'done' ? 'Ready' : j.stage || 'In progress')}</span>${specs(j)}
