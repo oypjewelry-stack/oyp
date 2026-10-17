@@ -1,0 +1,28 @@
+/* Quotes / payments, Payments, Quotes, Balances, Clients (billing) — pay.js. Reuses .rv / .rvrow / .fchip / .fsec / .lc from app.css. */
+.ptabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}.ptabs .fchip{text-decoration:none}
+.pkpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;max-width:1400px;margin-bottom:20px}.pkpis .lc b{font-size:24px;white-space:nowrap}
+.pnote{margin-bottom:12px!important}.ptop{margin:0 0 12px}.fchip.sm{padding:5px 11px;font-size:11px}
+.rvrow.prow{grid-template-columns:104px 1fr;gap:12px}.pamt{font-family:var(--head);font-weight:500;font-size:18px;text-align:right;white-space:nowrap}
+.pamt.rejected{text-decoration:line-through;color:#999}.pamt.pending{color:#a8861c}.pamt.od{color:#a8861c}
+.phd{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:12px}.phd .shot .ph{width:120px;height:120px}
+.pbig{font-family:var(--head);font-weight:500;font-size:34px;line-height:1.15;margin:2px 0}
+.pmatch{border-left:3px solid var(--gold);background:#fffdf6;padding:8px 12px;font-family:var(--label);font-size:13px;margin:0 0 14px!important;border-radius:0 8px 8px 0}.pmatch.none{border-left-color:#b3261e;background:#fff7f6}
+.pfacts{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin:0 0 16px;font-size:16px}.pfacts .lab{margin-bottom:2px}
+.pconf{border-top:1px solid #eee;padding-top:14px}.pconf h3,.ph3{font-family:var(--head);font-weight:500;font-size:19px;text-transform:uppercase;margin:12px 0 8px}
+.pjsum{border:1px solid #eee;border-radius:12px;padding:12px 14px;margin:0 0 14px;background:#fafafa}.pjsum b{font-family:var(--head);font-weight:500}
+.pjn{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;font-size:17px}.pjn4{grid-template-columns:repeat(4,1fr);margin:0 0 14px}.pjn .lab{margin-bottom:2px}
+.pmore{margin-top:8px;max-width:220px}.pfile{display:block;border:1.5px dashed #111;border-radius:12px;padding:12px 14px;cursor:pointer;font-family:var(--label);font-size:13px}.pfile input{display:none}
+.pdraft{border:1.5px solid var(--gold);border-radius:14px;padding:14px 16px;margin-top:16px;background:#fffdf6}.pdraft textarea{font-size:15px;line-height:1.45}
+.plist{border-top:1px solid #eee;margin-bottom:12px}.pli{display:grid;grid-template-columns:70px 90px 1fr auto auto;gap:10px;align-items:center;padding:9px 4px;border-bottom:1px solid #eee;font-size:15px;cursor:pointer}
+.pli b{font-family:var(--head);font-weight:500;text-align:right;white-space:nowrap}.pli.pending{background:#fffdf6}.pli span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pseg{max-width:300px;margin-bottom:14px}.pq2{max-width:420px}.ptbl tr[data-cl]{cursor:pointer}.ptbl tr[data-cl]:hover td{background:#faf8f1}
+.kjo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block}
+@media (max-width:899px){.pkpis{grid-template-columns:1fr 1fr}.pkpis .lc b{font-size:20px}.rvrow.prow{grid-template-columns:92px 1fr}.pamt{font-size:16px}
+  .pfacts{grid-template-columns:1fr}.pbig{font-size:28px}.pjn4{grid-template-columns:1fr 1fr}.pli{grid-template-columns:60px 1fr auto;font-size:14px}.pli>span:nth-child(3){display:none}
+  .phd .shot .ph{width:96px;height:96px}.ptbl td:nth-child(2),.ptbl th:nth-child(2),.ptbl td:nth-child(3),.ptbl th:nth-child(3){display:none}}
+.rv>*,.rvi{min-width:0}
+.rvpanel .lnk,.pli .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-size:12px;letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#111;padding:0}
+.pconf .fnote{margin-bottom:12px!important}
+@media (max-width:899px){.pkpis{display:flex;overflow-x:auto;gap:8px;margin:0 -18px 16px;padding:0 18px 2px}.pkpis .lc{flex:0 0 auto;min-width:132px;padding:9px 12px}.pkpis .lc b{font-size:18px}
+  .pwrap.popen .pkpis,.pwrap.popen .pseg{display:none}}
+@media (max-width:899px){.pli{grid-template-columns:auto 1fr auto;gap:4px 12px}.pli>span:first-child{overflow:visible}.pli>.chip{grid-column:1/-1;justify-self:start;overflow:visible}}
