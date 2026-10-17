@@ -100,6 +100,10 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .rvpanel{border:1px solid #eee;border-radius:14px;padding:20px 22px;position:sticky;top:76px;max-height:calc(100vh - 92px);overflow:auto}
 .rvempty{padding:80px 0;text-align:center}.rvback{display:none}
 .shots{display:flex;gap:10px;overflow-x:auto;margin:6px 0 18px;padding-bottom:4px}.shot{border:0;background:none;padding:0;cursor:zoom-in;text-align:left}
+.shlab{display:flex;align-items:center;gap:8px;margin:4px 0 -2px}
+.shist{margin:-8px 0 18px;border-top:1px solid #eee;padding-top:8px}.shist summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;padding:4px 0}
+.shist summary::-webkit-details-marker{display:none}.shist summary::before{content:'›';display:inline-block;font-size:18px;line-height:1;transition:transform .15s}.shist[open] summary::before{transform:rotate(90deg)}
+.hset{margin-top:8px}.hset .shots{margin:4px 0 6px}.hset .shot .ph{width:150px;height:112px;opacity:.9}
 .shot .ph{display:block;width:200px;height:150px;border-radius:10px;background:#f1f1f1 center/cover no-repeat;border:1px solid #eee}.shot .lab{margin-top:5px}
 .fsec{margin-bottom:14px}.flab{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}.flag{font-family:var(--label);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#a8861c;border:1px solid var(--gold);border-radius:10px;padding:1px 7px}
 .flag.c{color:#b3261e;border-color:#b3261e}

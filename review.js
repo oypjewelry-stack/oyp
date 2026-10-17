@@ -151,7 +151,7 @@ function panel(j) {
   return `<div class="rvp">
     ${backBtn()}
     <div class="dhead"><h2>JO ${esc(j.jo)}${j.location === 'archived' ? ' <span class="chip arch big" title="JO on record, no physical piece">Archived</span>' : ''}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
-    <div class="shots">${j.pages.map(p => `<button class="shot" data-big="${esc(p.file_id)}"><span class="ph" data-ph="${esc(j.jo)}|${esc(p.file_id)}"></span><span class="lab">Page ${p.page}</span></button>`).join('') || '<span class="muted">No photos</span>'}</div>
+    ${shotsHtml(j)}
     <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
       <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(l[1])}</button>`).join('')}</div></div>
     <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">What is it?</span>${flag('item_type')}</div>
@@ -185,6 +185,25 @@ function panel(j) {
     <div class="fbtns">${ext && j.review_state !== 'draft' ? '' : '<button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button>'}<button class="pill outline" id="fSave">SAVE</button>${ext ? '' : '<button class="lnk" id="fNext">Next card ›</button>'}</div>
     <p class="muted fnote">${j.scanned_at ? 'Scanned ' + esc(new Date(j.scanned_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + ' PHT · ' : ''}Saving never replaces something another person changed in the meantime.</p>
   </div>`;
+}
+
+// Card scans: the newest scan set is always shown first; every earlier set (rescans keep the old photos, JobSync.gs) sits under a
+// collapsed History, newest first. Old files without a date tag are the oldest set ("Earlier scan").
+const ORD = ['', '', '2nd', '3rd'];
+function setLabel(x) {
+  if (!x) return '';
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(x.date || '') ? new Date(x.date + 'T12:00:00+08:00').toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' }) : '';
+  const k = x.set && x.set.length > 6 ? x.set.charCodeAt(6) - 96 : 1, nth = k > 1 ? ' · ' + (ORD[k] || k + 'th') + ' scan that day' : '';
+  return (x.set ? d : 'Earlier scan' + (d ? ' · ' + d : '')) + nth;
+}
+function shotsHtml(j) {
+  const { esc } = window.OYP, H = j.history || [];
+  const row = (jo, pages) => `<div class="shots">${pages.map(p => `<button class="shot" data-big="${esc(p.file_id)}"><span class="ph" data-ph="${esc(jo)}|${esc(p.file_id)}"></span><span class="lab">Page ${p.page}</span></button>`).join('') || '<span class="muted">No photos</span>'}</div>`;
+  const latest = setLabel({ set: j.pages_set || '', date: j.pages_date });
+  if (!H.length) return row(j.jo, j.pages);
+  return `<div class="shlab"><span class="chip dark">Latest</span><span class="lab">${esc(latest || 'Latest scan')}</span></div>${row(j.jo, j.pages)}
+    <details class="shist"><summary><span class="lab">History · ${H.length} older scan${H.length === 1 ? '' : 's'}</span></summary>
+      ${H.map(x => `<div class="hset"><div class="lab sm">${esc(setLabel(x))} · ${x.n || x.pages.length} page${(x.n || x.pages.length) === 1 ? '' : 's'}</div>${row(j.jo, x.pages)}</div>`).join('')}</details>`;
 }
 
 function contactSec(j) {
