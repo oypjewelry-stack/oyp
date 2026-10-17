@@ -110,7 +110,7 @@ function draw(main) {
   wire(main);
 }
 
-function backBtn() { const { esc } = window.OYP; return S.back ? `<button class="lnk rvback dback" data-dback>‹ ${esc(S.back.label)}</button>` : '<button class="lnk rvback" data-back>‹ All cards</button>'; }
+function backBtn() { return S.back ? '<button class="lnk rvback dback" data-dback>‹ BACK</button>' : '<button class="lnk rvback" data-back>‹ BACK</button>'; } // same target as before (drill list / all cards), one label everywhere
 function stubPanel(j) { // pre-paste: what the dashboard knew, read-only
   const { esc } = window.OYP, r = j.row || {};
   return `<div class="rvp">${backBtn()}<div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">From the dashboard</span></div>
