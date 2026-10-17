@@ -111,3 +111,5 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
   .fgrid{grid-template-columns:1fr 1fr}.shot .ph{width:132px;height:176px}.fbtns .pill{flex:1}.fbtns .lnk{margin:6px auto 0}}
 @media (max-width:899px){.fgrid{grid-template-columns:1fr}.fbtns .pill{flex:1 1 100%}.fbtns .lnk{margin:4px auto 0}}
 .rvbig .rot{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#fff;color:#111}.rvbig img{transition:transform .2s}
+.kinds{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.kindsec{margin-bottom:0}.kindgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:0 14px}
+@media (max-width:899px){.kinds{grid-template-columns:repeat(2,1fr)}.kindgrid{grid-template-columns:1fr 1fr}}

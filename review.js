@@ -4,6 +4,8 @@
 (() => {
 'use strict';
 const FIELDS = [['client', 'Client'], ['due_date', 'Due date'], ['type', 'Type'], ['metal', 'Metal'], ['karat', 'Karat'], ['description', 'Description']];
+const KIND_EXTRA = { jewelry: ['size'] }; // shown, never flagged
+const SPECIFIC = ['metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade', 'material', 'weight_g'];
 const TYPES = [['new', 'New job'], ['repair', 'Repair'], ['revision', 'Revision']];
 const STATUS = [['', 'Automatic (from location)'], ['draft', 'Draft'], ['active', 'Active'], ['done', 'Done'], ['picked_up', 'Picked up'], ['cancelled', 'Cancelled']];
 const photoCache = {};
@@ -28,7 +30,7 @@ async function render(main, u) {
   if (!r || !r.ok) {
     main.innerHTML = `<h2>To review</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for card reviews yet.' : (r && r.error) || 'Could not load')}</p>`; return;
   }
-  S.jobs = r.jobs; S.locations = r.locations; S.canPhone = r.can_see_phone; S.u = u;
+  S.jobs = r.jobs; S.locations = r.locations; S.itemTypes = r.item_types || []; S.canPhone = r.can_see_phone; S.u = u;
   if (S.open && !S.jobs.some(j => j.jo === S.open)) S.open = null;
   if (!S.open && innerWidth >= 900) { const f = shown()[0]; if (f) S.open = f.jo; } // desktop: show the first card right away
   draw(main);
@@ -71,12 +73,15 @@ function panel(j) {
   const { esc } = window.OYP, miss = k => j.missing.includes(k), cf = S.conflicts;
   const flag = k => (cf[k] ? `<span class="flag c">Changed by someone: now “${esc(cf[k])}”</span>` : miss(k) ? '<span class="flag">Missing</span>' : '');
   const fcls = k => (cf[k] ? 'conf' : miss(k) ? 'miss' : '');
+  const fld = (k, lab, input) => `<div class="fsec ${fcls(k)}" data-f1="${k}"><div class="flab"><span class="lab">${esc(lab)}</span>${cf[k] ? flag(k) : ''}</div>${input}</div>`;
   return `<div class="rvp">
     <button class="lnk rvback" data-back>‹ All cards</button>
     <div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
     <div class="shots">${j.pages.map(p => `<button class="shot" data-big="${esc(p.file_id)}"><span class="ph" data-ph="${esc(j.jo)}|${esc(p.file_id)}"></span><span class="lab">Page ${p.page}</span></button>`).join('') || '<span class="muted">No photos</span>'}</div>
     <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>
       <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(l[1])}</button>`).join('')}</div></div>
+    <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">What is it?</span>${flag('item_type')}</div>
+      <div class="kinds">${S.itemTypes.map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}</div></div>
     <div class="fgrid">
       <div class="fsec full ${fcls('client') || fcls('client_id')}"><div class="flab"><span class="lab">Client</span>${flag('client') || flag('client_id')}</div>
         <div id="fClient" class="cpick">${j.client ? `<div class="csel"><b>${esc(j.client.name)}</b>${j.client.phone ? ` <span class="muted">${esc(j.client.phone)}</span>` : ''}<button class="lnk" data-cclear>Change</button></div>` : ''}
@@ -84,12 +89,21 @@ function panel(j) {
           <div class="cnew"><span class="lab">or add a new client</span><div class="row2"><input id="fNn" placeholder="Name"><input id="fNp" placeholder="Phone" inputmode="tel"></div></div></div></div></div>
       <div class="fsec ${fcls('due_date')}"><div class="flab"><span class="lab">Due date</span>${flag('due_date')}</div><input type="date" id="f_due_date" value="${esc(j.due_date)}"></div>
       <div class="fsec ${fcls('type')}"><div class="flab"><span class="lab">Type</span>${flag('type')}</div><div class="seg">${TYPES.map(t => `<button class="${j.type === t[0] ? 'on' : ''}" data-type="${t[0]}">${esc(t[1])}</button>`).join('')}</div></div>
-      <div class="fsec ${fcls('metal')}"><div class="flab"><span class="lab">Metal</span>${flag('metal')}</div><input id="f_metal" list="dlMetal" value="${esc(j.metal)}" placeholder="Gold, Silver…"></div>
-      <div class="fsec ${fcls('karat')}"><div class="flab"><span class="lab">Karat</span>${flag('karat')}</div><input id="f_karat" list="dlKarat" value="${esc(j.karat)}" placeholder="18k, 925…"></div>
-      <div class="fsec ${fcls('size')}"><div class="flab"><span class="lab">Size</span>${flag('size')}</div><input id="f_size" value="${esc(j.size)}" placeholder="optional"></div>
+      <div class="fsec full kindsec" data-for="metal,karat,size,stone_type,stone_size,grade,material,weight_g"><div class="kindgrid">
+        ${fld('metal', 'Metal', `<input id="f_metal" list="dlMetal" value="${esc(j.metal)}" placeholder="Gold, Silver…">`)}
+        ${fld('karat', 'Karat', `<input id="f_karat" list="dlKarat" value="${esc(j.karat)}" placeholder="18k, 925…">`)}
+        ${fld('size', 'Ring size / length', `<input id="f_size" value="${esc(j.size)}" placeholder="optional">`)}
+        ${fld('stone_type', 'Stone type', `<input id="f_stone_type" list="dlStone" value="${esc(j.stone_type)}" placeholder="Diamond, South Sea…">`)}
+        ${fld('stone_size', 'Carat / size', `<input id="f_stone_size" value="${esc(j.stone_size)}" placeholder="0.50 ct, 11 mm">`)}
+        ${fld('grade', 'Grade', `<input id="f_grade" value="${esc(j.grade)}" placeholder="VS1 G, AAA…">`)}
+        ${fld('material', 'Material', `<input id="f_material" list="dlMat" value="${esc(j.material)}" placeholder="Gold scrap, silver grain…">`)}
+        ${fld('weight_g', 'Weight (g)', `<input id="f_weight_g" inputmode="decimal" value="${esc(j.weight_g)}" placeholder="12.5">`)}
+      </div></div>
       <div class="fsec ${fcls('status')}"><div class="flab"><span class="lab">Status</span>${flag('status')}</div><select id="f_status">${STATUS.map(s => `<option value="${s[0]}">${esc(s[1])}${s[0] && s[0] === j.status ? ' · now' : ''}</option>`).join('')}</select></div>
       <div class="fsec full ${fcls('description')}"><div class="flab"><span class="lab">Description</span>${flag('description')}</div><textarea id="f_description" rows="2" placeholder="e.g. Coin necklace, 13 coins">${esc(j.description)}</textarea></div>
     </div>
+    <datalist id="dlStone"><option>Diamond</option><option>Ruby</option><option>Sapphire</option><option>Emerald</option><option>South Sea pearl</option><option>Freshwater pearl</option><option>Akoya pearl</option><option>Other</option></datalist>
+    <datalist id="dlMat"><option>Gold scrap</option><option>Gold grain</option><option>Silver scrap</option><option>Silver grain</option><option>Platinum</option><option>Findings</option><option>Chain</option></datalist>
     <datalist id="dlMetal"><option>Gold</option><option>Silver</option><option>Platinum</option><option>Palladium</option><option>Two-tone</option><option>Other</option></datalist>
     <datalist id="dlKarat"><option>24k</option><option>22k</option><option>18k</option><option>14k</option><option>10k</option><option>925</option><option>999</option></datalist>
     <div class="fbtns"><button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button><button class="pill outline" id="fSave">SAVE</button><button class="lnk" id="fNext">Next card ›</button></div>
@@ -119,7 +133,22 @@ function wire(main) {
     photo(jo, fid).then(src => { if (src) e.target.style.backgroundImage = `url("${src}")`; }); }), { rootMargin: '200px' });
   main.querySelectorAll('[data-th],[data-ph]').forEach(el => io.observe(el));
   const j = S.open && S.jobs.find(x => x.jo === S.open); if (!j) return;
-  const st = { location: j.location, type: j.type, client_id: j.client_id, newClient: null };
+  const st = { location: j.location, type: j.type, client_id: j.client_id, item_type: j.item_type, newClient: null };
+  const kindFields = k => { const t = S.itemTypes.find(x => x[0] === k); return t ? t[2].concat(KIND_EXTRA[k] || []) : []; };
+  const flagged = k => { const t = S.itemTypes.find(x => x[0] === st.item_type); return !!t && t[2].includes(k); };
+  const applyKind = () => {
+    const show = kindFields(st.item_type);
+    main.querySelectorAll('[data-f1]').forEach(el => {
+      const k = el.dataset.f1, on = show.includes(k); el.classList.toggle('hidden', !on);
+      const empty = !main.querySelector('#f_' + k).value.trim(), fl = el.querySelector('.flag:not(.c)');
+      const want = on && flagged(k) && empty && !S.conflicts[k];
+      el.classList.toggle('miss', want);
+      if (want && !fl) el.querySelector('.flab').insertAdjacentHTML('beforeend', '<span class="flag">Missing</span>'); else if (!want && fl) fl.remove();
+    });
+    const ks = main.querySelector('.kindsec'); if (ks) ks.classList.toggle('hidden', !show.length);
+  };
+  applyKind();
+  main.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { st.item_type = b.dataset.kind; main.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('on', x === b)); filled(b); applyKind(); });
   const filled = el => { const f = el.closest('.fsec'); if (f) { f.classList.remove('miss'); const fl = f.querySelector('.flag:not(.c)'); if (fl) fl.remove(); } };
   main.querySelectorAll('.rvp input, .rvp textarea').forEach(el => el.addEventListener('input', () => { if (el.value.trim() && !['fCq'].includes(el.id)) filled(el); }));
   const back = $('[data-back]'); if (back) back.onclick = () => { S.open = null; draw(main); };
@@ -139,8 +168,8 @@ function wire(main) {
     main.querySelectorAll('[data-cid]').forEach(b => b.onclick = () => { st.client_id = b.dataset.cid; $('#fCq').value = b.dataset.cn; $('#fCres').innerHTML = `<span class="chip dark">Picked: ${esc(b.dataset.cn)}</span>`; filled(b.closest('.fsec') ? $('#fCq') : $('#fCq')); });
   }, 250); };
   const save = async mark => {
-    const set = { location: st.location, type: st.type, client_id: st.client_id };
-    ['due_date', 'metal', 'karat', 'size', 'description'].forEach(k => { set[k] = $('#f_' + k).value; });
+    const set = { location: st.location, item_type: st.item_type, type: st.type, client_id: st.client_id };
+    ['due_date', 'description'].concat(kindFields(st.item_type)).forEach(k => { set[k] = $('#f_' + k).value; }); // hidden fields are left as they are
     if ($('#f_status').value) set.status = $('#f_status').value;
     const seen = {}; Object.keys(set).forEach(k => { seen[k] = j[k] == null ? '' : j[k]; });
     const nn = $('#fNn').value.trim(), np = $('#fNp').value.trim();
