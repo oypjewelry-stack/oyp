@@ -8,7 +8,7 @@ const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
 const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
 const NAV = {
   admin: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
-  production_manager: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials'], ['prices', 'Material prices']],
+  production_manager: [['dashboard', 'Dashboard'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Inventory (view)']]
 };
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };

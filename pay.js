@@ -23,8 +23,10 @@ const methodLab = k => ((S.r && S.r.methods || []).find(m => m[0] === k) || [k, 
 const kindLab = k => ((S.r && S.r.kinds || []).find(m => m[0] === k) || [k, k || ''])[1];
 const job = jo => S.r.jobs.find(j => j.jo === jo);
 const isAdmin = () => !!(S.r && S.r.can && S.r.can.exec);
+const canRec = () => !!(S.r && S.r.can && S.r.can.record); // admin + accounting
+const pmView = () => !!(S.r && S.r.can && S.r.can.balances_only); // production manager: Balances only, view-only
 let U = null;
-const link = t => U && U.role === 'accounting' ? '#/' + t : t === 'payments' ? '#/payments' : '#/payments/' + t; // admin nav has one "Quotes / payments" entry
+const link = t => U && U.role !== 'admin' ? '#/' + t : t === 'payments' ? '#/payments' : '#/payments/' + t; // admin nav has one "Quotes / payments" entry // admin nav has one "Quotes / payments" entry
 const narrow = () => innerWidth < 900;
 
 async function load(force) {
@@ -40,21 +42,23 @@ async function render(main, u, page) {
   if (narrow() && !S.keep) { S.open = null; S.form = null; } S.keep = false;
   if (!S.r) main.innerHTML = `<h2>${esc(tab === 'payments' ? 'Payments' : TABS.find(t => t[0] === tab)[1])}</h2><p class="muted">Loading…</p>`;
   const r = await load(); if (!live()) return;
-  if (!r || !r.ok) { main.innerHTML = `<h2>Payments</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
+  if (!r || !r.ok) { main.innerHTML = `<h2>${esc(page === 'payments' && u.role === 'admin' ? 'Quotes / payments' : (TABS.find(t => t[0] === tab) || TABS[0])[1])}</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
+  if (pmView() && S.tab !== 'balances') { S.tab = 'balances'; S.open = null; }
   draw(main);
 }
 async function refresh(main) { const live = window.OYP.here(); const r = await load(true); if (live() && r && r.ok) draw(main); }
 
 function head() {
   const { esc } = window.OYP, r = S.r;
-  const t = TABS.map(([k, l]) => `<a class="fchip ${k === S.tab ? 'on' : ''}" href="${link(k)}">${esc(l)}${k === 'payments' && r.counts.to_confirm ? `<b>${r.counts.to_confirm}</b>` : ''}</a>`).join('');
+  const t = (pmView() ? TABS.filter(x => x[0] === 'balances') : TABS).map(([k, l]) => `<a class="fchip ${k === S.tab ? 'on' : ''}" href="${link(k)}">${esc(l)}${k === 'payments' && r.counts.to_confirm ? `<b>${r.counts.to_confirm}</b>` : ''}</a>`).join('');
   const mon = todayPH().slice(0, 7), got = r.payments.filter(p => p.status === 'confirmed' && String(p.date).slice(0, 7) === mon).reduce((s, p) => s + (p.amount || 0), 0);
   const owed = r.jobs.reduce((s, j) => s + (j.balance > 0 ? j.balance : 0), 0), od = r.jobs.filter(j => j.overdue).length;
   const k = [[r.counts.to_confirm, 'To confirm', r.counts.to_confirm ? 'gold' : '', link('payments')], [peso(got), 'Received in ' + MON[Number(mon.slice(5)) - 1], '', ''],
     [peso(owed), 'Owed by clients', '', link('balances')], [od, 'Overdue JOs', od ? 'gold' : '', link('balances')]];
+  if (pmView()) k.splice(0, 2);
   if (r.sales_month) k.push([peso(r.sales_month.total), 'Sales in ' + MON[Number(mon.slice(5)) - 1] + ' · ' + r.sales_month.count + (r.sales_month.count === 1 ? ' job' : ' jobs'), '', '']);
   return `<div class="dhead"><h2>${S.tab === 'payments' && U.role !== 'accounting' ? 'Quotes / payments' : esc(TABS.find(x => x[0] === S.tab)[1] === 'Clients' ? 'Clients (billing)' : TABS.find(x => x[0] === S.tab)[1])}</h2></div>
-    <div class="ptabs">${t}</div>
+    ${pmView() ? '<p class="muted pnote">View only. Payments are recorded and confirmed by accounting.</p>' : `<div class="ptabs">${t}</div>`}
     ${r.setup ? '' : '<p class="muted pnote">No payments yet. The Payments tab is added to the Sheet with the first payment.</p>'}
     <div class="pkpis">${k.map(x => `<${x[3] ? 'a href="' + x[3] + '"' : 'div'} class="lc ${x[2]}"><span class="lab">${esc(x[1])}</span><b>${esc(String(x[0]))}</b></${x[3] ? 'a' : 'div'}>`).join('')}</div>`;
 }
@@ -72,7 +76,7 @@ function payShown() {
 }
 function payRow(p) {
   const { esc } = window.OYP, jo = p.jo || p.suggested_jo;
-  return `<div class="rvrow prow ${S.open === p.pay_id && !S.form ? 'on' : ''}" data-pay="${esc(p.pay_id)}"><div class="pamt ${p.status}">${esc(peso(p.amount))}</div>
+  return `<div class="rvrow pyrow ${S.open === p.pay_id && !S.form ? 'on' : ''}" data-pay="${esc(p.pay_id)}"><div class="pamt ${p.status}">${esc(peso(p.amount))}</div>
     <div class="rvi"><div class="kjo">${p.jo ? 'JO ' + esc(p.jo) : p.suggested_jo ? '<span class="muted">JO?</span> ' + esc(p.suggested_jo) : '<span class="muted">No JO yet</span>'}<span class="muted sm">${esc(day(p.date))}</span></div>
     <div class="kd">${esc([p.payer || p.client, p.reference].filter(Boolean).join(' · ') || 'No name in the alert')}</div>
     <div class="kf"><span class="chip ${p.status === 'pending' ? 'gold' : p.status === 'rejected' ? 'arch' : ''}">${esc(STAT[p.status] || p.status)}</span><span class="chip">${esc(methodLab(p.method))}</span>${p.source !== 'manual' ? `<span class="chip">${esc(SRC[p.source] || p.source)}</span>` : ''}${p.has_receipt ? '<span class="chip">Receipt</span>' : ''}</div></div></div>`;
@@ -82,7 +86,7 @@ function payTab() {
   if (!S.open && !S.form && !narrow()) { const f = L[0]; if (f) S.open = f.pay_id; }
   const srcs = [...new Set(S.r.payments.map(p => p.source))];
   return `<div class="rv ${S.open || S.form ? 'has-open' : ''}"><div class="rvlist">
-    <div class="fbtns ptop"><button class="pill sm" data-rec>+ RECORD PAYMENT</button></div>
+    ${canRec() ? '<div class="fbtns ptop"><button class="pill sm" data-rec>+ RECORD PAYMENT</button></div>' : ''}
     <div class="rvchips">${Object.keys(PVIEWS).map(k => `<button class="fchip ${S.pv === k ? 'on' : ''}" data-pv="${k}">${PVIEWS[k][0]}<b>${cnt(k)}</b></button>`).join('')}</div>
     ${srcs.length > 1 ? `<div class="rvchips">${['', ...srcs].map(s => `<button class="fchip sm ${S.src === s ? 'on' : ''}" data-src="${esc(s)}">${esc(s ? SRC[s] || s : 'Any source')}</button>`).join('')}</div>` : ''}
     <input class="rvq" id="pq" placeholder="Search JO, name, reference, amount" value="${esc(S.q)}">
@@ -111,7 +115,7 @@ function payPanel(p) {
     ['Method', methodLab(p.method)], ['Kind', kindLab(p.kind)], ['Note', p.note],
     p.status === 'confirmed' ? ['Confirmed', (p.confirmed_by || '') + ' · ' + when(p.confirmed_at)] : null, p.status === 'rejected' ? ['Rejected', p.updated_by + ' · ' + when(p.updated_at) + ': ' + p.reject_reason] : null].filter(x => x && x[1]);
   return `<button class="lnk rvback" data-close>‹ BACK</button>
-    <div class="phd"><div><span class="lab">${esc(STAT[p.status])} · ${esc(p.pay_id)}</span><div class="pbig">${esc(peso(p.amount))}</div><span class="muted">${esc(day(p.date))}</span></div>${recp}</div>
+    <div class="pyhd"><div><span class="lab">${esc(STAT[p.status])} · ${esc(p.pay_id)}</span><div class="pbig">${esc(peso(p.amount))}</div><span class="muted">${esc(day(p.date))}</span></div>${recp}</div>
     ${p.match_note && p.source !== 'manual' ? `<p class="pmatch ${p.suggested_jo || p.jo ? '' : 'none'}">${esc(p.match_note)}</p>` : ''}
     <div class="pfacts">${facts.map(f => `<div><span class="lab">${esc(f[0])}</span>${esc(f[1])}</div>`).join('')}</div>
     ${pend ? `<div class="pconf"><h3>Check and confirm</h3><p class="fnote muted">Only confirmed payments count toward balances, sales and the client's My Orders.</p>
@@ -119,7 +123,7 @@ function payPanel(p) {
       <div id="cSum">${joSummary(jo)}</div>
       <div class="fgrid"><div class="fsec"><span class="lab">Amount</span><input id="cAmt" inputmode="decimal" value="${esc(p.amount == null ? '' : p.amount)}"></div>
       <div class="fsec"><span class="lab">Date received</span><input id="cDate" type="date" value="${esc(p.date)}" max="${todayPH()}"></div>
-      <div class="fsec"><span class="lab">Method</span><select id="cMeth">${S.r.methods.map(m => `<option value="${m[0]}" ${m[0] === p.method ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select></div>
+      <div class="fsec"><span class="lab">Method</span><select id="cMeth">${S.r.methods.some(m => m[0] === p.method) ? '' : '<option value="">Pick…</option>'}${S.r.methods.map(m => `<option value="${m[0]}" ${m[0] === p.method ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select></div>
       <div class="fsec"><span class="lab">Reference no.</span><input id="cRef" value="${esc(p.reference)}"></div>
       <div class="fsec"><span class="lab">Payer</span><input id="cPayer" value="${esc(p.payer)}"></div>
       <div class="fsec"><span class="lab">Kind</span><select id="cKind"><option value="">Work it out</option>${S.r.kinds.map(m => `<option value="${m[0]}" ${m[0] === p.kind ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select></div></div>
@@ -130,17 +134,18 @@ function payPanel(p) {
 }
 function recForm() {
   const { esc } = window.OYP, f = S.form;
-  const quick = ['gcash', 'bank', 'cash', 'card'];
+  const quick = S.r.methods.map(m => m[0]), cash = f.method === 'cash', proofOk = f.pic || (!cash && String(f.reference || '').trim());
   return `<button class="lnk rvback" data-close>‹ BACK</button><h3 class="ph3">Record a payment</h3>
     <p class="fnote muted">For money you have seen (counter, bank app, GCash). It counts right away. Gmail and Telegram payments come in by themselves under To confirm.</p>
     <div class="fsec ${f.jo ? '' : 'miss'}"><span class="lab">JO</span><select id="fJo">${joOptions(f.jo)}</select></div><div id="fSum">${joSummary(f.jo)}</div>
     <div class="fgrid"><div class="fsec ${f.amount ? '' : 'miss'}"><span class="lab">Amount received (₱)</span><input id="fAmt" inputmode="decimal" placeholder="0" value="${esc(f.amount || '')}"></div>
     <div class="fsec"><span class="lab">Date received</span><input id="fDate" type="date" value="${esc(f.date || todayPH())}" max="${todayPH()}"></div></div>
     <div class="fsec"><span class="lab">How they paid</span><div class="seg">${quick.map(m => `<button data-m="${m}" class="${f.method === m ? 'on' : ''}">${esc(methodLab(m))}</button>`).join('')}</div>
-      <select id="fMeth" class="pmore"><option value="">More…</option>${S.r.methods.filter(m => !quick.includes(m[0])).map(m => `<option value="${m[0]}" ${m[0] === f.method ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select></div>
-    <div class="fgrid"><div class="fsec"><span class="lab">Reference no.</span><input id="fRef" placeholder="GCash / bank ref" value="${esc(f.reference || '')}"></div>
-    <div class="fsec"><span class="lab">Paid by</span><input id="fPayer" placeholder="Client name" value="${esc(f.payer || '')}"></div></div>
-    <div class="fsec"><span class="lab">Receipt photo</span><label class="pfile"><input type="file" id="fPic" accept="image/*"><span>${f.pic ? '✓ ' + esc(f.picName || 'photo') + ' · change' : 'Add photo (saved to the JO folder)'}</span></label></div>
+    </div>
+    <div class="pproof ${proofOk ? '' : 'miss'}"><span class="lab">Proof (required)</span><p class="fnote muted">${cash ? 'Cash: add a photo of the receipt you issued.' : 'A photo of the deposit slip, or the deposit / email reference no.'}</p>
+    <div class="fsec"><span class="lab">${cash ? 'Photo of the receipt you issued' : 'Deposit slip photo'}</span><label class="pfile"><input type="file" id="fPic" accept="image/*"><span>${f.pic ? '✓ ' + esc(f.picName || 'photo') + ' · change' : 'Add photo (saved to the JO folder)'}</span></label></div>
+    <div class="fsec"><span class="lab">${cash ? 'Receipt no. (optional)' : 'Reference no.'}</span><input id="fRef" placeholder="${cash ? 'OR number' : 'GCash / bank / email ref'}" value="${esc(f.reference || '')}"></div></div>
+    <div class="fsec"><span class="lab">Paid by</span><input id="fPayer" placeholder="Client name" value="${esc(f.payer || '')}"></div>
     <div class="fsec"><span class="lab">Note</span><input id="fNote" value="${esc(f.note || '')}"></div>
     <div class="fbtns"><button class="pill" data-save>SAVE PAYMENT</button><button class="lnk" data-close>Cancel</button></div>`;
 }
@@ -158,7 +163,7 @@ function quoteTab() {
   const cnt = k => S.r.quotes.filter(q => k === 'all' || q.status === k).length;
   return `<div class="rv ${S.open ? 'has-open' : ''}"><div class="rvlist"><div class="rvchips">${Object.keys(QVIEWS).map(k => `<button class="fchip ${S.qv === k ? 'on' : ''}" data-qv="${k}">${QVIEWS[k]}<b>${cnt(k)}</b></button>`).join('')}</div>
     <input class="rvq" id="pq" placeholder="Search JO, client, piece" value="${esc(S.q)}">
-    <div class="rvrows">${Q.map(q => `<div class="rvrow prow ${S.open === q.quote_id ? 'on' : ''}" data-q="${esc(q.quote_id)}"><div class="pamt">${esc(peso(q.amount))}</div>
+    <div class="rvrows">${Q.map(q => `<div class="rvrow pyrow ${S.open === q.quote_id ? 'on' : ''}" data-q="${esc(q.quote_id)}"><div class="pamt">${esc(peso(q.amount))}</div>
       <div class="rvi"><div class="kjo">JO ${esc(q.jo)}<span class="muted sm">v${q.version}</span></div><div class="kd">${esc(q.client || '—')} · ${esc(q.description || '')}</div>
       <div class="kf"><span class="chip ${q.status === 'accepted' ? 'dark' : q.status === 'sent' ? 'gold' : q.status === 'replaced' ? 'arch' : ''}">${esc(QVIEWS[q.status] || q.status)}</span><span class="muted sm">${esc(when(q.updated_at))}</span></div></div></div>`).join('') || '<p class="muted rvnone">No quotes here.</p>'}</div>
     </div><div class="rvpanel">${S.open ? quotePanel(S.r.quotes.find(q => q.quote_id === S.open)) : '<div class="rvempty muted">Pick a quote</div>'}</div></div>`;
@@ -168,7 +173,7 @@ function quotePanel(q) {
   const ex = isAdmin(), others = S.r.quotes.filter(x => x.jo === q.jo && x.quote_id !== q.quote_id).sort((a, b) => b.version - a.version);
   const d = S.draft && S.draft.quote_id === q.quote_id ? S.draft : null;
   return `<button class="lnk rvback" data-close>‹ BACK</button>
-    <div class="phd"><div><span class="lab">${esc(QVIEWS[q.status] || q.status)} · version ${q.version}</span><div class="pbig">${esc(peso(q.amount))}</div><span class="muted">JO ${esc(q.jo)} · ${esc(q.client || 'no client')}</span></div></div>
+    <div class="pyhd"><div><span class="lab">${esc(QVIEWS[q.status] || q.status)} · version ${q.version}</span><div class="pbig">${esc(peso(q.amount))}</div><span class="muted">JO ${esc(q.jo)} · ${esc(q.client || 'no client')}</span></div></div>
     <div class="pfacts"><div><span class="lab">Piece</span>${esc(q.description || '—')}</div><div><span class="lab">Saved</span>${esc(q.created_by)} · ${esc(when(q.created_at))}</div>
       ${q.updated_by && q.updated_at !== q.created_at ? `<div><span class="lab">Last change</span>${esc(q.updated_by)} · ${esc(when(q.updated_at))}</div>` : ''}
       ${ex && q.cost_total != null ? `<div><span class="lab">Cost</span>${esc(peso(q.cost_total))}${q.amount ? ' · margin ' + Math.round((1 - q.cost_total / q.amount) * 100) + '%' : ''}</div>` : ''}</div>
@@ -191,7 +196,7 @@ function balTab() {
   if (S.by === 'client') {
     const C = S.r.clients.filter(c => c.jos && (!t || [c.name, c.aliases, c.phone].join(' ').toLowerCase().includes(t)));
     return `${seg}<input class="rvq pq2" id="pq" placeholder="Search client" value="${esc(S.q)}"><div class="tw"><table class="dt ptbl"><thead><tr><th><span class="lab">Client</span></th><th class="r"><span class="lab">JOs</span></th><th class="r"><span class="lab">Total</span></th><th class="r"><span class="lab">Paid</span></th><th class="r"><span class="lab">Owed</span></th><th></th></tr></thead><tbody>
-      ${C.map(c => `<tr class="${c.overdue ? 'od' : ''}" data-cl="${esc(c.client_id)}"><td><b class="cn">${esc(c.name)}</b></td><td class="r">${c.jos}</td><td class="r">${esc(peso(c.total))}</td><td class="r">${esc(peso(c.paid))}</td><td class="r"><b>${esc(peso(c.owed))}</b></td>
+      ${C.map(c => `<tr class="${c.overdue ? 'od' : ''}" ${pmView() ? '' : `data-cl="${esc(c.client_id)}"`}><td><b class="cn">${esc(c.name)}</b></td><td class="r">${c.jos}</td><td class="r">${esc(peso(c.total))}</td><td class="r">${esc(peso(c.paid))}</td><td class="r"><b>${esc(peso(c.owed))}</b></td>
       <td>${c.overdue ? `<span class="chip gold">${c.overdue} overdue</span>` : ''}${c.no_price ? ` <span class="chip">${c.no_price} no price</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No clients with JOs.</td></tr>'}</tbody></table></div>`;
   }
   const J = S.r.jobs.filter(j => BVIEWS[S.bv][1](j) && (!t || [j.jo, j.client, j.description].join(' ').toLowerCase().includes(t)))
@@ -199,22 +204,22 @@ function balTab() {
   if (!S.open && !narrow() && J[0]) S.open = J[0].jo;
   return `${seg}<div class="rv ${S.open ? 'has-open' : ''}"><div class="rvlist"><div class="rvchips">${Object.keys(BVIEWS).map(k => `<button class="fchip ${S.bv === k ? 'on' : ''}" data-bv="${k}">${BVIEWS[k][0]}<b>${cnt(k)}</b></button>`).join('')}</div>
     <input class="rvq" id="pq" placeholder="Search JO, client, piece" value="${esc(S.q)}">
-    <div class="rvrows">${J.map(j => `<div class="rvrow prow ${S.open === j.jo ? 'on' : ''}" data-jo="${esc(j.jo)}"><div class="pamt ${j.overdue ? 'od' : ''}">${j.balance == null ? '<span class="muted">—</span>' : esc(peso(j.balance))}</div>
+    <div class="rvrows">${J.map(j => `<div class="rvrow pyrow ${S.open === j.jo ? 'on' : ''}" data-jo="${esc(j.jo)}"><div class="pamt ${j.overdue ? 'od' : ''}">${j.balance == null ? '<span class="muted">—</span>' : esc(peso(j.balance))}</div>
       <div class="rvi"><div class="kjo">JO ${esc(j.jo)}${j.overdue ? '<span class="dot"></span>' : ''}</div><div class="kd">${esc(j.client || 'No client')} · ${esc(j.description || '')}</div>
       <div class="kf">${j.overdue ? '<span class="chip gold">Overdue</span>' : ''}${j.paid_in_full ? '<span class="chip dark">Paid</span>' : ''}${j.total == null ? '<span class="chip">No price</span>' : `<span class="chip">of ${esc(peso(j.total))}</span>`}${j.due ? `<span class="muted sm">due ${esc(day(j.due))}</span>` : ''}</div></div></div>`).join('') || '<p class="muted rvnone">Nothing here.</p>'}</div>
     </div><div class="rvpanel">${S.open ? jobPanel(S.open) : '<div class="rvempty muted">Pick a JO</div>'}</div></div>`;
 }
 function payList(P) {
   const { esc } = window.OYP;
-  return P.length ? `<div class="plist">${P.map(p => `<div class="pli ${p.status}" data-goto="${esc(p.pay_id)}"><span>${esc(day(p.date))}</span><span>${p.jo ? 'JO ' + esc(p.jo) : '<i>JO?</i> ' + esc(p.suggested_jo || '')}</span><span>${esc(methodLab(p.method))}</span><b>${esc(peso(p.amount))}</b>${p.status !== 'confirmed' ? `<span class="chip ${p.status === 'pending' ? 'gold' : 'arch'}">${esc(STAT[p.status])}</span>` : ''}</div>`).join('')}</div>` : '<p class="muted fnote">No payments yet.</p>';
+  return P.length ? `<div class="plist">${P.map(p => `<div class="pli ${p.status}" ${pmView() ? '' : `data-goto="${esc(p.pay_id)}"`}><span>${esc(day(p.date))}</span><span>${p.jo ? 'JO ' + esc(p.jo) : '<i>JO?</i> ' + esc(p.suggested_jo || '')}</span><span>${esc(methodLab(p.method))}</span><b>${esc(peso(p.amount))}</b>${p.status !== 'confirmed' ? `<span class="chip ${p.status === 'pending' ? 'gold' : 'arch'}">${esc(STAT[p.status])}</span>` : ''}</div>`).join('')}</div>` : '<p class="muted fnote">No payments yet.</p>';
 }
 function jobPanel(jo) {
   const { esc } = window.OYP, j = job(jo); if (!j) return '';
   const P = S.r.payments.filter(p => (p.jo === jo || (!p.jo && p.suggested_jo === jo)) && p.status !== 'rejected');
   return `<button class="lnk rvback" data-close>‹ BACK</button>${joSummary(jo)}
-    <p class="fnote muted">${esc(j.total_src ? 'Price from the ' + j.total_src + '.' : 'No accepted price yet, so no balance. Accept a quote first.')}${j.overdue ? (j.location === 'sold' ? ' Overdue: piece already sold / released with a balance.' : ' Overdue: past the due date with a balance.') : ''}</p>
+    <p class="fnote muted">${esc(j.total_src ? 'Price from the ' + j.total_src + '.' : 'No accepted price yet, so no balance. Accept a quote first.')}${j.overdue ? (j.location === 'sold' ? ' Overdue: piece already sold / released with a balance.' : ' Overdue: more than 3 business days past the due date with a balance.') : j.balance > 0.5 && j.due && j.due < S.r.today ? ' Past due, in the 3-business-day grace until ' + day(j.grace_until) + '.' : ''}</p>
     <h3 class="ph3">Payments</h3>${payList(P)}
-    <div class="fbtns"><button class="pill sm" data-recjo="${esc(jo)}">+ RECORD PAYMENT</button>${isAdmin() ? `<button class="lnk" data-card="${esc(jo)}">OPEN JO CARD</button>` : ''}</div>`;
+    ${canRec() || isAdmin() ? `<div class="fbtns">${canRec() ? `<button class="pill sm" data-recjo="${esc(jo)}">+ RECORD PAYMENT</button>` : ''}${isAdmin() ? `<button class="lnk" data-card="${esc(jo)}">OPEN JO CARD</button>` : ''}</div>` : ''}`;
 }
 
 /* ---------- Clients (billing) ---------- */
@@ -223,7 +228,7 @@ function cliTab() {
   const C = S.r.clients.filter(c => !t || [c.name, c.aliases, c.phone, c.email].join(' ').toLowerCase().includes(t));
   if (!S.open && !narrow() && C[0]) S.open = C[0].client_id;
   return `<div class="rv ${S.open ? 'has-open' : ''}"><div class="rvlist"><input class="rvq" id="pq" placeholder="Search name, phone, email" value="${esc(S.q)}">
-    <div class="rvrows">${C.map(c => `<div class="rvrow prow ${S.open === c.client_id ? 'on' : ''}" data-cl="${esc(c.client_id)}"><div class="pamt ${c.overdue ? 'od' : ''}">${c.owed ? esc(peso(c.owed)) : '<span class="muted">₱0</span>'}</div>
+    <div class="rvrows">${C.map(c => `<div class="rvrow pyrow ${S.open === c.client_id ? 'on' : ''}" data-cl="${esc(c.client_id)}"><div class="pamt ${c.overdue ? 'od' : ''}">${c.owed ? esc(peso(c.owed)) : '<span class="muted">₱0</span>'}</div>
       <div class="rvi"><div class="kjo">${esc(c.name)}</div><div class="kd">Paid ${esc(peso(c.paid))} · ${c.jos} JO${c.jos === 1 ? '' : 's'}</div>
       <div class="kf">${c.overdue ? `<span class="chip gold">${c.overdue} overdue</span>` : ''}${c.no_price ? `<span class="chip">${c.no_price} no price</span>` : ''}</div></div></div>`).join('') || '<p class="muted rvnone">No clients.</p>'}</div>
     </div><div class="rvpanel">${S.open ? cliPanel(S.r.clients.find(c => c.client_id === S.open)) : '<div class="rvempty muted">Pick a client</div>'}</div></div>`;
@@ -232,7 +237,7 @@ function cliPanel(c) {
   const { esc } = window.OYP; if (!c) return '';
   const J = S.r.jobs.filter(j => j.client_id === c.client_id), js = J.map(j => j.jo);
   const P = S.r.payments.filter(p => p.status !== 'rejected' && (js.includes(p.jo) || (!p.jo && js.includes(p.suggested_jo))));
-  return `<button class="lnk rvback" data-close>‹ BACK</button><div class="phd"><div><span class="lab">Client</span><div class="pbig">${esc(c.name)}</div>
+  return `<button class="lnk rvback" data-close>‹ BACK</button><div class="pyhd"><div><span class="lab">Client</span><div class="pbig">${esc(c.name)}</div>
     <span class="muted">${esc([c.phone, c.email].filter(Boolean).join(' · ') || 'No phone or email')}</span></div></div>
     <div class="pjn pjn4"><span><span class="lab">Total</span>${esc(peso(c.total))}</span><span><span class="lab">Paid</span>${esc(peso(c.paid))}</span><span><span class="lab">Owed</span><b>${esc(peso(c.owed))}</b></span><span><span class="lab">Overdue</span>${c.overdue}</span></div>
     ${c.billing_info ? `<div class="pfacts"><div><span class="lab">Billing info</span>${esc(c.billing_info)}</div></div>` : ''}
@@ -258,8 +263,8 @@ function wire(main) {
   on('[data-goto]', b => { const p = S.r.payments.find(x => x.pay_id === b.dataset.goto); S.keep = true; S.open = p.pay_id; S.form = null; S.pv = p.status; S.src = ''; S.q = '';
     if (S.tab === 'payments') re(); else location.hash = link('payments'); });
   on('[data-close]', () => { S.open = null; S.form = null; S.draft = null; re(); });
-  on('[data-rec]', () => { S.form = { method: 'gcash', date: todayPH() }; S.open = null; re(); if (narrow()) scrollTo(0, 0); });
-  on('[data-recjo]', b => { const j = job(b.dataset.recjo); S.keep = true; S.form = { jo: j.jo, payer: j.client, method: 'gcash', date: todayPH() }; S.open = null; if (S.tab === 'payments') re(); else location.hash = link('payments'); });
+  on('[data-rec]', () => { S.form = { method: '', date: todayPH() }; S.open = null; re(); if (narrow()) scrollTo(0, 0); });
+  on('[data-recjo]', b => { const j = job(b.dataset.recjo); S.keep = true; S.form = { jo: j.jo, payer: j.client, method: '', date: todayPH() }; S.open = null; if (S.tab === 'payments') re(); else location.hash = link('payments'); });
   on('[data-card]', b => { try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: b.dataset.card, back: location.hash, label: 'Back' })); } catch (_) {} location.hash = '#/review'; });
   // receipt thumbnail (Drive files are private: the server sends the picture)
   const big = main.querySelector('[data-big]');
@@ -278,6 +283,7 @@ function wire(main) {
     toast(msg); if (live()) await refresh(main); return r;
   };
   on('[data-confirm]', () => { if (!$('cJo').value) { toast('Pick the JO this payment is for'); return $('cJo').focus(); }
+    if (!$('cMeth').value) { toast('Pick how they paid'); return $('cMeth').focus(); }
     act('payConfirm', { pay_id: p.pay_id, base_updated_at: p.updated_at, jo: $('cJo').value, amount: $('cAmt').value, date: $('cDate').value, method: $('cMeth').value,
       reference: $('cRef').value, payer: $('cPayer').value, kind: $('cKind').value }, 'Confirmed: ' + peso($('cAmt').value) + ' to JO ' + $('cJo').value); });
   on('[data-reject]', () => { const why = $('rWhy').value.trim(); if (!why) return $('rWhy').focus(); act('payReject', { pay_id: p.pay_id, base_updated_at: p.updated_at, reason: why }, 'Rejected. It does not count anywhere.'); });
@@ -286,10 +292,13 @@ function wire(main) {
     const f = S.form, keep = () => { f.jo = $('fJo').value; f.amount = $('fAmt').value; f.date = $('fDate').value; f.reference = $('fRef').value; f.payer = $('fPayer').value; f.note = $('fNote').value; };
     $('fJo').onchange = () => { keep(); const j = job(f.jo); if (j && !f.payer) f.payer = j.client; re(); };
     on('[data-m]', b => { keep(); f.method = b.dataset.m; re(); });
-    $('fMeth').onchange = () => { keep(); if ($('fMeth').value) f.method = $('fMeth').value; re(); };
+    $('fRef').oninput = () => { keep(); const b = main.querySelector('.pproof'); if (b) b.classList.toggle('miss', !(f.pic || (f.method !== 'cash' && f.reference.trim()))); };
     $('fPic').onchange = async () => { keep(); const file = $('fPic').files[0]; if (!file) return; try { f.pic = await shrink(file); f.picName = file.name; } catch (e) { toast(e.message); } if (live()) re(); };
     on('[data-save]', async b => { keep();
       if (!f.jo) { toast('Pick the JO'); return $('fJo').focus(); } if (!(Number(String(f.amount).replace(/[,₱]/g, '')) > 0)) { toast('Type the amount'); return $('fAmt').focus(); }
+      if (!f.method) return toast('Pick how they paid');
+      if (f.method === 'cash' && !f.pic) return toast('Cash: add a photo of the receipt you issued');
+      if (!f.pic && !String(f.reference || '').trim()) { toast('Add proof: deposit slip photo or reference no.'); return $('fRef').focus(); }
       const send = async dup => { b.disabled = true; const r = await call('paySave', { pay: { jo: f.jo, amount: f.amount, date: f.date, method: f.method, reference: f.reference, payer: f.payer, note: f.note },
         receipt_base64: f.pic ? f.pic.split(',')[1] : '', receipt_mime: 'image/jpeg', allow_duplicate: !!dup }); b.disabled = false; return r; };
       let r = await send(false);
