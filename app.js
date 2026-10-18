@@ -84,7 +84,7 @@ function route() {
   const u = user();
   if (!u) { show('vLogin'); $('title').textContent = 'Sign in'; return; }
   const cur0 = (location.hash.match(/^#\/(\w+)/) || [])[1];
-  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'production'))) { // staff: simple home; Appointments + Production in the back office
+  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && cur0 === 'appts')) { // staff: simple home; Appointments in the back office (Production: Susan + admins only)
     show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
   }
   show('vOffice'); $('title').textContent = 'Back office';

@@ -10,7 +10,7 @@ const NAV = {
   admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['production', 'Production'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
   production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Inventory (view)']],
-  staff: [['home', 'Home'], ['production', 'Production'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Production + Appointments open in the back office
+  staff: [['home', 'Home'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments opens in the back office. No Production (Susan + admins only)
 };
 // back-office only: kept out of the scanner menu (the scanner reads OYPNav.NAV); the back office reads OFFICE_NAV
 const OFFICE_ONLY = { production: true };
