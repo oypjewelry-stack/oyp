@@ -87,3 +87,23 @@
 .pwadd{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0 4px}.pwadd .lnk{background:none;border:0;text-decoration:underline;cursor:pointer;font:inherit;color:#111;padding:0 4px}
 .pwform{border:1.5px solid #111;border-radius:14px;padding:14px 16px;margin:10px 0 6px;max-width:560px}.pwform h3{font-family:var(--head);font-weight:500;font-size:22px;margin-bottom:6px}
 .pwnote{font-size:13px;margin:4px 0!important}.pwbtn{display:flex;gap:10px;align-items:center}.pwbtn .lnk{background:none;border:0;text-decoration:underline;cursor:pointer;font-family:var(--label);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-left:auto}
+/* equal cards (Oct 18): every JO card on the board is the same height, desktop and phone, with or without photo / target / worker / timer.
+   Columns are equal width, the photo is a fixed 4:3, each text line has a fixed height (clamped with …), the timer line is always reserved,
+   and the chips sit in a fixed footer (3 rows desktop, 2 phone; Delayed, target, due first) (more chips than fit are hidden here; the card detail shows them all). */
+.pcard{display:flex;flex-direction:column;min-width:0;overflow:hidden;box-sizing:border-box}
+.pcard .pcm,.pcard .pbd{min-width:0}
+.pcard .pth{aspect-ratio:4/3;flex:0 0 auto;margin:0 0 8px}
+.pcard .kjo{flex-wrap:nowrap;height:20px;line-height:20px;overflow:hidden;white-space:nowrap}.pcard .pjn{overflow:hidden;text-overflow:ellipsis;min-width:0}.pcard .pver{flex-shrink:0}
+.pcard .kd{font-size:14px;line-height:18px;height:36px;margin:3px 0 2px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;word-break:break-word}
+.pcard .kc{line-height:16px;height:32px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;word-break:break-word}
+.pcard .prun{height:16px;line-height:16px;margin-top:4px;white-space:nowrap;overflow:hidden}
+.pcard .kf{flex:0 0 auto;height:65px;margin-top:6px;overflow:hidden;display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px}
+.pcard .kf .chip{white-space:nowrap;height:19px;line-height:13px;padding:2px 7px;margin:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
+.pmove.pmnone{background:#f4f2ec;color:#b9b2a0;text-align:center;cursor:default;box-sizing:border-box}
+/* phone list: photo 96×72 (4:3) beside the text */
+.prplist .pcm{display:flex;gap:12px;align-items:flex-start}.prplist .pth{width:96px;height:72px;aspect-ratio:4/3;margin:0}
+.prplist .kjo{height:26px;line-height:26px;font-size:20px}
+.prplist .kd{font-size:16px;line-height:20px;height:40px}
+.prplist .kc{font-size:14px;line-height:18px;height:18px;-webkit-line-clamp:1}
+.prplist .kf{height:50px}.prplist .kf .chip{font-size:11px;height:23px;line-height:15px;padding:3px 9px}
+.prplist .pmove{height:56px;padding:0 12px;line-height:56px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -92,19 +92,20 @@ function drawBoard(main) {
   $('pWrap').innerHTML = `${head('board')}${sum}${filt}${board}`;
   wireBoard(main); loadThumbs(main); tick();
 }
-function cardH(c, phone) {
+function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, clamped text, reserved timer line, fixed 2-row footer (production.css "equal cards")
   const nx = nextCol(c), staff = !can().all;
-  const chips = [c.delayed ? '<span class="chip gold">Delayed</span>' : '', tgtChip(c), `<span class="chip pdays">${esc(daysTxt(c))}</span>`,
-    c.due ? `<span class="chip ${c.late ? 'plate' : ''}">${c.late ? 'Past due ' : 'Due '}${dShort(c.due)}</span>` : '',
+  const chips = [c.delayed ? '<span class="chip gold">Delayed</span>' : '', tgtChip(c),
+    c.due ? `<span class="chip ${c.late ? 'plate' : ''}">${c.late ? 'Past due ' : 'Due '}${dShort(c.due)}</span>` : '', `<span class="chip pdays">${esc(daysTxt(c))}</span>`,
     c.stage_label.toLowerCase() !== col(c.col).label.toLowerCase() ? `<span class="chip">${esc(c.stage_label)}</span>` : '', c.review ? '<span class="chip">To review</span>' : ''].join('');
+  const desc = c.description || 'No description yet', who = c.assignee || 'Unassigned';
   return `<div class="pcard tap${c.delayed ? ' dl' : ''}${c.late ? ' late' : ''}" data-jo="${c.jo}" ${phone ? '' : 'draggable="true"'}>
     <div class="pcm"><div class="pth" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}>${c.photo ? '' : '<span>No scan</span>'}</div>
-    <div class="pbd"><div class="kjo">${esc(c.jo)}${c.photo && c.photo.version ? `<span class="pver" title="Version ${esc(c.photo.version)} (latest)">Ver. ${esc(c.photo.version)}</span>` : ''}</div>
-      <div class="kd">${esc(c.description || 'No description yet')}</div>
-      <div class="kc">${c.client ? esc(c.client) + ' · ' : ''}${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
-      ${c.running.length ? `<div class="prun"><i></i>${esc(c.running[0].worker)} · <span data-since="${c.running[0].since}">${elapsed(c.running[0].since)}</span></div>` : ''}</div></div>
+    <div class="pbd"><div class="kjo"><span class="pjn">${esc(c.jo)}</span>${c.photo && c.photo.version ? `<span class="pver" title="Version ${esc(c.photo.version)} (latest)">Ver. ${esc(c.photo.version)}</span>` : ''}</div>
+      <div class="kd" title="${esc(desc)}">${esc(desc)}</div>
+      <div class="kc" title="${esc((c.client ? c.client + ' · ' : '') + who)}">${c.client ? esc(c.client) + ' · ' : ''}${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
+      ${c.running.length ? `<div class="prun"><i></i>${esc(c.running[0].worker)} · <span data-since="${c.running[0].since}">${elapsed(c.running[0].since)}</span></div>` : '<div class="prun pslot" aria-hidden="true"></div>'}</div></div>
     <div class="kf">${chips}</div>
-    ${phone && nx && !(staff && c.col === 'pickup') ? `<button class="pmove" data-move="${c.jo}">Move to ${esc(nx.label)} <span>▸</span></button>` : ''}</div>`;
+    ${phone ? (nx && !(staff && c.col === 'pickup') ? `<button class="pmove" data-move="${c.jo}">Move to ${esc(nx.label)} <span>▸</span></button>` : '<div class="pmove pmnone" aria-hidden="true">Last stage</div>') : ''}</div>`;
 }
 function wireBoard(main) {
   const redraw = () => drawBoard(main);
