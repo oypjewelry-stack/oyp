@@ -27,7 +27,7 @@
 .pempty{border:1px dashed #ddd;border-radius:calc(12px*var(--rad));padding:calc(30px*var(--sp)) calc(10px*var(--sp))}
 /* move sheet */
 .pmodal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:flex;align-items:center;justify-content:center;padding:calc(16px*var(--sp))}
-.pmbox{background:#fff;border-radius:calc(18px*var(--rad));width:min(480px,100%);max-height:100%;overflow:auto;padding:calc(20px*var(--sp)) calc(22px*var(--sp))}
+.pmbox{background:#fff;border-radius:calc(18px*var(--rad));width:min(calc(480px*var(--pw)),100%);max-height:100%;overflow:auto;padding:calc(20px*var(--sp)) calc(22px*var(--sp))}
 .pmtop{display:flex;gap:calc(14px*var(--sp));align-items:center;margin-bottom:calc(14px*var(--sp))}.pmtop h3{font-family:var(--head);font-weight:500;font-size:calc(26px*var(--hs))}
 .pmft{display:flex;align-items:center;justify-content:center;gap:calc(12px*var(--sp));margin:calc(6px*var(--sp)) 0 calc(16px*var(--sp))}.pst{font-family:var(--label);font-weight:500;font-size:calc(14px*var(--fs));text-transform:uppercase;letter-spacing:.05em;border:1.5px solid #ccc;border-radius:calc(22px*var(--rad));padding:calc(9px*var(--sp)) calc(16px*var(--sp));color:#777}
 .pst.to{border-color:#111;background:#111;color:#fff}.parr{font-size:calc(26px*var(--fs));color:var(--gold)}
