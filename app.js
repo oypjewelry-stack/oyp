@@ -111,13 +111,33 @@ async function signIn() {
   if (!name) { $('loginErr').textContent = 'Type your first name'; $('uName').focus(); return; }
   if (code.length !== 4) { $('loginErr').textContent = 'Enter your 4-digit code'; return; }
   $('btnSignIn').disabled = true; $('btnSignIn').textContent = 'SIGNING IN…';
-  const r = await call('login', { username: name, code });
+  const r = await call('login', { username: name, code, boot: bootReads() });
   $('btnSignIn').disabled = false; $('btnSignIn').textContent = 'SIGN IN';
   code = ''; drawDots();
   if (!r.ok) { $('loginErr').textContent = r.error || 'Name or code is wrong'; return; }
-  saveSession(r); $('uName').value = ''; location.hash = '#/home'; route();
+  saveSession(r); bootStore(r); $('uName').value = ''; location.hash = '#/home'; route();
 }
-async function logout() { await call('logout'); clearSession(); location.hash = ''; route(); }
+/* Sign-in carries the first page's data (Fast.gs): we name, per role, the reads its landing page needs; the server runs them
+   with the new session (same role checks) and returns them in the login answer, so the first page needs no second round trip.
+   An older server ignores 'boot' and the page loads its data as before. */
+function bootReads() {
+  const out = {};
+  try { Object.keys(NAV).forEach(role => {
+    const first = NAV[role][0] && NAV[role][0][0], list = [];
+    (PAGE_READS[first] || []).forEach(([a, f]) => { const d = f ? f() : {}; if (d && CACHED[a]) list.push([a, d]); });
+    if (list.length) out[role] = list;
+  }); } catch (_) {}
+  return out;
+}
+function bootStore(r) {
+  if (!Array.isArray(r.boot)) return;
+  r.boot.forEach(it => { const [a, d, res] = it || []; if (CACHED[a] && res && res.ok) cachePut(ckey(a, d || {}), JSON.stringify(res)); });
+}
+// wake the server while the name and code are typed, so sign-in doesn't pay Apps Script's cold start (public 'ping', no data)
+let warmAt = 0;
+function warm() { if (Date.now() - warmAt < 240e3) return; warmAt = Date.now(); net('ping').catch(() => {}); }
+$('uName').addEventListener('focus', warm);
+async function logout() { clearTimeout(pfT); await call('logout'); clearSession(); location.hash = ''; route(); }
 document.addEventListener('click', e => {
   if (e.target.closest('[data-logout]')) logout();
   const s = e.target.closest('[data-soon]'); if (s) toast(s.dataset.soon + ' is coming soon');
@@ -139,7 +159,7 @@ function route() {
   $('menu').classList.add('hidden');
   if (location.hash === '#/logout') { history.replaceState(null, '', location.pathname); if (user()) return logout(); } // Log out from the scanner menu
   const u = user();
-  if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; return; }
+  if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; warm(); return; }
   const cur0 = (location.hash.match(/^#\/(\w+)/) || [])[1];
   if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && cur0 === 'appts')) { // staff: simple home; Appointments in the back office (Production: Susan + admins only)
     show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
