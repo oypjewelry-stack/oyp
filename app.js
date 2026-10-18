@@ -67,7 +67,7 @@ document.addEventListener('click', e => {
 });
 
 /* ---------- role menus ---------- */
-const { SCANNER, NAV, ROLE_LABEL, scannerLink } = window.OYPNav; // nav.js: same menu in the scanner
+const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.OFFICE_NAV || window.OYPNav.NAV; // nav.js: same menu in the scanner, minus back-office-only pages (Production)
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
 const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
   payments: true, quotes: true, balances: true, clients: true }; // pay.js: payments, quotes, balances, clients

@@ -12,9 +12,13 @@ const NAV = {
   accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Inventory (view)']],
   staff: [['home', 'Home'], ['production', 'Production'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Production + Appointments open in the back office
 };
+// back-office only: kept out of the scanner menu (the scanner reads OYPNav.NAV); the back office reads OFFICE_NAV
+const OFFICE_ONLY = { production: true };
+const OFFICE_NAV = NAV;
+const SCAN_NAV = {}; Object.keys(NAV).forEach(r => { SCAN_NAV[r] = NAV[r].filter(([k]) => !OFFICE_ONLY[k]); });
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
 // link to the scanner that tells it whose menu to show (the role only picks menu items; every page still checks the sign-in)
 const scannerLink = role => SCANNER + (role ? '?role=' + encodeURIComponent(role) : '');
-root.OYPNav = { SITE, STAFF, SCANNER, NAV, ROLE_LABEL, scannerLink };
+root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, scannerLink };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPNav;
 })(typeof window !== 'undefined' ? window : globalThis);

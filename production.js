@@ -1,5 +1,6 @@
 /* OYP back office: Production (#/production). JOs by stage on a board, who has them, time worked.
-   Server: Production.gs (prodBoard, prodJob, prodWorkers, prodPhoto, prodMove, prodAssign, prodTimer, prodSessionAdd, prodSessionVoid).
+   Server: Production.gs (prodBoard, prodJob, prodWorkers, prodPhoto, prodMove, prodAssign, prodSetTarget, prodTimer, prodSessionAdd, prodSessionVoid, prodWorkerSave).
+   Delayed = past a target date Susan or an admin set (whole JO or this step). No target = never Delayed. Workers are names; Susan logs their time.
    Routes: #/production (board) · #/production/jo/<JO> (board + card detail) · #/production/workers (who has what, hours this week).
    Desktop: drag a card to the next column. Phone: one stage at a time, a big "Move to ..." button on every card.
    No money on the board for anyone. Labor cost shows only in the card detail, only when the server sends it (admin + production manager). */
@@ -24,7 +25,9 @@ const isoHM = iso => { const d = new Date(Date.parse(iso) + 8 * 36e5); return pa
 const isoDay = iso => new Date(Date.parse(iso) + 8 * 36e5).toISOString().slice(0, 10);
 const nowMs = () => Date.now() + S.skew;
 const elapsed = iso => { const s = Math.max(0, Math.floor((nowMs() - Date.parse(iso)) / 1000)); return Math.floor(s / 3600) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); };
-const daysTxt = c => c.days == null ? '' : (c.days === 0 ? 'Since today' : c.days + (c.days === 1 ? ' day' : ' days')) + (c.limit ? ' · limit ' + c.limit : '');
+const daysTxt = c => c.days == null ? '' : c.days === 0 ? 'In step since today' : c.days + (c.days === 1 ? ' day' : ' days') + ' in step';
+const tgtOf = c => c.step_target && (c.delayed_by === 'step' || !c.target || c.step_target < c.target) ? { d: c.step_target, step: true } : c.target ? { d: c.target, step: false } : null; // the date that matters most
+const tgtChip = c => { const t = tgtOf(c); return t ? `<span class="chip ${c.delayed ? 'pover' : 'ptgt'}">${t.step ? 'Step target ' : 'Target '}${dShort(t.d)}</span>` : ''; };
 const col = k => S.r.columns.find(c => c.key === k) || { key: k, label: k };
 const nextCol = c => { const x = col(c.col); return x.next ? col(x.next) : null; };
 const can = () => (S.r && S.r.can) || {};
@@ -91,7 +94,7 @@ function drawBoard(main) {
 }
 function cardH(c, phone) {
   const nx = nextCol(c), staff = !can().all;
-  const chips = [c.delayed ? '<span class="chip gold">Delayed</span>' : '', `<span class="chip pdays${c.delayed ? ' over' : ''}">${esc(daysTxt(c))}</span>`,
+  const chips = [c.delayed ? '<span class="chip gold">Delayed</span>' : '', tgtChip(c), `<span class="chip pdays">${esc(daysTxt(c))}</span>`,
     c.due ? `<span class="chip ${c.late ? 'plate' : ''}">${c.late ? 'Past due ' : 'Due '}${dShort(c.due)}</span>` : '',
     c.stage_label.toLowerCase() !== col(c.col).label.toLowerCase() ? `<span class="chip">${esc(c.stage_label)}</span>` : '', c.review ? '<span class="chip">To review</span>' : ''].join('');
   return `<div class="pcard tap${c.delayed ? ' dl' : ''}${c.late ? ' late' : ''}" data-jo="${c.jo}" ${phone ? '' : 'draggable="true"'}>
@@ -146,6 +149,7 @@ function openMove(c, to) {
     ${c.running.length ? `<p class="pmnote">${esc(c.running.map(x => x.worker).join(', '))}\u2019s timer is running. It stops when you move the JO.</p>` : ''}
     ${to !== 'pickup' ? `<span class="lab">Who works on it in ${esc(t.label)}?</span><div class="pmwho">${S.r.workers.map(w => `<button class="${S.move.who === w.worker_id ? 'on' : ''}" data-who="${w.worker_id}">${esc(w.name)}<small>${esc(w.skill)}</small></button>`).join('')}<button class="${!S.move.who ? 'on' : ''}" data-who="">Decide later</button></div>` : '<p class="pmnote">The JO goes to “For pickup”.</p>'}
     ${can().all && t.codes.length > 1 ? `<label class="pmcode"><span class="lab">Exact step (optional)</span><select id="pmCode"><option value="">${esc(S.r.labels[t.codes[0]] ? 'Start of ' + t.label : t.label)}</option>${codes}</select></label>` : ''}
+    ${can().all && to !== 'pickup' ? `<label class="pmcode"><span class="lab">Target for ${esc(t.label)} (optional)</span><input type="date" id="pmT" min="${S.r.today}"><small class="muted">Leave empty if there is no target. Past this date the card shows Delayed.</small></label>` : ''}
     <p class="err" id="pmErr"></p>
     <button class="pill wide" id="pmGo">YES, MOVE TO ${esc(t.label.toUpperCase())}</button>
     <button class="pill outline wide" id="pmNo">CANCEL</button></div></div>`;
@@ -156,11 +160,12 @@ function openMove(c, to) {
   $('pmGo').onclick = async () => {
     const b = $('pmGo'); b.disabled = true; b.textContent = 'MOVING…';
     const code = $('pmCode') ? $('pmCode').value : '';
-    const r = await call('prodMove', { jo: c.jo, to: code || to, seen: c.stage_id, assignee_id: S.move.who || '' });
+    const tg = $('pmT') ? $('pmT').value : '';
+    const r = await call('prodMove', { jo: c.jo, to: code || to, seen: c.stage_id, assignee_id: S.move.who || '', step_target: tg });
     if (!r || !r.ok) { $('pmErr').textContent = (r && r.error) || 'Could not move. Try again.'; b.disabled = false; b.textContent = 'TRY AGAIN';
       if (r && r.code === 'MOVED') { await reload(); } return; }
     const who = S.r.workers.find(w => w.worker_id === S.move.who);
-    box.querySelector('.pmbox').innerHTML = `<div class="pmdone"><div class="pok">✓</div><h3>Moved to ${esc(r.to_label)}</h3><p>JO ${esc(c.jo)}${who ? ' · now with <b>' + esc(who.name) + '</b>' : ''}</p>
+    box.querySelector('.pmbox').innerHTML = `<div class="pmdone"><div class="pok">✓</div><h3>Moved to ${esc(r.to_label)}</h3><p>JO ${esc(c.jo)}${who ? ' · now with <b>' + esc(who.name) + '</b>' : ''}${r.step_target ? ' · target ' + esc(dShort(r.step_target)) : ''}</p>
       <p class="muted">Saved in the log: ${esc(S.u.display_name)}, ${esc(dLong(isoDay(r.at)))} ${esc(clock12(isoHM(r.at)))}${r.stopped && r.stopped.length ? ' · timer stopped for ' + esc(r.stopped.join(', ')) : ''}</p>
       <button class="pill wide" id="pmOk">OK</button></div>`;
     $('pmOk').onclick = () => { box.innerHTML = ''; };
@@ -194,6 +199,8 @@ function drawJob() {
     + (open ? g.rows.slice().reverse().map(s => `<tr class="psr${s.running ? ' prow-run' : ''}"><td class="cd">${esc(dShort(s.date))}</td><td class="ct">${esc(clock12(s.start))}–${s.running ? '<b>now</b>' : esc(clock12(s.end))}</td><td class="r ch">${s.running ? `<span data-since="${s.date}T${s.start}:00+08:00">${elapsed(s.date + 'T' + s.start + ':00+08:00')}</span>` : hrs(s.minutes)}</td><td class="cw">${esc(s.worker)}${s.source === 'manual' ? ' <small class="muted">typed</small>' : ''}</td>${cost ? `<td class="r cc">${s.cost == null ? '<small class="muted">no rate</small>' : peso(s.cost)}</td>` : ''}<td class="r cr">${s.running ? '' : `<button class="lnk" data-void="${s.session_id}">Remove</button>`}</td></tr>`).join('') : '')
     + (g.rows.length || !open ? '' : `<tr><td colspan="${cost ? 6 : 5}" class="muted">No time logged in this stage yet.</td></tr>`); }).join('');
   const total = `<tr class="ptot"><td colspan="2" class="cd"><b>All stages</b></td><td class="r ch"><b>${hrs(r.total_minutes)}</b></td><td class="cw"></td>${cost ? `<td class="r cc"><b>${peso(r.labor_cost)}</b></td>` : ''}<td class="cr"></td></tr>`;
+  const tgtField = (scope, label, d) => { const over = d && c.col !== 'pickup' && r.today > d;
+    return `<div class="ivf ptf${over ? ' over' : ''}"><span class="lab">${label}</span>${r.can.all ? `<input type="date" data-tgt="${scope}" value="${d || ''}">${d ? `<button class="lnk" data-tgtclr="${scope}">Clear</button>` : '<small class="muted">No target</small>'}` : `<b>${d ? esc(dLong(d)) : '—'}</b>`}${over ? '<small class="gold">Past target: Delayed</small>' : ''}</div>`; };
   const timerWho = r.can.all ? (runs[0] ? runs[0].worker_id : (c.assignee_id || me || '')) : me;
   const myRun = runs.find(s => s.worker_id === timerWho);
   box.innerHTML = `<div class="ivsheet" id="pSheet"><div class="ivsbox pdet">
@@ -203,13 +210,14 @@ function drawJob() {
     <div class="prpbig" id="pBig" ${r.pages[0] ? `data-full="${r.pages[0].file_id}"` : ''}>${r.pages[0] ? '' : '<span class="lab">No scan yet</span>'}</div>
     ${r.pages.length ? `<div class="pthumbs">${r.pages.map((p, i) => `<button class="pth xs ${i ? '' : 'on'}" data-pg="${p.file_id}" data-ph="${p.file_id}" data-jo="${c.jo}" aria-label="Page ${p.page}"></button>`).join('')}<span class="muted pvnote">${r.pages_version ? 'Version ' + esc(r.pages_version) + ' (latest) · ' : ''}${r.pages.length} page${r.pages.length > 1 ? 's' : ''}${r.older_sets ? ' · ' + r.older_sets + ' older scan' + (r.older_sets > 1 ? 's' : '') + ' in To review' : ''}</span></div>` : ''}
     <div class="ivfs">
-      <div class="ivf"><span class="lab">Stage</span><b>${esc(c.stage_label)}</b><small class="${c.delayed ? 'gold' : 'muted'}">${esc(daysTxt(c))}</small></div>
-      <div class="ivf"><span class="lab">Due</span><b>${c.due ? esc(dLong(c.due)) : '—'}</b></div>
+      <div class="ivf"><span class="lab">Stage</span><b>${esc(c.stage_label)}</b><small class="muted">${esc(daysTxt(c))}</small></div>
+      <div class="ivf"><span class="lab">Due (client)</span><b>${c.due ? esc(dLong(c.due)) : '—'}</b></div>
+      ${tgtField('step', 'Target · this step', c.step_target)}${tgtField('job', 'Target · whole JO', c.target)}
       <div class="ivf"><span class="lab">Client</span><b>${esc(c.client || '—')}</b></div>
       <div class="ivf"><span class="lab">Has it now</span>${r.can.all ? wsel('pAsg', c.assignee_id, true) : `<b>${esc(c.assignee || 'Nobody yet')}</b>${!c.assignee && me ? '<button class="lnk" id="pTake">Take it</button>' : ''}`}</div>
     </div>
     <div class="ptimer ${myRun ? 'on' : ''}">
-      <div><span class="lab">Timer · ${esc(c.stage_label)}</span>${r.can.all ? wsel('pTW', timerWho, true) : `<b>${esc((r.workers.find(w => w.worker_id === me) || {}).name || '')}</b>`}</div>
+      <div><span class="lab">${r.can.all ? 'Who is working · ' : 'Timer · '}${esc(c.stage_label)}</span>${r.can.all ? wsel('pTW', timerWho, true) : `<b>${esc((r.workers.find(w => w.worker_id === me) || {}).name || '')}</b>`}</div>
       <div class="pclock">${myRun ? `<span data-since="${myRun.date}T${myRun.start}:00+08:00">${elapsed(myRun.date + 'T' + myRun.start + ':00+08:00')}</span>` : '<span class="muted">Not running</span>'}</div>
       ${!r.can.all && !me ? '<p class="muted">Ask Susan to link your name to a worker to use the timer.</p>' : `<button class="pill ${myRun ? '' : 'outline'} prpgo" id="pTimer">${myRun ? '■ STOP' : '▶ START'}</button>`}
     </div>
@@ -223,7 +231,7 @@ function drawJob() {
       <label class="fsec full"><span class="lab">Stage</span><select id="paSt">${r.history.slice().reverse().filter((h, i, a) => a.findIndex(x => x.code === h.code) === i).map(h => `<option value="${h.code}">${esc(h.label)}${h.status === 'doing' ? ' (now)' : ''}</option>`).join('')}</select></label></div>
       <p class="err" id="paErr"></p><button class="pill sm" id="paGo">ADD</button></details>
     <div class="dtitle prphist"><h3>Stage history</h3><span class="kn">every move, who and when</span></div>
-    <div class="phl">${r.history.slice().reverse().map(h => `<div class="phr ${h.status === 'doing' ? 'now' : ''}"><div><b>${esc(h.label)}</b>${h.assignee ? ' · ' + esc(h.assignee) : ''}</div>
+    <div class="phl">${r.history.slice().reverse().map(h => `<div class="phr ${h.status === 'doing' ? 'now' : ''}"><div><b>${esc(h.label)}</b>${h.assignee ? ' · ' + esc(h.assignee) : ''}${h.target ? ' · <span class="muted">target ' + esc(dShort(h.target)) + '</span>' : ''}</div>
       <div class="phs">In ${esc(dShort(isoDay(h.started_at)))} ${esc(clock12(isoHM(h.started_at)))} by ${esc(h.moved_in_by)}${h.ended_at ? ` · out ${esc(dShort(isoDay(h.ended_at)))} by ${esc(h.moved_out_by)}` : ' · still here'} · ${h.days == null ? '' : h.days + ' d'} · ${hrs(h.minutes)}</div></div>`).join('')}</div>
     ${nx && !(c.col === 'pickup') ? `<button class="pill wide pmv" id="pMv">MOVE TO ${esc(nx.label.toUpperCase())} ▸</button>` : ''}
   </div></div>`;
@@ -235,6 +243,9 @@ function drawJob() {
   if ($('pAsg')) $('pAsg').onchange = e => call('prodAssign', { jo: c.jo, worker_id: e.target.value }).then(x => after(x, 'Saved: ' + (x && x.assignee ? x.assignee + ' has JO ' + c.jo : 'nobody assigned')));
   if ($('pTake')) $('pTake').onclick = () => call('prodAssign', { jo: c.jo, worker_id: me }).then(x => after(x, 'JO ' + c.jo + ' is yours'));
   if ($('pTW')) $('pTW').onchange = () => drawTimerOnly();
+  const setT = (scope, d) => call('prodSetTarget', { jo: c.jo, scope, target: d }).then(x => after(x, x && x.ok ? (d ? 'Target set: ' + dShort(d) : 'Target cleared') : ''));
+  box.querySelectorAll('[data-tgt]').forEach(i => i.onchange = () => setT(i.dataset.tgt, i.value));
+  box.querySelectorAll('[data-tgtclr]').forEach(b => b.onclick = () => setT(b.dataset.tgtclr, ''));
   const tbtn = $('pTimer');
   if (tbtn) tbtn.onclick = async () => {
     const who = $('pTW') ? $('pTW').value : me; if (!who) return toast('Pick who is working');
@@ -268,8 +279,8 @@ async function workersPage(main, live) {
   const max = Math.max(480, ...r.lanes.flatMap(l => l.by_day.map(d => d.minutes)));
   const mini = (c, i) => `<a class="pmini tap${c.delayed ? ' dl' : ''}" href="#/production/jo/${c.jo}">${i != null ? `<span class="pnum">${i + 1}</span>` : ''}<span class="pth xs" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}></span>
     <span class="pmb"><b>${esc(c.jo)}</b> <span class="muted">${esc(c.stage_label)}</span><span class="kd">${esc(c.description)}</span>
-    <span class="pmf">${c.delayed ? '<span class="chip gold">Delayed</span>' : ''}<span class="chip pdays">${esc(daysTxt(c))}</span>${c.due ? `<span class="chip ${c.late ? 'plate' : ''}">Due ${dShort(c.due)}</span>` : ''}${c.minutes_stage ? `<span class="chip">${hrs(c.minutes_stage)} so far</span>` : ''}</span></span></a>`;
-  const lane = l => `<div class="plane"><div class="prplh"><div><b class="pln">${esc(l.name)}</b><span class="lab">${esc(l.skill)}</span></div><div class="plhrs"><b>${hrs(l.minutes_week)}</b><span class="lab">${thisWeek ? 'this week' : 'that week'}</span></div></div>
+    <span class="pmf">${c.delayed ? '<span class="chip gold">Delayed</span>' : ''}${tgtChip(c)}<span class="chip pdays">${esc(daysTxt(c))}</span>${c.due ? `<span class="chip ${c.late ? 'plate' : ''}">Due ${dShort(c.due)}</span>` : ''}${c.minutes_stage ? `<span class="chip">${hrs(c.minutes_stage)} so far</span>` : ''}</span></span></a>`;
+  const lane = l => `<div class="plane"><div class="prplh"><div><b class="pln">${esc(l.name)}</b><span class="lab">${esc(l.skill)}</span>${r.can.all ? `<button class="lnk pwed" data-wed="${l.worker_id}">Edit</button>` : ''}</div><div class="plhrs"><b>${hrs(l.minutes_week)}</b><span class="lab">${thisWeek ? 'this week' : 'that week'}</span></div></div>
     <div class="pbars">${l.by_day.slice(0, 6).map(d => `<div class="pbar${d.day === r.today ? ' cur' : ''}" title="${esc(dShort(d.day))}: ${hrs(d.minutes)}"><i style="height:${Math.round(d.minutes / max * 100)}%"></i><span>${DN[new Date(d.day + 'T00:00:00Z').getUTCDay()].slice(0, 1)}</span></div>`).join('')}</div>
     ${l.running ? `<div class="prun big"><i></i>Working on JO ${esc(l.running.jo)} · <span data-since="${l.running.since}">${elapsed(l.running.since)}</span></div>` : '<div class="prun off">No timer running</div>'}
     <div class="plsec"><span class="lab">Has now · ${l.in_hand.length}</span>${l.in_hand.map(c => mini(c)).join('') || '<p class="muted pnone">Nothing started</p>'}</div>
@@ -277,12 +288,39 @@ async function workersPage(main, live) {
   const tot = r.lanes.reduce((t, l) => t + l.minutes_week, 0);
   main.innerHTML = `<div class="prod">${head('workers')}
     <div class="pwk"><button class="icon pnav" id="wPrev" aria-label="Previous week">‹</button><b>Week of ${esc(dShort(r.week))} – ${esc(dShort(r.week_end))}</b><button class="icon pnav" id="wNext" aria-label="Next week" ${thisWeek ? 'disabled' : ''}>›</button>${thisWeek ? '' : '<button class="ivclr" id="wNow">This week</button>'}</div>
+    ${r.can.all ? `<div class="pwadd"><button class="pill sm" id="wAdd">+ ADD WORKER</button>${r.hidden && r.hidden.length ? `<span class="muted">Hidden: ${r.hidden.map(h => `<button class="lnk" data-wshow="${h.worker_id}">${esc(h.name)}</button>`).join(' ')}</span>` : ''}</div><div id="wForm"></div>` : ''}
     <p class="muted psum">${hrs(tot)} logged by ${r.lanes.length} people · “Has now” = time logged in the current stage · “Up next” = assigned, not started (most urgent first)</p>
     <div class="planes">${r.lanes.map(lane).join('')}${r.unassigned.length ? `<div class="plane un"><div class="prplh"><div><b class="pln">Unassigned</b><span class="lab">needs a person</span></div><div class="plhrs"><b>${r.unassigned.length}</b><span class="lab">JOs</span></div></div><div class="plsec">${r.unassigned.map(c => mini(c)).join('')}</div></div>` : ''}</div></div>`;
   loadThumbs(main); tick();
+  if (r.can.all) wireWorkerForm(main, r);
   $('wPrev').onclick = () => { S.wk = addD(r.week, -7); workersPage(main, window.OYP.here()); };
   $('wNext').onclick = () => { S.wk = addD(r.week, 7); workersPage(main, window.OYP.here()); };
   if ($('wNow')) $('wNow').onclick = () => { S.wk = null; workersPage(main, window.OYP.here()); };
+}
+
+/* add / edit a worker (Susan / admin). Workers are names only, no logins. Hide = off the lists, never deleted. */
+function wireWorkerForm(main, r) {
+  const box = $('wForm'), again = () => { S.wkr = null; workersPage(main, window.OYP.here()); };
+  const form = w => {
+    const opts = (r.labor_options || []).map(o => `<option value="${esc(o.code)}" ${w && w.labor_code === o.code ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+    box.innerHTML = `<div class="pwform"><h3>${w ? 'Edit ' + esc(w.name) : 'Add a worker'}</h3><div class="pform">
+      <label class="fsec"><span class="lab">Name</span><input id="wfN" maxlength="40" value="${esc(w ? w.name : '')}" placeholder="e.g. Romy" autocomplete="off"></label>
+      <label class="fsec"><span class="lab">Does</span><input id="wfS" maxlength="40" value="${esc(w ? w.skill : '')}" placeholder="e.g. Polishing" autocomplete="off"></label>
+      ${opts ? `<label class="fsec full"><span class="lab">Labor rate (for the cost of hours)</span><select id="wfL"><option value="">None</option>${opts}</select></label>` : ''}</div>
+      <p class="muted pwnote">Just a name for the lists and the time log. They do not get a login; Susan logs their time.</p>
+      <p class="err" id="wfErr"></p><div class="pwbtn"><button class="pill sm" id="wfGo">SAVE</button><button class="pill sm outline" id="wfNo">CANCEL</button>${w ? '<button class="lnk" id="wfHide">Hide from lists</button>' : ''}</div></div>`;
+    if ($('wfL') && !w) $('wfL').onchange = e => { const o = (r.labor_options || []).find(x => x.code === e.target.value), m = o && o.label.match(/^(.*?)\s*\((.+)\)\s*$/); // "Goldsmith (Romy)" fills Romy · Goldsmith
+      if (o && !$('wfN').value) $('wfN').value = m ? m[2] : ''; if (o && !$('wfS').value) $('wfS').value = m ? m[1] : o.label; };
+    $('wfNo').onclick = () => { box.innerHTML = ''; };
+    const save = async extra => { const x = await call('prodWorkerSave', Object.assign({ worker_id: w ? w.worker_id : '', name: $('wfN').value, skill: $('wfS').value, labor_code: $('wfL') ? $('wfL').value : (w ? w.labor_code : '') }, extra || {}));
+      if (!x || !x.ok) { $('wfErr').textContent = (x && x.error) || 'Could not save'; return; } toast(extra && extra.active === false ? x.name + ' is hidden' : 'Saved: ' + x.name); S.r = null; again(); };
+    $('wfGo').onclick = () => save(); if ($('wfHide')) $('wfHide').onclick = () => { if (confirm('Hide ' + w.name + ' from the lists? Their logged time stays.')) save({ active: false }); };
+    $('wfN').focus();
+  };
+  $('wAdd').onclick = () => form(null);
+  main.querySelectorAll('[data-wed]').forEach(b => b.onclick = () => form(r.lanes.find(l => l.worker_id === b.dataset.wed)));
+  main.querySelectorAll('[data-wshow]').forEach(b => b.onclick = async () => { const h = r.hidden.find(x => x.worker_id === b.dataset.wshow);
+    const x = await call('prodWorkerSave', { worker_id: h.worker_id, name: h.name, skill: h.skill, labor_code: h.labor_code || '', active: true }); if (x && x.ok) { toast(h.name + ' is back on the lists'); S.r = null; again(); } else toast((x && x.error) || 'Could not save'); });
 }
 
 /* running clocks: one ticker for every [data-since] on screen */
