@@ -17,6 +17,10 @@ const SECS = [
   ['staff', 'Staff accounts', 'Add, turn off, role, new code'],
   ['scanner', 'Scanner', 'Page rotation and auto-snap for every phone'],
   ['log', 'Change history', 'Who changed what, and when']];
+// Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
+// The values stay in the Settings tab and in the Change history; nothing is deleted. Remove a key here to show the section again.
+const HIDDEN = { stages: true };
+const SHOWN = SECS.filter(s => !HIDDEN[s[0]]);
 const S = { r: null, dirty: {}, code: null, busy: false };
 const $ = id => document.getElementById(id);
 const esc = s => window.OYP.esc(s);
@@ -41,7 +45,7 @@ async function render(main, u) {
 }
 async function reload(main) { const live = window.OYP.here(); const r = await window.OYP.call('settingsGet'); if (!live()) return; if (r && r.ok) { S.r = r; S.dirty = {}; draw(main); } }
 function draw(main) {
-  const s = sec(), ok = SECS.find(x => x[0] === s);
+  const s = sec(), ok = SHOWN.find(x => x[0] === s);
   main.innerHTML = `<div class="set">${!S.r.setup ? '<div class="setwarn">Almost ready: run <b>setupSettings</b> once in Apps Script. Until then you can look, but not save.</div>' : ''}${ok ? section(s) : landing()}</div>`;
   wire(main);
 }
@@ -62,7 +66,7 @@ function summary(k) {
 }
 function landing() {
   return `<h2>Settings</h2><p class="muted">Change the shop's numbers here. Every change is saved with your name in the Change history. Empty fields use the default.</p>
-    <div class="setgrid">${SECS.map(([k, t, d]) => `<a class="setcard tap" href="#/settings/${k}"><span class="lab">${esc(t)}</span><b>${esc(summary(k))}</b><span class="muted">${esc(d)}</span><span class="chev">›</span></a>`).join('')}</div>`;
+    <div class="setgrid">${SHOWN.map(([k, t, d]) => `<a class="setcard tap" href="#/settings/${k}"><span class="lab">${esc(t)}</span><b>${esc(summary(k))}</b><span class="muted">${esc(d)}</span><span class="chev">›</span></a>`).join('')}</div>`;
 }
 
 /* ---------- one section ---------- */

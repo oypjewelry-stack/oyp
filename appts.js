@@ -321,7 +321,7 @@ async function save(main, force) {
   if (f.newc && !f.newc.name.trim()) return toast('Type the new client’s name');
   if (f.newc && !f.newc.email.trim() && !f.newc.mobile.trim()) return toast('New client: add their email or mobile');
   if (!f.staff) return toast('Pick the staff member');
-  if (f.start + f.minutes > (S.r.hours.latest || 1080)) return toast('That runs past 6:00 PM. Pick an earlier start or a shorter length.');
+  if (f.start + f.minutes > (S.r.hours.latest || 1080)) return toast('That runs past ' + clock(S.r.hours.latest || 1080) + '. Pick an earlier start or a shorter length.');
   if (S.busy) return; S.busy = true; const live = window.OYP.here(); const b = $('apSave'); if (b) b.disabled = true;
   const r = await window.OYP.call('apptSave', payload(force, false)); S.busy = false;
   if (!live() || S.form !== f) return;

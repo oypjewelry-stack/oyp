@@ -7,7 +7,7 @@ const STAFF = 'https://oypjewelry.com/staff/';
 const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
 const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['production', 'Production'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['users', 'Staff logins'], ['settings', 'Settings']],
+  admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['production', 'Production'], ['scanner', 'Scanner'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['shop', 'Shop listings'], ['payments', 'Quotes / payments'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it
   production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['review', 'To review'], ['estimate', 'Cost estimator'], ['jos', 'Inventory'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)'], ['jos', 'Inventory (view)']],
   staff: [['home', 'Home'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments opens in the back office. No Production (Susan + admins only)

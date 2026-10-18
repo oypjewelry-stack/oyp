@@ -232,7 +232,7 @@ function drawJob() {
       <p class="err" id="paErr"></p><button class="pill sm" id="paGo">ADD</button></details>
     <div class="dtitle prphist"><h3>Stage history</h3><span class="kn">every move, who and when</span></div>
     <div class="phl">${r.history.slice().reverse().map(h => `<div class="phr ${h.status === 'doing' ? 'now' : ''}"><div><b>${esc(h.label)}</b>${h.assignee ? ' · ' + esc(h.assignee) : ''}${h.target ? ' · <span class="muted">target ' + esc(dShort(h.target)) + '</span>' : ''}</div>
-      <div class="phs">In ${esc(dShort(isoDay(h.started_at)))} ${esc(clock12(isoHM(h.started_at)))} by ${esc(h.moved_in_by)}${h.ended_at ? ` · out ${esc(dShort(isoDay(h.ended_at)))} by ${esc(h.moved_out_by)}` : ' · still here'} · ${h.days == null ? '' : h.days + ' d'} · ${hrs(h.minutes)}</div></div>`).join('')}</div>
+      <div class="phs">${h.pending ? 'From the scan · since ' + esc(dShort(isoDay(h.started_at))) : `In ${esc(dShort(isoDay(h.started_at)))} ${esc(clock12(isoHM(h.started_at)))} by ${esc(h.moved_in_by)}`}${h.ended_at ? ` · out ${esc(dShort(isoDay(h.ended_at)))} by ${esc(h.moved_out_by)}` : ' · still here'} · ${h.days == null ? '' : h.days + ' d'} · ${hrs(h.minutes)}</div></div>`).join('')}</div>
     ${nx && !(c.col === 'pickup') ? `<button class="pill wide pmv" id="pMv">MOVE TO ${esc(nx.label.toUpperCase())} ▸</button>` : ''}
   </div></div>`;
   wireSheetClose(); loadThumbs(box); tick();
