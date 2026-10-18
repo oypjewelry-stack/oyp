@@ -16,6 +16,7 @@ const SECS = [
   ['stages', 'Stage delays', 'Days a JO may stay in a stage before it is flagged'],
   ['staff', 'Staff accounts', 'Add, turn off, role, new code'],
   ['scanner', 'Scanner', 'Page rotation and auto-snap for every phone'],
+  ['design', 'Design', 'Text size, headings, spacing, corners, box height and width'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
 // The values stay in the Settings tab and in the Change history; nothing is deleted. Remove a key here to show the section again.
@@ -61,6 +62,8 @@ function summary(k) {
   if (k === 'stages') { const n = S.r.items.filter(i => i.group === 'stages' && i.value !== '').length; return n ? n + ' stage' + (n > 1 ? 's' : '') + ' with a limit' : 'No limits set'; }
   if (k === 'staff') { const a = S.r.users.filter(x => x.active).length; return a + ' active · ' + (S.r.users.length - a) + ' off'; }
   if (k === 'scanner') return I('scanner.rotate').replace(/ \(.*\)/, '') + ' · auto-snap ' + I('scanner.auto_snap').toLowerCase();
+  if (k === 'design') { const v = dsStart(), D = window.OYPDesign; if (!D) return '';
+    const on = Object.keys(DS).filter(x => v[x] !== D.KEYS[x][1]); return on.length ? on.map(x => DS[x][0] + ' ' + dsFmt(x, v[x])).join(' · ') : 'Original look'; }
   if (k === 'log') { const l = S.r.log[0]; return l ? 'Last: ' + when(l.at) + ' by ' + l.by : 'No changes yet'; }
   return '';
 }
@@ -108,8 +111,68 @@ function section(s) {
     + `<div class="setbox">${field('appt.default_min', 'Default length')}${typesBox()}</div>` + saveBar();
   if (s === 'prices') return head(t[1], 'These are the rates the cost estimator and quotes use. Metal prices per gram are changed on <a href="#/prices">Material prices</a>.') + pricesBox() + saveBar();
   if (s === 'staff') return head(t[1], 'Accounts are never deleted: turn them off instead. A new code is shown only once. Changing someone\'s role or code signs them out on every device.') + staffBox();
+  if (s === 'design') return head(t[1], 'Drag a slider and this page changes right away, so you can see it before saving. <b>SAVE</b> makes it the look for everyone: every staff phone and computer, and the customer pages (order lookup, shop). Other devices pick it up within a few minutes.') + designBox();
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
   return '';
+}
+/* ---------- Design (sliders -> CSS variables, design.js) ---------- */
+const DS = { // key -> [short name, label, what it changes]
+  text: ['Text', 'Text size', 'Everyday text: descriptions, tables, labels, menus, form fields'],
+  head: ['Headings', 'Heading size', 'Page titles, JO numbers, names, big numbers and the black buttons'],
+  space: ['Spacing', 'Spacing', 'Space inside and between boxes, cards, rows and buttons'],
+  radius: ['Corners', 'Corner roundness', 'How round the corners of cards, boxes, fields and buttons are (0 = square)'],
+  box: ['Card height', 'Card and box height', 'Production JO cards (all stay the same height) and the minimum height of boxes and columns'],
+  width: ['Width', 'Content width', 'How wide pages can grow on a big screen (the customer pages too)'] };
+const dsPasted = () => !!item('design.text');
+const dsFmt = (k, v) => window.OYPDesign.KEYS[k][5] === '%' ? v + '%' : v + ' px';
+function dsStart() { const D = window.OYPDesign, o = {}, loc = D.local();
+  Object.keys(DS).forEach(k => { const it = item('design.' + k), def = D.KEYS[k][1];
+    o[k] = loc && k in loc ? loc[k] : loc ? def : it && it.value !== '' ? Number(it.value) : def; });
+  return o; }
+function designBox() {
+  const D = window.OYPDesign; if (!D) return '<p class="muted">Reload the page to use Design.</p>';
+  const v = S.ds || (S.ds = dsStart()), pasted = dsPasted(), loc = D.local(), dis = pasted && !S.r.setup ? ' disabled' : '';
+  const row = k => { const [, def, mn, mx, st] = D.KEYS[k], it = item('design.' + k);
+    return `<div class="setrow dsrow"><div class="setl"><span class="lab">${esc(DS[k][1])}</span><span class="muted">${esc(DS[k][2])}</span>
+      <span class="setmeta">${it && it.value !== '' && !loc ? `Saved ${esc(when(it.changed_at))} by ${esc(it.changed_by)} · ` : ''}Default ${esc(dsFmt(k, def))}</span></div>
+      <div class="setv dsv"><input type="range" data-ds="${k}" min="${mn}" max="${mx}" step="${st}" value="${v[k]}" aria-label="${esc(DS[k][1])}"${dis}>
+      <output class="dsout" id="dsO_${k}">${esc(dsFmt(k, v[k]))}</output><button class="lnk" data-dsreset="${k}"${v[k] === def ? ' disabled' : ''}${dis}>Reset</button></div></div>`; };
+  return `${!pasted ? '<div class="setwarn">Saving for everyone needs the <b>Design</b> paste in Apps Script. Until then SAVE keeps the look on <b>this device only</b>.</div>'
+      : loc ? '<div class="setwarn">This device shows its own look (saved here before the Design paste). SAVE to make it everyone\'s look, or Reset all.</div>' : ''}
+    <div class="dsprev" aria-label="Sample"><span class="lab">Sample</span>
+      <div class="dsgrid"><div class="kpi"><span class="lab">Balance due</span><b>₱226,750</b><small>Final payment · BPI</small></div>
+      <div class="pcard"><div class="pcm"><div class="pth"><span>No scan</span></div><div class="pbd"><div class="kjo"><span class="pjn">JO 1234</span></div>
+        <div class="kd">18k yellow gold ring, oval sapphire</div><div class="kc">Baby Buenaventura · <b>Susan</b></div><div class="prun pslot" aria-hidden="true"></div></div></div>
+        <div class="kf"><span class="chip">Due Oct 24</span><span class="chip pdays">2 days in step</span></div></div>
+      <div class="dsside"><h3 class="dsh">Heading</h3><p>Everyday text looks like this. <span class="chip gold">Chip</span></p><button class="pill" type="button" tabindex="-1">BUTTON</button></div></div></div>
+    <div class="setbox">${Object.keys(DS).map(row).join('')}</div>
+    <div class="setbar"><button class="pill" id="dsSave" disabled>${pasted ? 'SAVE' : 'SAVE ON THIS DEVICE'}</button><button class="lnk" id="dsAll"${dis}>Reset all</button><span class="muted" id="dsMsg"></span></div>`;
+}
+function dsDirty() { const D = window.OYPDesign, a = S.ds, b = dsSaved(); return Object.keys(DS).filter(k => a[k] !== b[k]); }
+function dsSaved() { const D = window.OYPDesign, cur = D.current(), o = {}; Object.keys(DS).forEach(k => { o[k] = k in cur ? cur[k] : D.KEYS[k][1]; }); return o; }
+function dsMark() { const n = dsDirty().length, b = $('dsSave'), m = $('dsMsg'), D = window.OYPDesign;
+  if (b) b.disabled = (!n && !(dsPasted() && D.local())) || S.busy; if (m && !S.busy) m.textContent = n ? 'Preview only: ' + n + ' change' + (n > 1 ? 's' : '') + ' not saved yet' : '';
+  Object.keys(DS).forEach(k => { const r = document.querySelector(`[data-dsreset="${k}"]`); if (r) r.disabled = S.ds[k] === D.KEYS[k][1]; }); }
+function dsWire(main) {
+  const D = window.OYPDesign; if (!D || !$('dsSave')) return;
+  const set = (k, v) => { S.ds[k] = v; const i = main.querySelector(`[data-ds="${k}"]`); if (i) i.value = v; $('dsO_' + k).textContent = dsFmt(k, v); };
+  const prev = () => { D.preview(S.ds); dsMark(); };
+  main.querySelectorAll('[data-ds]').forEach(el => el.oninput = el.onchange = () => { set(el.dataset.ds, Number(el.value)); prev(); });
+  main.querySelectorAll('[data-dsreset]').forEach(b => b.onclick = () => { set(b.dataset.dsreset, D.KEYS[b.dataset.dsreset][1]); prev(); });
+  $('dsAll').onclick = () => { Object.keys(DS).forEach(k => set(k, D.KEYS[k][1])); prev(); };
+  $('dsSave').onclick = () => dsSave(main);
+  if (dsDirty().length) D.preview(S.ds); dsMark();
+}
+async function dsSave(main) {
+  const D = window.OYPDesign, { call, toast } = window.OYP, v = Object.assign({}, S.ds);
+  if (!dsPasted()) { const c = D.clean(v); if (Object.keys(c).length) D.setLocal(c); else D.clearLocal(); D.restore(); toast('Saved on this device'); S.ds = null; draw(main); return; }
+  S.busy = true; dsMark(); $('dsMsg').textContent = 'Saving…';
+  const values = {}, seen = {};
+  Object.keys(DS).forEach(k => { const it = item('design.' + k), sv = it.value !== '' ? Number(it.value) : D.KEYS[k][1];
+    if (v[k] !== sv) { values['design.' + k] = String(v[k]); seen['design.' + k] = it.changed_at || ''; } });
+  if (Object.keys(values).length) { const r = await call('settingsSave', { values, seen });
+    if (!r || !r.ok) { S.busy = false; dsMark(); $('dsMsg').textContent = ''; return toast((r && r.error) || 'Could not save'); } }
+  D.clearLocal(); D.setServer(v); D.restore(); S.busy = false; S.ds = null; toast('Saved for everyone'); reload(main);
 }
 function typesBox() {
   const it = item('appt.types'), T = S.types || (S.types = JSON.parse(eff(it))), dis = it.off || !S.r.setup ? ' disabled' : '';
@@ -151,7 +214,7 @@ const KEYLAB = k => { const it = item(k); if (it) return (SECS.find(s => s[0] ==
   const m = k.match(/^(rate|premium)\.(.+)$/); if (m) { const R = S.r.rates, x = R.markups.concat(R.labor, R.metals).find(r => r.code === m[2]); return (x ? x.label : m[2]) + (m[1] === 'premium' ? ' · premium %' : ''); }
   const u = k.match(/^user\.([^.]+)(?:\.(\w+))?$/); if (u) return 'Staff · ' + u[1] + (u[2] ? ' · ' + ({ active: 'on / off', role: 'role', code: 'code', unlock: 'unlock' }[u[2]] || u[2]) : '');
   return k; };
-function logVal(k, v) { const it = item(k); if (v === '') return it ? 'default' : '—'; if (it && it.type === 'types') { try { return JSON.parse(v).map(t => t.label + (t.on ? '' : ' (off)')).join(', '); } catch (e) { return v; } }
+function logVal(k, v) { const it = item(k); if (v === '') return it ? 'default' : '—'; if (/^design\./.test(k) && window.OYPDesign) return dsFmt(k.slice(7), v); if (it && it.type === 'types') { try { return JSON.parse(v).map(t => t.label + (t.on ? '' : ' (off)')).join(', '); } catch (e) { return v; } }
   if (/\.active$/.test(k)) return v === 'true' ? 'On' : 'Off';
   if (/\.role$/.test(k) || /^user\.[^.]+$/.test(k)) return v.replace(/(admin|production_manager|accounting|staff)/, r => ROLE(r)); return it ? show(it, v) : v; }
 function logBox() {
@@ -193,6 +256,7 @@ function wire(main) {
     const r = await call(a, { username: un, active: !!b.dataset.on }); if (!r.ok) return toast(r.error);
     S.code = r.code ? { username: r.username, code: r.code } : null; reload(main); });
   if (!sec() || sec() !== 'staff') S.code = null;
+  if (sec() === 'design') dsWire(main);
   mark();
 }
 async function save(main) {
@@ -206,6 +270,6 @@ async function save(main) {
   if (Object.keys(values).length) { const r = await call('settingsSave', { values, seen }); if (!r.ok) return fail(r.error); }
   S.busy = false; S.types = null; S.typesDirty = false; toast('Saved'); reload(main);
 }
-window.addEventListener('hashchange', () => { S.types = null; S.typesDirty = false; });
+window.addEventListener('hashchange', () => { S.types = null; S.typesDirty = false; if (S.ds && sec() !== 'design') { S.ds = null; if (window.OYPDesign) window.OYPDesign.restore(); } }); // leaving Design unsaved: back to the saved look
 window.OYPSettings = { render };
 })();

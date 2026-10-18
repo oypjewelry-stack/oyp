@@ -34,7 +34,7 @@ function list() {
   setMeta('Shop · OYP Jewelry', 'Finished pieces from our workshop, ready to take home.');
   app.innerHTML = `<h1>For sale</h1><p class="grey">Finished pieces from our workshop, ready to take home.</p>
   ${items.length ? '' : '<p class="note">Nothing listed right now. Please check back soon.</p>'}
-  <div class="grid">${items.map((it, i) => `<a class="tile" href="/shop/${esc(it.slug)}" data-i="${i}"><div class="th" data-s="${esc(it.slug)}"><button class="shr" data-share="${i}" aria-label="Share">${SHARE_ICON}</button></div><b>${esc(it.title)}</b><span class="grey" style="font-size:13px">${esc(it.category || it.metal)}</span>
+  <div class="grid">${items.map((it, i) => `<a class="tile" href="/shop/${esc(it.slug)}" data-i="${i}"><div class="th" data-s="${esc(it.slug)}"><button class="shr" data-share="${i}" aria-label="Share">${SHARE_ICON}</button></div><b>${esc(it.title)}</b><span class="grey" style="font-size:calc(13px*var(--fs))">${esc(it.category || it.metal)}</span>
   <div class="p">${it.price_php ? peso(it.price_php) : 'Ask for price'}</div></a>`).join('')}</div>`;
   app.querySelectorAll('.tile').forEach(a => a.onclick = e => {
     const s = e.target.closest('[data-share]'); e.preventDefault();
@@ -52,7 +52,7 @@ function detail(it) {
   ${it.description ? `<p class="grey" style="margin-top:10px">${esc(it.description)}</p>` : ''}
   ${specs.length ? `<p class="sec">Details</p><dl class="specs2">${specs.map(x => `<dt>${esc(x.label)}</dt><dd>${esc(x.value)}</dd>`).join('')}</dl>` : ''}
   <div class="buy"><div class="amt">${it.price_php ? peso(it.price_php) : 'Ask for price'}</div><button class="blk" id="ask">Ask about it</button></div>
-  ${it.item_code ? `<p class="grey" style="font-size:13px;margin-top:10px">Item code ${esc(it.item_code)}</p>` : ''}</div></div>`;
+  ${it.item_code ? `<p class="grey" style="font-size:calc(13px*var(--fs));margin-top:10px">Item code ${esc(it.item_code)}</p>` : ''}</div></div>`;
   slides(document.getElementById('hero'), it.photos, i => photo(it, i));
   document.getElementById('bk').onclick = e => { e.preventDefault(); history.pushState(null, '', '/shop/'); route(); };
   document.getElementById('shr').onclick = () => share(it);
