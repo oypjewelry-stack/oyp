@@ -15,7 +15,7 @@ let P = null; // last priceGet
 
 async function render(main, u) {
   const { call, esc } = window.OYP, parts = (location.hash.match(/^#\/prices\/(\w+)(?:\/(\w+))?/) || []).slice(1);
-  main.innerHTML = '<h2>Material prices</h2><p class="muted">Loading…</p>';
+  main.innerHTML = '<h2>Material prices</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const live = window.OYP.here(); // route token (app.js): bail if the user moved on while loading
   const r = await call('priceGet'); if (!live()) return;
   if (!r || !r.ok) {

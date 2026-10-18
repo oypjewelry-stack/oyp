@@ -65,3 +65,4 @@
 .apinv.off{color:#8a6d1f;margin-right:8px}.apoffn{color:#8a6d1f}
 .aphol{display:block;font-size:10.5px;line-height:1.25;color:#a0782c;font-family:var(--label);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aphol.open{color:#5c7d5c}.aphol.pending{color:#b3261e}.apmd .aphol{margin:1px 0 2px}.aphold{color:#8a6d1f}.chip.red{color:#b3261e;border-color:#b3261e}
+.aplegend .apcx{margin-left:auto;padding:4px 10px;font-size:11px}.aplegend .apcx b{margin-left:4px}

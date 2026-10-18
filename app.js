@@ -13,7 +13,7 @@ if (!localStorage.getItem(K.dev)) {
 }
 const device = () => localStorage.getItem(K.dev);
 
-async function call(action, data = {}) {
+async function net(action, data) {
   let r;
   try {
     const res = await fetch(API(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -24,8 +24,63 @@ async function call(action, data = {}) {
   if (r && r.code === 'NO_SESSION' && action !== 'login') { clearSession(); route(); }
   return r;
 }
+
+/* ---------- page-data cache (stale-while-revalidate) ----------
+   Every Apps Script call takes 3-9 s, so the main read of each page is kept in localStorage under a key tied to the
+   signed-in session (a hash of the session token, never the token itself). A page opens at once from it, the server is
+   asked again in the background, and the page redraws if the answer changed (unless the user already started using it).
+   Cleared on log in, log out, session expiry and after any change (save / move / confirm ...), so a save always re-reads. */
+const CACHED = { dashboard: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1,
+  pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1 };
+const READS = Object.assign({ me: 1, admCustAudit: 1, apptClients: 1, costQuotes: 1, dashDrill: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1,
+  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1 }, CACHED); // anything else changes data
+const C = { mem: new Map(), fly: new Map(), gen: 0, servedStale: 0, touched: 0, redraw: 0, busy: 0 };
+const FRESH = 20e3, MAX_AGE = 12 * 36e5, CP = 'oypC1:';
+const ns = () => { const t = localStorage.getItem(K.s) || ''; let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return CP + (h >>> 0).toString(36) + ':'; };
+const ckey = (action, data) => ns() + action + ':' + JSON.stringify(data || {});
+function cacheClear() {
+  C.mem.clear(); C.fly.clear(); C.gen++;
+  try { Object.keys(localStorage).filter(k => k.startsWith(CP)).forEach(k => localStorage.removeItem(k)); } catch (_) {}
+}
+function cacheGet(k) {
+  let e = C.mem.get(k);
+  if (!e) { try { const raw = localStorage.getItem(k); if (raw) { e = JSON.parse(raw); C.mem.set(k, e); } } catch (_) {} }
+  return e && Date.now() - e.t < MAX_AGE ? e : null;
+}
+function cachePut(k, s) {
+  const e = { t: Date.now(), s }; C.mem.set(k, e);
+  try { localStorage.setItem(k, JSON.stringify(e)); } catch (_) { /* storage full: memory only */ }
+}
+let bar = 0; const syncBar = d => { bar = Math.max(0, bar + d); document.documentElement.classList.toggle('oyp-sync', bar > 0); }; // thin top bar: the page on screen is refreshing
+// one request per key at a time: a second caller (prefetch + page, or two tiles) shares the first one's answer
+function fetchCached(action, data, k) {
+  if (C.fly.has(k)) return C.fly.get(k);
+  const gen = C.gen; C.busy++;
+  const p = net(action, data).then(r => {
+    const s = JSON.stringify(r == null ? { ok: false, error: 'Could not load' } : r);
+    if (r && r.ok && gen === C.gen && ns() === k.slice(0, ns().length)) cachePut(k, s);
+    return s;
+  }).finally(() => { if (C.fly.get(k) === p) C.fly.delete(k); C.busy--; });
+  C.fly.set(k, p); return p;
+}
+async function call(action, data = {}) {
+  if (action === 'login' || action === 'logout') cacheClear();
+  if (!READS[action]) { cacheClear(); const r = await net(action, data); cacheClear(); return r; } // a change: next reads go to the server
+  if (!CACHED[action] || !user()) return net(action, data);
+  const k = ckey(action, data), e = cacheGet(k);
+  if (!e) return JSON.parse(await fetchCached(action, data, k));
+  if (Date.now() - e.t > FRESH) { // show what we have now, refresh in the background
+    const seq = routeSeq, at = Date.now(); C.servedStale = at; syncBar(1);
+    fetchCached(action, data, k).finally(() => syncBar(-1)).then(s => {
+      if (s === e.s || seq !== routeSeq || C.touched > at || !(JSON.parse(s) || {}).ok) return;
+      clearTimeout(C.redraw); C.redraw = setTimeout(() => { if (seq === routeSeq && C.touched <= at) route(); }, 60);
+    });
+  }
+  return JSON.parse(e.s); // a copy: pages may change the objects they get
+}
+['pointerdown', 'keydown', 'input'].forEach(ev => document.addEventListener(ev, e => { if (e.isTrusted) C.touched = Date.now(); }, true));
 function saveSession(r) { localStorage.setItem(K.s, r.session); localStorage.setItem(K.exp, r.expires_at); localStorage.setItem(K.u, JSON.stringify(r.user)); }
-function clearSession() { [K.s, K.u, K.exp].forEach(k => localStorage.removeItem(k)); }
+function clearSession() { cacheClear(); [K.s, K.u, K.exp].forEach(k => localStorage.removeItem(k)); }
 function user() {
   const exp = localStorage.getItem(K.exp);
   if (!localStorage.getItem(K.s) || !exp || new Date(exp) < new Date()) return null;
@@ -34,6 +89,8 @@ function user() {
 function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 2600); }
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+// light placeholder while a page's first data loads (instead of a blank "Loading…")
+const skel = (n = 5) => `<div class="skel" aria-busy="true" aria-label="Loading">${'<i></i>'.repeat(n)}</div>`;
 /* ---------- sign in ---------- */
 let code = '';
 const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
@@ -82,7 +139,7 @@ function route() {
   $('menu').classList.add('hidden');
   if (location.hash === '#/logout') { history.replaceState(null, '', location.pathname); if (user()) return logout(); } // Log out from the scanner menu
   const u = user();
-  if (!u) { show('vLogin'); $('title').textContent = 'Sign in'; return; }
+  if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; return; }
   const cur0 = (location.hash.match(/^#\/(\w+)/) || [])[1];
   if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && cur0 === 'appts')) { // staff: simple home; Appointments in the back office (Production: Susan + admins only)
     show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
@@ -100,6 +157,9 @@ function route() {
     + `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
     <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
   const title = nav.find(n => n[0] === page)[1];
+  schedulePrefetch(nav, page);
+  // nothing saved for this page yet (first visit, or just after a change): a light placeholder, not the last page's content
+  if ((PAGE_READS[page] || []).some(([a, f]) => { const d = f ? f() : {}; return d && !cacheGet(ckey(a, d)); })) $('main').innerHTML = `<h2>${esc(title)}</h2>` + skel();
   if (page === 'settings' && window.OYPSettings) return window.OYPSettings.render($('main'), u); // settings.js (admin only: only the admin menu has it)
   if (page === 'production' && window.OYPProd) return window.OYPProd.render($('main'), u); // production.js
   if (page === 'appts' && window.OYPAppts) return window.OYPAppts.render($('main'), u); // appts.js
@@ -116,6 +176,31 @@ function route() {
   $('main').innerHTML = `<h2>${esc(title)}</h2><p class="muted">Signed in as ${esc(u.display_name)} · ${esc(ROLE_LABEL[u.role])}</p><div class="soonbox">Coming soon</div>`;
 }
 window.addEventListener('hashchange', route);
+/* ---------- prefetch: once the page on screen has its data, quietly load the other menu pages' data (3 at a time) ---------- */
+const PAGE_READS = { dashboard: [['dashboard'], ['contactList']], review: [['jobReviewList'], ['contactList']], estimate: [['costRates'], ['priceGet']],
+  jos: [['invList']], production: [['prodBoard']], inventory: [['matList']], prices: [['priceGet']], customers: [['pplList']], shop: [['admShopList']],
+  payments: [['payData']], quotes: [['payData']], balances: [['payData']], clients: [['payData']], settings: [['settingsGet']],
+  appts: [['apptList', () => window.OYPAppts && window.OYPAppts.range && window.OYPAppts.range()]] };
+let pfT = 0, pfRun = false;
+function schedulePrefetch(nav, page) {
+  clearTimeout(pfT);
+  pfT = setTimeout(async function go() {
+    if (pfRun || !user()) return;
+    if (C.busy) { pfT = setTimeout(go, 400); return; } // the page on screen first
+    const seen = {}, jobs = [];
+    [page].concat(nav.map(n => n[0])).forEach(pg => (PAGE_READS[pg] || []).forEach(([a, f]) => {
+      const d = f ? f() : {}; if (f && !d) return; const k = ckey(a, d); if (seen[k]) return; seen[k] = 1;
+      const e = cacheGet(k); if (!e || Date.now() - e.t > 60e3) jobs.push([a, d, k]);
+    }));
+    if (!jobs.length) return;
+    pfRun = true; const gen = C.gen;
+    const worker = async () => { while (jobs.length && gen === C.gen && user()) { const [a, d, k] = jobs.shift(); await fetchCached(a, d, k).catch(() => {}); } };
+    try { await Promise.all([worker(), worker(), worker()]); } finally { pfRun = false; }
+  }, 600);
+}
+// drop page data saved under another (older or other person's) session
+try { const mine = ns(); Object.keys(localStorage).filter(k => k.startsWith(CP) && !k.startsWith(mine)).forEach(k => localStorage.removeItem(k)); } catch (_) {}
+
 /* desktop account menu (sidebar name block) */
 function whoMenu(open) {
   const m = $('whoMenu'), b = $('whoBtn'); if (!m || !b) return;
@@ -143,7 +228,7 @@ async function usersPage(shown) {
     <div class="addrow"><label><span class="lab">First name</span><input id="nuName" placeholder="Thea" maxlength="24"></label>
     <label><span class="lab">Role</span><select id="nuRole"><option value="staff">Staff</option><option value="production_manager">Production manager</option><option value="accounting">Accounting</option><option value="admin">Admin</option></select></label>
     <button id="nuAdd" class="pill">ADD &amp; MAKE CODE</button></div>
-    <div id="ulist" class="muted">Loading…</div>`;
+    <div id="ulist"><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div></div>`;
   if (shown) showCode(shown.username, shown.code);
   $('nuAdd').onclick = async () => {
     const name = $('nuName').value.trim(); if (!name) return $('nuName').focus();
@@ -178,7 +263,7 @@ const pending = p => p.portal.some(a => a.status === 'pending');
 async function customersPage(open, extra) {
   if (open !== undefined) PS.open = open; PS.extra = extra || null;
   const m = $('main'), live = here();
-  if (!m.querySelector('#plist')) m.innerHTML = '<h2>Customers</h2><p class="muted">Loading…</p>';
+  if (!m.querySelector('#plist')) m.innerHTML = '<h2>Customers</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const r = await call('pplList'); if (!live()) return;
   if (!r.ok && r.error === 'Unknown action') return portalOnlyPage();
   if (!r.ok) { m.innerHTML = `<h2>Customers</h2><p class="muted">${esc(r.error)}</p>`; return; }
@@ -266,7 +351,7 @@ async function portalOnlyPage(open, extra) {
   const m = $('main');
   m.innerHTML = `<h2>Customers</h2><p class="muted">Portal sign-ups only. Walk-in clients will show here too once the server is updated.</p>
     <div class="addrow"><input id="cq" placeholder="Search name, phone or email" style="min-width:280px"><select id="cf"><option value="">All</option><option value="pending">Needs approval</option><option value="active">Active</option><option value="locked">Locked</option><option value="off">Off</option></select></div>
-    <div id="clist" class="muted">Loading…</div>`;
+    <div id="clist"><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div></div>`;
   const live = here(); const r = await call('admCustList'); if (!live()) return; if (!r.ok) { $('clist').textContent = r.error; return; }
   const draw = () => {
     const q = $('cq').value.trim().toLowerCase(), f = $('cf').value;
@@ -316,13 +401,13 @@ async function shopPage() {
     <label><span class="lab">Type</span><input id="siK" placeholder="Ring" size="8"></label><label><span class="lab">Metal</span><input id="siM" size="9"></label><label><span class="lab">Price ₱</span><input id="siP" inputmode="numeric" size="8"></label>
     <label><span class="lab">JO (private)</span><input id="siJ" size="8"></label><label><span class="lab">Photo file IDs</span><input id="siF" placeholder="Drive ids, comma" size="14"></label>
     <select id="siS"><option value="listed">Listed</option><option value="hidden">Hidden</option><option value="sold">Sold</option></select><button id="siAdd" class="pill">SAVE</button></div>
-    <div id="slist" class="muted">Loading…</div>`;
+    <div id="slist"><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div></div>`;
   $('siAdd').onclick = async () => { const r = await call('admShopSave', { item_code: $('siC').value, title: $('siT').value, category: $('siK').value, metal: $('siM').value, price_php: $('siP').value, jo: $('siJ').value, photo_file_ids: $('siF').value, status: $('siS').value }); if (!r.ok) return toast(r.error); toast('Saved'); if (live()) shopPage(); };
   const r = await call('admShopList'); if (!live()) return; if (!r.ok) { $('slist').textContent = r.error; return; }
   $('slist').outerHTML = r.items.length ? `<table><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">Price</span></th><th><span class="lab">JO</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${r.items.map(i => `<tr><td><b class="cn">${esc(i.title)}</b><br><span class="muted">${esc(i.item_code)} · ${esc(i.category)}</span></td><td>${i.price_php ? '₱' + Number(i.price_php).toLocaleString() : '—'}</td><td>${esc(i.jo)}</td><td><span class="chip ${i.status === 'listed' ? 'gold' : ''}">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nothing listed yet.</p>';
 }
 
-window.OYP = { call, esc, toast, user, ROLE_LABEL, here }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
+window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 drawDots(); route();
 // re-check the session with the server on load (catches resets / deactivation)
 // redraw only if the role or name changed, so a page opened meanwhile (e.g. the estimator mid-typing) is not reset

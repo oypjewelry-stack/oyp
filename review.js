@@ -57,7 +57,7 @@ const views = {
 
 async function render(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
-  main.innerHTML = '<h2>To review</h2><p class="muted">Loading…</p>';
+  main.innerHTML = '<h2>To review</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const [r, cc] = await Promise.all([call('jobReviewList'), call('contactList')]);
   if (!live()) return;
   S.cc = cc && cc.ok ? cc : null; S.contact = S.cc ? Object.fromEntries(cc.jobs.map(x => [x.jo, x])) : null;

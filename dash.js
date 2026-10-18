@@ -23,7 +23,7 @@ async function render(main, u, fresh) {
   const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
   const drill = (location.hash.match(/^#\/dashboard\/(\w+)(?:\/([\w-]+))?/) || []).slice(1);
   if (drill[0] && D.r && !fresh && Date.now() - D.at < 5 * 60e3) return drillPage(main, u, drill[0], drill[1] || '');
-  main.innerHTML = '<h2>Dashboard</h2><p class="muted">Loading…</p>';
+  main.innerHTML = '<h2>Dashboard</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const [r, cc] = await Promise.all([call('dashboard'), call('contactList')]); // contactList: JobContact.gs (absent before that paste -> no tile)
   if (!live()) return; // the user went to another page while this loaded: leave it alone
   if (r && r.ok) { D.r = r; D.cc = cc; D.x = null; D.at = Date.now(); }
@@ -114,7 +114,7 @@ async function drillPage(main, u, kind, key) {
   const capped = cols => cols.filter(c => c.count > c.cards.length).map(c => c.label + ': first ' + c.cards.length + ' of ' + c.count).join(' · ');
   let title = '', sub = '', chips = [], groups = null, rows = [], note = '', body = '', show = { loc: true, stage: true };
   const live = window.OYP.here();
-  main.innerHTML = '<p class="muted">Loading…</p>';
+  main.innerHTML = '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
 
   if (kind === 'active' || kind === 'stage') {
     const col = kind === 'stage' ? r.board.find(b => b.key === key) : null;

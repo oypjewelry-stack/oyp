@@ -45,7 +45,7 @@ async function render(main, u) {
   S.u = u; const live = window.OYP.here(), rt = route();
   if (rt.view === 'workers') return workersPage(main, live);
   if (!S.r || Date.now() - S.at > 60000 || rt.view !== 'jo') {
-    if (!S.r) main.innerHTML = '<h2>Production</h2><p class="muted">Loading…</p>';
+    if (!S.r) main.innerHTML = '<h2>Production</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
     const r = await call('prodBoard'); if (!live()) return;
     if (!r || !r.ok) { main.innerHTML = `<h2>Production</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
     S.r = r; S.at = Date.now(); S.skew = Date.parse(r.now) - Date.now();
@@ -272,7 +272,7 @@ function drawJob() {
 
 /* ---------- worker schedule ---------- */
 async function workersPage(main, live) {
-  if (!S.wkr) main.innerHTML = head('workers') + '<p class="muted">Loading…</p>';
+  if (!S.wkr) main.innerHTML = head('workers') + '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const r = await call('prodWorkers', { week: S.wk || '' }); if (!live()) return;
   if (!r || !r.ok) { main.innerHTML = `<h2>Production</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
   S.wkr = r; S.skew = Date.parse(r.now) - Date.now();

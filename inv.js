@@ -52,11 +52,11 @@ function ivShown() {
 }
 async function renderJos(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); IV.u = u; // live(): still on this route (app.js)
-  if (!IV.r || Date.now() - IV.at > 3 * 60e3) {
-    main.innerHTML = '<h2>Inventory</h2><p class="muted">Loading…</p>';
+  { // app.js serves the last answer at once and refreshes it in the background
+    if (!IV.r) main.innerHTML = '<h2>Inventory</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
     const r = await call('invList'); if (!live()) return;
-    if (!r || !r.ok) { main.innerHTML = `<h2>Inventory</h2><p class="muted">${esc(oldBackend(r) ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
-    IV.r = r; IV.at = Date.now();
+    if ((!r || !r.ok) && !IV.r) { main.innerHTML = `<h2>Inventory</h2><p class="muted">${esc(oldBackend(r) ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
+    if (r && r.ok) { IV.r = r; IV.at = Date.now(); }
   }
   ivDraw(main);
 }
@@ -163,7 +163,7 @@ function mShown() {
 }
 async function renderMats(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); MS.u = u;
-  main.innerHTML = '<h2>Materials</h2><p class="muted">Loading…</p>';
+  main.innerHTML = '<h2>Materials</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const r = await call('matList'); if (!live()) return;
   if (!r || !r.ok) { main.innerHTML = `<h2>Materials</h2><p class="muted">${esc(oldBackend(r) ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
   MS.r = r; if (MS.open && !r.items.some(m => m.mat_id === MS.open)) MS.open = null;

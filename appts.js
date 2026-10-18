@@ -34,7 +34,8 @@ const shut = day => isWe(day) || (hol(day) && hol(day).status === 'closed'); // 
 const holAsk = day => !!hol(day) && hol(day).status !== 'open'; // closed or not decided: booking needs the confirm
 const offHrs = (a, h) => isWe(a.day) || holAsk(a.day) || a.start_min < h.open || a.start_min + a.minutes > h.close; // outside store hours (booked after a confirm)
 let G = { open: 540, close: 960 }; // the hours the grid shows: store hours, stretched to fit visits booked outside them
-const S = { view: null, day: null, staff: '', r: null, key: '', open: null, form: null, back: null, busy: false };
+const S = { view: null, day: null, staff: '', r: null, key: '', open: null, form: null, back: null, busy: false, showCx: localStorage.getItem('oypApptShowCx') === '1' }; // cancelled visits hidden unless "Show cancelled" is on (per device)
+const vis = a => S.showCx || a.status !== 'cancelled';
 let U = null;
 
 function range() {
@@ -53,8 +54,8 @@ async function render(main, u) {
   if (!S.view) S.view = localStorage.getItem('oypApptView' + (narrow() ? 'P' : 'D')) || (narrow() ? 'day' : 'week');
   if (!S.day) S.day = openDay(todayPH());
   S.open = null; S.form = null;
-  if (!S.r) main.innerHTML = '<h2>Appointments</h2><p class="muted">Loading…</p>';
-  const r = await load(); if (!live()) return;
+  if (!S.r) main.innerHTML = '<h2>Appointments</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
+  const r = await load(true); if (!live()) return; // app.js answers from its cache at once and refreshes in the background
   if (!r || !r.ok) { main.innerHTML = `<h2>Appointments</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
   draw(main);
 }
@@ -63,7 +64,8 @@ async function reload(main, force) { const live = window.OYP.here(); const r = a
 /* ---------- page ---------- */
 function draw(main) {
   const { esc } = window.OYP, r = S.r, sel = S.staff;
-  const list = r.appts.filter(a => !sel || a.staff === sel);
+  const mine = r.appts.filter(a => !sel || a.staff === sel), list = mine.filter(vis);
+  const [rf, rt] = range(), nCx = mine.filter(a => a.status === 'cancelled' && a.day >= rf && a.day <= rt && (S.view !== 'day' || a.day === S.day)).length;
   const lab = S.view === 'day' ? dLab(S.day, true) + (S.day === todayPH() ? ' · Today' : '')
     : S.view === 'week' ? (() => { const sh = shown(monday(S.day)), a = sh[0], b = sh[sh.length - 1]; return MN[Number(a.slice(5, 7)) - 1] + ' ' + Number(a.slice(8)) + ' – ' + (a.slice(5, 7) === b.slice(5, 7) ? '' : MN[Number(b.slice(5, 7)) - 1] + ' ') + Number(b.slice(8)) + ', ' + b.slice(0, 4); })()
     : MONTHS[Number(S.day.slice(5, 7)) - 1] + ' ' + S.day.slice(0, 4);
@@ -78,7 +80,7 @@ function draw(main) {
       <div class="apnav"><button class="apar" data-go="-1" aria-label="Previous">‹</button><b class="aplab">${esc(lab)}</b><button class="apar" data-go="1" aria-label="Next">›</button>
       <button class="lnk aptoday" data-go="0">Today</button></div></div>
     ${staffChips}
-    <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span class="muted">Store hours ${hrsTxt(S.r.hours)}</span></div>
+    <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span class="muted">Store hours ${hrsTxt(S.r.hours)}</span><button class="fchip apcx ${S.showCx ? 'on' : ''}" data-cx aria-pressed="${S.showCx}">Show cancelled${nCx ? `<b>${nCx}</b>` : ''}</button></div>
     ${body}
   </div>${S.open ? sheet(S.open) : ''}${S.form ? formSheet() : ''}`;
   wire(main);
@@ -95,6 +97,7 @@ function wire(main) {
     reload(main);
   });
   main.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { S.staff = b.dataset.st; draw(main); });
+  main.querySelectorAll('[data-cx]').forEach(b => b.onclick = () => { S.showCx = !S.showCx; localStorage.setItem('oypApptShowCx', S.showCx ? '1' : '0'); draw(main); });
   main.querySelectorAll('[data-day]').forEach(b => b.onclick = e => { if (e.target.closest('[data-ap]')) return; S.back = { view: S.view, day: S.day }; S.view = 'day'; S.day = b.dataset.day; reload(main); });
   main.querySelectorAll('[data-ap]').forEach(b => b.onclick = e => { e.stopPropagation(); S.open = r.appts.find(a => a.appt_id === b.dataset.ap); S.form = null; draw(main); });
   main.querySelectorAll('[data-slot]').forEach(b => b.onclick = e => {
@@ -111,7 +114,7 @@ function wire(main) {
 }
 
 /* ---------- views ---------- */
-function shown(mon) { const a = S.r.appts; return [0, 1, 2, 3, 4, 5, 6].map(n => addD(mon, n)).filter(d => !isWe(d) || a.some(x => x.day === d)); } // Sat / Sun only when booked
+function shown(mon) { const a = S.r.appts.filter(vis); return [0, 1, 2, 3, 4, 5, 6].map(n => addD(mon, n)).filter(d => !isWe(d) || a.some(x => x.day === d)); } // Sat / Sun only when booked
 function span(list) {
   const h = S.r.hours; let o = h.open, c = h.close;
   list.forEach(a => { o = Math.min(o, Math.floor(a.start_min / 60) * 60); c = Math.max(c, Math.ceil((a.start_min + a.minutes) / 60) * 60); });
@@ -332,5 +335,11 @@ async function save(main, force) {
   S.form = null; S.day = a.day; reload(main, true);
 }
 
-window.OYPAppts = { render };
+// app.js prefetch: the date range this page will ask for when opened (same view / day rules as render)
+function prefetchRange() {
+  const v0 = S.view, d0 = S.day;
+  S.view = S.view || localStorage.getItem('oypApptView' + (narrow() ? 'P' : 'D')) || (narrow() ? 'day' : 'week'); S.day = S.day || openDay(todayPH());
+  const [from, to] = range(); S.view = v0; S.day = d0; return { from, to };
+}
+window.OYPAppts = { render, range: prefetchRange };
 })();

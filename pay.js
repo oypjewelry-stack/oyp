@@ -31,7 +31,7 @@ const narrow = () => innerWidth < 900;
 
 async function load(force) {
   const { call } = window.OYP;
-  if (!force && S.r && Date.now() - S.at < 60e3) return S.r;
+  // no local time limit: app.js keeps the last answer per session and refreshes it in the background
   const r = await call('payData'); if (r && r.ok) { S.r = r; S.at = Date.now(); } return r;
 }
 async function render(main, u, page) {
@@ -40,7 +40,7 @@ async function render(main, u, page) {
   const tab = page === 'payments' && TABS.some(t => t[0] === sub) ? sub : TABS.some(t => t[0] === page) ? page : 'payments';
   if (tab !== S.tab && !S.keep) { S.open = null; S.form = null; } if (tab !== S.tab) { S.draft = null; S.q = ''; } S.tab = tab;
   if (narrow() && !S.keep) { S.open = null; S.form = null; } S.keep = false;
-  if (!S.r) main.innerHTML = `<h2>${esc(tab === 'payments' ? 'Payments' : TABS.find(t => t[0] === tab)[1])}</h2><p class="muted">Loading…</p>`;
+  if (!S.r) main.innerHTML = `<h2>${esc(tab === 'payments' ? 'Payments' : TABS.find(t => t[0] === tab)[1])}</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>`;
   const r = await load(); if (!live()) return;
   if (!r || !r.ok) { main.innerHTML = `<h2>${esc(page === 'payments' && u.role === 'admin' ? 'Quotes / payments' : (TABS.find(t => t[0] === tab) || TABS[0])[1])}</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
   if (pmView() && S.tab !== 'balances') { S.tab = 'balances'; S.open = null; }

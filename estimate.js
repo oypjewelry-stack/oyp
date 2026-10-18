@@ -48,7 +48,7 @@ let S = { est: blank(), rates: null, map: null, exec: false, markups: [], quotes
 
 async function render(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); S.u = u; // live(): still on this route (app.js)
-  main.innerHTML = '<h2>Cost estimator</h2><p class="muted">Loading rates…</p>';
+  main.innerHTML = '<h2>Cost estimator</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const [r, pg] = await Promise.all([call('costRates'), call('priceGet')]); // priceGet: Prices.gs (absent before that paste -> no notes)
   if (!live()) return;
   S.price = pg && pg.ok ? pg : null;

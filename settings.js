@@ -38,7 +38,7 @@ const peso = n => n === '' || n == null ? '—' : '₱' + Number(n).toLocaleStri
 
 async function render(main, u) {
   const live = window.OYP.here();
-  if (!S.r) main.innerHTML = '<h2>Settings</h2><p class="muted">Loading…</p>';
+  if (!S.r) main.innerHTML = '<h2>Settings</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const r = await window.OYP.call('settingsGet'); if (!live()) return;
   if (!r || !r.ok) { main.innerHTML = `<h2>Settings</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
   S.r = r; S.dirty = {}; draw(main);
