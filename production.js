@@ -25,16 +25,16 @@ const isoHM = iso => { const d = new Date(Date.parse(iso) + 8 * 36e5); return pa
 const isoDay = iso => new Date(Date.parse(iso) + 8 * 36e5).toISOString().slice(0, 10);
 const nowMs = () => Date.now() + S.skew;
 const elapsed = iso => { const s = Math.max(0, Math.floor((nowMs() - Date.parse(iso)) / 1000)); return Math.floor(s / 3600) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); };
-const daysTxt = c => c.days == null ? '' : c.days === 0 ? 'In step since today' : c.days + (c.days === 1 ? ' day' : ' days') + ' in step';
+const daysTxt = c => c.days == null ? '' : c.days === 0 ? 'Since today' : c.days + (c.days === 1 ? ' day' : ' days') + ' in step';
 const tgtOf = c => c.step_target && (c.delayed_by === 'step' || !c.target || c.step_target < c.target) ? { d: c.step_target, step: true } : c.target ? { d: c.target, step: false } : null; // the date that matters most
-const tgtChip = c => { const t = tgtOf(c); return t ? `<span class="chip ${c.delayed ? 'pover' : 'ptgt'}">${t.step ? 'Step target ' : 'Target '}${dShort(t.d)}</span>` : ''; };
+const tgtChip = c => { const t = tgtOf(c); return t ? `<span class="chip ${c.delayed ? 'pover' : 'ptgt'}" title="${t.step ? 'Target for this step' : 'Target for the whole JO'}: ${dLong(t.d)}">${t.step ? 'Step · ' : 'Target '}${dShort(t.d)}</span>` : ''; }; // short so it fits a narrow column
 const col = k => S.r.columns.find(c => c.key === k) || { key: k, label: k };
 const nextCol = c => { const x = col(c.col); return x.next ? col(x.next) : null; };
 const can = () => (S.r && S.r.can) || {};
 
 /* ---------- photos (thumbnails cached per file) ---------- */
 const PH = {};
-const photo = (jo, fid, size) => { const k = fid + '|' + (size || 't'); if (!PH[k]) PH[k] = call('prodPhoto', { jo, file_id: fid, size }).then(x => (x && x.ok && x.src) || ''); return PH[k]; };
+const photo = (jo, fid, size) => { const k = fid + '|' + (size || 't'); if (!PH[k]) PH[k] = call('prodPhoto', { jo, file_id: fid, size }).then(x => { const src = (x && x.ok && x.src) || ''; if (!src) delete PH[k]; return src; }); return PH[k]; }; // a failed photo is asked again next time
 function loadThumbs(root) {
   root.querySelectorAll('[data-ph]').forEach(el => { if (el.dataset.done) return; el.dataset.done = 1;
     photo(el.dataset.jo, el.dataset.ph).then(src => { if (src) { el.style.backgroundImage = `url("${src}")`; el.classList.add('has'); } }); });
@@ -47,21 +47,29 @@ async function render(main, u) {
   if (!S.r || Date.now() - S.at > 60000 || rt.view !== 'jo') {
     if (!S.r) main.innerHTML = '<h2>Production</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
     const r = await call('prodBoard'); if (!live()) return;
-    if (!r || !r.ok) { main.innerHTML = `<h2>Production</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
-    S.r = r; S.at = Date.now(); S.skew = Date.parse(r.now) - Date.now();
+    if (!r || !r.ok) {
+      if (S.r && r && r.code !== 'FORBIDDEN' && r.error !== 'Unknown action') { toast('Could not refresh the board: ' + (r.error || 'try again')); } // keep what is on screen
+      else { failPage(main, r, () => render(main, u)); return; }
+    } else { S.r = r; S.at = Date.now(); }
     if (S.mine === null) S.mine = !!r.me_worker && u.role === 'staff';
   }
   if (rt.view === 'mine') { S.mine = !!S.r.me_worker; history.replaceState(null, '', '#/production'); }
   drawBoard(main);
   if (rt.view === 'jo' && rt.arg) openJob(rt.arg, live); else closeSheet();
 }
+// a page that could not load: the reason + TRY AGAIN (no data on screen to keep)
+function failPage(main, r, again) {
+  const msg = !r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load';
+  main.innerHTML = `<h2>Production</h2><div class="kempty pempty perr"><p>${esc(msg)}</p>${r && (r.code === 'FORBIDDEN' || r.error === 'Unknown action') ? '' : '<button class="pill sm" id="pRetry">TRY AGAIN</button>'}</div>`;
+  if ($('pRetry')) $('pRetry').onclick = () => { $('pRetry').disabled = true; $('pRetry').textContent = 'LOADING…'; again(); };
+}
 async function reload() {
-  const r = await call('prodBoard'); if (r && r.ok) { S.r = r; S.at = Date.now(); S.skew = Date.parse(r.now) - Date.now(); }
+  const r = await call('prodBoard'); if (r && r.ok) { S.r = r; S.at = Date.now(); }
   const m = $('main'); if (m && route().view !== 'workers' && $('pBoard')) drawBoard(m);
 }
 function shown() {
   const q = S.q.trim().toUpperCase(), me = S.r.me_worker;
-  return S.r.cards.filter(c => (!q || c.jo.includes(q) || c.description.toUpperCase().includes(q) || c.client.toUpperCase().includes(q))
+  return S.r.cards.filter(c => (!q || String(c.jo).toUpperCase().includes(q) || String(c.description || '').toUpperCase().includes(q) || String(c.client || '').toUpperCase().includes(q))
     && (!S.worker || (S.worker === '-' ? !c.assignee_id : c.assignee_id === S.worker)) && (!S.delayed || c.delayed) && (!S.mine || c.assignee_id === me));
 }
 function head(tab) {
@@ -72,13 +80,19 @@ function drawBoard(main) {
   const cols = r.columns.filter(c => !S.stage || c.key === S.stage);
   if (phone && (!S.pcol || !r.columns.some(c => c.key === S.pcol))) { const f = r.columns.find(c => list.some(x => x.col === c.key)); S.pcol = f ? f.key : r.columns[0].key; }
   const filt = `<div class="pfilt">
-      <input id="pQ" class="rvq" placeholder="Search JO number" value="${esc(S.q)}" inputmode="search" autocomplete="off">
+      <input id="pQ" class="rvq" placeholder="Search JO, item or client" value="${esc(S.q)}" inputmode="search" autocomplete="off">
       <label class="ivsel"><span class="lab">Worker</span><select id="pW"><option value="">Everyone</option>${r.workers.map(w => `<option value="${w.worker_id}" ${S.worker === w.worker_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}<option value="-" ${S.worker === '-' ? 'selected' : ''}>Unassigned</option></select></label>
       ${phone ? '' : `<label class="ivsel"><span class="lab">Stage</span><select id="pS"><option value="">All stages</option>${r.columns.map(c => `<option value="${c.key}" ${S.stage === c.key ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>`}
       <button class="fchip ${S.delayed ? 'on' : ''}" id="pD">Delayed only <b>${nd}</b></button>
       ${r.me_worker ? `<button class="fchip ${S.mine ? 'on' : ''}" id="pM">Mine</button>` : ''}
       ${S.q || S.worker || S.stage || S.delayed || S.mine ? '<button class="ivclr" id="pClr">Clear</button>' : ''}</div>`;
-  const sum = `<p class="muted psum">${r.cards.length} JOs in production${nd ? ` · <b class="gold">${nd} delayed</b>` : ''}${list.length !== r.cards.length ? ` · showing ${list.length}` : ''} · ${phone ? 'Tap a card to see it, or Move when it is done.' : 'Drag a card to the next stage when it is done. Click a card for photos and time.'}</p>`;
+  const filtered = !!(S.q || S.worker || S.stage || S.delayed || S.mine);
+  if (!r.cards.length) { // nothing in production at all
+    if (!$('pWrap')) main.innerHTML = '<div class="prod" id="pWrap"></div><div id="pSheetBox"></div><div id="pMoveBox"></div>';
+    $('pWrap').innerHTML = `${head('board')}<div class="kempty pempty pnojo"><b>No JOs in production right now.</b><p class="muted">A JO shows here once it is scanned and marked “Being worked on” or “In queue”, and stays until it is picked up.</p></div>`;
+    return;
+  }
+  const sum = `<p class="muted psum">${r.cards.length} JO${r.cards.length === 1 ? '' : 's'} in production${nd ? ` · <b class="gold">${nd} delayed</b>` : ''}${list.length !== r.cards.length ? ` · showing ${list.length}` : ''} · ${phone ? 'Tap a card to see it, or Move when it is done.' : 'Drag a card to the next stage when it is done. Click a card for photos and time.'}</p>`;
   let board;
   if (phone) {
     board = `<div class="rvchips pcols">${r.columns.map(c => { const n = list.filter(x => x.col === c.key).length, d = list.filter(x => x.col === c.key && x.delayed).length;
@@ -88,15 +102,16 @@ function drawBoard(main) {
     board = `<div class="pboard" id="pBoard" style="grid-template-columns:repeat(${cols.length},minmax(${cols.length > 1 ? 126 : 280}px,${cols.length > 1 ? '1fr' : '360px'}))">${cols.map(c => { const cs = list.filter(x => x.col === c.key);
       return `<div class="pcol" data-col="${c.key}"><div class="khead"><span class="lab">${esc(c.label)}</span><span class="kn">${cs.length}</span></div>${cs.map(x => cardH(x, false)).join('') || '<div class="kempty">—</div>'}</div>`; }).join('')}</div>`;
   }
+  const none = filtered && !list.length ? `<div class="pnomatch"><span>No JOs match${S.q ? ' “' + esc(S.q) + '”' : ''}.</span> <button class="ivclr" id="pClr2">Clear filters</button></div>` : '';
   if (!$('pWrap')) main.innerHTML = '<div class="prod" id="pWrap"></div><div id="pSheetBox"></div><div id="pMoveBox"></div>'; // the sheets live outside the part that redraws
-  $('pWrap').innerHTML = `${head('board')}${sum}${filt}${board}`;
+  $('pWrap').innerHTML = `${head('board')}${sum}${filt}${none}${board}`;
   wireBoard(main); loadThumbs(main); tick();
 }
 function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, clamped text, reserved timer line, fixed 2-row footer (production.css "equal cards")
   const nx = nextCol(c), staff = !can().all;
   const chips = [c.delayed ? '<span class="chip gold">Delayed</span>' : '', tgtChip(c),
     c.due ? `<span class="chip ${c.late ? 'plate' : ''}">${c.late ? 'Past due ' : 'Due '}${dShort(c.due)}</span>` : '', `<span class="chip pdays">${esc(daysTxt(c))}</span>`,
-    c.stage_label.toLowerCase() !== col(c.col).label.toLowerCase() ? `<span class="chip">${esc(c.stage_label)}</span>` : '', c.review ? '<span class="chip">To review</span>' : ''].join('');
+    c.stage_label.toLowerCase() !== col(c.col).label.toLowerCase() ? `<span class="chip" title="${esc(c.stage_label)}">${esc(c.stage_label)}</span>` : '', c.review ? '<span class="chip">To review</span>' : ''].join('');
   const desc = c.description || 'No description yet', who = c.assignee || 'Unassigned';
   return `<div class="pcard tap${c.delayed ? ' dl' : ''}${c.late ? ' late' : ''}" data-jo="${c.jo}" ${phone ? '' : 'draggable="true"'}>
     <div class="pcm"><div class="pth" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}>${c.photo ? '' : '<span>No scan</span>'}</div>
@@ -114,7 +129,8 @@ function wireBoard(main) {
   if ($('pS')) $('pS').onchange = e => { S.stage = e.target.value; redraw(); };
   $('pD').onclick = () => { S.delayed = !S.delayed; redraw(); };
   if ($('pM')) $('pM').onclick = () => { S.mine = !S.mine; redraw(); };
-  if ($('pClr')) $('pClr').onclick = () => { S.q = ''; S.worker = ''; S.stage = ''; S.delayed = false; S.mine = false; redraw(); };
+  const clr = () => { S.q = ''; S.worker = ''; S.stage = ''; S.delayed = false; S.mine = false; redraw(); };
+  if ($('pClr')) $('pClr').onclick = clr; if ($('pClr2')) $('pClr2').onclick = clr;
   main.querySelectorAll('[data-pcol]').forEach(b => b.onclick = () => { S.pcol = b.dataset.pcol; redraw(); });
   main.querySelectorAll('.pcard').forEach(el => el.onclick = e => { if (e.target.closest('[data-move]')) return; location.hash = '#/production/jo/' + el.dataset.jo; });
   main.querySelectorAll('[data-move]').forEach(b => b.onclick = e => { e.stopPropagation(); const c = S.r.cards.find(x => x.jo === b.dataset.move), nx = nextCol(c); openMove(c, nx.key); });
@@ -163,8 +179,8 @@ function openMove(c, to) {
     const code = $('pmCode') ? $('pmCode').value : '';
     const tg = $('pmT') ? $('pmT').value : '';
     const r = await call('prodMove', { jo: c.jo, to: code || to, seen: c.stage_id, assignee_id: S.move.who || '', step_target: tg });
-    if (!r || !r.ok) { $('pmErr').textContent = (r && r.error) || 'Could not move. Try again.'; b.disabled = false; b.textContent = 'TRY AGAIN';
-      if (r && r.code === 'MOVED') { await reload(); } return; }
+    if (r && r.code === 'MOVED') { box.innerHTML = ''; toast(r.error || 'Someone moved this JO already. The board is updated.'); S.at = 0; await reload(); if (route().view === 'jo') openJob(route().arg, () => true); return; }
+    if (!r || !r.ok) { $('pmErr').textContent = (r && r.error) || 'Could not move. Try again.'; b.disabled = false; b.textContent = 'TRY AGAIN'; return; }
     const who = S.r.workers.find(w => w.worker_id === S.move.who);
     box.querySelector('.pmbox').innerHTML = `<div class="pmdone"><div class="pok">✓</div><h3>Moved to ${esc(r.to_label)}</h3><p>JO ${esc(c.jo)}${who ? ' · now with <b>' + esc(who.name) + '</b>' : ''}${r.step_target ? ' · target ' + esc(dShort(r.step_target)) : ''}</p>
       <p class="muted">Saved in the log: ${esc(S.u.display_name)}, ${esc(dLong(isoDay(r.at)))} ${esc(clock12(isoHM(r.at)))}${r.stopped && r.stopped.length ? ' · timer stopped for ' + esc(r.stopped.join(', ')) : ''}</p>
@@ -182,7 +198,7 @@ async function openJob(jo, live) {
   wireSheetClose();
   const r = await call('prodJob', { jo }); if (!live() || route().arg !== jo) return;
   if (!r || !r.ok) { box.querySelector('.ivsbox').innerHTML = `<button class="lnk dback" id="pSX">‹ BACK</button><p class="muted">${esc((r && r.error) || 'Could not load')}</p>`; wireSheetClose(); return; }
-  S.job = r; S.skew = Date.parse(r.now) - Date.now(); drawJob();
+  S.job = r; if (r.now) S.skew = Date.parse(r.now) - Date.now(); drawJob(); // prodJob is never cached, so its clock is current
 }
 function wireSheetClose() { const x = $('pSX'), sh = $('pSheet'); if (x) x.onclick = () => { location.hash = '#/production'; }; if (sh) sh.onclick = e => { if (e.target.id === 'pSheet') location.hash = '#/production'; }; }
 function drawJob() {
@@ -240,7 +256,7 @@ function drawJob() {
   const big = $('pBig'); const showBig = fid => { big.innerHTML = '<span class="lab">Loading photo…</span>'; photo(c.jo, fid, 'full').then(src => { big.innerHTML = src ? `<img src="${src}" alt="JO card">` : '<span class="lab">Photo not found</span>'; }); };
   if (big.dataset.full) showBig(big.dataset.full);
   box.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { box.querySelectorAll('[data-pg]').forEach(x => x.classList.toggle('on', x === b)); showBig(b.dataset.pg); });
-  const after = async (res, msg) => { if (!res || !res.ok) { toast((res && res.error) || 'Could not save'); return false; } if (msg) toast(msg); S.at = 0; await reload(); const j = await call('prodJob', { jo: c.jo }); if (j && j.ok && route().arg === c.jo) { S.job = j; drawJob(); } return true; };
+  const after = async (res, msg) => { if (!res || !res.ok) { toast((res && res.error) || 'Could not save'); if (route().arg === c.jo) drawJob(); return false; } if (msg) toast(msg); S.at = 0; await reload(); const j = await call('prodJob', { jo: c.jo }); if (j && j.ok && route().arg === c.jo) { S.job = j; drawJob(); } return true; };
   if ($('pAsg')) $('pAsg').onchange = e => call('prodAssign', { jo: c.jo, worker_id: e.target.value }).then(x => after(x, 'Saved: ' + (x && x.assignee ? x.assignee + ' has JO ' + c.jo : 'nobody assigned')));
   if ($('pTake')) $('pTake').onclick = () => call('prodAssign', { jo: c.jo, worker_id: me }).then(x => after(x, 'JO ' + c.jo + ' is yours'));
   if ($('pTW')) $('pTW').onchange = () => drawTimerOnly();
@@ -274,8 +290,8 @@ function drawJob() {
 async function workersPage(main, live) {
   if (!S.wkr) main.innerHTML = head('workers') + '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const r = await call('prodWorkers', { week: S.wk || '' }); if (!live()) return;
-  if (!r || !r.ok) { main.innerHTML = `<h2>Production</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
-  S.wkr = r; S.skew = Date.parse(r.now) - Date.now();
+  if (!r || !r.ok) { if (S.wkr && $('wPrev') && r && r.code !== 'FORBIDDEN') { toast('Could not refresh: ' + (r.error || 'try again')); return; } failPage(main, r, () => workersPage(main, window.OYP.here())); return; }
+  S.wkr = r;
   const thisWeek = !S.wk || S.wk === r.week, addD = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   const max = Math.max(480, ...r.lanes.flatMap(l => l.by_day.map(d => d.minutes)));
   const mini = (c, i) => `<a class="pmini tap${c.delayed ? ' dl' : ''}" href="#/production/jo/${c.jo}">${i != null ? `<span class="pnum">${i + 1}</span>` : ''}<span class="pth xs" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}></span>
@@ -326,6 +342,8 @@ function wireWorkerForm(main, r) {
 
 /* running clocks: one ticker for every [data-since] on screen */
 function tick() { if (tick.t) return; tick.t = setInterval(() => { const els = document.querySelectorAll('[data-since]'); if (!els.length) { clearInterval(tick.t); tick.t = 0; return; } els.forEach(e => e.textContent = elapsed(e.dataset.since)); }, 1000); }
+document.addEventListener('keydown', e => { if (e.key !== 'Escape' || !location.hash.startsWith('#/production')) return;
+  if ($('pMove')) { $('pMoveBox').innerHTML = ''; return; } if ($('pSheet')) location.hash = '#/production'; });
 window.addEventListener('resize', () => { if (location.hash.startsWith('#/production') && S.r && $('pBoard') && (narrow() !== !!$('pBoard').classList.contains('prplist'))) drawBoard($('main')); });
 
 window.OYPProd = { render };

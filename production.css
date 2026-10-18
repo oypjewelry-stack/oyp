@@ -108,3 +108,8 @@
 .prplist .kc{font-size:calc(14px*var(--fs));line-height:calc(18px*var(--fs));height:calc(18px*var(--fs));-webkit-line-clamp:1}
 .prplist .kf{height:calc(50px*var(--fs));margin-top:max(calc(6px*var(--sp)),calc(6px*var(--sp) + (var(--bh) - 1)*90px))}.prplist .kf .chip{font-size:calc(11px*var(--fs));height:calc(23px*var(--fs));line-height:calc(15px*var(--fs));padding:calc(3px*var(--sp)) calc(9px*var(--sp))}
 .prplist .pmove{height:calc(56px*var(--hs));padding:0 calc(12px*var(--sp));line-height:calc(56px*var(--hs));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* empty + error states (Oct 19) */
+.pnojo{text-align:center;padding:calc(40px*var(--sp)) calc(16px*var(--sp));margin-top:calc(12px*var(--sp))}.pnojo b{font-family:var(--head);font-weight:500;font-size:calc(20px*var(--hs));display:block;margin-bottom:calc(6px*var(--sp))}.pnojo p{margin:0 auto!important;max-width:420px;font-size:calc(14px*var(--fs))}
+.perr{text-align:center;padding:calc(30px*var(--sp)) calc(16px*var(--sp))}.perr p{margin:0 0 calc(12px*var(--sp))!important;font-size:calc(15px*var(--fs))}
+.pnomatch{display:flex;align-items:center;gap:calc(10px*var(--sp));flex-wrap:wrap;border:1px dashed #ddd;border-radius:calc(12px*var(--rad));padding:calc(10px*var(--sp)) calc(14px*var(--sp));margin-bottom:calc(12px*var(--sp));font-size:calc(14px*var(--fs))}
+.pnojo b{color:#111}.pnojo p,.perr p{color:#555}
