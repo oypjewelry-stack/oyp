@@ -97,3 +97,13 @@
   .dpctl{grid-template-columns:minmax(0,1fr) 48px auto;row-gap:2px}.dpctl .lab{grid-column:1/-1}
   .set .dpctl input[type=range]{flex:none;width:100%}
 }
+/* Design › Fonts: each choice is shown in its own font (only fonts every page already loads) */
+.dsfonts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.dsfont{border:1.5px solid #ddd;background:#fff;border-radius:18px;padding:8px 14px;font-size:16px;line-height:1.2;color:#111;cursor:pointer;font-weight:500}
+.dsfont small{font-family:var(--label);font-size:11px;color:#888;font-weight:500}
+.dsfont.on{border-color:#111;background:#111;color:#fff}.dsfont.on small{color:#ccc}
+.dsfont:disabled{opacity:.5;cursor:default}
+.dsfrow .dsfonts .lnk{margin-left:6px}
+.dsfrow .dsfonts .lnk:disabled{color:#bbb;text-decoration:none;cursor:default}
+.dpfont{grid-template-columns:110px minmax(0,1fr) auto}.dpfont .dsfont{font-size:14px;padding:6px 12px}
+@media (max-width:560px){.dpfont{grid-template-columns:minmax(0,1fr) auto}.dpfont .lab{grid-column:1/-1}.dsfont{font-size:15px;padding:7px 12px}}
