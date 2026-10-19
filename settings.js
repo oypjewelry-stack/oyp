@@ -15,7 +15,7 @@ const SECS = [
   ['appts', 'Appointments', 'Default length and visit types'],
   ['stages', 'Stage delays', 'Days a JO may stay in a stage before it is flagged'],
   ['staff', 'Staff accounts', 'Add, turn off, role, new code'],
-  ['scanner', 'Scanner', 'Page rotation and auto-snap for every phone'],
+  ['scanner', 'Scanner', 'Page rotation, auto-snap, and where the JO number is read'],
   ['portal', 'Customer pages', 'Contact line, deposit and quote validity on Track my order / My orders'],
   ['design', 'Design', 'Text size in pixels, fonts, spacing, corners, and each button, header and shape'],
   ['log', 'Change history', 'Who changed what, and when']];
@@ -65,7 +65,14 @@ function summary(k) {
   if (k === 'appts') { const T = JSON.parse(eff(item('appt.types'))); return I('appt.default_min') + ' min · ' + T.filter(t => t.on).map(t => t.label).join(', '); }
   if (k === 'stages') { const n = S.r.items.filter(i => i.group === 'stages' && i.value !== '').length; return n ? n + ' stage' + (n > 1 ? 's' : '') + ' with a limit' : 'No limits set'; }
   if (k === 'staff') { const a = S.r.users.filter(x => x.active).length; return a + ' active · ' + (S.r.users.length - a) + ' off'; }
-  if (k === 'scanner') return I('scanner.rotate').replace(/ \(.*\)/, '') + ' · auto-snap ' + I('scanner.auto_snap').toLowerCase();
+  if (k === 'scanner') {
+    let z = '';
+    try {
+      if (window.OYPZones && window.OYPZones.summary()) z = ' · ' + window.OYPZones.summary();
+      else if (JSON.parse(localStorage.getItem('oypScanZones') || '[]').some(x => x.id === 'jo')) z = ' · JO box set';
+    } catch (e) {}
+    return I('scanner.rotate').replace(/ \(.*\)/, '') + ' · auto-snap ' + I('scanner.auto_snap').toLowerCase() + z;
+  }
   if (k === 'design') { const v = dsStart(), D = window.OYPDesign; if (!D) return '';
     const on = Object.keys(DS).filter(x => v[x] !== dsDef(x)), np = dpCount(dpStart()), f = dfStart();
     const s = on.map(x => DS[x][0] + ' ' + dsFmt(x, v[x])).concat(Object.keys(DF).filter(k => f[k]).map(k => DF[k][0] + ' ' + fName(f[k]))).concat(np ? [np + ' button & shape type' + (np > 1 ? 's' : '') + ' changed'] : []); return s.length ? s.join(' · ') : 'Original look'; }
@@ -112,8 +119,9 @@ function section(s) {
     + `<div class="setbox">${field('store.days', 'Open days')}${field('store.open', 'Opens')}${field('store.close', 'Closes')}${field('booking.earliest', 'Earliest booking', 'Even with the confirm')}${field('booking.latest', 'Latest end of a visit', 'Even with the confirm')}</div>` + saveBar();
   if (s === 'bulletin') return head(t[1], 'The Telegram group gets the day\'s visits, pickups and payments at this time. On other days it posts only when a visit is booked.')
     + `<div class="setbox">${field('bulletin.time', 'Time')}${field('bulletin.days', 'Days')}</div>` + saveBar();
-  if (s === 'scanner') return head(t[1], 'The default for every phone that scans JO cards. A phone where someone picked its own setting in the scanner keeps that.')
-    + `<div class="setbox">${field('scanner.rotate', 'Page rotation')}${field('scanner.auto_snap', 'Auto-snap', 'Takes the photo by itself when the card is steady')}</div>` + saveBar();
+  if (s === 'scanner') return head(t[1], 'Rotation and auto-snap are the default for every phone. A phone where someone picked its own keeps that. The JO boxes are shared by every phone once the scanner paste is deployed.')
+    + `<div class="setbox">${field('scanner.rotate', 'Page rotation')}${field('scanner.auto_snap', 'Auto-snap', 'Takes the photo by itself when the card is steady')}</div>` + saveBar()
+    + `<h3 class="seth">Where to read the card</h3><p class="muted">JO cards are the same shape. Draw the JO number box on a sample photo so a date somewhere else on the card stays out of the JO check. Date and other boxes are optional. Page 1 uses these boxes. Later pages are read in full. The same drawing tool is in the scanner menu, under JO card zones.</p><div id="zoneHost"></div>`;
   if (s === 'stages') return head(t[1], 'A JO that stays in a stage longer than this is flagged as delayed. Leave empty for no limit.')
     + `<div class="setbox setstages">${S.r.stages.map(([c, l]) => field('stage.' + c, l)).join('')}</div>` + saveBar();
   if (s === 'appts') return head(t[1], 'New visits start with the default length. Types can be renamed, given a minimum length, or turned off. A type is never removed, so old visits keep it.')
@@ -452,6 +460,10 @@ function wire(main) {
     S.code = r.code ? { username: r.username, code: r.code } : null; reload(main); });
   if (!sec() || sec() !== 'staff') S.code = null;
   if (sec() === 'design') dsWire(main);
+  if (sec() === 'scanner') {
+    const go = () => { const h = $('zoneHost'); if (h && window.OYPZones) window.OYPZones.mount(h); };
+    if (window.OYPZones) go(); else window.addEventListener('oyp-zones-ready', go, { once: true });
+  }
   mark();
 }
 async function save(main) {

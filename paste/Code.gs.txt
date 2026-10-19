@@ -1,0 +1,100 @@
+PASTE INTO: Code.gs
+
+No new OAuth scopes. Do not add any scopes. This uses the Script Properties service you already use for TOKEN, and the same Drive OCR (ocr_) you already use for the full photo.
+
+The phone still uploads the whole page as imageBase64, and that file is still saved under Job Order Cards. When the phone also sends ocrBase64, that JPEG is only the JO-number box. findJOs_ runs on that crop, so a date elsewhere on the card is not treated as a JO number. Optional extra crops arrive as ocrFieldsBase64 (a string or a list). Those are OCR'd and appended for the due date, the date given, and the karat. They are not passed to findJOs_. When ocrBase64 is missing, keep today's full-photo OCR.
+
+The shared boxes are one Script Property, SCAN_ZONES. Reading them is doGet ?zones=1 (no token). Saving them is POST {op:'saveZones', token, zones} and uses the same TOKEN check as an upload.
+
+1. Replace doGet with this. A call with no parameters still returns the same service line as today.
+
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (p.zones) return json_({ ok: true, zones: scanZones_() });
+  return json_({ ok: true, service: 'OYP Card Scanner', auth: typeof handleAction_ === 'function' });
+}
+
+2. In doPost, just after the TOKEN check and just before deletePage, add one line:
+
+    if (req.op === 'saveZones') return json_(saveScanZones_(req));
+
+The two lines around it stay as they are:
+
+    if (token && req.token !== token) return json_({ ok: false, error: 'Bad token' });
+    if (req.op === 'saveZones') return json_(saveScanZones_(req));
+    if (req.op === 'deletePage') return json_(deletePage_(req));
+
+3. Replace the OCR block that sets ocrText, calls ocr_ on the full photo, then findJOs_. It looks like this today:
+
+    var ocrText = '', ocrError = '';
+    try { ocrText = ocr_(blob, filename); } catch (err) { ocrError = String(err); }
+    var found = findJOs_(ocrText);
+    var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null;
+
+Use this instead. recordScan_ still receives the text used for date and karat. findJOs_ receives only the JO crop when the phone sent one.
+
+    var ocrText = '', joText = '', ocrError = '';
+    try {
+      var crops = ocrCrops_(req, filename);
+      if (crops) { joText = crops.joText; ocrText = crops.ocrText; ocrError = crops.ocrError; }
+      else { ocrText = ocr_(blob, filename); joText = ocrText; }
+    } catch (err) { ocrError = String(err); }
+    var found = findJOs_(joText);
+    var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null;
+
+4. Add these functions next to ocr_. Do not change ocr_, findJOs_, or the Drive file save.
+
+function scanZones_() {
+  var raw = PropertiesService.getScriptProperties().getProperty('SCAN_ZONES');
+  if (!raw) return [];
+  try { return cleanScanZones_(JSON.parse(raw)) || []; } catch (e) { return []; }
+}
+function saveScanZones_(req) {
+  var zones = cleanScanZones_(req.zones);
+  if (!zones) return { ok: false, error: 'Bad zones' };
+  PropertiesService.getScriptProperties().setProperty('SCAN_ZONES', JSON.stringify(zones));
+  return { ok: true, saved: true, zones: zones };
+}
+function cleanScanZones_(raw) {
+  if (Object.prototype.toString.call(raw) !== '[object Array]') return null;
+  var out = [], seenJo = false, seenDate = false, nOther = 0, i, z, id, x, y, w, h;
+  for (i = 0; i < raw.length && out.length < 8; i++) {
+    z = raw[i] || {};
+    id = String(z.id || '');
+    x = Number(z.x); y = Number(z.y); w = Number(z.w); h = Number(z.h);
+    if (!(x >= 0 && y >= 0 && w > 0 && h > 0)) continue;
+    if (x > 1 || y > 1 || w > 1 || h > 1) continue;
+    if (x + w > 1) w = 1 - x;
+    if (y + h > 1) h = 1 - y;
+    if (w < 0.02 || h < 0.02) continue;
+    if (id === 'jo') { if (seenJo) continue; seenJo = true; }
+    else if (id === 'date') { if (seenDate) continue; seenDate = true; }
+    else if (id === 'other' || /^other[2-4]$/.test(id)) { nOther++; if (nOther > 4) continue; id = nOther === 1 ? 'other' : 'other' + nOther; }
+    else continue;
+    out.push({ id: id, x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000, w: Math.round(w * 10000) / 10000, h: Math.round(h * 10000) / 10000 });
+  }
+  return out;
+}
+function ocrCrops_(req, filename) {
+  if (!req.ocrBase64) return null;
+  var joText = ocr_(Utilities.newBlob(Utilities.base64Decode(String(req.ocrBase64)), 'image/jpeg', 'jo-' + filename), 'jo-' + filename);
+  var ocrText = joText, ocrError = '', extras = req.ocrFieldsBase64, i, ft;
+  if (typeof extras === 'string' && extras) extras = [extras];
+  if (Object.prototype.toString.call(extras) === '[object Array]') {
+    for (i = 0; i < extras.length && i < 6; i++) {
+      if (!extras[i]) continue;
+      try {
+        ft = ocr_(Utilities.newBlob(Utilities.base64Decode(String(extras[i])), 'image/jpeg', 'fld' + i + '-' + filename), 'fld' + i + '-' + filename);
+        if (ft) ocrText += '\n' + ft;
+      } catch (e2) { if (!ocrError) ocrError = String(e2); }
+    }
+  }
+  return { joText: joText, ocrText: ocrText, ocrError: ocrError };
+}
+
+Paste steps:
+1. Open the Apps Script project that serves the card scanner and open Code.gs.
+2. Apply the four edits above. Do not add OAuth scopes. Do not change the Drive folder, the file name, or findJOs_.
+3. Deploy the web app the way you usually do (same deployment, Execute as Me, Anyone).
+4. On a scanner phone, open the menu, choose JO card zones, pick a sample card, draw the JO number box, and save. The phone should say the boxes were saved for every phone.
+5. Scan a card whose date sits outside that box. The JO check should follow the number in the box.
