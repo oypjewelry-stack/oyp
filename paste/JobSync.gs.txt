@@ -1,0 +1,31 @@
+PASTE INTO: JobSync.gs
+
+No new OAuth scopes. Do not add any scopes. No new columns. This only teaches jobParse_ to read the labeled lines Code.gs now appends (FIELD client, FIELD metal, FIELD size, and the other card labels). Those hints stay in OcrLog.parsed_json. They are not written into JobOrders.
+
+Replace the whole jobParse_ function with this. The first lines are the ones you already have. The FIELD loop is the new part, just before return p.
+
+/** Best-effort hints from OCR (printed labels only; handwriting is unreliable). Stored in OcrLog.parsed_json, never in JobOrders. */
+function jobParse_(text) {
+  var t = String(text || ''), u = t.toUpperCase(), p = {};
+  var due = u.match(/DATE\s*DUE\s*[:\-]?\s*([^\n]{1,24})/); if (due) p.due_text = due[1].trim();
+  var given = u.match(/DATE\s*GIVEN\s*[:\-]?\s*([^\n]{1,24})/); if (given) p.given_text = given[1].trim();
+  if (/\bREPAIR\b/.test(u) && !/\bNEW\s*JOB\b/.test(u)) p.type_hint = 'repair';
+  var k = u.match(/KARAT\s*(?:GOLD)?\s*[:\-]?\s*(\d{1,2}\s*K|AG|925|SILVER)/); if (k) p.karat_text = k[1].replace(/\s+/g, '');
+  var lines = t.split('\n'), i, m, key, val;
+  for (i = 0; i < lines.length; i++) {
+    m = lines[i].match(/^FIELD\s+([a-z0-9]{1,16})\s*:\s*(.{1,80})$/i);
+    if (!m) continue;
+    key = m[1].toLowerCase(); val = m[2].trim(); if (!val) continue;
+    if (key === 'due' || key === 'date') { if (!p.due_text) p.due_text = val; }
+    else if (key === 'given') { if (!p.given_text) p.given_text = val; }
+    else if (key === 'karat') { if (!p.karat_text) p.karat_text = val.replace(/\s+/g, ''); }
+    else p[key + '_text'] = val;
+  }
+  return p;
+}
+
+Paste steps:
+1. Open JobSync.gs in the same Apps Script project as Code.gs.
+2. Replace jobParse_ with the function above. Do not add OAuth scopes. Do not add columns.
+3. Deploy the same web app.
+4. Scan a card after the zones are saved. OcrLog.parsed_json should include client_text, metal_text, size_text, and the other labels you drew, each from its own box.

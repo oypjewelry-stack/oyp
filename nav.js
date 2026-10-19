@@ -22,7 +22,7 @@ const scannerLink = role => SCANNER + (role ? '?role=' + encodeURIComponent(role
 root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, scannerLink };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPNav;
 // The scanner cannot take a repo change from this site, but it already loads this file.
-// JO card zones (scan-zones.js) ride along so a phone can draw the JO-number box without a scanner release.
+// JO card zones (scan-zones.js) ride along so a phone can label every section of the card without a scanner release.
 if (typeof document !== 'undefined' && document.createElement) {
   var cs = document.currentScript, tags, i, src;
   if (!cs) {
@@ -36,7 +36,7 @@ if (typeof document !== 'undefined' && document.createElement) {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   if (base && !document.querySelector('script[src*="scan-zones.js"]')) {
     var zs = document.createElement('script');
-    zs.src = base + 'scan-zones.js?v=1';
+    zs.src = base + 'scan-zones.js?v=2';
     (document.head || document.documentElement).appendChild(zs);
   }
 }

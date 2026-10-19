@@ -1,8 +1,8 @@
 /* JO card zones. The card scanner (jo-scanner) loads nav.js from this site, and nav.js loads this file.
-   Staff draw the JO-number box once on a sample photo. Page 1 of a later scan sends that crop as ocrBase64
-   (and optional date / other crops as ocrFieldsBase64). The full page still uploads as imageBase64.
-   Code.gs runs the JO-number check on the JO crop only, so a date elsewhere on the card is not a JO number.
-   Later pages stay full-page reads: they are not the form, and the JO box would miss. No template = today's full-page read.
+   Staff tag each section of the standard card once (JO number, date, client, metal, size, and any other label).
+   Page 1 of a later scan sends the JO-number crop as ocrBase64 and the other crops as ocrFields [{id, label, image}].
+   The full page still uploads as imageBase64. Code.gs checks the JO number on the JO crop only, and reads each
+   other crop under its own label. Later pages stay full-page reads. No template = today's full-page read.
    The shared template is a Script Property (paste/Code.gs.txt). Until that paste is deployed, a save stays on this phone. */
 (function (root) {
 'use strict';
@@ -13,7 +13,11 @@ var SHARED = 'oypScanZonesShared';
 var TOKEN = 'oypScanToken';
 var API = 'oypScanApi';
 var DEFAULT_API = 'https://script.google.com/macros/s/AKfycbzUmacbdvb0V2nw9ekharFhZPYdSqVgpFpADKiPM2qhSUUF3G5pJ_cAZ46eQPxeawhV/exec';
-var COLOR = { jo: '#9a7b2f', date: '#2f6f9a', other: '#555555' };
+var FIELDS = [
+  ['jo', 'JO number'], ['due', 'Date due'], ['given', 'Date given'], ['client', 'Client'], ['phone', 'Phone'],
+  ['item', 'Item'], ['metal', 'Metal'], ['karat', 'Karat'], ['size', 'Size'], ['stone', 'Stone'],
+  ['weight', 'Weight'], ['price', 'Price'], ['notes', 'Notes']
+];
 var state = { zones: [], shared: false };
 var editors = 0;
 var refreshP = Promise.resolve();
@@ -25,40 +29,54 @@ function esc(s) {
 }
 function clamp(n, a, b) { n = Number(n); if (!isFinite(n)) n = 0; return n < a ? a : n > b ? b : n; }
 function round4(n) { return Math.round(n * 10000) / 10000; }
-function kindOf(id) {
-  if (id === 'jo' || id === 'date') return id;
-  if (id === 'other' || /^other[2-4]$/.test(id)) return 'other';
-  return '';
+function known(id) {
+  for (var i = 0; i < FIELDS.length; i++) if (FIELDS[i][0] === id) return FIELDS[i];
+  return null;
 }
-function labelOf(id) {
-  if (id === 'jo') return 'JO number';
-  if (id === 'date') return 'Date';
-  if (id === 'other') return 'Other';
-  var m = /^other([2-4])$/.exec(id);
-  return m ? 'Other ' + m[1] : id;
+function cleanLabel(s) {
+  s = String(s || '').replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim();
+  if (s.length > 24) s = s.slice(0, 24).trim();
+  return /^[A-Za-z0-9][A-Za-z0-9 .\/#&'-]{0,23}$/.test(s) ? s : '';
 }
 function cleanZone(z) {
-  if (!z || !kindOf(String(z.id || ''))) return null;
+  if (!z) return null;
+  var id = String(z.id || ''), label = cleanLabel(z.label), k = known(id);
+  if (id === 'date') { id = 'due'; k = known('due'); label = 'Date due'; }
+  else if (/^other([2-4])?$/.test(id)) { if (!label) label = id === 'other' ? 'Other' : 'Other ' + id.slice(5); id = 'x'; }
+  else if (/^x(\d+)$/.test(id)) { if (!label) label = 'Other'; }
+  else if (!k) return null;
+  else label = k[1];
   var x = clamp(z.x, 0, 1), y = clamp(z.y, 0, 1), w = clamp(z.w, 0, 1), h = clamp(z.h, 0, 1);
   if (x + w > 1) w = 1 - x;
   if (y + h > 1) h = 1 - y;
-  if (w < 0.02 || h < 0.02) return null;
-  return { id: String(z.id), x: round4(x), y: round4(y), w: round4(w), h: round4(h) };
+  if (w < 0.02 || h < 0.02 || !label) return null;
+  return { id: id, label: label, x: round4(x), y: round4(y), w: round4(w), h: round4(h) };
 }
+function nextFreeX(used) { for (var i = 1; i <= 6; i++) if (!used[i]) return i; return 0; }
 function cleanList(list) {
-  var out = [], seenJo = false, seenDate = false, nOther = 0;
+  var out = [], seen = {}, used = {};
   (list || []).forEach(function (z) {
     var c = cleanZone(z); if (!c) return;
-    var k = kindOf(c.id);
-    if (k === 'jo') { if (seenJo) return; seenJo = true; c.id = 'jo'; }
-    else if (k === 'date') { if (seenDate) return; seenDate = true; c.id = 'date'; }
-    else {
-      nOther += 1; if (nOther > 4) return;
-      c.id = nOther === 1 ? 'other' : 'other' + nOther;
+    var xm = /^x(\d+)$/.exec(c.id);
+    if (c.id === 'x' || xm) {
+      var n = xm ? Number(xm[1]) : 0;
+      if (n < 1 || n > 6 || used[n]) n = nextFreeX(used);
+      if (!n) return;
+      c.id = 'x' + n; used[n] = true;
+    } else {
+      if (seen[c.id]) return;
+      seen[c.id] = true;
     }
     out.push(c);
   });
   return out;
+}
+function colorOf(id) {
+  var palette = ['#9a7b2f', '#2f6f9a', '#3d6b4f', '#6b4f3d', '#5c4d7a', '#7a4d5c', '#3d5c6b', '#6b3d4f'];
+  if (id === 'jo') return palette[0];
+  var n = 0;
+  for (var i = 0; i < id.length; i++) n += id.charCodeAt(i);
+  return palette[n % palette.length];
 }
 function readLocal() {
   try { return cleanList(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch (e) { return []; }
@@ -105,8 +123,11 @@ function crops(b64, zones) {
     var joB64 = cropFrom(img, jo);
     if (!joB64) return null;
     var extra = [];
-    fields.forEach(function (z) { var b = cropFrom(img, z); if (b) extra.push(b); });
-    return { ocrBase64: joB64, ocrFieldsBase64: extra };
+    fields.forEach(function (z) {
+      var b = cropFrom(img, z);
+      if (b) extra.push({ id: z.id, label: z.label, image: b });
+    });
+    return { ocrBase64: joB64, ocrFields: extra };
   });
 }
 /* Page 1 only. The bytes in imageBase64 stay the full upright page. */
@@ -121,7 +142,7 @@ function prepare(body) {
     var next = {};
     Object.keys(body).forEach(function (k) { next[k] = body[k]; });
     next.ocrBase64 = c.ocrBase64;
-    if (c.ocrFieldsBase64 && c.ocrFieldsBase64.length) next.ocrFieldsBase64 = c.ocrFieldsBase64;
+    if (c.ocrFields && c.ocrFields.length) next.ocrFields = c.ocrFields;
     return next;
   });
 }
@@ -185,7 +206,7 @@ function saveMessage(res, zones) {
   var jo = hasJo(zones);
   if (res && res.shared) {
     return jo
-      ? 'Saved for every phone. On page 1, the JO number is read only from the JO box.'
+      ? 'Saved for every phone. On page 1, the JO number comes from the JO number box, and each other label is read on its own.'
       : 'Cleared for every phone. Scans read the whole card again.';
   }
   if (res && res.reason === 'no-token') return 'Saved on this phone. Add the scanner token to share the boxes with every phone.';
@@ -196,7 +217,9 @@ function saveMessage(res, zones) {
   return 'Saved on this phone.';
 }
 function summary() {
-  return hasJo(state.zones) ? 'JO box set' : '';
+  var n = state.zones.length;
+  if (!hasJo(state.zones)) return n ? n + ' card box' + (n > 1 ? 'es' : '') + ', no JO number' : '';
+  return n === 1 ? 'JO number box' : n + ' card boxes';
 }
 
 function ensureCss() {
@@ -212,7 +235,9 @@ function ensureCss() {
     '.ozbar b{font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:22px;flex:1 0 160px}',
     '.oznote{font-size:14px;line-height:1.45;color:#444;max-width:720px;margin:0 0 12px}',
     '.oztools{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}',
-    '.oztools button,.ozfile{border:1px solid #ddd;background:#fff;border-radius:999px;padding:8px 14px;font:500 12px/1.2 Inter,Helvetica,sans-serif;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:#111}',
+    '.oztools button,.ozfile,.ozcustom{border:1px solid #ddd;background:#fff;border-radius:999px;padding:8px 12px;font:500 12px/1.2 Inter,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}',
+    '.ozcustom{display:inline-flex;align-items:center;gap:6px;cursor:text}',
+    '.ozcustom input{text-transform:none;letter-spacing:0;font:15px Inter,Helvetica,sans-serif;border:0;padding:0;width:7.5em;background:transparent;color:#111}',
     '.oztools button.on{border-color:#d4af37;background:#faf8f1}',
     '.ozfile input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}',
     '.ozsave,.ozghost{border-radius:999px;padding:10px 16px;font:500 12px/1 Inter,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}',
@@ -280,8 +305,9 @@ function Editor(host, pop) {
   host.innerHTML = (pop
     ? '<div class="ozbar"><button type="button" class="ozghost" data-z="close">Close</button><b>JO card zones</b><button type="button" class="ozsave" data-z="save">Save zones</button></div>'
     : '<div class="ozbar"><b>JO card zones</b><button type="button" class="ozsave" data-z="save">Save zones</button></div>')
-    + '<p class="oznote">Draw a box around the JO number on a sample photo. Page 1 reads the JO number from that box only, so a date written somewhere else on the card stays out of the JO check. A date box and other boxes are optional: they are read for the due date, the date given, and the karat. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it.</p>'
-    + '<div class="oztools"><button type="button" data-kind="jo" class="on">JO number</button><button type="button" data-kind="date">Date</button><button type="button" data-kind="other">Other</button>'
+    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box.</p>'
+    + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
+    + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
     + '<label class="ozfile">Sample photo<input type="file" accept="image/*"></label></div>'
     + '<div class="ozstage"><canvas aria-label="Sample JO card. Drag a box on the photo."></canvas></div>'
     + '<ul class="ozlist"></ul>'
@@ -305,13 +331,26 @@ function Editor(host, pop) {
   else if (hasJo(zones)) setStatus('A JO box is saved on this phone. Save again after the Code.gs paste to share it.');
   else setStatus('No JO box yet. Scans read the whole card.');
 
-  function color(id) { return COLOR[kindOf(id)] || COLOR.other; }
-  function nextOtherId() {
+  function color(id) { return colorOf(id); }
+  function nextCustomId() {
     var used = {};
-    zones.forEach(function (z) { if (kindOf(z.id) === 'other') used[z.id] = true; });
-    var ids = ['other', 'other2', 'other3', 'other4'];
-    for (var i = 0; i < ids.length; i++) if (!used[ids[i]]) return ids[i];
-    return '';
+    zones.forEach(function (z) { var m = /^x(\d+)$/.exec(z.id); if (m) used[Number(m[1])] = true; });
+    var n = nextFreeX(used);
+    return n ? 'x' + n : '';
+  }
+  function idForDraw() {
+    if (kind !== 'x') return { id: kind, label: known(kind)[1] };
+    var label = cleanLabel(host.querySelector('[data-z="custom"]').value);
+    if (!label) return { error: 'Type a label for this box, then drag it.' };
+    var match = null;
+    FIELDS.forEach(function (f) { if (f[1].toLowerCase() === label.toLowerCase()) match = f[0]; });
+    if (match) return { id: match, label: known(match)[1] };
+    var existing = null;
+    zones.forEach(function (z) { if (/^x\d+$/.test(z.id) && z.label.toLowerCase() === label.toLowerCase()) existing = z.id; });
+    if (existing) return { id: existing, label: label };
+    var id = nextCustomId();
+    if (!id) return { error: 'Six extra labels already. Remove one to add another.' };
+    return { id: id, label: label };
   }
   function paint() {
     var W = img ? (img.naturalWidth || img.width) : 600;
@@ -329,7 +368,7 @@ function Editor(host, pop) {
       g.strokeStyle = col;
       g.strokeRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
       g.font = '600 ' + Math.max(14, Math.round(W * 0.028)) + 'px Inter, Helvetica, sans-serif';
-      var text = labelOf(z.id), tw = g.measureText(text).width, th = Math.max(18, Math.round(W * 0.04));
+      var text = z.label, tw = g.measureText(text).width, th = Math.max(18, Math.round(W * 0.04));
       g.fillStyle = col;
       g.fillRect(x, y, Math.min(w, tw + 12), th);
       g.fillStyle = '#fff';
@@ -343,12 +382,12 @@ function Editor(host, pop) {
     if (!img) {
       g.fillStyle = '#666';
       g.font = '500 22px Inter, Helvetica, sans-serif';
-      g.fillText('Choose a sample photo, then drag the JO number box.', 24, H / 2);
+      g.fillText('Choose a sample photo, pick a label, then drag its box.', 24, H / 2);
     }
   }
   function renderList() {
     list.innerHTML = zones.map(function (z, i) {
-      return '<li class="' + (i === selected ? 'on' : '') + '" data-i="' + i + '"><span>' + esc(labelOf(z.id)) + '</span><button type="button" data-rm="' + i + '">Remove</button></li>';
+      return '<li class="' + (i === selected ? 'on' : '') + '" data-i="' + i + '"><span>' + esc(z.label) + '</span><button type="button" data-rm="' + i + '">Remove</button></li>';
     }).join('') || '<li><span>No boxes yet</span></li>';
     host.querySelectorAll('[data-kind]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-kind') === kind); });
   }
@@ -369,8 +408,8 @@ function Editor(host, pop) {
     }
     return null;
   }
-  function upsert(id, rect) {
-    var z = { id: id, x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+  function upsert(id, rect, label) {
+    var z = { id: id, label: label, x: rect.x, y: rect.y, w: rect.w, h: rect.h };
     var i = zones.findIndex(function (q) { return q.id === id; });
     if (i >= 0) zones[i] = z; else zones.push(z);
     selected = zones.findIndex(function (q) { return q.id === id; });
@@ -393,8 +432,14 @@ function Editor(host, pop) {
       return;
     }
     var row = e.target.closest ? e.target.closest('.ozlist li[data-i]') : null;
-    if (row) { selected = Number(row.getAttribute('data-i')); var z = zones[selected]; if (z) kind = kindOf(z.id); renderList(); paint(); }
+    if (row) {
+      selected = Number(row.getAttribute('data-i'));
+      var z = zones[selected];
+      if (z) { kind = known(z.id) ? z.id : 'x'; if (kind === 'x') host.querySelector('[data-z="custom"]').value = z.label; }
+      renderList(); paint();
+    }
   });
+  host.querySelector('[data-z="custom"]').addEventListener('focus', function () { kind = 'x'; renderList(); });
   host.querySelector('[data-z="token"]').addEventListener('change', function () { setToken(tok.value.trim()); showToken(); });
   host.querySelector('[data-z="save"]').addEventListener('click', function () {
     var btn = host.querySelector('[data-z="save"]');
@@ -437,14 +482,14 @@ function Editor(host, pop) {
     var h = hit(p.x, p.y, p.W, p.H);
     if (h) {
       selected = h.i;
-      drag = { mode: h.mode, i: h.i, ax: p.x, ay: p.y, z: { id: zones[h.i].id, x: zones[h.i].x, y: zones[h.i].y, w: zones[h.i].w, h: zones[h.i].h } };
+      drag = { mode: h.mode, i: h.i, ax: p.x, ay: p.y, z: { id: zones[h.i].id, label: zones[h.i].label, x: zones[h.i].x, y: zones[h.i].y, w: zones[h.i].w, h: zones[h.i].h } };
       dirty = true;
     } else {
-      var id = kind === 'other' ? nextOtherId() : kind;
-      if (!id) { setStatus('Four other boxes already. Remove one to add another.'); return; }
+      var draw = idForDraw();
+      if (draw.error) { setStatus(draw.error); return; }
       var prev = null;
-      zones.forEach(function (z) { if (z.id === id) prev = { id: z.id, x: z.x, y: z.y, w: z.w, h: z.h }; });
-      drag = { mode: 'draw', id: id, ax: p.x, ay: p.y, prev: prev, placed: false };
+      zones.forEach(function (z) { if (z.id === draw.id) prev = { id: z.id, label: z.label, x: z.x, y: z.y, w: z.w, h: z.h }; });
+      drag = { mode: 'draw', id: draw.id, label: draw.label, ax: p.x, ay: p.y, prev: prev, placed: false };
     }
     try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
     paint(); renderList();
@@ -455,19 +500,19 @@ function Editor(host, pop) {
     if (drag.mode === 'draw') {
       if (Math.abs(p.x - drag.ax) < 0.01 && Math.abs(p.y - drag.ay) < 0.01) return;
       var x = Math.min(drag.ax, p.x), y = Math.min(drag.ay, p.y);
-      upsert(drag.id, { x: x, y: y, w: Math.abs(p.x - drag.ax), h: Math.abs(p.y - drag.ay) });
+      upsert(drag.id, { x: x, y: y, w: Math.abs(p.x - drag.ax), h: Math.abs(p.y - drag.ay) }, drag.label);
       drag.placed = true;
       dirty = true;
     } else if (drag.mode === 'move') {
       var z = drag.z;
       var nx = clamp(z.x + (p.x - drag.ax), 0, 1 - z.w);
       var ny = clamp(z.y + (p.y - drag.ay), 0, 1 - z.h);
-      zones[drag.i] = { id: z.id, x: nx, y: ny, w: z.w, h: z.h };
+      zones[drag.i] = { id: z.id, label: z.label, x: nx, y: ny, w: z.w, h: z.h };
     } else if (drag.mode === 'resize') {
       var r = drag.z;
       var w = clamp(p.x - r.x, 0.02, 1 - r.x);
       var h = clamp(p.y - r.y, 0.02, 1 - r.y);
-      zones[drag.i] = { id: r.id, x: r.x, y: r.y, w: w, h: h };
+      zones[drag.i] = { id: r.id, label: r.label, x: r.x, y: r.y, w: w, h: h };
     }
     paint();
   });
@@ -493,7 +538,7 @@ function Editor(host, pop) {
     paint(); renderList();
     host.dispatchEvent(new CustomEvent('oyp-zones-drawn', {
       bubbles: true,
-      detail: zones.map(function (z) { return { id: z.id, x: z.x, y: z.y, w: z.w, h: z.h }; })
+      detail: zones.map(function (z) { return { id: z.id, label: z.label, x: z.x, y: z.y, w: z.w, h: z.h }; })
     }));
   }
   canvas.addEventListener('pointerup', endDrag);
