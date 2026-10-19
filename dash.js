@@ -101,9 +101,9 @@ function inboxCard(ib, esc) {
   const row = x => `<div class="cmrow${x.status === 'open' ? '' : ' cmdone'}"><span class="cmico" aria-hidden="true">${x.kind === 'approval' ? '✓' : '?'}</span><div class="cmb">
     <div class="cmt"><b>${x.kind === 'approval' ? 'Quote approved' : 'Question'} · JO ${esc(x.jo)}</b><span class="muted">${esc(agoT(x.at))}</span></div>
     <div class="cmx">${esc(x.text)}${x.amount != null && x.kind === 'approval' ? '' : ''}</div>
-    <div class="muted">${esc(x.from)} · ${x.via === 'account' ? 'portal account' : 'Track my order'}${x.version ? ' · quote v' + x.version : ''}${x.amount != null ? ' · ' + peso(x.amount) : ''}${x.status !== 'open' && x.handled_by ? ' · handled by ' + esc(x.handled_by) : ''}</div></div>
+    <div class="muted">${esc(x.from)} · ${x.via === 'account' ? 'portal account' : x.via === 'staff' ? 'marked in the back office' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : x.via === 'telegram' ? 'marked via Tessa' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : 'Track my order'}${x.version ? ' · quote v' + x.version : ''}${x.amount != null ? ' · ' + peso(x.amount) : ''}${x.status !== 'open' && x.handled_by ? ' · handled by ' + esc(x.handled_by) : ''}</div></div>
     ${x.status === 'open' ? `<button class="lnk cmok" data-id="${esc(x.id)}">Done</button>` : ''}</div>`;
-  return `<section class="dcard" id="dMsgs"><div class="dtitle"><h3>Client messages</h3><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · from Track my order / My orders</span></div>
+  return `<section class="dcard" id="dMsgs"><div class="dtitle"><h3>Client messages</h3><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · approvals and questions</span></div>
     ${open.map(row).join('')}${done.length ? `<details class="cmold"><summary class="muted">Handled (${done.length})</summary>${done.map(row).join('')}</details>` : ''}
     <p class="muted dhint">The Telegram group gets each one too. Reply to the client yourself (phone / Viber / email); nothing is sent from here.</p></section>`;
 }

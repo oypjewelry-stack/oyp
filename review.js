@@ -220,8 +220,10 @@ function stepsSec(j) {
   const head = '<div class="flab"><span class="lab">Steps the client sees</span></div>';
   if (!S.steps) return `<div class="fsec full stepsec">${head}<p class="muted fnote">Pick which steps clients see on Track my order once the Portal update is pasted in Apps Script.</p></div>`;
   const ca = S.steps.client && S.steps.client[j.jo], ap = ca && ca.approved; // Portal.gs v3: what the client did online
-  const act = ca ? `<div class="cact">${ap ? `<span class="chip ok">Client approved quote v${esc(ap.version)}${ap.amount != null ? ' · ₱' + Math.round(ap.amount).toLocaleString('en-PH') : ''} · ${esc(ap.at)}${ap.via === 'track' ? ' (Track my order)' : ap.via === 'account' ? ' (portal account)' : ''}</span>` : ''}${ca.questions ? `<a class="chip gold" href="#/dashboard">${ca.questions} client question${ca.questions > 1 ? 's' : ''} · see Dashboard</a>` : ''}</div>` : '';
-  return `<div class="fsec full stepsec">${head}${act}<div class="locs" id="fSteps"></div>
+  const act = ca ? `<div class="cact">${ap ? `<span class="chip ok">Client approved quote v${esc(ap.version)}${ap.amount != null ? ' · ₱' + Math.round(ap.amount).toLocaleString('en-PH') : ''} · ${esc(ap.at)}${window.OYPMarkQ ? window.OYPMarkQ.viaText(ap.via, ap.how) : ap.via === 'track' ? ' (Track my order)' : ap.via === 'account' ? ' (portal account)' : ''}</span>` : ''}${ca.questions ? `<a class="chip gold" href="#/dashboard">${ca.questions} client question${ca.questions > 1 ? 's' : ''} · see Dashboard</a>` : ''}</div>` : '';
+  // Portal.gs v3.2: executives / admin can record the client's approval of the sent quote (in person / phone / chat / Telegram)
+  const oq = S.steps.quotes && S.steps.quotes[j.jo], mq = oq && window.OYPMarkQ ? window.OYPMarkQ.box(j.jo, oq) : '';
+  return `<div class="fsec full stepsec">${head}${act}${mq}<div class="locs" id="fSteps"></div>
     <p class="muted fnote" id="fStepsNote"></p></div>`;
 }
 function contactSec(j) {
@@ -282,6 +284,9 @@ function wire(main) {
     box.querySelectorAll('[data-step]').forEach(b => b.onclick = () => { const k = b.dataset.step; st.stepsTouched = true;
       st.steps = st.steps.includes(k) ? st.steps.filter(x => x !== k) : st.steps.concat(k); drawSteps(); }); };
   if (S.steps) drawSteps();
+  if (S.steps && S.steps.quotes && S.steps.quotes[j.jo] && window.OYPMarkQ) window.OYPMarkQ.wire(main, j.jo, S.steps.quotes[j.jo], (r, how) => { // the chip stays after a redraw
+    const q = S.steps.quotes[j.jo]; delete S.steps.quotes[j.jo]; S.steps.client = S.steps.client || {};
+    S.steps.client[j.jo] = Object.assign({}, S.steps.client[j.jo], { approved: { version: q.version, at: 'just now', via: 'staff', how, amount: q.total } }); });
   const kindFields = k => { const t = S.itemTypes.find(x => x[0] === k); return t ? t[2].concat(KIND_EXTRA[k] || []) : []; };
   const flagged = k => { const t = S.itemTypes.find(x => x[0] === st.item_type); return !!t && t[2].includes(k); };
   const applyKind = () => {

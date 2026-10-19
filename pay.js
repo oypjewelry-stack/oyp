@@ -45,7 +45,16 @@ async function render(main, u, page) {
   if (!r || !r.ok) { main.innerHTML = `<h2>${esc(page === 'payments' && u.role === 'admin' ? 'Quotes / payments' : (TABS.find(t => t[0] === tab) || TABS[0])[1])}</h2><p class="muted">${esc(!r || r.error === 'Unknown action' ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
   if (pmView() && S.tab !== 'balances') { S.tab = 'balances'; S.open = null; }
   draw(main);
+  loadMark(main, live);
 }
+// Portal.gs v3.2: "Mark approved by client" on a sent quote (executives / admin). portalSteps tells whether the server has it
+// (can_mark + quotes); an older Portal.gs answers without them, so the button never shows before that paste.
+function loadMark(main, live) {
+  if (!isAdmin() || S.mq !== undefined || !window.OYPMarkQ) return;
+  S.mq = null; // asked once per visit
+  window.OYP.call('portalSteps').then(x => { S.mq = x && x.ok && x.can_mark && x.quotes ? x : false; if (S.mq && live() && S.tab === 'quotes') draw(main); });
+}
+const markQ = q => S.mq && q && q.status === 'sent' && S.mq.quotes[q.jo] && S.mq.quotes[q.jo].version === q.version ? S.mq.quotes[q.jo] : null;
 async function refresh(main) { const live = window.OYP.here(); const r = await load(true); if (live() && r && r.ok) draw(main); }
 
 function head() {
@@ -181,6 +190,7 @@ function quotePanel(q) {
     <div class="fbtns">${ex && q.status === 'draft' ? `<button class="pill" data-sent ${q.amount ? '' : 'disabled'}>MARK SENT</button>` : ''}
       ${ex && (q.status === 'sent' || q.status === 'draft') && q.amount ? '<button class="pill outline" data-accept>MARK ACCEPTED / JOB STARTED</button>' : ''}
       <button class="pill outline sm" data-draft>DRAFT EMAIL TO CLIENT</button></div>
+    ${ex && markQ(q) ? window.OYPMarkQ.box(q.jo, markQ(q)) : ''}
     ${ex && q.status === 'draft' ? '<p class="fnote muted">Mark sent when you have given the client this price. They then see it in My Orders. No email is sent.</p>' : ''}
     ${!q.amount ? '<p class="fnote muted">No price on this version yet (set it in the cost estimator).</p>' : ''}
     ${d ? `<div class="pdraft"><span class="lab">Draft only · nothing was sent</span>
@@ -315,6 +325,7 @@ function wire(main) {
     const r = await call('priceAccept', { quote_id: qq.quote_id, base_updated_at: qq.updated_at });
     if (!r.ok) return toast(r.error === 'Unknown action' ? 'Needs the Prices paste in Apps Script (Mark accepted lives there).' : r.error);
     toast('Accepted. JO ' + qq.jo + ' price is ' + peso(qq.amount)); if (live()) refresh(main); });
+  if (qq && markQ(qq)) window.OYPMarkQ.wire(main, qq.jo, markQ(qq), () => { delete S.mq.quotes[qq.jo]; toast('Recorded: the client approved JO ' + qq.jo + ' v' + qq.version + '. Nothing was sent to the client.'); setTimeout(() => { if (window.OYP.here()) refresh(main); }, 1200); });
   on('[data-draft]', async () => { const r = await call('payQuoteDraft', { quote_id: qq.quote_id }); if (!r.ok) return toast(r.error); if (!live()) return;
     S.draft = Object.assign({ quote_id: qq.quote_id }, r); re(); });
   on('[data-copy]', async () => { const t = 'To: ' + $('dTo').value + '\nSubject: ' + $('dSub').value + '\n\n' + $('dBody').value;
