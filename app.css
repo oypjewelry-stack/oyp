@@ -249,3 +249,10 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.
 .pcard,.kcard{--fs:calc(var(--Gfs)*var(--d-pcard-t,1));--hs:calc(var(--Ghs)*var(--d-pcard-t,1));--sp:calc(var(--Gsp)*var(--d-pcard-h,1));--bh:calc(var(--Gbh)*var(--d-pcard-h,1));--rad:calc(var(--Grad)*var(--d-pcard-r,1));--pw:1;--head:var(--d-pcard-f,var(--Ghead));--body:var(--d-pcard-f,var(--Gbody));--label:var(--d-pcard-f,var(--Glabel))}
 .pmbox,.ivsbox,.whomenu,.menu{--fs:calc(var(--Gfs)*var(--d-modal-t,1));--hs:calc(var(--Ghs)*var(--d-modal-t,1));--sp:calc(var(--Gsp)*var(--d-modal-h,1));--bh:calc(var(--Gbh)*var(--d-modal-h,1));--rad:calc(var(--Grad)*var(--d-modal-r,1));--pw:var(--d-modal-w,1);--head:var(--d-modal-f,var(--Ghead));--body:var(--d-modal-f,var(--Gbody));--label:var(--d-modal-f,var(--Glabel))}
 .toast{--fs:calc(var(--Gfs)*var(--d-toast-t,1));--hs:calc(var(--Ghs)*var(--d-toast-t,1));--sp:calc(var(--Gsp)*var(--d-toast-h,1));--bh:calc(var(--Gbh)*var(--d-toast-h,1));--rad:calc(var(--Grad)*var(--d-toast-r,1));--pw:1;--head:var(--d-toast-f,var(--Ghead));--body:var(--d-toast-f,var(--Gbody));--label:var(--d-toast-f,var(--Glabel))}
+/* dashboard: client messages (Portal.gs v3) + JO review chip */
+.cmrow{display:flex;gap:calc(12px*var(--sp));align-items:flex-start;padding:calc(10px*var(--sp)) 0;border-top:1px solid #f0f0f0}.cmrow:first-of-type{border-top:0}
+.cmico{width:26px;height:26px;border-radius:50%;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;margin-top:2px}
+.cmdone .cmico{background:#ccc}.cmb{flex:1;min-width:0}.cmt{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.cmx{margin:2px 0;white-space:pre-wrap;word-break:break-word}
+.cmold summary{cursor:pointer;margin-top:calc(8px*var(--sp))}.cmok{flex-shrink:0}
+.cact{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 calc(10px*var(--sp))}.chip.ok{background:#e9f4ea;color:#245c2b}
+.cmok{background:none;border:0;padding:4px 0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;color:#111;cursor:pointer}

@@ -219,7 +219,9 @@ function stepsSec(j) {
   if (S.stepsState === 'forbidden') return '';
   const head = '<div class="flab"><span class="lab">Steps the client sees</span></div>';
   if (!S.steps) return `<div class="fsec full stepsec">${head}<p class="muted fnote">Pick which steps clients see on Track my order once the Portal update is pasted in Apps Script.</p></div>`;
-  return `<div class="fsec full stepsec">${head}<div class="locs" id="fSteps"></div>
+  const ca = S.steps.client && S.steps.client[j.jo], ap = ca && ca.approved; // Portal.gs v3: what the client did online
+  const act = ca ? `<div class="cact">${ap ? `<span class="chip ok">Client approved quote v${esc(ap.version)}${ap.amount != null ? ' · ₱' + Math.round(ap.amount).toLocaleString('en-PH') : ''} · ${esc(ap.at)}${ap.via === 'track' ? ' (Track my order)' : ap.via === 'account' ? ' (portal account)' : ''}</span>` : ''}${ca.questions ? `<a class="chip gold" href="#/dashboard">${ca.questions} client question${ca.questions > 1 ? 's' : ''} · see Dashboard</a>` : ''}</div>` : '';
+  return `<div class="fsec full stepsec">${head}${act}<div class="locs" id="fSteps"></div>
     <p class="muted fnote" id="fStepsNote"></p></div>`;
 }
 function contactSec(j) {

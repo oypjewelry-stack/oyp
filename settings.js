@@ -16,7 +16,7 @@ const SECS = [
   ['stages', 'Stage delays', 'Days a JO may stay in a stage before it is flagged'],
   ['staff', 'Staff accounts', 'Add, turn off, role, new code'],
   ['scanner', 'Scanner', 'Page rotation and auto-snap for every phone'],
-  ['portal', 'Customer pages', 'The contact line clients see on Track my order'],
+  ['portal', 'Customer pages', 'Contact line, deposit and quote validity on Track my order / My orders'],
   ['design', 'Design', 'Text size, fonts, spacing, corners, widths, and each type of button and shape'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
@@ -69,7 +69,9 @@ function summary(k) {
   if (k === 'design') { const v = dsStart(), D = window.OYPDesign; if (!D) return '';
     const on = Object.keys(DS).filter(x => v[x] !== D.KEYS[x][1]), np = Object.keys(dpStart()).length, f = dfStart();
     const s = on.map(x => DS[x][0] + ' ' + dsFmt(x, v[x])).concat(Object.keys(DF).filter(k => f[k]).map(k => DF[k][0] + ' ' + fName(f[k]))).concat(np ? [np + ' button & shape type' + (np > 1 ? 's' : '') + ' changed'] : []); return s.length ? s.join(' · ') : 'Original look'; }
-  if (k === 'portal') { const it = item('portal.contact'), v = it ? eff(it) : ''; return /^(none|off|-)$/i.test(v.trim()) ? 'No contact line' : v; }
+  if (k === 'portal') { const it = item('portal.contact'), v = it ? eff(it) : '', dp = item('portal.deposit_pct'), qd = item('portal.quote_days');
+    const extra = [dp && (eff(dp) === '0' ? 'no deposit shown' : 'deposit ' + eff(dp) + '%'), qd && 'quotes valid ' + eff(qd) + ' days'].filter(Boolean).join(' · ');
+    return (/^(none|off|-)$/i.test(v.trim()) ? 'No contact line' : v) + (extra ? ' · ' + extra : ''); }
   if (k === 'log') { const l = S.r.log[0]; return l ? 'Last: ' + when(l.at) + ' by ' + l.by : 'No changes yet'; }
   return '';
 }
@@ -119,7 +121,7 @@ function section(s) {
   if (s === 'prices') return head(t[1], 'These are the rates the cost estimator and quotes use. Metal prices per gram are changed on <a href="#/prices">Material prices</a>.') + pricesBox() + saveBar();
   if (s === 'staff') return head(t[1], 'Accounts are never deleted: turn them off instead. A new code is shown only once. Changing someone\'s role or code signs them out on every device.') + staffBox();
   if (s === 'portal') return head(t[1], 'Clients see this line under their order on <b>Track my order</b> (oypjewelry.com/track), and when an order isn\'t found. Phone numbers and emails in it become tap-to-call and tap-to-email links. Type <b>none</b> to hide the line.')
-    + `<div class="setbox">${field('portal.contact', 'Contact line')}</div>` + saveBar();
+    + `<div class="setbox">${field('portal.contact', 'Contact line')}${item('portal.deposit_pct') ? field('portal.deposit_pct', 'Deposit asked on a quote (%)', 'Shown on the client\'s quote as "Deposit to start". 0 = no deposit line.') : ''}${item('portal.quote_days') ? field('portal.quote_days', 'Quote valid for (days)', 'Counted from the day the quote was marked sent. After that the client can\'t approve it and is asked to message you for an updated price.') : ''}</div>` + saveBar();
   if (s === 'design') return head(t[1], 'Drag a slider and this page changes right away, so you can see it before saving. <b>SAVE</b> makes it the look for everyone: every staff phone and computer, and the customer pages (order lookup, shop). Other devices pick it up within a few minutes.') + designBox();
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
   return '';

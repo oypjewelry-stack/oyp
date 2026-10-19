@@ -1,7 +1,10 @@
 /* "Track my order" (client lookup): JO number + the mobile or email on that order (or a portal code). Read-only.
    Used on the landing page, on My orders (signed out) and on /track/ (full page, bookmarkable #t=<signed link>).
    Server: action clientLookup / clientPhoto (Portal.gs). Before that paste the server doesn't know the action and the
-   answer has no "portal" mark, so the page just says online tracking is coming soon (nothing breaks). */
+   answer has no "portal" mark, so the page just says online tracking is coming soon (nothing breaks).
+   v5: the quote (Portal.gs v3 adds job.quote): total, deposit, valid until, Approve (with a confirm step) and Ask a question
+   (portalApprove / portalAsk, with the signed link on /track or the account session on /my). An older server sends no quote:
+   the section is simply not there. */
 window.OYPTrack = (() => {
 'use strict';
 const { call, esc, peso, slides } = OYP;
@@ -44,6 +47,56 @@ function balanceBox(j) {
 function stepper(j) {
   return `<ol class="tsteps">${(j.steps || []).map(s => `<li class="${esc(s.state)}"><i>${s.state === 'done' ? '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</i><span>${esc(s.label)}${s.state === 'now' && j.stage && j.stage !== s.label ? `<small>${esc(j.stage)}</small>` : ''}</span></li>`).join('')}</ol>`;
 }
+/* ---------- the quote (job.quote from Portal.gs v3; allowlisted there) ---------- */
+const QSTATE = { open: ['Waiting for your approval', ''], accepted: ['Approved', ' rdy'], expired: ['Expired', ' old'] };
+function quoteBox(j) {
+  const q = j.quote; if (!q) return '';
+  const st = QSTATE[q.state] || QSTATE.open, dep = q.deposit;
+  const depLine = !dep ? '' : q.deposit_due === 0 ? `<p class="tline"><span>Deposit</span><b>Paid</b></p>`
+    : q.deposit_due < dep ? `<p class="tline"><span>Deposit still due</span><b>${peso(q.deposit_due)}</b></p>`
+    : `<p class="tline"><span>Deposit to start${q.deposit_pct ? ' (' + q.deposit_pct + '%)' : ''}</span><b>${peso(dep)}</b></p>`;
+  const when = q.state === 'accepted' ? `You approved this quote${q.approved_on ? ' on ' + esc(q.approved_on) : ''}. Thank you!`
+    : q.state === 'expired' ? `This quote expired${q.valid_until ? ' on ' + esc(q.valid_until) : ''}. Ask us for an updated price.`
+    : q.valid_until ? `Valid until ${esc(q.valid_until)}` : '';
+  return `<p class="sec" id="tq">Quote</p><div class="tq ${esc(q.state)}">
+    <div class="tqtop"><span class="lab">Quote${q.version > 1 ? ' v' + q.version : ''}${q.sent ? ' · sent ' + esc(q.sent) : ''}</span><span class="chipg${st[1]}">${st[0]}</span></div>
+    <p class="tline tqamt"><span>Total</span><b>${peso(q.total)}</b></p>${depLine}
+    ${when ? `<p class="grey sm tqwhen">${when}</p>` : ''}
+    <div class="tqact">${q.can_approve ? '<button class="pill tqOk" type="button">APPROVE QUOTE</button>' : ''}<button class="lk tqAsk" type="button">Ask a question</button></div>
+    <div class="tqconf hidden"><p><b>Approve ${peso(q.total)} for order ${esc(j.jo)}?</b></p>
+      <p class="grey sm">This tells the shop you accept this price${dep && q.deposit_due ? '. We\'ll get in touch about the deposit' : ''}.</p>
+      <div class="tqbtns"><button class="pill tqYes" type="button">YES, APPROVE</button><button class="lk tqNo" type="button">Cancel</button></div></div>
+    <div class="tqform hidden"><label class="field"><span class="lab">Your question</span><textarea class="tqText" rows="3" maxlength="1000" placeholder="Ask about the price, the design, the date…"></textarea></label>
+      <div class="tqbtns"><button class="pill tqSend" type="button">SEND</button><button class="lk tqNo" type="button">Cancel</button></div></div>
+    <p class="err tqErr" role="alert"></p><p class="note tqDone hidden"></p></div>`;
+}
+/* buttons of the quote box. auth = { token } (Track my order link) or { session } (My orders). redraw(job, note) draws the card again. */
+function wire(el, j, auth, redraw) {
+  const box = el.querySelector('.tq'); if (!box || !j.quote) return;
+  const $ = c => box.querySelector('.' + c), err = t => { $('tqErr').textContent = t || ''; };
+  const show = w => { ['tqact', 'tqconf', 'tqform'].forEach(c => $(c).classList.toggle('hidden', c !== w)); err(''); };
+  const send = (action, data) => call(action, Object.assign({ jo: j.jo }, auth.token ? { token: auth.token } : {}, data), auth.session || '');
+  const busy = async (b, label, fn) => { const t = b.textContent; b.disabled = true; b.textContent = label; try { await fn(); } finally { b.disabled = false; b.textContent = t; } };
+  const ok = $('tqOk'); if (ok) ok.onclick = () => show('tqconf');
+  $('tqAsk').onclick = () => { show('tqform'); $('tqText').focus(); };
+  box.querySelectorAll('.tqNo').forEach(b => b.onclick = () => show('tqact'));
+  $('tqYes').onclick = () => busy($('tqYes'), 'APPROVING…', async () => {
+    const r = await send('portalApprove', { version: j.quote.version, amount: j.quote.total }) || {};
+    if (r.ok) return redraw(r.job, r.already ? 'This quote was already approved. Thank you!' : 'Thank you! We got your approval and the shop has been told.');
+    if (r.job && (r.code === 'CHANGED' || r.code === 'EXPIRED')) return redraw(r.job, '', r.error);
+    show('tqact'); err(r.error || 'Could not send. Please try again.');
+  });
+  $('tqSend').onclick = () => busy($('tqSend'), 'SENDING…', async () => {
+    const text = $('tqText').value.trim(); if (text.length < 2) return err('Type your question first');
+    const r = await send('portalAsk', { text }) || {};
+    if (!r.ok) return err(r.error || 'Could not send. Please try again.');
+    $('tqText').value = ''; show('tqact'); const d = $('tqDone'); d.textContent = 'Thanks! Your question was sent to the shop. We\'ll get back to you soon.'; d.classList.remove('hidden');
+  });
+}
+function noteAfter(el, note, error) { const b = el.querySelector('.tq'); if (!b) return;
+  if (note) { const d = b.querySelector('.tqDone'); d.textContent = note; d.classList.remove('hidden'); }
+  if (error) b.querySelector('.tqErr').textContent = error;
+  b.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
 function result(j, token, full, contact) {
   const dates = [j.received && ['Received', j.received], j.target && [j.ready || j.picked_up ? 'Promised for' : 'Target date', j.target]].filter(Boolean);
   return `<div class="trk2${full ? ' full' : ''}">
@@ -52,20 +105,25 @@ function result(j, token, full, contact) {
       <p class="lab">Order ${esc(j.jo)}</p><h3>${esc(j.item)}</h3>
       <span class="chipg${j.ready ? ' rdy' : ''}">${esc(j.stage)}</span>
       ${j.ready ? '<p class="note">Your piece is ready. Please come by the shop to pick it up.</p>' : ''}
+      ${j.quote && j.quote.can_approve ? '<p class="note tqnote">Your quote is ready. <a class="lk" href="#tq">Review and approve</a></p>' : ''}
       ${dates.length ? `<div class="tdates">${dates.map(d => `<div><span class="lab">${esc(d[0])}</span><b>${esc(d[1])}</b></div>`).join('')}</div>` : ''}
       <p class="sec">Progress</p>${stepper(j)}
       ${j.specs && j.specs.length ? `<p class="sec">Details</p><dl class="specs2">${j.specs.map(x => `<dt>${esc(x.label)}</dt><dd>${esc(x.value)}</dd>`).join('')}</dl>` : ''}
+      ${quoteBox(j)}
       <p class="sec">Payment</p>${balanceBox(j)}
       ${full ? '<p class="grey sm tsave">Bookmark this page to check again without typing. The link works for 30 days.</p>'
-        : `<p class="grey sm" style="margin-top:14px"><a class="lk" href="/track/#t=${encodeURIComponent(token)}">Open this order on its own page</a></p>`}
+        : token ? `<p class="grey sm" style="margin-top:14px"><a class="lk" href="/track/#t=${encodeURIComponent(token)}">Open this order on its own page</a></p>` : ''}
       ${contactHtml(contact)}
     </div></div>`;
 }
-function showPhotos(el, j, token) {
+function showPhotos(el, j, token, load) {
   const ph = el.querySelector('.tph'); if (!ph) return;
   if (!j.photos) { ph.remove(); return; }
-  slides(ph, j.photos, n => call('clientPhoto', { token, n }).then(x => (x && x.ok && x.src) || ''));
+  slides(ph, j.photos, load || (n => call('clientPhoto', { token, n }).then(x => (x && x.ok && x.src) || '')));
 }
+// the in-page "Review and approve" link scrolls to the quote without touching the address bar (#t=... stays)
+document.addEventListener('click', e => { const a = e.target.closest && e.target.closest('a[href="#tq"]'); if (!a) return; e.preventDefault();
+  const q = (a.closest('.trk2') || document).querySelector('#tq'); if (q) q.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 /* el: container. opts.full = /track/ page (result replaces the form; link saved in the address bar) */
 function mount(el, opts = {}) {
   const full = !!opts.full;
@@ -82,12 +140,14 @@ function mount(el, opts = {}) {
     $('tSw').textContent = useCode ? 'Use my mobile number or email' : 'I have a portal code'; err(''); };
   function soon() { $('tOut').innerHTML = `<p class="note">${esc(SOON)}</p>${contactHtml(CONTACT0)}`; }
   const fail = r => { err(r.error || 'We couldn\'t find that order'); if (r.code !== 'INPUT') $('tOut').innerHTML = contactHtml(r.contact); };
-  function show(r) {
+  function show(r, note, error) {
     const j = r.job;
     if (full) { el.querySelector('.tform').classList.add('hidden'); history.replaceState(null, '', '#t=' + encodeURIComponent(r.token)); }
     $('tOut').innerHTML = result(j, r.token, full, r.contact) + (full ? '<p class="tagain"><button class="lk tAg" type="button">Look up another order</button></p>' : '');
     showPhotos($('tOut'), j, r.token);
+    wire($('tOut'), j, { token: r.token }, (nj, n2, e2) => show(Object.assign({}, r, { job: nj }), n2, e2));
     const ag = $('tAg'); if (ag) ag.onclick = () => { history.replaceState(null, '', location.pathname); $('tOut').innerHTML = ''; el.querySelector('.tform').classList.remove('hidden'); };
+    if (note || error) return noteAfter($('tOut'), note, error);
     if (full) window.scrollTo(0, 0);
   }
   async function ask(data) {
@@ -123,5 +183,5 @@ function mount(el, opts = {}) {
     });
   }
 }
-return { mount, money, specs, result };
+return { mount, money, specs, result, wire, showPhotos, noteAfter, contactHtml };
 })();

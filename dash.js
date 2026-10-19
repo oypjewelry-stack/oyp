@@ -24,7 +24,10 @@ async function render(main, u, fresh) {
   const drill = (location.hash.match(/^#\/dashboard\/(\w+)(?:\/([\w-]+))?/) || []).slice(1);
   if (drill[0] && D.r && !fresh && Date.now() - D.at < 5 * 60e3) return drillPage(main, u, drill[0], drill[1] || '');
   main.innerHTML = '<h2>Dashboard</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
-  const [r, cc] = await Promise.all([call('dashboard'), call('contactList')]); // contactList: JobContact.gs (absent before that paste -> no tile)
+  // portalSteps {inbox:1}: client approvals / questions (Portal.gs v3; admin + production manager). An older Portal.gs answers without
+  // "inbox" -> no card. (portalSteps, not a new action name, so a server without v3 never sees an unknown action.)
+  const pin = u && (u.role === 'admin' || u.role === 'production_manager');
+  const [r, cc, pi] = await Promise.all([call('dashboard'), call('contactList'), pin ? call('portalSteps', { inbox: 1 }) : null]); // contactList: JobContact.gs (absent before that paste -> no tile)
   if (!live()) return; // the user went to another page while this loaded: leave it alone
   if (r && r.ok) { D.r = r; D.cc = cc; D.x = null; D.at = Date.now(); }
   if (drill[0] && r && r.ok) return drillPage(main, u, drill[0], drill[1] || '');
@@ -45,6 +48,8 @@ async function render(main, u, fresh) {
   ${can.sales ? tile(monthName(r.sales.month) + ' sales', peso(c.month_sales), 'confirmed payments', '', '#/dashboard/sales/' + r.sales.month) : ''}
   ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>`;
 
+  const ib = pi && pi.ok && pi.inbox; D.inbox = ib || null;
+  if (ib && ib.items.length) h += inboxCard(ib, esc);
   if (r.locations) {
     const unset = r.locations.find(l => l.key === 'unset');
     h += `<section class="dcard"><div class="dtitle"><h3>Location</h3><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
@@ -85,7 +90,32 @@ async function render(main, u, fresh) {
   main.querySelector('#dRef').onclick = () => render(main, u, true);
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
+  wireInbox(main, esc);
   const nc = main.querySelector('#dNoCC'); if (nc) nc.onclick = () => { try { sessionStorage.setItem('oypReviewFilter', 'nocontact'); } catch (_) {} };
+}
+
+/* ---------- client messages (Portal.gs v3): quote approvals + questions from Track my order / My orders ---------- */
+const agoT = iso => { const m = Math.round((Date.now() - Date.parse(iso)) / 6e4); return !(m >= 0) ? '' : m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : plural(Math.round(m / 1440), 'day') + ' ago'; };
+function inboxCard(ib, esc) {
+  const open = ib.items.filter(x => x.status === 'open'), done = ib.items.filter(x => x.status !== 'open').slice(0, 5);
+  const row = x => `<div class="cmrow${x.status === 'open' ? '' : ' cmdone'}"><span class="cmico" aria-hidden="true">${x.kind === 'approval' ? '✓' : '?'}</span><div class="cmb">
+    <div class="cmt"><b>${x.kind === 'approval' ? 'Quote approved' : 'Question'} · JO ${esc(x.jo)}</b><span class="muted">${esc(agoT(x.at))}</span></div>
+    <div class="cmx">${esc(x.text)}${x.amount != null && x.kind === 'approval' ? '' : ''}</div>
+    <div class="muted">${esc(x.from)} · ${x.via === 'account' ? 'portal account' : 'Track my order'}${x.version ? ' · quote v' + x.version : ''}${x.amount != null ? ' · ' + peso(x.amount) : ''}${x.status !== 'open' && x.handled_by ? ' · handled by ' + esc(x.handled_by) : ''}</div></div>
+    ${x.status === 'open' ? `<button class="lnk cmok" data-id="${esc(x.id)}">Done</button>` : ''}</div>`;
+  return `<section class="dcard" id="dMsgs"><div class="dtitle"><h3>Client messages</h3><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · from Track my order / My orders</span></div>
+    ${open.map(row).join('')}${done.length ? `<details class="cmold"><summary class="muted">Handled (${done.length})</summary>${done.map(row).join('')}</details>` : ''}
+    <p class="muted dhint">The Telegram group gets each one too. Reply to the client yourself (phone / Viber / email); nothing is sent from here.</p></section>`;
+}
+function wireInbox(main, esc) {
+  main.querySelectorAll('.cmok').forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = '…';
+    const r = await window.OYP.call('portalInboxDone', { id: b.dataset.id });
+    if (!r || !r.ok) { b.disabled = false; b.textContent = 'Done'; return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save'); }
+    const sec = main.querySelector('#dMsgs'); if (!sec) return;
+    if (!r.inbox.items.length) return sec.remove();
+    sec.outerHTML = inboxCard(r.inbox, esc); wireInbox(main, esc);
+  });
 }
 
 /* ---------- drill-down lists (same list rows as To review; a JO opens in the To review card) ---------- */

@@ -1,4 +1,7 @@
-/* Customer portal: sign up (name, email, mobile, PIN) -> email check code -> own orders only. */
+/* Customer portal: sign up (name, email, mobile, PIN) -> email check code -> own orders only.
+   v3 (server Portal.gs v3 answers custJobs with pv: 3): order cards (photo, step dots, target date, balance), quotes waiting for
+   approval at the top, and a tap opens the SAME card as Track my order (OYPTrack.result) with Approve / Ask a question.
+   An older server (no pv) gets the old list exactly as before. */
 (() => {
 'use strict';
 const { call, esc, peso, slides } = OYP, app = document.getElementById('app');
@@ -82,6 +85,7 @@ async function home(flag) {
   app.innerHTML = '<p class="grey">Loading your orders…</p>';
   const r = await call('custJobs', {}, sess());
   if (!r.ok) { if (r.code === 'NO_SESSION') { clear(); return signIn(); } app.innerHTML = `<p class="err">${esc(r.error)}</p>`; return; }
+  if (r.pv >= 3) return homeV3(r, flag);
   jobs = r.jobs; const c = r.customer;
   if (r.safe_photos !== true) jobs.forEach(j => { j.photos = 0; }); // older server: show no photos at all
   app.innerHTML = `<p class="lab">Hello</p><h1>${esc(c.full_name)}</h1><p class="grey">${esc(c.mobile)}</p>
@@ -93,8 +97,53 @@ async function home(flag) {
   jobs.forEach(j => j.photos && photo(j.jo).then(src => { const el = app.querySelector(`.th[data-jo="${CSS.escape(j.jo)}"]`); if (el && src) el.style.backgroundImage = `url("${src}")`; }));
   document.getElementById('out').onclick = async () => { await call('custLogout', {}, sess()); clear(); start(); };
 }
+/* ---------- v3 ---------- */
+let V3 = { r: null, filter: 'all' };
+const isReady = j => j.ready, isDone = j => j.picked_up;
+const FILTERS = [['all', 'All'], ['open', 'In progress', j => !isReady(j) && !isDone(j)], ['ready', 'Ready', isReady], ['done', 'Picked up', isDone]];
+function balLine(j) {
+  if (j.total == null) return '<span class="grey">Price coming soon</span>';
+  return j.balance > 0 ? `Balance <b>${peso(j.balance)}</b>` : '<b>Fully paid</b>';
+}
+function card(j, i) {
+  const q = j.quote, dots = (j.steps || []).map(s => `<i class="${esc(s.state)}"></i>`).join('');
+  return `<button class="ocard" data-i="${i}"><span class="th" data-jo="${esc(j.jo)}"></span><span class="ob">
+    <span class="lab">Order ${esc(j.jo)}</span><b class="oi">${esc(j.item)}</b>
+    <span class="odots" aria-hidden="true">${dots}</span>
+    <span class="ost"><span class="chipg${j.ready ? ' rdy' : ''}">${esc(j.stage)}</span>${j.target ? `<span class="grey sm">${j.ready || j.picked_up ? 'Promised for' : 'Target'} ${esc(j.target)}</span>` : ''}</span>
+    <span class="obal">${balLine(j)}${q && q.can_approve ? '<span class="chipg qwait">Quote to approve</span>' : ''}</span></span></button>`;
+}
+function homeV3(r, flag) {
+  V3.r = r; jobs = r.jobs; const c = r.customer, wait = jobs.filter(j => j.quote && j.quote.can_approve);
+  const f = FILTERS.find(x => x[0] === V3.filter) || FILTERS[0], shown = jobs.map((j, i) => [j, i]).filter(([j]) => !f[2] || f[2](j));
+  app.innerHTML = `<p class="lab">Hello</p><h1>${esc(c.full_name)}</h1><p class="grey">${esc(c.mobile)}</p>
+  ${wait.length ? `<section class="myq"><p class="sec">Waiting for your approval</p>${wait.map(j => `<button class="myqrow" data-jo="${esc(j.jo)}"><span><b>${esc(j.item)}</b>
+    <span class="grey sm">Order ${esc(j.jo)} · ${peso(j.quote.total)}${j.quote.valid_until ? ' · valid until ' + esc(j.quote.valid_until) : ''}</span></span><span class="pill sm">REVIEW</span></button>`).join('')}</section>` : ''}
+  ${!jobs.length ? `<p class="note">${c.status === 'pending' || flag === 'pending' ? 'Thanks for signing up! We couldn\'t match your account to an order yet. We\'ll link your orders shortly.' : 'No orders yet.'}</p>`
+    : `<div class="ohead"><p class="sec">Your orders</p>${jobs.length > 2 ? `<div class="ofil">${FILTERS.map(x => `<button class="${x[0] === f[0] ? 'on' : ''}" data-f="${x[0]}">${x[1]}</button>`).join('')}</div>` : ''}</div>
+    <div class="olist">${shown.map(([j, i]) => card(j, i)).join('') || '<p class="grey">Nothing here.</p>'}</div>`}
+  ${OYPTrack.contactHtml(r.contact)}
+  <div style="text-align:center;margin-top:30px"><button class="lk" id="out">Sign out</button></div>`;
+  app.querySelectorAll('.ocard').forEach(b => b.onclick = () => detailV3(jobs[b.dataset.i]));
+  app.querySelectorAll('.myqrow').forEach(b => b.onclick = () => detailV3(jobs.find(j => j.jo === b.dataset.jo), true));
+  app.querySelectorAll('.ofil button').forEach(b => b.onclick = () => { V3.filter = b.dataset.f; homeV3(r, flag); });
+  shown.forEach(([j]) => j.photos && photo(j.jo).then(src => { const el = app.querySelector(`.th[data-jo="${CSS.escape(j.jo)}"]`); if (el && src) el.style.backgroundImage = `url("${src}")`; }));
+  document.getElementById('out').onclick = async () => { await call('custLogout', {}, sess()); clear(); start(); };
+}
+function detailV3(j, toQuote, note, error) {
+  app.classList.add('wide'); window.scrollTo(0, 0);
+  app.innerHTML = `<button class="back" id="bk">‹ My orders</button><div class="mydet">${OYPTrack.result(j, '', false, V3.r && V3.r.contact)}</div>
+  <div class="buy" style="margin-top:18px"><button class="blk" id="rf" style="max-width:none">REFRESH</button></div>`;
+  OYPTrack.showPhotos(app, j, '', n => photo(j.jo, n));
+  OYPTrack.wire(app, j, { session: sess() }, (nj, n2, e2) => { const i = jobs.findIndex(x => x.jo === nj.jo); if (i >= 0) jobs[i] = nj; detailV3(nj, true, n2, e2); });
+  if (note || error) OYPTrack.noteAfter(app, note, error);
+  else if (toQuote) { const q = app.querySelector('#tq'); if (q) setTimeout(() => q.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }
+  document.getElementById('bk').onclick = () => { app.classList.remove('wide'); V3.r ? homeV3(Object.assign(V3.r, { jobs })) : home(); };
+  document.getElementById('rf').onclick = async () => { Object.keys(cache).forEach(k => { if (k.startsWith(j.jo + ':')) delete cache[k]; });
+    const r = await call('custJobs', {}, sess()); if (r.ok && r.pv >= 3) { V3.r = r; jobs = r.jobs; } const n = r.ok && r.jobs.find(x => x.jo === j.jo); if (n) { detailV3(n); toast('Up to date'); } else home(); };
+}
 const cache = {};
-function photo(jo) { return cache[jo] || (cache[jo] = call('custPhoto', { jo }, sess()).then(r => r.ok ? r.src : '')); }
+function photo(jo, n = 0) { const k = jo + ':' + n; return cache[k] || (cache[k] = call('custPhoto', { jo, n }, sess()).then(r => r.ok ? r.src : '')); }
 function detail(j) {
   app.classList.add('wide'); window.scrollTo(0, 0);
   const specs = [j.metal && j.karat ? `${j.metal} · ${j.karat}` : j.metal, j.size && 'Size ' + j.size, j.due_date && 'Due ' + j.due_date].filter(Boolean);
@@ -106,7 +155,7 @@ function detail(j) {
   <div class="buy" style="margin-top:18px"><button class="blk" id="rf" style="max-width:none">REFRESH</button></div></div></div>`;
   slides(document.getElementById('hero'), j.photos, () => photo(j.jo));
   document.getElementById('bk').onclick = () => home();
-  document.getElementById('rf').onclick = async () => { delete cache[j.jo]; const r = await call('custJobs', {}, sess()); const n = r.ok && r.jobs.find(x => x.jo === j.jo); if (n && r.safe_photos !== true) n.photos = 0; if (n) { detail(n); toast('Up to date'); } else home(); };
+  document.getElementById('rf').onclick = async () => { delete cache[j.jo + ':0']; const r = await call('custJobs', {}, sess()); const n = r.ok && r.jobs.find(x => x.jo === j.jo); if (n && r.safe_photos !== true) n.photos = 0; if (n) { detail(n); toast('Up to date'); } else home(); };
 }
 const first = () => sess() ? home() : location.hash === '#signin' ? signIn() : location.hash === '#signup' ? signUp() : start();
 window.addEventListener('hashchange', () => { if (!sess() && /^#sign(in|up)$/.test(location.hash)) first(); });

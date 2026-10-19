@@ -35,3 +35,43 @@
 .tcontact{font-family:var(--label);font-size:calc(14px*var(--fs));color:#555;text-align:center;margin-top:calc(16px*var(--sp));line-height:1.6}
 .tcontact a{color:#111;font-weight:500;text-decoration:underline;white-space:nowrap}
 .trk2 .tcontact{text-align:left;border-top:1px solid #eee;padding-top:calc(14px*var(--sp))}
+/* v3: quote box (Approve / Ask a question) and the signed-in My orders cards */
+.tq{background:#fff;border:1.5px solid #e9e1c4;border-radius:calc(18px*var(--rad));padding:calc(14px*var(--sp)) calc(16px*var(--sp));font-family:var(--label)}
+.tq.accepted{border-color:#e3e2dd;background:#fbfbf9}.tq.expired{border-color:#e3e2dd}
+.tqtop{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:calc(6px*var(--sp))}
+.tqtop .chipg{margin-top:0}.trk2 .chipg.old,.chipg.old{background:#eee;color:#777}
+.tqamt b{font-size:calc(22px*var(--hs))}
+.tqwhen{margin:calc(6px*var(--sp)) 0 0}
+.tqact{display:flex;align-items:center;gap:calc(16px*var(--sp));flex-wrap:wrap;margin-top:calc(12px*var(--sp))}
+.tqact{justify-content:center}.tqact .pill{flex:1 1 100%;white-space:nowrap}
+.tqconf,.tqform{margin-top:calc(12px*var(--sp));border-top:1px solid #eee;padding-top:calc(12px*var(--sp))}
+.tqconf p{margin:0 0 calc(6px*var(--sp));font-size:calc(15px*var(--fs))}
+.tqbtns{display:flex;align-items:center;gap:calc(16px*var(--sp));margin-top:calc(10px*var(--sp))}.tqbtns .pill{flex:1}
+.tqform textarea{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:calc(16px*var(--fs));resize:vertical;outline:none;min-height:90px}
+.tqform textarea:focus{border-color:#111}
+.tq .err:empty{display:none}.tq .err{text-align:left;margin-top:calc(8px*var(--sp))}
+.tq .note{margin-top:calc(12px*var(--sp))}
+.tqnote{margin-top:calc(12px*var(--sp))}
+.myq{margin-top:calc(18px*var(--sp))}
+.myqrow{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;background:#fffdf6;border:1.5px solid #efe3b8;border-radius:calc(18px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));cursor:pointer;margin-top:calc(10px*var(--sp));font-family:var(--label);color:#111}
+.myqrow b{display:block;font-family:var(--head);font-weight:500;font-size:calc(17px*var(--hs))}.myqrow .grey{display:block;margin-top:2px}
+.pill.sm{padding:calc(8px*var(--sp)) calc(14px*var(--sp));font-size:calc(12px*var(--fs));flex-shrink:0;width:auto}
+.ohead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ofil{display:flex;gap:6px;flex-wrap:wrap}
+.ofil button{border:1px solid #ddd;background:#fff;border-radius:999px;padding:5px 11px;font-family:var(--label);font-size:calc(12px*var(--fs));cursor:pointer;color:#555}
+.ofil button.on{background:#111;border-color:#111;color:#fff}
+.olist{display:grid;gap:calc(12px*var(--sp));margin-top:calc(10px*var(--sp))}
+.ocard{display:flex;gap:calc(14px*var(--sp));align-items:flex-start;background:#fff;border:0;border-radius:calc(20px*var(--rad));padding:calc(12px*var(--sp));cursor:pointer;width:100%;text-align:left;color:inherit;font-family:var(--label)}
+.ocard .th{width:84px;height:84px;border-radius:calc(14px*var(--rad));background:#f1f0ec center/cover no-repeat;flex-shrink:0}
+.ocard .ob{display:flex;flex-direction:column;gap:calc(5px*var(--sp));min-width:0;flex:1}
+.ocard .lab{margin:0}.ocard .oi{font-family:var(--head);font-weight:500;font-size:calc(18px*var(--hs));line-height:1.2}
+.odots{display:flex;gap:4px;margin-top:2px}.odots i{height:5px;flex:1;max-width:34px;border-radius:3px;background:#e6e5e0}
+.odots i.done{background:#111}.odots i.now{background:var(--gold)}
+.ost{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ost .chipg{margin-top:0}.ost .chipg.rdy{background:var(--gold);color:#fff}
+.obal{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:calc(14px*var(--fs));color:#555}.obal b{font-family:var(--head);font-weight:500;color:#111}
+.obal .qwait{margin-top:0;background:#111;color:#fff}
+.mydet .trk2{margin-top:calc(6px*var(--sp))}
+@media (min-width:900px){
+  .mydet .trk2{display:grid;grid-template-columns:1fr 1fr;gap:calc(44px*var(--sp));align-items:start}
+  .mydet .trk2 .tph{margin:0;position:sticky;top:20px}.mydet .trk2 .hero{margin:0}
+}
