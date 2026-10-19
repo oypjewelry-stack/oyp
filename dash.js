@@ -30,18 +30,95 @@ function writeOrder(u, ids) {
   const def = SEC_ORDER.filter(id => present.includes(id));
   try { if (!present.length || present.join() === def.join()) localStorage.removeItem(ordKey(u)); else localStorage.setItem(ordKey(u), JSON.stringify(present)); } catch (e) {}
 }
-function arrange(ids, saved) { // saved null = the original order. A section that appears later slots in where it sits in that order.
-  const present = new Set(ids), extra = ids.filter(id => !SEC_ORDER.includes(id));
-  if (!saved || !saved.length) return SEC_ORDER.filter(id => present.has(id)).concat(extra);
+function arrangeList(canon, ids, saved) { // saved null = canon order. An id that appears later slots in where it sits in canon.
+  const present = new Set(ids), extra = ids.filter(id => canon.indexOf(id) < 0);
+  if (!saved || !saved.length) return canon.filter(id => present.has(id)).concat(extra);
   const out = [];
-  saved.forEach(id => { if (present.has(id) && !out.includes(id)) out.push(id); });
-  SEC_ORDER.forEach((id, i) => {
-    if (!present.has(id) || out.includes(id)) return;
+  saved.forEach(id => { if (present.has(id) && out.indexOf(id) < 0) out.push(id); });
+  canon.forEach((id, i) => {
+    if (!present.has(id) || out.indexOf(id) >= 0) return;
     let at = out.length;
-    for (let j = i + 1; j < SEC_ORDER.length; j++) { const k = out.indexOf(SEC_ORDER[j]); if (k >= 0) { at = k; break; } }
+    for (let j = i + 1; j < canon.length; j++) { const k = out.indexOf(canon[j]); if (k >= 0) { at = k; break; } }
     out.splice(at, 0, id);
   });
-  return out.concat(extra);
+  extra.forEach(id => { if (out.indexOf(id) < 0) out.push(id); });
+  return out;
+}
+function arrange(ids, saved) { return arrangeList(SEC_ORDER, ids, saved); }
+// Location tiles: order and hidden names on this device, per signed-in name. Empty = the row the server sends.
+const locStoreKey = u => 'oypDashLoc:' + (u && u.username || 'device');
+function locCanon(list) { // today's row: every place except "no location yet", then that one at the end when it has a count
+  const keys = [];
+  (list || []).forEach(l => { if (l && l.key && l.key !== 'unset' && keys.indexOf(l.key) < 0) keys.push(l.key); });
+  const unset = (list || []).find(l => l && l.key === 'unset');
+  if (unset && unset.count) keys.push('unset');
+  return keys;
+}
+function readLocPref(u) {
+  try {
+    const o = JSON.parse(localStorage.getItem(locStoreKey(u)) || 'null');
+    if (!o || typeof o !== 'object') return null;
+    return {
+      order: Array.isArray(o.order) ? o.order.filter(x => typeof x === 'string') : [],
+      hide: Array.isArray(o.hide) ? o.hide.filter(x => typeof x === 'string') : []
+    };
+  } catch (e) { return null; }
+}
+function writeLocPref(u, order, hide, canon) {
+  const ord = [], h = [];
+  order.forEach(k => { if (ord.indexOf(k) < 0) ord.push(k); });
+  hide.forEach(k => { if (h.indexOf(k) < 0) h.push(k); });
+  try {
+    if (ord.join() === canon.join() && !h.length) localStorage.removeItem(locStoreKey(u));
+    else localStorage.setItem(locStoreKey(u), JSON.stringify({ order: ord, hide: h }));
+  } catch (e) {}
+}
+function loadLoc(list, u) {
+  const canon = locCanon(list), byKey = {};
+  (list || []).forEach(l => { if (l && l.key) byKey[l.key] = l; });
+  let order = canon.slice(); const hide = new Set();
+  if (D.ordOn) {
+    const p = readLocPref(u);
+    if (p) { order = arrangeList(canon, canon, p.order); p.hide.forEach(k => { if (canon.indexOf(k) >= 0) hide.add(k); }); }
+  }
+  D.loc = { canon: canon, order: order, hide: hide, byKey: byKey };
+}
+function locName(l) { return l.key === 'unset' ? 'No location yet' : (l.label || l.key); }
+function locTile(esc, l, on) {
+  const arch = l.key === 'archived', unset = l.key === 'unset', name = locName(l);
+  const cls = 'lc tap' + (l.key === 'working' ? ' cur' : '') + (arch ? ' arch' : '') + (unset ? ' gold' : '');
+  const href = unset ? '#/review' : '#/dashboard/loc/' + esc(l.key);
+  const title = arch ? ' title="JO on record, no physical piece · not counted as on hand"' : '';
+  const link = `<a class="${cls}" href="${href}"${title}><b>${l.count}</b><span class="lab">${esc(name)} ›</span></a>`;
+  if (!on) return link;
+  const n = esc(name);
+  return `<div class="lctile" data-lkey="${esc(l.key)}">${link}<span class="lcord"><button type="button" class="dmove" data-lup aria-label="Move ${n} earlier" title="Move earlier">←</button><button type="button" class="dmove" data-ldn aria-label="Move ${n} later" title="Move later">→</button><span class="dgrip lgrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span><button type="button" class="dmove" data-lhide aria-label="Hide ${n}" title="Hide">✕</button></span></div>`;
+}
+function paintLoc(main, esc) {
+  const row = main.querySelector('#locRow');
+  if (!row || !D.loc) return;
+  const show = D.loc.order.filter(k => !D.loc.hide.has(k) && D.loc.byKey[k]);
+  row.innerHTML = show.map(k => locTile(esc, D.loc.byKey[k], D.ordOn)).join('') || (D.ordOn ? '<p class="muted">Every location tile is hidden.</p>' : '');
+  const hid = main.querySelector('#locHid');
+  if (hid) {
+    const keys = D.loc.order.filter(k => D.loc.hide.has(k) && D.loc.byKey[k]);
+    hid.hidden = !keys.length;
+    hid.innerHTML = keys.map(k => `<button type="button" class="fchip" data-lshow="${esc(k)}">Show ${esc(locName(D.loc.byKey[k]))}</button>`).join('');
+  }
+  const rst = main.querySelector('#dLocReset');
+  if (rst) rst.hidden = !readLocPref(D.user);
+  [...row.querySelectorAll('[data-lkey]')].forEach((t, i, all) => {
+    const L = t.querySelector('[data-lup]'), R = t.querySelector('[data-ldn]');
+    if (L) L.disabled = i === 0; if (R) R.disabled = i === all.length - 1;
+  });
+}
+function saveLoc(u) {
+  const prev = readLocPref(u);
+  const base = prev && prev.order.length ? prev.order : D.loc.canon;
+  const ord = arrangeList(base, base.concat(D.loc.order), D.loc.order);
+  const hide = new Set(D.loc.hide);
+  if (prev) prev.hide.forEach(k => { if (D.loc.canon.indexOf(k) < 0) hide.add(k); });
+  writeLocPref(u, ord, hide, D.loc.canon);
 }
 function ordBar(esc, label) {
   if (!D.ordOn) return '';
@@ -144,9 +221,8 @@ async function render(main, u, fresh) {
   const ib = pi && pi.ok && pi.inbox; D.inbox = ib || null;
   if (ib && ib.items.length) parts.msgs = inboxCard(ib, esc);
   if (r.locations) {
-    const unset = r.locations.find(l => l.key === 'unset');
-    parts.loc = `<section class="dcard" data-dsec="loc"><div class="dtitle"><span class="dname">${ordBar(esc, 'Location')}<h3>Location</h3></span><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
-      `<a class="lc tap ${l.key === 'working' ? 'cur' : ''}${l.key === 'archived' ? ' arch' : ''}" href="#/dashboard/loc/${esc(l.key)}"${l.key === 'archived' ? ' title="JO on record, no physical piece · not counted as on hand"' : ''}><b>${l.count}</b><span class="lab">${esc(l.label)} ›</span></a>`).join('')}${unset && unset.count ? `<a class="lc gold" href="#/review"><b>${unset.count}</b><span class="lab">No location yet ›</span></a>` : ''}</div></section>`;
+    loadLoc(r.locations, u);
+    parts.loc = `<section class="dcard" data-dsec="loc"><div class="dtitle"><span class="dname">${ordBar(esc, 'Location')}<h3>Location</h3></span><span class="dlocacts"><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span>${D.ordOn ? '<button type="button" class="lnk" id="dLocReset" hidden>Reset</button>' : ''}</span></div><div class="locrow${D.ordOn ? ' edit' : ''}" id="locRow"></div>${D.ordOn ? '<div class="lchide" id="locHid" hidden></div><p class="muted lhint">Arrows set the flow. Drag the grip. ✕ hides a tile.</p>' : ''}</section>`;
   }
 
   if (can.sales) {
@@ -183,6 +259,7 @@ async function render(main, u, fresh) {
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u, true);
+  if (r.locations) { paintLoc(main, esc); wireLoc(main, esc, u); }
   wireOrder(main, u);
   if (can.sales) { paintSales(main, esc); wireSales(main, esc); ensureSales().then(() => { if (live() && salesView() !== 'month') paintSales(main, esc); }); }
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
@@ -235,7 +312,7 @@ function wireOrder(main, u) {
   if (!box.dataset.wired) {
     box.dataset.wired = '1';
     box.addEventListener('pointerdown', e => {
-      const g = e.target.closest && e.target.closest('.dgrip'); if (!g || !box.contains(g)) return;
+      const g = e.target.closest && e.target.closest('.dgrip'); if (!g || !box.contains(g) || g.closest('.lctile')) return;
       if (e.button != null && e.button !== 0) return;
       e.preventDefault();
       const s = g.closest('[data-dsec]'); if (!s) return;
@@ -264,6 +341,57 @@ function wireOrder(main, u) {
     paint();
   };
   paint();
+}
+function wireLoc(main, esc, u) {
+  const sec = main.querySelector('[data-dsec="loc"]');
+  if (!sec || !u || u.role !== 'admin' || !D.loc) return;
+  const applyDom = () => {
+    const row = sec.querySelector('#locRow');
+    const visible = [...row.querySelectorAll('[data-lkey]')].map(el => el.dataset.lkey);
+    D.loc.order = arrangeList(D.loc.order, D.loc.order, visible);
+    saveLoc(u); paintLoc(main, esc);
+  };
+  sec.addEventListener('click', e => {
+    if (e.target.closest('#dLocReset')) {
+      try { localStorage.removeItem(locStoreKey(u)); } catch (err) {}
+      D.loc.order = D.loc.canon.slice(); D.loc.hide = new Set(); paintLoc(main, esc); return;
+    }
+    const show = e.target.closest('[data-lshow]');
+    if (show && sec.contains(show)) { D.loc.hide.delete(show.dataset.lshow); saveLoc(u); paintLoc(main, esc); return; }
+    const b = e.target.closest('[data-lup],[data-ldn],[data-lhide]');
+    if (!b || !sec.contains(b)) return;
+    e.preventDefault();
+    const t = b.closest('[data-lkey]'); if (!t) return;
+    const row = sec.querySelector('#locRow');
+    if (b.hasAttribute('data-lhide')) { D.loc.hide.add(t.dataset.lkey); saveLoc(u); paintLoc(main, esc); return; }
+    if (b.hasAttribute('data-lup')) { const p = t.previousElementSibling; if (p && p.dataset.lkey) row.insertBefore(t, p); }
+    else { const n = t.nextElementSibling; if (n && n.dataset.lkey) row.insertBefore(n, t); }
+    applyDom();
+  });
+  sec.addEventListener('pointerdown', e => {
+    const g = e.target.closest && e.target.closest('.lgrip');
+    if (!g || !sec.contains(g)) return;
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const t = g.closest('[data-lkey]'); if (!t) return;
+    const row = sec.querySelector('#locRow');
+    t.classList.add('dragging'); t.style.pointerEvents = 'none';
+    try { g.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = ev => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const over = el && el.closest && el.closest('[data-lkey]');
+      if (!over || over === t || !row.contains(over)) return;
+      const r = over.getBoundingClientRect();
+      const ref = ev.clientX > r.left + r.width / 2 ? over.nextSibling : over;
+      if (ref !== t) row.insertBefore(t, ref);
+    };
+    const up = () => {
+      t.classList.remove('dragging'); t.style.pointerEvents = '';
+      g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
+      applyDom();
+    };
+    g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+  });
 }
 
 /* ---------- drill-down lists (same list rows as To review; a JO opens in the To review card) ---------- */
