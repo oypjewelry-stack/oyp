@@ -6,7 +6,7 @@ const signedIn = () => { const e = localStorage.getItem('oypCustExp'); return !!
 const btn = document.getElementById('btnCMenu'), m = document.getElementById('cmenu');
 if (!btn || !m) return;
 function draw() {
-  const esc = OYP.esc, items = [['Shop', ROOT + 'shop/'], ['My orders', ROOT + 'my/']];
+  const esc = OYP.esc, items = [['Track my order', ROOT + 'track/'], ['Shop', ROOT + 'shop/'], ['My orders', ROOT + 'my/']];
   m.innerHTML = items.map(([t, h, s]) => `<a href="${h}">${esc(t)}${s ? ' <small class="soon">' + s + '</small>' : ''}</a>`).join('')
     + (signedIn() ? '<button id="cOut">Sign out</button>' : `<a href="${ROOT}my/#signin" class="strong">Sign in</a>`);
   const o = document.getElementById('cOut');
