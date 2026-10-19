@@ -1,7 +1,7 @@
 /* OYP back office: "Mark approved" = record that the CLIENT approved a sent quote (in person / phone / chat / Telegram).
    Server: Portal.gs v3.2 portalMarkApproved (executives / admin). It is the same approval as the client's own Approve button on
    Track my order / My orders and Tessa's /approve: the quote becomes Accepted, a Client messages row is added (Dashboard), the JO review
-   shows "Client approved", and Tessa posts it in the staff group (no amounts). Nothing is sent to the client.
+   shows "Client approved", and Tessa posts it in the staff group (with the amount). Nothing is sent to the client.
    Shown only when portalSteps answers with can_mark + quotes (v3.2); before that paste nothing here appears.
    Used by review.js (JO review) and pay.js (Quotes). */
 (() => {
@@ -21,7 +21,7 @@ function box(jo, q) {
       <div class="mqhow">${HOW.map(([k, l]) => `<button type="button" class="fchip mqHow" data-how="${k}">${esc(l)}</button>`).join('')}</div>
       ${exp ? `<label class="mqexp"><input type="checkbox" class="mqExp"> This quote expired on ${esc(q.valid_until)}. Approve it anyway.</label>` : ''}
       <div class="fbtns"><button type="button" class="pill sm mqGo" disabled>CONFIRM APPROVAL</button><button type="button" class="lnk mqNo">Cancel</button></div>
-      <p class="fnote muted">The quote becomes Accepted, the Dashboard and JO review show it, and Tessa tells the staff group (no amounts). Nothing is sent to the client.</p>
+      <p class="fnote muted">The quote becomes Accepted, the Dashboard and JO review show it, and Tessa tells the staff group (with the amount). Nothing is sent to the client.</p>
       <p class="fnote mqErr" role="alert"></p>
     </div></div>`;
 }
