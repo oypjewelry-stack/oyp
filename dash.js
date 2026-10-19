@@ -48,6 +48,67 @@ function ordBar(esc, label) {
   const n = esc(label);
   return `<span class="dord"><button type="button" class="dmove" data-dup aria-label="Move ${n} up" title="Move up">↑</button><button type="button" class="dmove" data-ddn aria-label="Move ${n} down" title="Move down">↓</button><span class="dgrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span></span>`;
 }
+/* Sales card ranges. Monthly is the chart the dashboard already had (last 6 months of confirmed payments).
+   Daily, weekly, and annual use each JO's sale date and full sale amount from dashDrill, so a range's number is the sum of its bars. */
+const todayPH = () => new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10);
+const addD = (day, n) => { const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const dow = day => new Date(day + 'T00:00:00Z').getUTCDay();
+const mondayOf = day => addD(day, -((dow(day) + 6) % 7));
+function salesView() {
+  if (!D.salesView) { let s = ''; try { s = localStorage.getItem('oypDashSalesView') || ''; } catch (e) {} D.salesView = s === 'day' || s === 'week' || s === 'year' ? s : 'month'; }
+  return D.salesView;
+}
+function saleRows() { // null = the sales list has not come back; [] = it is not available
+  if (!D.x) return null;
+  if (!D.x.ok || !Array.isArray(D.x.sales)) return [];
+  return D.x.sales.map(s => ({ date: String(s.date || '').slice(0, 10), amount: Number(s.amount) || 0 })).filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s.date));
+}
+function salesSpec(view) {
+  const today = todayPH(), rows = saleRows();
+  if (view === 'month') {
+    const months = (D.r && D.r.sales && D.r.sales.months) || [];
+    return { view, caption: 'Last 6 months · confirmed payments', hint: 'Tap a month to see the JOs sold.', bars: months.map((m, i, a) => ({ key: m.month, label: monthName(m.month), value: Number(m.total) || 0, href: '#/dashboard/sales/' + m.month, cur: i === a.length - 1, title: 'JOs sold in ' + monthName(m.month) })) };
+  }
+  if (rows == null) return { wait: true };
+  if (!rows.length) return { caption: '', hint: '', bars: [], empty: 'Daily, weekly, and annual use the sales list. That list is not on the server yet, so those views have no bars. Monthly still shows confirmed payments.' };
+  if (view === 'day') {
+    const start = addD(today, -13), bars = [];
+    for (let d = start; d <= today; d = addD(d, 1)) bars.push({ key: d, label: String(Number(d.slice(8))), value: 0, cur: d === today, title: day(d) });
+    rows.forEach(s => { const b = bars.find(x => x.key === s.date); if (b) b.value += s.amount; });
+    return { view, caption: 'Last 14 days · ' + day(start) + '–' + day(today) + ' · full sale amount', hint: 'Each bar is one day. This is the sale amount, counted on the sale date.', bars };
+  }
+  if (view === 'week') {
+    const thisMon = mondayOf(today), start = addD(thisMon, -7 * 7), bars = [];
+    for (let i = 0; i < 8; i++) { const d = addD(start, i * 7); bars.push({ key: d, label: Number(d.slice(8)) + ' ' + MON[Number(d.slice(5, 7)) - 1], value: 0, cur: d === thisMon, title: 'Week of ' + day(d) }); }
+    rows.forEach(s => { const b = bars.find(x => x.key === mondayOf(s.date)); if (b) b.value += s.amount; });
+    return { view, caption: 'Last 8 weeks · full sale amount', hint: 'Weeks start on Monday. This is the sale amount, counted on the sale date.', bars };
+  }
+  const y0 = Number(today.slice(0, 4)), years = rows.map(s => Number(s.date.slice(0, 4))).filter(y => y > 1900 && y <= y0);
+  let lo = years.length ? Math.min.apply(null, years) : y0; if (y0 - lo > 5) lo = y0 - 5;
+  const bars = []; for (let y = lo; y <= y0; y++) bars.push({ key: String(y), label: String(y), value: 0, cur: y === y0, title: String(y) });
+  rows.forEach(s => { const b = bars.find(x => x.key === s.date.slice(0, 4)); if (b) b.value += s.amount; });
+  return { view, caption: (lo === y0 ? y0 : lo + '–' + y0) + ' · full sale amount', hint: 'Each bar is a calendar year. This is the sale amount, counted on the sale date.', bars };
+}
+function salesBody(esc, view) {
+  const spec = salesSpec(view);
+  if (spec.wait) return '<p class="muted">Loading the day-by-day sales…</p>';
+  if (spec.empty) return `<p class="muted">${esc(spec.empty)}</p>`;
+  const max = Math.max(1, ...spec.bars.map(b => b.value)), total = spec.bars.reduce((t, b) => t + b.value, 0);
+  const bars = spec.bars.map(b => { const h = spec.view === 'month' || b.value ? Math.max(2, Math.round(b.value / max * 100)) : 0;
+    const inner = `<span class="v">${esc(spec.view === 'month' || b.value ? short(b.value) : '—')}</span><i style="height:${h}%"></i><span class="lab">${esc(b.label)}</span>`;
+    return b.href ? `<a class="bar tap${b.cur ? ' cur' : ''}" href="${esc(b.href)}" title="${esc(b.title)}">${inner}</a>` : `<div class="bar${b.cur ? ' cur' : ''}" title="${esc(b.title)}">${inner}</div>`; }).join('');
+  return `<p class="salesum"><b>${esc(peso(total))}</b><span class="muted">${esc(spec.caption)}</span></p><div class="bars">${bars}</div><p class="muted dhint">${esc(spec.hint)}</p>`;
+}
+function paintSales(main, esc) { const box = main.querySelector('#saleBody'); if (box) box.innerHTML = salesBody(esc, salesView()); }
+function ensureSales() { if (D.x) return Promise.resolve(D.x); if (!D.salesP) D.salesP = extra().then(x => x, () => null).then(x => { D.salesP = null; return x; }); return D.salesP; }
+function wireSales(main, esc) {
+  main.querySelectorAll('[data-sv]').forEach(b => b.onclick = () => {
+    D.salesView = b.dataset.sv; try { localStorage.setItem('oypDashSalesView', D.salesView); } catch (e) {}
+    main.querySelectorAll('[data-sv]').forEach(x => { const on = x.dataset.sv === D.salesView; x.classList.toggle('on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    paintSales(main, esc);
+    if (D.salesView !== 'month' && !D.x) ensureSales().then(() => { if (window.OYP.here()()) paintSales(main, esc); });
+  });
+}
 
 async function render(main, u, fresh) {
   const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
@@ -89,9 +150,10 @@ async function render(main, u, fresh) {
   }
 
   if (can.sales) {
-    const max = Math.max(1, ...r.sales.months.map(m => m.total));
-    parts.sales = `<section class="dcard" data-dsec="sales"><div class="dtitle"><span class="dname">${ordBar(esc, 'Sales')}<h3>Sales</h3></span><span class="lab">Last 6 months · admin only</span></div><div class="bars">${r.sales.months.map((m, i, a) =>
-      `<a class="bar tap${i === a.length - 1 ? ' cur' : ''}" href="#/dashboard/sales/${esc(m.month)}" title="JOs sold in ${esc(monthName(m.month))}"><span class="v">${esc(short(m.total))}</span><i style="height:${Math.max(2, Math.round(m.total / max * 100))}%"></i><span class="lab">${esc(monthName(m.month))}</span></a>`).join('')}</div><p class="muted dhint">Tap a month to see the JOs sold</p></section>`;
+    const sv = salesView();
+    parts.sales = `<section class="dcard" data-dsec="sales"><div class="dtitle"><span class="dname">${ordBar(esc, 'Sales')}<h3>Sales</h3></span><span class="lab">Admin only</span></div>
+      <div class="seg salestog" role="tablist" aria-label="Sales range">${[['day', 'Daily'], ['week', 'Weekly'], ['month', 'Monthly'], ['year', 'Annual']].map(([k, l]) => `<button type="button" role="tab" data-sv="${k}" class="${sv === k ? 'on' : ''}" aria-selected="${sv === k ? 'true' : 'false'}">${l}</button>`).join('')}</div>
+      <div id="saleBody"></div></section>`;
   }
 
   parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname">${ordBar(esc, 'Job board')}<h3>Job board</h3></span><span class="lab">${r.locations ? 'Being worked on · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
@@ -122,6 +184,7 @@ async function render(main, u, fresh) {
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u, true);
   wireOrder(main, u);
+  if (can.sales) { paintSales(main, esc); wireSales(main, esc); ensureSales().then(() => { if (live() && salesView() !== 'month') paintSales(main, esc); }); }
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
   wireInbox(main, esc);
