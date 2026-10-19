@@ -148,6 +148,113 @@ const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
 const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
   payments: true, quotes: true, balances: true, clients: true }; // pay.js: payments, quotes, balances, clients
+// Menu order on this device, per signed-in name. Empty = today's menu. The scanner keeps the shared list in nav.js.
+const navKey = u => 'oypNavOrder:' + (u && u.username || 'device');
+function readNavOrder(u) {
+  try { const a = JSON.parse(localStorage.getItem(navKey(u)) || 'null'); return Array.isArray(a) ? a.filter(x => typeof x === 'string') : null; }
+  catch (e) { return null; }
+}
+function writeNavOrder(u, keys, canon) {
+  const present = keys.filter(k => canon.indexOf(k) >= 0);
+  const def = canon.filter(k => present.indexOf(k) >= 0);
+  try { if (!present.length || present.join() === def.join()) localStorage.removeItem(navKey(u)); else localStorage.setItem(navKey(u), JSON.stringify(present)); } catch (e) {}
+}
+function arrangeMenu(canon, saved) { // saved null = today's order. A new item slots in where it sits in that order.
+  if (!saved || !saved.length) return canon.slice();
+  const ids = canon.map(n => n[0]), by = {};
+  canon.forEach(n => { by[n[0]] = n; });
+  const present = new Set(ids), out = [];
+  saved.forEach(id => { if (present.has(id) && out.indexOf(id) < 0) out.push(id); });
+  ids.forEach((id, i) => {
+    if (out.indexOf(id) >= 0) return;
+    let at = out.length;
+    for (let j = i + 1; j < ids.length; j++) { const k = out.indexOf(ids[j]); if (k >= 0) { at = k; break; } }
+    out.splice(at, 0, id);
+  });
+  return out.map(id => by[id]);
+}
+function orderedNav(u) {
+  const canon = NAV[u.role] || [];
+  return u.role === 'admin' ? arrangeMenu(canon, readNavOrder(u)) : canon;
+}
+function navLink(k, t, page) {
+  if (k === 'scanner') return `<a href="${scanUrl()}">${esc(t)}</a>`;
+  return `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
+}
+function navRow(k, t, page, edit) {
+  const link = navLink(k, t, page);
+  if (!edit) return link;
+  const n = esc(t);
+  return `<div class="nitem${k === page ? ' on' : ''}" data-nkey="${esc(k)}"><span class="nord"><button type="button" class="dmove" data-nup aria-label="Move ${n} up" title="Move up">↑</button><button type="button" class="dmove" data-ndn aria-label="Move ${n} down" title="Move down">↓</button><span class="dgrip ngrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span></span>${link}</div>`;
+}
+function whoBlock(u) {
+  return `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
+    <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
+}
+let curPage = '';
+function renderNav(u, page) {
+  curPage = page;
+  const edit = u.role === 'admin';
+  const rows = orderedNav(u).map(([k, t]) => navRow(k, t, page, edit)).join('');
+  const reset = edit ? '<button type="button" class="nreset" hidden>Reset menu</button>' : '';
+  $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + reset + '</div>' + whoBlock(u);
+  wireNav($('sideNav'), u);
+  const m = $('menu');
+  if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); wireNav(m, u); }
+}
+function phoneInner(u) {
+  if (!u) return `<a href="${SCANNER}">Card scanner</a>`;
+  if ((u.role === 'staff' || !NAV[u.role]) && !(u.role === 'staff' && NAV.staff)) return `<a href="${scanUrl()}">Scan JO card</a><button data-logout>Log out</button>`;
+  if (u.role === 'staff') return NAV.staff.map(([k, t]) => navLink(k, t, '')).join('') + '<button data-logout>Log out</button>';
+  const edit = u.role === 'admin';
+  return orderedNav(u).map(([k, t]) => navRow(k, t, curPage, edit)).join('') + (edit ? '<button type="button" class="nreset" hidden>Reset menu</button>' : '') + '<button data-logout>Log out</button>';
+}
+function wireNav(box, u) {
+  if (!box || !u || u.role !== 'admin') return;
+  const items = () => [...box.querySelectorAll(':scope > [data-nkey]')];
+  const paintEnds = () => {
+    const all = items();
+    all.forEach((s, i) => { const up = s.querySelector('[data-nup]'), dn = s.querySelector('[data-ndn]'); if (up) up.disabled = i === 0; if (dn) dn.disabled = i === all.length - 1; });
+    const rst = box.querySelector('.nreset'); if (rst) rst.hidden = !readNavOrder(u);
+  };
+  const persist = () => { writeNavOrder(u, items().map(s => s.dataset.nkey), (NAV[u.role] || []).map(n => n[0])); renderNav(u, curPage); };
+  box.addEventListener('click', e => {
+    if (e.target.closest('.nreset')) {
+      e.preventDefault(); e.stopPropagation();
+      try { localStorage.removeItem(navKey(u)); } catch (err) {}
+      renderNav(u, curPage); return;
+    }
+    const b = e.target.closest('[data-nup],[data-ndn]'); if (!b || !box.contains(b)) return;
+    e.preventDefault(); e.stopPropagation();
+    const s = b.closest('[data-nkey]'); if (!s) return;
+    if (b.hasAttribute('data-nup')) { const p = s.previousElementSibling; if (p && p.dataset.nkey) box.insertBefore(s, p); }
+    else { const n = s.nextElementSibling; if (n && n.dataset.nkey) box.insertBefore(n, s); }
+    persist();
+  });
+  box.addEventListener('pointerdown', e => {
+    const g = e.target.closest && e.target.closest('.ngrip'); if (!g || !box.contains(g)) return;
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    const s = g.closest('[data-nkey]'); if (!s) return;
+    s.classList.add('dragging'); s.style.pointerEvents = 'none';
+    try { g.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = ev => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const over = el && el.closest && el.closest('[data-nkey]');
+      if (!over || over === s || !box.contains(over)) return;
+      const r = over.getBoundingClientRect();
+      const ref = ev.clientY > r.top + r.height / 2 ? over.nextSibling : over;
+      if (ref !== s) box.insertBefore(s, ref);
+    };
+    const up = () => {
+      s.classList.remove('dragging'); s.style.pointerEvents = '';
+      g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
+      persist();
+    };
+    g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+  });
+  paintEnds();
+}
 
 // Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
 // reply for a page the user already left (e.g. the dashboard still loading) never draws over the page they are on now.
@@ -166,18 +273,14 @@ function route() {
   }
   show('vOffice'); $('title').textContent = 'Back office';
   if (cur0 === 'users' && NAV[u.role].some(n => n[0] === 'settings')) { history.replaceState(null, '', '#/settings/staff'); } // old Staff logins page: now Settings › Staff accounts
-  const nav = NAV[u.role], cur = (location.hash.match(/^#\/(\w+)/) || [])[1];
+  const canon = NAV[u.role], cur = (location.hash.match(/^#\/(\w+)/) || [])[1];
   const ALIAS = { clients: 'customers', joborders: 'jos', materials: 'inventory' }; // old / friendly links keep working
-  const want = nav.some(n => n[0] === cur) ? cur : ALIAS[cur] && nav.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
-  const page = want || nav[0][0];
+  const want = canon.some(n => n[0] === cur) ? cur : ALIAS[cur] && canon.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
+  const page = want || canon[0][0]; // opening a page still starts at today's first item when the link is not a menu item
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  // desktop sidebar: menu items scroll inside; the name block stays at the bottom and opens a small account menu (Log out; room for Settings)
-  $('side').innerHTML = '<div class="sidenav">' + nav.map(([k, t]) => k === 'scanner' ? `<a href="${scanUrl()}">${esc(t)}</a>`
-    : `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`).join('') + '</div>'
-    + `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
-    <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
-  const title = nav.find(n => n[0] === page)[1];
-  schedulePrefetch(nav, page);
+  renderNav(u, page); // desktop sidebar: items scroll; the name block stays at the bottom
+  const title = canon.find(n => n[0] === page)[1];
+  schedulePrefetch(canon, page);
   // nothing saved for this page yet (first visit, or just after a change): a light placeholder, not the last page's content
   if ((PAGE_READS[page] || []).some(([a, f]) => { const d = f ? f() : {}; return d && !cacheGet(ckey(a, d)); })) $('main').innerHTML = `<h2>${esc(title)}</h2>` + skel();
   if (page === 'settings' && window.OYPSettings) return window.OYPSettings.render($('main'), u); // settings.js (admin only: only the admin menu has it)
@@ -232,10 +335,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') whoMenu(fals
 $('btnMenu').onclick = () => {
   const u = user(), m = $('menu');
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
-  m.innerHTML = !u ? `<a href="${SCANNER}">Card scanner</a>`
-    : (u.role === 'staff' && NAV.staff ? NAV.staff.map(([k, t]) => `<a href="${k === 'scanner' ? scanUrl() : '#/' + k}">${esc(t)}</a>`).join('')
-      : u.role === 'staff' || !NAV[u.role] ? `<a href="${scanUrl()}">Scan JO card</a>`
-      : NAV[u.role].map(([k, t]) => `<a href="${k === 'scanner' ? scanUrl() : '#/' + k}">${esc(t)}</a>`).join('')) + '<button data-logout>Log out</button>';
+  m.innerHTML = phoneInner(u);
+  if (u && u.role === 'admin') wireNav(m, u);
   m.classList.remove('hidden');
 };
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu')) $('menu').classList.add('hidden'); });
