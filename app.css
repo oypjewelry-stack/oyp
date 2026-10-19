@@ -263,3 +263,4 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.
 .mqexp{display:flex;gap:8px;align-items:flex-start;font-size:14px;color:#7a5b00}.mqexp input{margin-top:3px}.mqErr{color:#b00020;margin:0}.mqErr:empty{display:none}
 .mqform{text-align:left;align-items:stretch}.mqform .lab{text-align:left}.mqq{font-family:var(--body);font-size:calc(15px*var(--fs,1))}.mqq b{font-weight:600}
 .mqform .fbtns{justify-content:flex-start;align-items:center;gap:16px;margin:4px 0 0}.mqform .fnote{text-align:left;margin:0}
+.mqr label.lab{display:flex;flex-direction:column;gap:4px}.mqr .mqrWhy{width:100%}

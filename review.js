@@ -223,7 +223,10 @@ function stepsSec(j) {
   const act = ca ? `<div class="cact">${ap ? `<span class="chip ok">Client approved quote v${esc(ap.version)}${ap.amount != null ? ' · ₱' + Math.round(ap.amount).toLocaleString('en-PH') : ''} · ${esc(ap.at)}${window.OYPMarkQ ? window.OYPMarkQ.viaText(ap.via, ap.how) : ap.via === 'track' ? ' (Track my order)' : ap.via === 'account' ? ' (portal account)' : ''}</span>` : ''}${ca.questions ? `<a class="chip gold" href="#/dashboard">${ca.questions} client question${ca.questions > 1 ? 's' : ''} · see Dashboard</a>` : ''}</div>` : '';
   // Portal.gs v3.2: executives / admin can record the client's approval of the sent quote (in person / phone / chat / Telegram)
   const oq = S.steps.quotes && S.steps.quotes[j.jo], mq = oq && window.OYPMarkQ ? window.OYPMarkQ.box(j.jo, oq) : '';
-  return `<div class="fsec full stepsec">${head}${act}${mq}<div class="locs" id="fSteps"></div>
+  // Portal.gs v3.4: "Re-open for changes" on the approved quote (reverses the cost lock); only when the server sends accepted
+  const aq = !oq && S.steps.accepted && S.steps.accepted[j.jo], rq = aq && window.OYPMarkQ && window.OYPMarkQ.reopenBox ? window.OYPMarkQ.reopenBox(j.jo, aq) : '';
+  const ro = !ap && ca && ca.reopened ? `<div class="cact"><span class="chip">Quote v${esc(ca.reopened.version)} re-opened for changes · ${esc(ca.reopened.at)}${ca.reopened.by ? ' by ' + esc(ca.reopened.by) : ''}</span></div>` : '';
+  return `<div class="fsec full stepsec">${head}${act}${ro}${mq}${rq}<div class="locs" id="fSteps"></div>
     <p class="muted fnote" id="fStepsNote"></p></div>`;
 }
 function contactSec(j) {
@@ -286,7 +289,12 @@ function wire(main) {
   if (S.steps) drawSteps();
   if (S.steps && S.steps.quotes && S.steps.quotes[j.jo] && window.OYPMarkQ) window.OYPMarkQ.wire(main, j.jo, S.steps.quotes[j.jo], (r, how) => { // the chip stays after a redraw
     const q = S.steps.quotes[j.jo]; delete S.steps.quotes[j.jo]; S.steps.client = S.steps.client || {};
-    S.steps.client[j.jo] = Object.assign({}, S.steps.client[j.jo], { approved: { version: q.version, at: 'just now', via: 'staff', how, amount: q.total } }); });
+    S.steps.client[j.jo] = Object.assign({}, S.steps.client[j.jo], { approved: { version: q.version, at: 'just now', via: 'staff', how, amount: q.total } });
+    delete costCache[j.jo]; costBox(main, j.jo); }); // v3.4: the approval locked the cost: show the fresh locked-cost card
+  const aq0 = S.steps && !(S.steps.quotes && S.steps.quotes[j.jo]) && S.steps.accepted && S.steps.accepted[j.jo];
+  if (aq0 && window.OYPMarkQ && window.OYPMarkQ.wireReopen) window.OYPMarkQ.wireReopen(main, j.jo, aq0, r => { // the chip stays after a redraw
+    delete S.steps.accepted[j.jo]; S.steps.client = S.steps.client || {};
+    S.steps.client[j.jo] = Object.assign({}, S.steps.client[j.jo], { approved: null, reopened: { version: aq0.version, at: 'just now', by: 'you' } }); delete costCache[j.jo]; costBox(main, j.jo); });
   const kindFields = k => { const t = S.itemTypes.find(x => x[0] === k); return t ? t[2].concat(KIND_EXTRA[k] || []) : []; };
   const flagged = k => { const t = S.itemTypes.find(x => x[0] === st.item_type); return !!t && t[2].includes(k); };
   const applyKind = () => {

@@ -3,6 +3,8 @@
    Track my order / My orders and Tessa's /approve: the quote becomes Accepted, a Client messages row is added (Dashboard), the JO review
    shows "Client approved", and Tessa posts it in the staff group (with the amount). Nothing is sent to the client.
    Shown only when portalSteps answers with can_mark + quotes (v3.2); before that paste nothing here appears.
+   v3.4 (Portal.gs v3.4 + Prices.gs v2): approving also locks the JO cost; "Re-open for changes" (portalUnlockCost) on an approved quote
+   reverses that lock (logged who / when / why). Shown only when portalSteps answers with accepted (both pastes in); before, nothing.
    Used by review.js (JO review) and pay.js (Quotes). */
 (() => {
 'use strict';
@@ -48,5 +50,33 @@ function wire(root, jo, q, onDone) {
 }
 const viaText = (via, how) => via === 'track' ? ' (Track my order)' : via === 'account' ? ' (portal account)'
   : via === 'staff' ? ' (marked in the back office' + (HOWL[how] ? ', ' + HOWL[how] : '') + ')' : via === 'telegram' ? ' (marked via Tessa' + (HOWL[how] ? ', ' + HOWL[how] : '') + ')' : '';
-window.OYPMarkQ = { box, wire, viaText };
+// v3.4: a = portalSteps accepted[jo] = {version, total, approved_on, by, locked, locked_on, locked_by, lock_quote}
+function reopenBox(jo, a) {
+  const { esc } = window.OYP;
+  return `<div class="mq mqr" data-mqr="${esc(jo)}">
+    <div class="mqhd"><span class="chip ${a.locked ? 'dark' : ''}">${a.locked ? '🔒 Cost locked' + (a.locked_on ? ' ' + esc(a.locked_on) : '') : 'Cost not locked'}</span></div>
+    <button class="pill outline sm mqrOpen" type="button">RE-OPEN FOR CHANGES</button>
+    <div class="mqform hidden">
+      <p class="mqq"><b>Re-open quote v${esc(a.version)}${a.total != null ? ' · ' + esc(peso(a.total)) : ''} on JO ${esc(jo)} for changes?</b></p>
+      <p class="fnote muted">${a.locked ? 'The cost lock is reversed (kept in the history with your name and the time). ' : ''}The quote becomes “reopened”: the client sees no quote until you save a NEW version, mark it sent and the client approves it again, which locks the cost again. Nothing is sent to the client.</p>
+      <label class="lab">Why? (optional)<input class="mqrWhy" maxlength="200" placeholder="e.g. client wants 18K instead"></label>
+      <div class="fbtns"><button type="button" class="pill sm mqrGo">CONFIRM RE-OPEN</button><button type="button" class="lnk mqrNo">Cancel</button></div>
+      <p class="fnote mqErr" role="alert"></p>
+    </div></div>`;
+}
+// onDone(r) after the server re-opened it
+function wireReopen(root, jo, a, onDone) {
+  const el = root.querySelector(`.mqr[data-mqr="${CSS.escape(jo)}"]`); if (!el) return;
+  const f = el.querySelector('.mqform'), go = el.querySelector('.mqrGo'), err = el.querySelector('.mqErr'), open = el.querySelector('.mqrOpen');
+  open.onclick = () => { f.classList.remove('hidden'); open.classList.add('hidden'); };
+  el.querySelector('.mqrNo').onclick = () => { f.classList.add('hidden'); open.classList.remove('hidden'); err.textContent = ''; };
+  go.onclick = async () => {
+    go.disabled = true; go.textContent = 'SAVING…'; err.textContent = '';
+    const r = await window.OYP.call('portalUnlockCost', { jo, version: a.version, reason: el.querySelector('.mqrWhy').value.trim() });
+    go.textContent = 'CONFIRM RE-OPEN'; go.disabled = false;
+    if (r && r.ok) { el.outerHTML = `<div class="cact"><span class="chip">Quote v${window.OYP.esc(String(a.version))} re-opened for changes · just now (by you)${r.unlocked ? ' · cost unlocked' : ''}</span></div>`; if (onDone) onDone(r); return; }
+    err.textContent = !r ? 'No answer. Try again.' : r.error === 'Unknown action' ? 'Needs the Portal.gs v3.4 paste in Apps Script.' : (r.error || 'Could not save');
+  };
+}
+window.OYPMarkQ = { box, wire, viaText, reopenBox, wireReopen };
 })();

@@ -153,7 +153,8 @@ function lockHeadline(l) {
 }
 function lockedHtml(j, opt = {}) {
   const esc = window.OYP.esc, l = j && j.locked;
-  if (!l) return `<div class="plock none"><span class="lab">Cost</span><p class="muted fnote">Not locked yet. The cost locks when the client accepts a quote (job start)${opt.exec ? ': on the cost estimator, tap “Mark accepted / job started” on a saved quote' : ''}.</p></div>`;
+  const un = j && j.unlocked; // Prices.gs v2: the newest lock was reversed ("Re-open for changes")
+  if (!l) return `<div class="plock none"><span class="lab">Cost</span>${un ? `<p class="fnote">Unlocked ${esc(when(un.unlocked_at))} by ${esc(un.unlocked_by)} (re-opened for changes${un.unlock_reason ? ': ' + esc(un.unlock_reason) : ''}). It locks again when the client approves the new quote.</p>` : ''}<p class="muted fnote">Not locked${un ? '' : ' yet'}. The cost locks when the client accepts a quote (job start)${opt.exec ? ': on the cost estimator, tap “Mark accepted / job started” on a saved quote' : ''}.</p></div>`;
   const diff = l.today_cost_total - l.cost.total, row = (a, b, c = '') => `<div class="sr sm ${c}"><span>${a}</span><span>${b}</span></div>`;
   const lines = [].concat(
     l.materials.map(m => row(esc(m.label || m.code) + ' · ' + num(m.grams) + ' g × ' + peso(m.rate), peso(m.cost))),
@@ -167,7 +168,7 @@ function lockedHtml(j, opt = {}) {
     <div class="sr big"><span class="lab">Locked cost</span><b>${peso(l.cost.total)}</b></div>
     ${l.quote_amount !== undefined ? `${l.srp != null ? row('SRP (locked markups)', peso(l.srp)) : ''}${row('Price agreed', '<b>' + peso(l.quote_amount) + '</b>')}${l.margin != null ? row('Margin', peso(l.margin) + (l.quote_amount ? ' · ' + num(l.margin / l.quote_amount * 100, 1) + '%' : '')) : ''}` : ''}
     ${Math.abs(diff) >= 0.01 ? `<p class="muted fnote">At today's rates the same job would cost ${peso(l.today_cost_total)} (${diff > 0 ? '+' : '−'}${peso(Math.abs(diff))}). Not used.</p>` : ''}
-    ${earlier.length ? `<p class="muted fnote">Earlier locks (history): ${earlier.map(h => 'v' + h.quote_version + ' ' + esc(when(h.locked_at)) + ' · cost ' + peso(h.cost_total) + (h.quote_amount != null ? ' · price ' + peso(h.quote_amount) : '')).join('; ')}</p>` : ''}</div>`;
+    ${earlier.length ? `<p class="muted fnote">Earlier locks (history): ${earlier.map(h => 'v' + h.quote_version + ' ' + esc(when(h.locked_at)) + ' · cost ' + peso(h.cost_total) + (h.quote_amount != null ? ' · price ' + peso(h.quote_amount) : '') + (h.unlocked_at ? ' · unlocked by ' + esc(h.unlocked_by) : '')).join('; ')}</p>` : ''}</div>`;
 }
 window.OYPPrices = { render, get: () => P, lockedHtml, lockHeadline };
 })();
