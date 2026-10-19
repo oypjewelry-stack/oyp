@@ -6,6 +6,20 @@ window.OYPTrack = (() => {
 'use strict';
 const { call, esc, peso, slides } = OYP;
 const SOON = 'Online order tracking is coming soon. For now, message us and we\'ll send you an update.';
+const CONTACT0 = 'Questions? Call 8892 1171 or email oypjewelry@gmail.com'; // used only before the Portal paste (after it: Settings › Customer pages)
+/* the shop's contact line, with tap-to-call and tap-to-email links. 8-digit Metro Manila landlines dial as +63 2 ... from a mobile. */
+function telHref(raw) {
+  let d = raw.replace(/\D/g, '');
+  if (/^63\d{9,10}$/.test(d)) return '+' + d;
+  if (/^0\d{9,10}$/.test(d)) return '+63' + d.slice(1);
+  if (/^[2-9]\d{7}$/.test(d)) return '+632' + d;
+  return d;
+}
+function contactHtml(text) {
+  if (!text) return '';
+  const parts = String(text).split(/([^\s@<>]+@[^\s@<>]+\.[a-z]{2,}|\+?\d[\d\s-]{5,}\d)/i);
+  return '<p class="tcontact">' + parts.map((x, i) => !(i % 2) ? esc(x) : /@/.test(x) ? `<a href="mailto:${esc(x)}">${esc(x)}</a>` : `<a href="tel:${esc(telHref(x))}">${esc(x.trim())}</a>`).join('') + '</p>';
+}
 /* price, payments and balance for the signed-in My orders page (custJobs answer; unchanged) */
 function money(j) {
   if (j.price == null && j.total == null) return '<p class="sec">Price</p><p class="grey">Your price will show here once we send your quote.</p>';
@@ -30,7 +44,7 @@ function balanceBox(j) {
 function stepper(j) {
   return `<ol class="tsteps">${(j.steps || []).map(s => `<li class="${esc(s.state)}"><i>${s.state === 'done' ? '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</i><span>${esc(s.label)}${s.state === 'now' && j.stage && j.stage !== s.label ? `<small>${esc(j.stage)}</small>` : ''}</span></li>`).join('')}</ol>`;
 }
-function result(j, token, full) {
+function result(j, token, full, contact) {
   const dates = [j.received && ['Received', j.received], j.target && [j.ready || j.picked_up ? 'Promised for' : 'Target date', j.target]].filter(Boolean);
   return `<div class="trk2${full ? ' full' : ''}">
     <div class="tph"></div>
@@ -44,6 +58,7 @@ function result(j, token, full) {
       <p class="sec">Payment</p>${balanceBox(j)}
       ${full ? '<p class="grey sm tsave">Bookmark this page to check again without typing. The link works for 30 days.</p>'
         : `<p class="grey sm" style="margin-top:14px"><a class="lk" href="/track/#t=${encodeURIComponent(token)}">Open this order on its own page</a></p>`}
+      ${contactHtml(contact)}
     </div></div>`;
 }
 function showPhotos(el, j, token) {
@@ -65,11 +80,12 @@ function mount(el, opts = {}) {
   let useCode = false;
   $('tSw').onclick = () => { useCode = !useCode; $('tW').classList.toggle('hidden', useCode); $('tC').classList.toggle('hidden', !useCode);
     $('tSw').textContent = useCode ? 'Use my mobile number or email' : 'I have a portal code'; err(''); };
-  function soon() { $('tOut').innerHTML = `<p class="note">${esc(SOON)}</p>`; }
+  function soon() { $('tOut').innerHTML = `<p class="note">${esc(SOON)}</p>${contactHtml(CONTACT0)}`; }
+  const fail = r => { err(r.error || 'We couldn\'t find that order'); if (r.code !== 'INPUT') $('tOut').innerHTML = contactHtml(r.contact); };
   function show(r) {
     const j = r.job;
     if (full) { el.querySelector('.tform').classList.add('hidden'); history.replaceState(null, '', '#t=' + encodeURIComponent(r.token)); }
-    $('tOut').innerHTML = result(j, r.token, full) + (full ? '<p class="tagain"><button class="lk tAg" type="button">Look up another order</button></p>' : '');
+    $('tOut').innerHTML = result(j, r.token, full, r.contact) + (full ? '<p class="tagain"><button class="lk tAg" type="button">Look up another order</button></p>' : '');
     showPhotos($('tOut'), j, r.token);
     const ag = $('tAg'); if (ag) ag.onclick = () => { history.replaceState(null, '', location.pathname); $('tOut').innerHTML = ''; el.querySelector('.tform').classList.remove('hidden'); };
     if (full) window.scrollTo(0, 0);
@@ -88,7 +104,7 @@ function mount(el, opts = {}) {
     const r = await ask(useCode ? { jo, code } : { jo, contact: who });
     if (r.code === 'NET') return err(r.error);
     if (!r.portal) return soon(); // server without Portal.gs yet
-    if (!r.ok) return err(r.error || 'We couldn\'t find that order');
+    if (!r.ok) return fail(r);
     show(r);
   }
   b.onclick = go;
@@ -103,7 +119,7 @@ function mount(el, opts = {}) {
       el.querySelector('.tform').classList.remove('hidden'); $('tOut').innerHTML = '';
       if (r.code === 'NET') return err(r.error);
       if (!r.portal) return soon();
-      history.replaceState(null, '', location.pathname); err(r.error || 'This link has expired. Please look up your order again.');
+      history.replaceState(null, '', location.pathname); fail(r);
     });
   }
 }

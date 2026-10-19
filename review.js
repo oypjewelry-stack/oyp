@@ -11,7 +11,7 @@ const STATUS = [['', 'Automatic (from location)'], ['draft', 'Draft'], ['active'
 const photoCache = {};
 // A JO opened from a dashboard list (dash.js) that is not a draft: shown in the same panel, fetched with dashDrill {what:'job'} (DashboardDrill.gs).
 const cur = () => S.open ? (S.jobs.find(j => j.jo === S.open) || (S.ext && S.ext.jo === S.open ? S.ext : null)) : null;
-let S = { ext: null, back: null, jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {} };
+let S = { steps: null, stepsState: 'old', ext: null, back: null, jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {} };
 // Client phone/email live on the client linked to the JO (JobContact.gs). Before that paste, contactList is unknown and the section just explains.
 const noContact = jo => !!(S.contact && S.contact[jo] && !S.contact[jo].has_contact && S.contact[jo].location !== 'archived');
 const fmtPhone = v => { const t = String(v || '').trim(), d = t.replace(/\D/g, ''); let m = /^63\d{10}$/.test(d) ? d.slice(2) : /^0\d{10}$/.test(d) ? d.slice(1) : d;
@@ -58,8 +58,10 @@ const views = {
 async function render(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
   main.innerHTML = '<h2>To review</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
-  const [r, cc] = await Promise.all([call('jobReviewList'), call('contactList')]);
+  const [r, cc, ps] = await Promise.all([call('jobReviewList'), call('contactList'), call('portalSteps')]);
   if (!live()) return;
+  // Steps the client sees on Track my order (Portal.gs). Before that paste the server doesn't know portalSteps: the section just explains.
+  S.steps = ps && ps.ok && ps.portal ? ps : null; S.stepsState = S.steps ? 'on' : ps && ps.code === 'FORBIDDEN' ? 'forbidden' : 'old';
   S.cc = cc && cc.ok ? cc : null; S.contact = S.cc ? Object.fromEntries(cc.jobs.map(x => [x.jo, x])) : null;
   S.ccState = S.cc ? 'on' : cc && cc.code === 'FORBIDDEN' ? 'forbidden' : 'old';
   try { const f = sessionStorage.getItem('oypReviewFilter'); if (f) { sessionStorage.removeItem('oypReviewFilter'); if (views[f]) S.filter = f; } } catch (_) {}
@@ -177,6 +179,7 @@ function panel(j) {
       <div class="fsec ${fcls('status')}"><div class="flab"><span class="lab">Status</span>${flag('status')}</div><select id="f_status">${STATUS.map(s => `<option value="${s[0]}">${esc(s[1])}${s[0] && s[0] === j.status ? ' · now' : ''}</option>`).join('')}</select></div>
       <div class="fsec full ${fcls('description')}"><div class="flab"><span class="lab">Description</span>${flag('description')}</div><textarea id="f_description" rows="2" placeholder="e.g. Coin necklace, 13 coins">${esc(j.description)}</textarea></div>
     </div>
+    ${stepsSec(j)}
     <datalist id="dlStone"><option>Diamond</option><option>Ruby</option><option>Sapphire</option><option>Emerald</option><option>South Sea pearl</option><option>Freshwater pearl</option><option>Akoya pearl</option><option>Other</option></datalist>
     <datalist id="dlMat"><option>Gold scrap</option><option>Gold grain</option><option>Silver scrap</option><option>Silver grain</option><option>Platinum</option><option>Findings</option><option>Chain</option></datalist>
     <datalist id="dlMetal"><option>Gold</option><option>Silver</option><option>Platinum</option><option>Palladium</option><option>Two-tone</option><option>Other</option></datalist>
@@ -207,6 +210,18 @@ function shotsHtml(j) {
       ${H.map(x => `<div class="hset"><div class="lab sm">${esc(setLabel(x))} · ${x.n || x.pages.length} page${(x.n || x.pages.length) === 1 ? '' : 's'}</div>${row(j.jo, x.pages)}</div>`).join('')}</details>`;
 }
 
+// Steps the client sees on Track my order: saved per JO (JobOrders.client_steps). Not saved yet = the default for the JO type
+// (Repair: Received, Stone setting, Polishing, Quality check, Ready for pickup; everything else: all 7). Received + Ready for pickup always on.
+const savedSteps = jo => (S.steps && S.steps.steps[jo]) || '';
+const defSteps = type => S.steps ? (type === 'repair' ? S.steps.defaults.repair : S.steps.defaults.new).slice() : [];
+function stepsSec(j) {
+  const { esc } = window.OYP;
+  if (S.stepsState === 'forbidden') return '';
+  const head = '<div class="flab"><span class="lab">Steps the client sees</span></div>';
+  if (!S.steps) return `<div class="fsec full stepsec">${head}<p class="muted fnote">Pick which steps clients see on Track my order once the Portal update is pasted in Apps Script.</p></div>`;
+  return `<div class="fsec full stepsec">${head}<div class="locs" id="fSteps"></div>
+    <p class="muted fnote" id="fStepsNote"></p></div>`;
+}
 function contactSec(j) {
   const { esc } = window.OYP, cf = S.conflicts, d = S.ccDraft[j.jo] || {};
   if (S.ccState === 'forbidden') return '';
@@ -257,6 +272,14 @@ function wire(main) {
   costBox(main, j.jo);
   const isExt = S.ext && S.ext.jo === j.jo;
   const st = { location: j.location, type: j.type, client_id: j.client_id, item_type: j.item_type, newClient: null };
+  const saved0 = savedSteps(j.jo); st.steps = saved0 ? saved0.split(',') : defSteps(j.type); st.stepsTouched = false;
+  const drawSteps = () => { const box = $('#fSteps'); if (!box) return; const { esc } = window.OYP;
+    box.innerHTML = S.steps.all.map(([k, l]) => { const lock = S.steps.always.includes(k), on = lock || st.steps.includes(k);
+      return `<button type="button" class="loc ${on ? 'on' : ''}" data-step="${esc(k)}" ${lock ? 'disabled title="Always shown"' : ''} aria-pressed="${on}">${on ? '✓ ' : ''}${esc(l)}</button>`; }).join('');
+    $('#fStepsNote').textContent = (saved0 || st.stepsTouched ? '' : (st.type === 'repair' ? 'Repair default. ' : 'New piece default: all steps. ')) + 'Tap a step to show or hide it on Track my order. Received and Ready for pickup are always shown.';
+    box.querySelectorAll('[data-step]').forEach(b => b.onclick = () => { const k = b.dataset.step; st.stepsTouched = true;
+      st.steps = st.steps.includes(k) ? st.steps.filter(x => x !== k) : st.steps.concat(k); drawSteps(); }); };
+  if (S.steps) drawSteps();
   const kindFields = k => { const t = S.itemTypes.find(x => x[0] === k); return t ? t[2].concat(KIND_EXTRA[k] || []) : []; };
   const flagged = k => { const t = S.itemTypes.find(x => x[0] === st.item_type); return !!t && t[2].includes(k); };
   const applyKind = () => {
@@ -285,7 +308,8 @@ function wire(main) {
       [ph, th].forEach(el => el && photo(j.jo, fid).then(s3 => { if (s3) el.style.backgroundImage = `url("${s3}")`; })); } };
   });
   main.querySelectorAll('[data-loc]').forEach(b => b.onclick = () => { st.location = b.dataset.loc; main.querySelectorAll('[data-loc]').forEach(x => x.classList.toggle('on', x === b)); filled(b); });
-  main.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { st.type = st.type === b.dataset.type ? '' : b.dataset.type; main.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x.dataset.type === st.type)); if (st.type) filled(b); });
+  main.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { st.type = st.type === b.dataset.type ? '' : b.dataset.type; main.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x.dataset.type === st.type)); if (st.type) filled(b);
+    if (S.steps && !saved0 && !st.stepsTouched) { st.steps = defSteps(st.type); drawSteps(); } }); // not saved yet: the default follows the type
   const cc = $('[data-cclear]'); if (cc) cc.onclick = () => { $('.csel').classList.add('hidden'); $('.csearch').classList.remove('hidden'); $('#fCq').focus(); };
   let tq; $('#fCq').oninput = e => { clearTimeout(tq); const q = e.target.value; tq = setTimeout(async () => {
     const r = await call('jobClientSearch', { q }); if (!r.ok) return;
@@ -328,6 +352,13 @@ function wire(main) {
       const cr = await saveCC((r.job && r.job.client_id) || ''); if (!cr.ok) return ccFail(cr, true);
       delete S.ccDraft[j.jo];
       if (mark) { const r2 = await call('jobReviewSave', { jo: j.jo, set: {}, seen: {}, mark_reviewed: true }); if (r2.ok) r = r2; else return toast(r2.error); }
+    }
+    if (S.steps) { // the client steps (Portal.gs), only when they differ from what is saved
+      const order = S.steps.all.map(x => x[0]), want = order.filter(k => S.steps.always.includes(k) || st.steps.includes(k)).join(',');
+      if (want !== saved0) {
+        const sr = await call('portalStepsSave', { jo: j.jo, steps: want.split(','), seen: saved0 });
+        if (sr && sr.ok) S.steps.steps[j.jo] = sr.steps; else { toast('Card saved, but the client steps were not: ' + ((sr && sr.error) || 'try again')); S.open = j.jo; await rerender(); return; }
+      }
     }
     S.conflicts = {}; const idx = S.jobs.findIndex(x => x.jo === j.jo);
     toast(mark ? 'JO ' + j.jo + ' reviewed' : 'Saved');

@@ -107,3 +107,5 @@
 .dsfrow .dsfonts .lnk:disabled{color:#bbb;text-decoration:none;cursor:default}
 .dpfont{grid-template-columns:110px minmax(0,1fr) auto}.dpfont .dsfont{font-size:14px;padding:6px 12px}
 @media (max-width:560px){.dpfont{grid-template-columns:minmax(0,1fr) auto}.dpfont .lab{grid-column:1/-1}.dsfont{font-size:15px;padding:7px 12px}}
+
+.setrow:has(.settext){flex-direction:column;align-items:stretch}.setrow:has(.settext) .setv{flex:1 1 auto}.setv .settext{width:100%}

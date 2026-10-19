@@ -16,12 +16,16 @@ const SECS = [
   ['stages', 'Stage delays', 'Days a JO may stay in a stage before it is flagged'],
   ['staff', 'Staff accounts', 'Add, turn off, role, new code'],
   ['scanner', 'Scanner', 'Page rotation and auto-snap for every phone'],
+  ['portal', 'Customer pages', 'The contact line clients see on Track my order'],
   ['design', 'Design', 'Text size, fonts, spacing, corners, widths, and each type of button and shape'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
 // The values stay in the Settings tab and in the Change history; nothing is deleted. Remove a key here to show the section again.
 const HIDDEN = { stages: true };
-const SHOWN = SECS.filter(s => !HIDDEN[s[0]]);
+const SHOWN0 = SECS.filter(s => !HIDDEN[s[0]]);
+// Customer pages shows only once the server has its setting (Portal.gs adds portal.contact): before that paste the card is not listed.
+let SHOWN = SHOWN0;
+const shownNow = () => (SHOWN = SHOWN0.filter(s => s[0] !== 'portal' || (S.r && S.r.items.some(i => i.key === 'portal.contact'))));
 const S = { r: null, dirty: {}, code: null, busy: false };
 const $ = id => document.getElementById(id);
 const esc = s => window.OYP.esc(s);
@@ -46,7 +50,7 @@ async function render(main, u) {
 }
 async function reload(main) { const live = window.OYP.here(); const r = await window.OYP.call('settingsGet'); if (!live()) return; if (r && r.ok) { S.r = r; S.dirty = {}; draw(main); } }
 function draw(main) {
-  const s = sec(), ok = SHOWN.find(x => x[0] === s);
+  shownNow(); const s = sec(), ok = SHOWN.find(x => x[0] === s);
   main.innerHTML = `<div class="set">${!S.r.setup ? '<div class="setwarn">Almost ready: run <b>setupSettings</b> once in Apps Script. Until then you can look, but not save.</div>' : ''}${ok ? section(s) : landing()}</div>`;
   wire(main);
 }
@@ -65,6 +69,7 @@ function summary(k) {
   if (k === 'design') { const v = dsStart(), D = window.OYPDesign; if (!D) return '';
     const on = Object.keys(DS).filter(x => v[x] !== D.KEYS[x][1]), np = Object.keys(dpStart()).length, f = dfStart();
     const s = on.map(x => DS[x][0] + ' ' + dsFmt(x, v[x])).concat(Object.keys(DF).filter(k => f[k]).map(k => DF[k][0] + ' ' + fName(f[k]))).concat(np ? [np + ' button & shape type' + (np > 1 ? 's' : '') + ' changed'] : []); return s.length ? s.join(' · ') : 'Original look'; }
+  if (k === 'portal') { const it = item('portal.contact'), v = it ? eff(it) : ''; return /^(none|off|-)$/i.test(v.trim()) ? 'No contact line' : v; }
   if (k === 'log') { const l = S.r.log[0]; return l ? 'Last: ' + when(l.at) + ' by ' + l.by : 'No changes yet'; }
   return '';
 }
@@ -88,6 +93,7 @@ function input(it) {
     return `<div class="setdays" data-days="${k}">${DAYS.map(([n, l]) => `<button type="button" class="dchip${a.includes(n) ? ' on' : ''}" data-d="${n}"${dis}>${l}</button>`).join('')}</div>`; }
   if (it.type === 'bool') return `<label class="settog"><input type="checkbox" data-k="${k}"${v === 'true' ? ' checked' : ''}${dis}><span>${v === 'true' ? 'On' : 'Off'}</span></label>`;
   if (it.type === 'choice') return `<select data-k="${k}"${dis}>${Object.entries(it.choices).map(([c, l]) => `<option value="${esc(c)}"${c === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  if (it.type === 'text') return `<input data-k="${k}" type="text" maxlength="200" class="settext" value="${esc(v)}"${dis}>`;
   if (it.key === 'appt.default_min') return `<select data-k="${k}"${dis}>${LENS.map(n => `<option value="${n}"${String(n) === String(v) ? ' selected' : ''}>${n} min</option>`).join('')}</select>`;
   return `<input data-k="${k}" inputmode="decimal" value="${esc(v)}"${it.blank ? ' placeholder="off"' : ''}${dis}>`;
 }
@@ -112,6 +118,8 @@ function section(s) {
     + `<div class="setbox">${field('appt.default_min', 'Default length')}${typesBox()}</div>` + saveBar();
   if (s === 'prices') return head(t[1], 'These are the rates the cost estimator and quotes use. Metal prices per gram are changed on <a href="#/prices">Material prices</a>.') + pricesBox() + saveBar();
   if (s === 'staff') return head(t[1], 'Accounts are never deleted: turn them off instead. A new code is shown only once. Changing someone\'s role or code signs them out on every device.') + staffBox();
+  if (s === 'portal') return head(t[1], 'Clients see this line under their order on <b>Track my order</b> (oypjewelry.com/track), and when an order isn\'t found. Phone numbers and emails in it become tap-to-call and tap-to-email links. Type <b>none</b> to hide the line.')
+    + `<div class="setbox">${field('portal.contact', 'Contact line')}</div>` + saveBar();
   if (s === 'design') return head(t[1], 'Drag a slider and this page changes right away, so you can see it before saving. <b>SAVE</b> makes it the look for everyone: every staff phone and computer, and the customer pages (order lookup, shop). Other devices pick it up within a few minutes.') + designBox();
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
   return '';
