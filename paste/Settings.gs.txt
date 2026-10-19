@@ -1,0 +1,31 @@
+PASTE INTO: Settings.gs
+
+No new setting keys. No new OAuth scopes. Do not add any scopes.
+
+The Design page still saves through the settings you already have:
+- design.text, design.head, design.space, design.radius, design.box, design.width
+- design.font_body, design.font_head, design.font_label
+- design.parts (one JSON string)
+
+design.box and design.width are still the same percents as before (100 = today's look). The website shows those as pixels on the Design page (120 px and 1,200 px when the stored value is 100). A saved value may now have one decimal, for example 100.8, so a 1 px step round-trips. If the number check only allows whole numbers, allow one decimal for design.box and design.width.
+
+design.parts is opaque JSON. settingsDesign must return it unchanged, and settingsSave must store the string unchanged. The page now puts these inside that same JSON:
+
+Types: hmenu, hbody, hprice, box, sw, arrow
+  plus the types you already have: btn, btnout, btnbig, btnsm, link, menu, tabs, fchip, chip, field, card, pcard, modal, toast
+
+Controls on a type: t, h, r, w (legacy percents; 100 is left out), f (libre, moda, or inter), g (400, 500, 600, or 700), c (#rrggbb)
+
+Pixel sizes are a sibling inside the same JSON, not a new setting key:
+  "_px": { "<type>": { "t" or "h" or "w" or "r": <integer pixels> } }
+
+If Settings.gs already stores design.parts as a string and settingsDesign returns that string with no allowlist, do not paste any code.
+
+If a sanitizer drops unknown part names or control letters, merge the lists above and keep "_px". Keep every type and control you already allow.
+
+Paste steps:
+1. Open the Apps Script project that serves oypjewelry.com and open Settings.gs.
+2. Find settingsDesign (where design.parts is read) and settingsSave (where it is written).
+3. If design.parts is stored and returned as-is, stop. Nothing to paste, and no scopes to add.
+4. If unknown keys are dropped, add the types, the controls t h r w f g c, and the "_px" object to that allowlist. Do not add OAuth scopes. Do not add new setting keys.
+5. Deploy the web app the way you usually do (same deployment). In Settings, then Design, change one header and SAVE, then refresh and confirm it is still there.

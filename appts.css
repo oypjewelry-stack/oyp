@@ -2,9 +2,12 @@
 .ap{max-width:calc(1240px*var(--cw))}.aphead{align-items:center}.ap .apback{background:none;border:0;cursor:pointer;padding:0;margin-bottom:calc(10px*var(--sp));display:inline-block}
 .apwarn{border:1px solid var(--gold);background:#fffdf6;border-radius:calc(12px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.45}
 .aptools{display:flex;align-items:center;gap:calc(16px*var(--sp));flex-wrap:wrap;margin:calc(6px*var(--sp)) 0 calc(12px*var(--sp))}.apseg{width:auto;border-radius:calc(22px*var(--rad))}.apseg button{padding:calc(10px*var(--sp)) calc(18px*var(--sp));min-width:76px}
-.apnav{display:flex;align-items:center;gap:calc(10px*var(--sp))}.apar{width:38px;height:38px;border-radius:50%;border:1px solid #ddd;background:#fff;font-size:calc(20px*var(--fs));line-height:1;cursor:pointer;color:#111}
+.apnav{display:flex;align-items:center;gap:calc(10px*var(--sp))}.apar{width:var(--d-arrow-hp,38px);height:var(--d-arrow-hp,38px);border-radius:50%;border:1px solid #ddd;background:#fff;font-size:var(--d-arrow-fp,calc(20px*var(--fs)));line-height:1;cursor:pointer;color:var(--d-arrow-c,#111)}
+.apstafff{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp)) calc(14px*var(--sp));align-items:center;margin:0 0 calc(12px*var(--sp))}
+.apchk{display:inline-flex;align-items:center;gap:calc(6px*var(--sp));font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}
+.apchk input{width:18px;height:18px;accent-color:#111;margin:0}
+.apchk.all{padding-right:calc(4px*var(--sp));border-right:1px solid #eee}
 .aplab{font-family:var(--head);font-weight:500;font-size:calc(19px*var(--hs));min-width:150px;text-align:center}.aptoday{background:none;border:0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#111}
-.apstaff{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.apstaff .fchip{white-space:nowrap}
 .aplegend{display:flex;gap:calc(14px*var(--sp));flex-wrap:wrap;font-family:var(--label);font-size:calc(11px*var(--fs));letter-spacing:.04em;text-transform:uppercase;color:#555;margin:0 0 calc(12px*var(--sp))}.aplegend span{display:inline-flex;align-items:center;gap:calc(5px*var(--sp))}
 .apdot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
 [class*=" t-"],[class^="t-"]{--c:#8a7f72;--b:#f5f3f0} /* types added on the Settings page */

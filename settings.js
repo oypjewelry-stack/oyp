@@ -17,7 +17,7 @@ const SECS = [
   ['staff', 'Staff accounts', 'Add, turn off, role, new code'],
   ['scanner', 'Scanner', 'Page rotation and auto-snap for every phone'],
   ['portal', 'Customer pages', 'Contact line, deposit and quote validity on Track my order / My orders'],
-  ['design', 'Design', 'Text size, fonts, spacing, corners, widths, and each type of button and shape'],
+  ['design', 'Design', 'Text size in pixels, fonts, spacing, corners, and each button, header and shape'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
 // The values stay in the Settings tab and in the Change history; nothing is deleted. Remove a key here to show the section again.
@@ -67,7 +67,7 @@ function summary(k) {
   if (k === 'staff') { const a = S.r.users.filter(x => x.active).length; return a + ' active · ' + (S.r.users.length - a) + ' off'; }
   if (k === 'scanner') return I('scanner.rotate').replace(/ \(.*\)/, '') + ' · auto-snap ' + I('scanner.auto_snap').toLowerCase();
   if (k === 'design') { const v = dsStart(), D = window.OYPDesign; if (!D) return '';
-    const on = Object.keys(DS).filter(x => v[x] !== D.KEYS[x][1]), np = Object.keys(dpStart()).length, f = dfStart();
+    const on = Object.keys(DS).filter(x => v[x] !== dsDef(x)), np = dpCount(dpStart()), f = dfStart();
     const s = on.map(x => DS[x][0] + ' ' + dsFmt(x, v[x])).concat(Object.keys(DF).filter(k => f[k]).map(k => DF[k][0] + ' ' + fName(f[k]))).concat(np ? [np + ' button & shape type' + (np > 1 ? 's' : '') + ' changed'] : []); return s.length ? s.join(' · ') : 'Original look'; }
   if (k === 'portal') { const it = item('portal.contact'), v = it ? eff(it) : '', dp = item('portal.deposit_pct'), qd = item('portal.quote_days');
     const extra = [dp && (eff(dp) === '0' ? 'no deposit shown' : 'deposit ' + eff(dp) + '%'), qd && 'quotes valid ' + eff(qd) + ' days'].filter(Boolean).join(' · ');
@@ -132,16 +132,21 @@ const DS = { // key -> [short name, label, what it changes]
   head: ['Headings', 'Heading size', 'Page titles, JO numbers, names, big numbers and the black buttons'],
   space: ['Spacing', 'Spacing', 'Space inside and between boxes, cards, rows and buttons'],
   radius: ['Corners', 'Corner roundness', 'How round the corners of cards, boxes, fields and buttons are (0 = square)'],
-  box: ['Card height', 'Card and box height', 'Production JO cards (all stay the same height) and the minimum height of boxes and columns'],
-  width: ['Width', 'Content width', 'How wide pages can grow on a big screen (the customer pages too)'] };
+  box: ['Card height', 'Card and box height', 'Minimum height of board columns and boxes. 120 px is today\'s height'],
+  width: ['Width', 'Content width', 'How wide pages can grow on a big screen. 1,200 px is today\'s back-office width'] };
 const dsPasted = () => !!item('design.text');
-const dsFmt = (k, v) => window.OYPDesign.KEYS[k][5] === '%' ? v + '%' : v + ' px';
+const dsDef = k => { const D = window.OYPDesign; return D.GPX[k] ? D.GPX[k][0] : D.KEYS[k][1]; };
+const dsFmt = (k, v) => k === 'space' ? v + '%' : (k === 'width' ? Number(v).toLocaleString('en-PH') : v) + ' px';
 function dsStart() { const D = window.OYPDesign, o = {}, loc = D.local();
   Object.keys(DS).forEach(k => { const it = item('design.' + k), def = D.KEYS[k][1];
     o[k] = loc && k in loc ? loc[k] : loc ? def : it && it.value !== '' ? Number(it.value) : def; });
-  return o; }
+  return D.sliderOf(o); } // box and width come back as pixels; the server still stores the same ratio as before
 /* ---------- Buttons & shapes (one row per type; design.js PARTS, app.css --d-<type>-<control>) ---------- */
 const PRV = { // preview markup = the real classes, styled by the real CSS
+  hmenu: '<span class="title">OYP Jewelry</span>',
+  hbody: '<h2 style="margin:0">Appointments</h2>',
+  hprice: '<div class="prices"><div class="dtitle" style="margin:0"><h3>Metals</h3></div><div class="pname"><b>18k yellow gold</b></div></div>',
+  arrow: '<button class="apar" type="button" tabindex="-1" aria-hidden="true">‹</button><button class="apar" type="button" tabindex="-1" aria-hidden="true">›</button>',
   btn: '<button class="pill" type="button" tabindex="-1">SAVE</button>',
   btnout: '<button class="pill outline" type="button" tabindex="-1">CANCEL</button>',
   btnbig: '<button class="pill wide" type="button" tabindex="-1">MOVE TO CASTING ▸</button>',
@@ -149,36 +154,47 @@ const PRV = { // preview markup = the real classes, styled by the real CSS
   link: '<button class="lnk" type="button" tabindex="-1">Reset</button><span class="lnk dback">‹ BACK</span>',
   menu: '<div class="menu"><a class="on">Production</a><a>Appointments</a></div>',
   tabs: '<div class="seg"><button class="on" type="button" tabindex="-1">DAY</button><button type="button" tabindex="-1">WEEK</button><button type="button" tabindex="-1">MONTH</button></div>',
+  sw: '<label class="settog"><input type="checkbox" checked tabindex="-1"><span>On</span></label>',
   fchip: '<button class="fchip on" type="button" tabindex="-1">ALL <b>12</b></button><button class="fchip" type="button" tabindex="-1">LATE <b>2</b></button>',
   chip: '<span class="chip">Due Oct 24</span><span class="chip gold">Paid</span>',
   field: '<input type="text" value="Baby Buenaventura" tabindex="-1" readonly aria-label="Sample field">',
   card: '<div class="kpi"><span class="lab">Balance due</span><b>₱226,750</b><small>Final payment · BPI</small></div>',
+  box: '<div class="setbox" style="margin:0"><div class="setrow" style="border:0"><span class="lab">Inside a box</span></div></div>',
   pcard: '<div class="pcard"><div class="pcm"><div class="pth"><span>No scan</span></div><div class="pbd"><div class="kjo"><span class="pjn">JO 1234</span></div><div class="kd">18k yellow gold ring, oval sapphire</div><div class="kc">Baby Buenaventura · <b>Susan</b></div><div class="prun pslot"></div></div></div><div class="kf"><span class="chip">Due Oct 24</span></div></div>',
   modal: '<div class="pmbox"><span class="lab">JO 1234</span><b class="dpmh">Move to Casting?</b><button class="pill wide" type="button" tabindex="-1">YES, MOVE</button></div>',
   toast: '<div class="toast">Saved for everyone</div>' };
 const DP = { // type -> [name, where it is used, height label, width label]
-  btn: ['Black buttons', 'Save, Sign in, Upload, Confirm', 'Height', 'Width'],
-  btnout: ['White outline buttons', 'Cancel, Edit, Back-up choices (customer Sign in too)', 'Height', 'Width'],
+  hmenu: ['Menu header', 'The name in the top bar', 'Size', ''],
+  hbody: ['Body header', 'Page titles on staff pages and customer pages', 'Size', ''],
+  hprice: ['Pricing header', 'Material prices title, section titles and material names. They share one size once you set it (26 px, 19 px and 17 px until then)', 'Size', ''],
+  arrow: ['Left and right arrows', 'Previous / next on the calendar and on Production', 'Circle size', ''],
+  btn: ['Black buttons', 'Save, Upload, Confirm, and other black buttons that are not full width', 'Height', 'Width'],
+  btnout: ['White buttons', 'Cancel and Edit. Full-width white buttons stay full width. Customer Sign in uses this color', 'Height', 'Width'],
   btnbig: ['Big and full-width buttons', 'Home page tiles, Move to…, Yes / OK in pop-ups', 'Height', ''],
   btnsm: ['Small buttons', 'Add, Edit, Rotate inside lists and panels', 'Height', 'Width'],
   link: ['Text links', 'Reset, Back, Show more (underlined words)', '', ''],
   menu: ['Menu items', 'Side menu, phone menu and the name menu', 'Height', ''],
-  tabs: ['Tabs and switches', 'Day / Week / Month, Board / Workers, Cash / GCash', 'Height', ''],
+  tabs: ['Tabs', 'Day / Week / Month, Board / Workers, Cash / GCash', 'Height', ''],
+  sw: ['Switches', 'On / off toggles', '', ''],
   fchip: ['Filter chips', 'All / Late filters, day buttons in Settings', 'Height', 'Width'],
   chip: ['Status badges', 'Due, Paid, Delayed, Archived labels', 'Height', 'Width'],
   field: ['Form fields', 'Every text box and drop-down (customer pages too)', 'Height', ''],
-  card: ['Cards and boxes', 'Dashboard numbers, panels, Settings boxes, inventory and shop tiles', 'Padding', 'Max width'],
+  card: ['Cards', 'Dashboard numbers, inventory cards and shop tiles', 'Padding', 'Max width'],
+  box: ['Boxes', 'Dashboard sections, Settings boxes and panels', 'Padding', 'Max width'],
   pcard: ['Production JO cards', 'Board cards (all stay the same height)', 'Card height', ''],
   modal: ['Pop-ups and side panels', 'Move JO pop-up, inventory panel, menus', 'Padding', 'Width'],
   toast: ['Notices', 'The black "Saved" message at the bottom', 'Height', ''] };
-const DPC = { t: 'Text size', r: 'Corners' };
+const DP_GROUPS = [
+  ['Headers', ['hmenu', 'hbody', 'hprice'], 'Menu header, body header and pricing header are separate. Until you change one, it follows the Headings slider and the Headings font above, so today\'s saved header is the start for all three.'],
+  ['Navigation arrows', ['arrow'], 'Size and color of the left and right arrows. The calendar arrows are 20 px and the Production arrows are 24 px until you set one size for both.'],
+  ['Buttons, boxes and type', ['btn', 'btnout', 'btnbig', 'btnsm', 'link', 'menu', 'tabs', 'sw', 'fchip', 'chip', 'field', 'card', 'box', 'pcard', 'modal', 'toast'], 'Numbers are the real pixels, so a black button and a white button can be set to the same width. Each of these also has its own font, weight and color. Reset puts that one control back to the size the sliders above make.']];
 const dpPasted = () => !!item('design.parts');
 const dpParse = s => window.OYPDesign.cleanParts(s || '{}');
 function dpServer() { const it = item('design.parts'); return it ? dpParse(it.value) : {}; }
 function dpStart() { const D = window.OYPDesign, lp = D.localParts(), lf = D.localFonts(), p = JSON.parse(JSON.stringify(lp || dpServer()));
-  if (lf || !dfPasted()) Object.keys(p).forEach(c => { delete p[c].f; }); // fonts not on the server yet: a type's font comes from this device
-  if (lf) Object.keys(lf.pf).forEach(c => { (p[c] = p[c] || {}).f = lf.pf[c]; });
-  Object.keys(p).forEach(c => { if (!Object.keys(p[c]).length) delete p[c]; }); return p; }
+  if (lf || !dfPasted()) Object.keys(p).forEach(c => { if (c === '_px' || !p[c]) return; delete p[c].f; }); // fonts not on the server yet: a type's font comes from this device
+  if (lf) Object.keys(lf.pf).forEach(c => { if (c === '_px') return; (p[c] = p[c] || {}).f = lf.pf[c]; });
+  Object.keys(p).forEach(c => { if (c === '_px') { if (!p._px || !Object.keys(p._px).length) delete p._px; return; } if (!p[c] || !Object.keys(p[c]).length) delete p[c]; }); return p; }
 /* ---------- Fonts (only the fonts every page already loads: design.js FONTS) ---------- */
 const DF = { font_body: ['Body text', 'Everyday text: descriptions, tables, form fields'], font_head: ['Headings', 'Page titles, names, JO numbers, big numbers and the black buttons'],
   font_label: ['Labels and menus', 'Small capital labels, menus, chips, tabs and links'] };
@@ -192,7 +208,7 @@ const fontChips = (attr, cur, defName, dis, defCode) => ['', 'libre', 'moda', 'i
   style="font-family:${v || defCode ? fStack(v || defCode).replace(/'/g, '&#39;') : 'var(--label)'}"${dis}>${v ? esc(fName(v)) : 'Default' + (defName ? ' <small>(' + esc(defName) + ')</small>' : '')}</button>`).join('');
 function fontsBox(dis) {
   const D = window.OYPDesign;
-  return `<h3 class="seth">Fonts</h3><p class="muted dsph">Only the fonts the website already uses, so nothing new has to load. <b>Default</b> keeps today's font.</p>
+  return `<h3 class="seth">Fonts</h3><p class="muted dsph">These three set the fonts for the whole site. Cards, boxes, form fields, status badges, filter chips, tabs, switches, buttons and each header also have their own font, size, weight and color in the rows below. Only the fonts the website already uses, so nothing new has to load. <b>Default</b> keeps today's font.</p>
     ${!dfPasted() ? '<div class="setwarn">Saving fonts for everyone needs the new <b>Design</b> paste in Apps Script. Until then fonts are saved on <b>this device only</b>.</div>'
       : D.localFonts() ? '<div class="setwarn">This device shows its own fonts (saved here before the paste). SAVE to make them everyone\'s, or Reset all.</div>' : ''}
     <div class="setbox">${Object.keys(DF).map(k => { const it = item('design.' + k);
@@ -200,28 +216,49 @@ function fontsBox(dis) {
         <span class="setmeta">${it && it.value !== '' && it.value !== 'default' && !D.localFonts() ? `Saved ${esc(when(it.changed_at))} by ${esc(it.changed_by)} · ` : ''}Default ${esc(fName(D.FKEYS[k][1]))}</span></div>
         <div class="dsfonts">${fontChips(`data-dsf="${k}"`, S.df[k], fName(D.FKEYS[k][1]), dis, D.FKEYS[k][1])}<button class="lnk" data-dsfreset="${k}"${S.df[k] ? '' : ' disabled'}${dis}>Reset</button></div></div>`; }).join('')}</div>`;
 }
-const dpVal = (c, k) => (S.dp[c] && S.dp[c][k] != null ? S.dp[c][k] : 100);
-const dpLab = (c, k) => k === 't' || k === 'r' ? DPC[k] : k === 'f' ? 'Font' : k === 'h' ? DP[c][2] : DP[c][3];
-const dpFmt = (k, v) => k === 'f' ? fName(v) : v + '%';
-const dpText = p => { const o = []; Object.keys(DP).forEach(c => { const x = p[c]; if (!x) return;
-  o.push(DP[c][0] + ': ' + Object.keys(x).map(k => dpLab(c, k).toLowerCase() + ' ' + dpFmt(k, x[k])).join(', ')); }); return o.join(' · '); };
-const dpShort = (c, p) => { const x = (p || S.dp)[c]; return x && Object.keys(x).length ? Object.keys(x).map(k => dpLab(c, k) + ' ' + dpFmt(k, x[k])).join(' · ') : 'Original'; };
+const gNow = () => window.OYPDesign.storedOf(S.ds || dsStart());
+const shownPx = (c, k, src) => {
+  const D = window.OYPDesign, p = src || S.dp, g = gNow();
+  const hit = p._px && p._px[c] && p._px[c][k];
+  if (hit != null) return hit;
+  const pct = p[c] && p[c][k];
+  if (pct != null && D.PX[c] && D.PX[c][k]) return D.pctToPx(c, k, pct, g);
+  return D.defaultPx(c, k, g);
+};
+const dpOn = (c, src) => { const p = src || S.dp; return !!((p[c] && Object.keys(p[c]).length) || (p._px && p._px[c])); };
+const dpCount = p => { const s = new Set(Object.keys(p || {}).filter(k => k !== '_px' && p[k] && Object.keys(p[k]).length)); if (p && p._px) Object.keys(p._px).forEach(k => s.add(k)); return s.size; };
+const dpLab = (c, k) => k === 'f' ? 'Font' : k === 'g' ? 'Weight' : k === 'c' ? 'Color' : k === 't' ? (c === 'arrow' ? 'Arrow size' : (c === 'hmenu' || c === 'hbody' || c === 'hprice' ? 'Size' : 'Text size')) : k === 'r' ? 'Corners' : k === 'h' ? (DP[c][2] || 'Height') : (DP[c][3] || 'Width');
+const dpFmtVal = (k, v) => k === 'f' ? fName(v) : k === 'g' ? (window.OYPDesign.WEIGHTS[v] || v) : k === 'c' ? v : v + ' px';
+function dpBits(c, src) {
+  const D = window.OYPDesign, p = src || S.dp, g = gNow(), raw = p[c] || {}, px = (p._px && p._px[c]) || {}, o = {};
+  Object.keys(raw).forEach(k => { if (k === 'f' || k === 'g' || k === 'c') o[k] = raw[k]; else if (D.PX[c] && D.PX[c][k]) o[k] = D.pctToPx(c, k, raw[k], g); });
+  Object.keys(px).forEach(k => { o[k] = px[k]; });
+  return o;
+}
+const dpText = p => { const o = []; Object.keys(DP).forEach(c => { const x = dpBits(c, p); if (!Object.keys(x).length) return;
+  o.push(DP[c][0] + ': ' + Object.keys(x).map(k => dpLab(c, k).toLowerCase() + ' ' + dpFmtVal(k, x[k])).join(', ')); }); return o.join(' · '); };
+const dpShort = (c, p) => { const x = dpBits(c, p || S.dp); const keys = Object.keys(x); return keys.length ? keys.map(k => dpLab(c, k) + ' ' + dpFmtVal(k, x[k])).join(' · ') : 'Original'; };
+const weightChips = (c, dis) => { const cur = (S.dp[c] && S.dp[c].g) || ''; return [['', 'Default'], [400, 'Regular'], [500, 'Medium'], [600, 'Semibold'], [700, 'Bold']].map(([v, l]) =>
+  `<button type="button" class="dsfont${String(cur) === String(v) ? ' on' : ''}" data-dpg="${c}" data-gv="${v}"${dis}>${l}</button>`).join(''); };
 function partsBox(dis) {
   const D = window.OYPDesign, srv = dpServer(), it = item('design.parts');
-  const row = c => { const ctl = D.PARTS[c].split('');
+  const row = c => { const ctl = D.PARTS[c].split(''), sizes = ctl.filter(k => D.PX[c] && D.PX[c][k]);
     return `<details class="dspart" data-dp="${c}"${S.dpOpen && S.dpOpen[c] ? ' open' : ''}><summary>
-      <span class="dspn"><b>${esc(DP[c][0])}</b><span class="muted">${esc(DP[c][1])}</span><span class="dpst${S.dp[c] ? ' on' : ''}" id="dpS_${c}">${esc(dpShort(c))}</span></span>
+      <span class="dspn"><b>${esc(DP[c][0])}</b><span class="muted">${esc(DP[c][1])}</span><span class="dpst${dpOn(c) ? ' on' : ''}" id="dpS_${c}">${esc(dpShort(c))}</span></span>
       <span class="dspv dspv-${c}" aria-hidden="true">${PRV[c]}</span><span class="dschev" aria-hidden="true">›</span></summary>
-      <div class="dspc">${ctl.filter(k => k !== 'f').map(k => { const [mn, mx] = D.CTL[k], v = dpVal(c, k);
-        return `<div class="dpctl"><span class="lab">${esc(dpLab(c, k))}</span><input type="range" data-dpc="${c}" data-dpk="${k}" min="${mn}" max="${mx}" step="5" value="${v}" aria-label="${esc(DP[c][0] + ' ' + dpLab(c, k))}"${dis}>
-          <output class="dsout" id="dpO_${c}_${k}">${v}%</output><button class="lnk" data-dpreset="${c}" data-dpk="${k}"${v === 100 ? ' disabled' : ''}${dis}>Reset</button></div>`; }).join('')}
+      <div class="dspc">${sizes.map(k => { const spec = D.PX[c][k], v = shownPx(c, k), locked = !!((S.dp._px && S.dp._px[c] && S.dp._px[c][k] != null) || (S.dp[c] && S.dp[c][k] != null));
+        return `<div class="dpctl"><span class="lab">${esc(dpLab(c, k))}</span><input type="range" data-dpc="${c}" data-dpk="${k}" min="${spec[1]}" max="${spec[2]}" step="1" value="${v}" aria-label="${esc(DP[c][0] + ' ' + dpLab(c, k))}"${dis}>
+          <output class="dsout" id="dpO_${c}_${k}">${v} px</output><button class="lnk" data-dpreset="${c}" data-dpk="${k}"${locked ? '' : ' disabled'}${dis}>Reset</button></div>`; }).join('')}
         ${ctl.includes('f') ? `<div class="dpctl dpfont"><span class="lab">Font</span><div class="dsfonts">${fontChips(`data-dpf="${c}"`, S.dp[c] && S.dp[c].f, '', dis)}</div>
           <button class="lnk" data-dpreset="${c}" data-dpk="f"${S.dp[c] && S.dp[c].f ? '' : ' disabled'}${dis}>Reset</button></div>` : ''}
-        <div class="dpfoot"><span class="setmeta">100% = as the sliders above make it · Default font = the fonts above${srv[c] ? ' · saved: ' + esc(dpShort(c, srv)) : ''}</span><button class="lnk" data-dpreset="${c}" data-dpk=""${S.dp[c] ? '' : ' disabled'}${dis}>Reset ${esc(DP[c][0].toLowerCase())}</button></div></div></details>`; };
-  return `<h3 class="seth">Buttons &amp; shapes</h3><p class="muted dsph">Tap a row to change that one type of button or shape. Its sliders work on top of the ones above (100% = no change), and the whole site changes while you drag.${it && it.value !== '' && !D.localParts() ? ` <span class="setmeta">Saved ${esc(when(it.changed_at))} by ${esc(it.changed_by)}</span>` : ''}</p>
-    ${!dpPasted() ? '<div class="setwarn">Saving buttons &amp; shapes for everyone needs the new <b>Design</b> paste in Apps Script. Until then they are saved on <b>this device only</b>' + (dsPasted() ? ' (the sliders above still save for everyone)' : '') + '.</div>'
-      : D.localParts() ? '<div class="setwarn">This device shows its own buttons &amp; shapes (saved here before the paste). SAVE to make them everyone\'s, or Reset all.</div>' : ''}
-    <div class="dsparts">${Object.keys(DP).map(row).join('')}</div>`;
+        ${ctl.includes('g') ? `<div class="dpctl dpwt"><span class="lab">Weight</span><div class="dsfonts">${weightChips(c, dis)}</div>
+          <button class="lnk" data-dpreset="${c}" data-dpk="g"${S.dp[c] && S.dp[c].g ? '' : ' disabled'}${dis}>Reset</button></div>` : ''}
+        ${ctl.includes('c') ? `<div class="dpctl"><span class="lab">Color</span><input type="color" class="dpcolor" data-dpcolor="${c}" value="${(S.dp[c] && S.dp[c].c) || '#111111'}" aria-label="${esc(DP[c][0])} color"${dis}>
+          <span class="dsout" id="dpC_${c}">${esc((S.dp[c] && S.dp[c].c) || 'Default')}</span><button class="lnk" data-dpreset="${c}" data-dpk="c"${S.dp[c] && S.dp[c].c ? '' : ' disabled'}${dis}>Reset</button></div>` : ''}
+        <div class="dpfoot"><span class="setmeta">The number is the size in pixels. Reset follows the sliders above again.${srv[c] || (srv._px && srv._px[c]) ? ' · saved: ' + esc(dpShort(c, srv)) : ''}</span><button class="lnk" data-dpreset="${c}" data-dpk=""${dpOn(c) ? '' : ' disabled'}${dis}>Reset ${esc(DP[c][0].toLowerCase())}</button></div></div></details>`; };
+  const warn = !dpPasted() ? '<div class="setwarn">Saving these for everyone needs the <b>Design</b> paste in Apps Script (design.parts). Until then they are saved on <b>this device only</b>' + (dsPasted() ? ' (the sliders above still save for everyone)' : '') + '.</div>'
+    : D.localParts() ? '<div class="setwarn">This device shows its own buttons and shapes (saved here before the paste). SAVE to make them everyone\'s, or Reset all.</div>' : '';
+  return warn + DP_GROUPS.map(([title, keys, help]) => `<h3 class="seth">${esc(title)}</h3><p class="muted dsph">${help}${title === 'Buttons, boxes and type' && it && it.value !== '' && !D.localParts() ? ` <span class="setmeta">Saved ${esc(when(it.changed_at))} by ${esc(it.changed_by)}</span>` : ''}</p><div class="dsparts">${keys.map(row).join('')}</div>`).join('');
 }
 function dpDirty() { return JSON.stringify(window.OYPDesign.cleanParts(S.dp)) !== JSON.stringify(window.OYPDesign.cleanParts(dpSavedNow())); }
 function dpSavedNow() { const D = window.OYPDesign, cur = S.dp; S.dp = null; const p = dpStart(); S.dp = cur; return p; } // what is saved now (server / this device)
@@ -230,7 +267,8 @@ function designBox() {
   const D = window.OYPDesign; if (!D) return '<p class="muted">Reload the page to use Design.</p>';
   const v = S.ds || (S.ds = dsStart()), pasted = dsPasted(), loc = D.local(), dis = pasted && !S.r.setup ? ' disabled' : '';
   if (!S.dp) S.dp = dpStart(); if (!S.df) S.df = dfStart();
-  const row = k => { const [, def, mn, mx, st] = D.KEYS[k], it = item('design.' + k);
+  const row = k => { const meta = D.KEYS[k], spec = D.GPX[k], def = dsDef(k), it = item('design.' + k);
+    const mn = spec ? spec[1] : meta[2], mx = spec ? spec[2] : meta[3], st = spec ? spec[3] : meta[4];
     return `<div class="setrow dsrow"><div class="setl"><span class="lab">${esc(DS[k][1])}</span><span class="muted">${esc(DS[k][2])}</span>
       <span class="setmeta">${it && it.value !== '' && !loc ? `Saved ${esc(when(it.changed_at))} by ${esc(it.changed_by)} · ` : ''}Default ${esc(dsFmt(k, def))}</span></div>
       <div class="setv dsv"><input type="range" data-ds="${k}" min="${mn}" max="${mx}" step="${st}" value="${v[k]}" aria-label="${esc(DS[k][1])}"${dis}>
@@ -249,43 +287,68 @@ function designBox() {
     <div class="setbar"><button class="pill" id="dsSave" disabled>${pasted || dpPasted() ? 'SAVE' : 'SAVE ON THIS DEVICE'}</button><button class="lnk" id="dsAll"${dis}>Reset all</button><span class="muted" id="dsMsg"></span></div>`;
 }
 function dsDirty() { const D = window.OYPDesign, a = S.ds, b = dsSaved(); return Object.keys(DS).filter(k => a[k] !== b[k]); }
-function dsSaved() { const D = window.OYPDesign, cur = D.current(), o = {}; Object.keys(DS).forEach(k => { o[k] = k in cur ? cur[k] : D.KEYS[k][1]; }); return o; }
+function dsSaved() { const D = window.OYPDesign, cur = D.current(), o = {}; Object.keys(DS).forEach(k => { o[k] = k in cur ? cur[k] : D.KEYS[k][1]; }); return D.sliderOf(o); }
 function dsMark() { const D = window.OYPDesign, pd = S.dp && dpDirty(), fd = S.df ? dfDirty().length : 0, sd = dsDirty().length, n = sd + (pd ? 1 : 0) + fd, b = $('dsSave'), m = $('dsMsg');
   if (b) b.disabled = (!n && !(dsPasted() && D.local()) && !(dpPasted() && D.localParts()) && !(dfPasted() && D.localFonts())) || S.busy;
   const what = [sd ? sd + ' slider' + (sd > 1 ? 's' : '') : '', fd ? fd + ' font' + (fd > 1 ? 's' : '') : '', pd ? 'buttons & shapes' : ''].filter(Boolean).join(' + ');
   if (m && !S.busy) m.textContent = n ? 'Preview only: not saved yet (' + what + ')' : '';
   if (S.df) { Object.keys(DF).forEach(k => { document.querySelectorAll(`[data-dsf="${k}"]`).forEach(x => x.classList.toggle('on', x.dataset.fv === (S.df[k] || '')));
     const rr = document.querySelector(`[data-dsfreset="${k}"]`); if (rr) rr.disabled = !S.df[k]; }); }
-  if (S.dp) Object.keys(DP).forEach(c => document.querySelectorAll(`[data-dpf="${c}"]`).forEach(x => x.classList.toggle('on', x.dataset.fv === ((S.dp[c] && S.dp[c].f) || ''))));
-  Object.keys(DS).forEach(k => { const r = document.querySelector(`[data-dsreset="${k}"]`); if (r) r.disabled = S.ds[k] === D.KEYS[k][1]; });
-  if (S.dp) Object.keys(DP).forEach(c => { const st = $('dpS_' + c); if (st) { st.textContent = dpShort(c); st.classList.toggle('on', !!S.dp[c]); }
-    D.PARTS[c].split('').forEach(k => { const r = document.querySelector(`[data-dpreset="${c}"][data-dpk="${k}"]`); if (r) r.disabled = dpVal(c, k) === 100; });
-    const ra = document.querySelector(`[data-dpreset="${c}"][data-dpk=""]`); if (ra) ra.disabled = !S.dp[c]; }); }
-const dsLook = () => Object.assign({}, S.ds, S.df || {}, { parts: S.dp || {} }); // what the page previews: the six sliders + fonts + buttons & shapes
+  if (S.dp) Object.keys(DP).forEach(c => { document.querySelectorAll(`[data-dpf="${c}"]`).forEach(x => x.classList.toggle('on', x.dataset.fv === ((S.dp[c] && S.dp[c].f) || '')));
+    document.querySelectorAll(`[data-dpg="${c}"]`).forEach(x => x.classList.toggle('on', String(x.dataset.gv) === String((S.dp[c] && S.dp[c].g) || ''))); });
+  Object.keys(DS).forEach(k => { const r = document.querySelector(`[data-dsreset="${k}"]`); if (r) r.disabled = S.ds[k] === dsDef(k); });
+  if (S.dp) Object.keys(DP).forEach(c => { const st = $('dpS_' + c); if (st) { st.textContent = dpShort(c); st.classList.toggle('on', dpOn(c)); }
+    D.PARTS[c].split('').forEach(k => { const r = document.querySelector(`[data-dpreset="${c}"][data-dpk="${k}"]`); if (!r) return;
+      const on = k === 'f' ? !!(S.dp[c] && S.dp[c].f) : k === 'g' ? !!(S.dp[c] && S.dp[c].g) : k === 'c' ? !!(S.dp[c] && S.dp[c].c) : !!((S.dp._px && S.dp._px[c] && S.dp._px[c][k] != null) || (S.dp[c] && S.dp[c][k] != null));
+      r.disabled = !on; });
+    const ra = document.querySelector(`[data-dpreset="${c}"][data-dpk=""]`); if (ra) ra.disabled = !dpOn(c); }); }
+const dsLook = () => Object.assign({}, window.OYPDesign.storedOf(S.ds), S.df || {}, { parts: S.dp || {} }); // sliders (box/width converted back to the stored ratio) + fonts + parts
 function dsWire(main) {
   const D = window.OYPDesign; if (!D || !$('dsSave')) return;
-  const set = (k, v) => { S.ds[k] = v; const i = main.querySelector(`[data-ds="${k}"]`); if (i) i.value = v; $('dsO_' + k).textContent = dsFmt(k, v); };
+  const paintPx = () => { if (!S.dp) return; Object.keys(DP).forEach(c => { if (!D.PX[c]) return; Object.keys(D.PX[c]).forEach(k => {
+    const locked = !!((S.dp._px && S.dp._px[c] && S.dp._px[c][k] != null) || (S.dp[c] && S.dp[c][k] != null));
+    if (locked && S.dp._px && S.dp._px[c] && S.dp._px[c][k] != null) return; // a chosen pixel stays put while the globals move
+    const px = shownPx(c, k), i = main.querySelector(`[data-dpc="${c}"][data-dpk="${k}"]`), o = $('dpO_' + c + '_' + k);
+    if (i && document.activeElement !== i) i.value = px; if (o) o.textContent = px + ' px'; }); }); };
+  const set = (k, v) => { S.ds[k] = v; const i = main.querySelector(`[data-ds="${k}"]`); if (i) i.value = v; $('dsO_' + k).textContent = dsFmt(k, v); paintPx(); };
   const prev = () => { D.preview(dsLook()); dsMark(); };
-  const pset = (c, k, v) => { const x = S.dp[c] || (S.dp[c] = {}); if (k === 'f' ? !D.FONTS[v] : v === 100) delete x[k]; else x[k] = v; if (!Object.keys(x).length) delete S.dp[c];
-    if (k === 'f') return; const i = main.querySelector(`[data-dpc="${c}"][data-dpk="${k}"]`); if (i) i.value = v; const o = $('dpO_' + c + '_' + k); if (o) o.textContent = v + '%'; };
+  const pset = (c, k, v) => { // v null resets. A size number is pixels.
+    const x = S.dp[c] || (S.dp[c] = {});
+    if (k === 'f') { if (!D.FONTS[v]) delete x.f; else x.f = v; }
+    else if (k === 'g') { if (!D.WEIGHTS[Number(v)]) delete x.g; else x.g = Number(v); }
+    else if (k === 'c') { if (!v || !/^#[0-9a-fA-F]{6}$/.test(v)) delete x.c; else x.c = v.toLowerCase(); }
+    else {
+      if (!S.dp._px) S.dp._px = {};
+      const clear = v == null || v === D.defaultPx(c, k, gNow());
+      if (clear) { delete x[k]; if (S.dp._px[c]) { delete S.dp._px[c][k]; if (!Object.keys(S.dp._px[c]).length) delete S.dp._px[c]; } }
+      else { delete x[k]; (S.dp._px[c] = S.dp._px[c] || {})[k] = v; }
+      if (S.dp._px && !Object.keys(S.dp._px).length) delete S.dp._px;
+      const px = shownPx(c, k), i = main.querySelector(`[data-dpc="${c}"][data-dpk="${k}"]`), o = $('dpO_' + c + '_' + k);
+      if (i) i.value = px; if (o) o.textContent = px + ' px';
+    }
+    if (!Object.keys(x).length) delete S.dp[c];
+    const col = $('dpC_' + c); if (col && k === 'c') col.textContent = (S.dp[c] && S.dp[c].c) || 'Default';
+  };
   main.querySelectorAll('[data-dpf]').forEach(b => b.onclick = () => { pset(b.dataset.dpf, 'f', b.dataset.fv); prev(); });
+  main.querySelectorAll('[data-dpg]').forEach(b => b.onclick = () => { pset(b.dataset.dpg, 'g', b.dataset.gv); prev(); });
+  main.querySelectorAll('[data-dpcolor]').forEach(el => el.oninput = () => { pset(el.dataset.dpcolor, 'c', el.value); prev(); });
   main.querySelectorAll('[data-dsf]').forEach(b => b.onclick = () => { S.df[b.dataset.dsf] = b.dataset.fv; prev(); });
   main.querySelectorAll('[data-dsfreset]').forEach(b => b.onclick = () => { S.df[b.dataset.dsfreset] = ''; prev(); });
   main.querySelectorAll('[data-dpc]').forEach(el => el.oninput = el.onchange = () => { pset(el.dataset.dpc, el.dataset.dpk, Number(el.value)); prev(); });
-  main.querySelectorAll('[data-dpreset]').forEach(b => b.onclick = () => { const c = b.dataset.dpreset; (b.dataset.dpk ? [b.dataset.dpk] : D.PARTS[c].split('')).forEach(k => pset(c, k, 100)); prev(); });
+  main.querySelectorAll('[data-dpreset]').forEach(b => b.onclick = () => { const c = b.dataset.dpreset; (b.dataset.dpk ? [b.dataset.dpk] : D.PARTS[c].split('')).forEach(k => pset(c, k, null)); prev(); });
   main.querySelectorAll('details.dspart').forEach(d => d.ontoggle = () => { (S.dpOpen = S.dpOpen || {})[d.dataset.dp] = d.open; });
   main.querySelectorAll('[data-ds]').forEach(el => el.oninput = el.onchange = () => { set(el.dataset.ds, Number(el.value)); prev(); });
-  main.querySelectorAll('[data-dsreset]').forEach(b => b.onclick = () => { set(b.dataset.dsreset, D.KEYS[b.dataset.dsreset][1]); prev(); });
-  $('dsAll').onclick = () => { Object.keys(DS).forEach(k => set(k, D.KEYS[k][1])); Object.keys(DF).forEach(k => { S.df[k] = ''; }); Object.keys(DP).forEach(c => D.PARTS[c].split('').forEach(k => pset(c, k, 100))); prev(); };
+  main.querySelectorAll('[data-dsreset]').forEach(b => b.onclick = () => { set(b.dataset.dsreset, dsDef(b.dataset.dsreset)); prev(); });
+  $('dsAll').onclick = () => { Object.keys(DS).forEach(k => set(k, dsDef(k))); Object.keys(DF).forEach(k => { S.df[k] = ''; }); Object.keys(DP).forEach(c => D.PARTS[c].split('').forEach(k => pset(c, k, null))); prev(); };
   $('dsSave').onclick = () => dsSave(main);
   if (dsDirty().length || dpDirty() || dfDirty().length) D.preview(dsLook()); dsMark();
 }
 async function dsSave(main) {
   // Each part goes to the server when its paste is in, else it is kept on this device: the six sliders (design.text..), buttons & shapes
   // (design.parts), fonts (design.font_body/head/label + each type's font f inside design.parts). One settingsSave = one save in the Change history.
-  const D = window.OYPDesign, { call, toast } = window.OYP, v = Object.assign({}, S.ds), p = D.cleanParts(S.dp || {}), F = Object.assign({}, S.df || {});
+  const D = window.OYPDesign, { call, toast } = window.OYP, v = D.storedOf(Object.assign({}, S.ds)), p = D.cleanParts(S.dp || {}), F = Object.assign({}, S.df || {});
   const gSrv = dsPasted(), pSrv = dpPasted(), fSrv = dfPasted(), values = {}, seen = {};
-  const pNoF = JSON.parse(JSON.stringify(p)), pf = {}; Object.keys(pNoF).forEach(c => { if (pNoF[c].f) pf[c] = pNoF[c].f; delete pNoF[c].f; if (!Object.keys(pNoF[c]).length) delete pNoF[c]; });
+  const pNoF = JSON.parse(JSON.stringify(p)), pf = {}; Object.keys(pNoF).forEach(c => { if (c === '_px' || !pNoF[c]) return; if (pNoF[c].f) pf[c] = pNoF[c].f; delete pNoF[c].f; if (!Object.keys(pNoF[c]).length) delete pNoF[c]; });
   const pSend = fSrv ? p : pNoF;
   if (gSrv) Object.keys(DS).forEach(k => { const it = item('design.' + k), sv = it.value !== '' ? Number(it.value) : D.KEYS[k][1];
     if (v[k] !== sv) { values['design.' + k] = String(v[k]); seen['design.' + k] = it.changed_at || ''; } });
@@ -346,7 +409,7 @@ const KEYLAB = k => { const it = item(k); if (it) return (SECS.find(s => s[0] ==
   const m = k.match(/^(rate|premium)\.(.+)$/); if (m) { const R = S.r.rates, x = R.markups.concat(R.labor, R.metals).find(r => r.code === m[2]); return (x ? x.label : m[2]) + (m[1] === 'premium' ? ' · premium %' : ''); }
   const u = k.match(/^user\.([^.]+)(?:\.(\w+))?$/); if (u) return 'Staff · ' + u[1] + (u[2] ? ' · ' + ({ active: 'on / off', role: 'role', code: 'code', unlock: 'unlock' }[u[2]] || u[2]) : '');
   return k; };
-function logVal(k, v) { const it = item(k); if (v === '') return it ? 'default' : '—'; if (k === 'design.parts' && window.OYPDesign) return dpText(dpParse(v)) || 'original look'; if (/^design\.font_/.test(k) && window.OYPDesign) return fName(v); if (/^design\./.test(k) && window.OYPDesign) return dsFmt(k.slice(7), v); if (it && it.type === 'types') { try { return JSON.parse(v).map(t => t.label + (t.on ? '' : ' (off)')).join(', '); } catch (e) { return v; } }
+function logVal(k, v) { const it = item(k); if (v === '') return it ? 'default' : '—'; if (k === 'design.parts' && window.OYPDesign) return dpText(dpParse(v)) || 'original look'; if (/^design\.font_/.test(k) && window.OYPDesign) return fName(v); if (/^design\.(box|width)$/.test(k) && window.OYPDesign) { const key = k.slice(7), px = window.OYPDesign.sliderOf({ [key]: Number(v) }); return dsFmt(key, px[key]); } if (/^design\./.test(k) && window.OYPDesign) return dsFmt(k.slice(7), v); if (it && it.type === 'types') { try { return JSON.parse(v).map(t => t.label + (t.on ? '' : ' (off)')).join(', '); } catch (e) { return v; } }
   if (/\.active$/.test(k)) return v === 'true' ? 'On' : 'Off';
   if (/\.role$/.test(k) || /^user\.[^.]+$/.test(k)) return v.replace(/(admin|production_manager|accounting|staff)/, r => ROLE(r)); return it ? show(it, v) : v; }
 function logBox() {
