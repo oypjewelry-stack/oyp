@@ -17,7 +17,37 @@ const stageLabel = c => STAGE[c] || (c ? String(c).replace(/_/g, ' ') : 'Not sta
 const ago = d => { if (!d) return ''; const n = Math.round((Date.now() - Date.parse(d + 'T00:00:00+08:00')) / 864e5); return n <= 0 ? 'today' : plural(n, 'day'); };
 // Drill-downs: #/dashboard/<kind>/<key>. The dashboard response is kept so a list opens without reloading;
 // per-JO lists that the dashboard does not carry (locations, sales, pending, consigned JOs) come once from dashDrill (DashboardDrill.gs).
-const D = { r: null, cc: null, x: null, at: 0 };
+const D = { r: null, cc: null, x: null, at: 0, user: null, ordOn: false };
+// Section order on this device, per signed-in name. Empty = today's order. Design settings are the shared look, not a per-person preference, so this stays in localStorage.
+const SEC_ORDER = ['msgs', 'loc', 'sales', 'board', 'consign', 'pay', 'inq'];
+const ordKey = u => 'oypDashOrder:' + (u && u.username || 'device');
+function readOrder(u) {
+  try { const a = JSON.parse(localStorage.getItem(ordKey(u)) || 'null'); return Array.isArray(a) ? a.filter(x => typeof x === 'string' && SEC_ORDER.includes(x)) : null; }
+  catch (e) { return null; }
+}
+function writeOrder(u, ids) {
+  const present = ids.filter(id => SEC_ORDER.includes(id));
+  const def = SEC_ORDER.filter(id => present.includes(id));
+  try { if (!present.length || present.join() === def.join()) localStorage.removeItem(ordKey(u)); else localStorage.setItem(ordKey(u), JSON.stringify(present)); } catch (e) {}
+}
+function arrange(ids, saved) { // saved null = the original order. A section that appears later slots in where it sits in that order.
+  const present = new Set(ids), extra = ids.filter(id => !SEC_ORDER.includes(id));
+  if (!saved || !saved.length) return SEC_ORDER.filter(id => present.has(id)).concat(extra);
+  const out = [];
+  saved.forEach(id => { if (present.has(id) && !out.includes(id)) out.push(id); });
+  SEC_ORDER.forEach((id, i) => {
+    if (!present.has(id) || out.includes(id)) return;
+    let at = out.length;
+    for (let j = i + 1; j < SEC_ORDER.length; j++) { const k = out.indexOf(SEC_ORDER[j]); if (k >= 0) { at = k; break; } }
+    out.splice(at, 0, id);
+  });
+  return out.concat(extra);
+}
+function ordBar(esc, label) {
+  if (!D.ordOn) return '';
+  const n = esc(label);
+  return `<span class="dord"><button type="button" class="dmove" data-dup aria-label="Move ${n} up" title="Move up">↑</button><button type="button" class="dmove" data-ddn aria-label="Move ${n} down" title="Move down">↓</button><span class="dgrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span></span>`;
+}
 
 async function render(main, u, fresh) {
   const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
@@ -36,33 +66,35 @@ async function render(main, u, fresh) {
     main.innerHTML = `<h2>Dashboard</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for the dashboard yet.' : (r && r.error) || 'Could not load')}</p>`; return;
   }
   const c = r.counts, can = r.can, pb = c.pending_breakdown;
+  D.user = u; D.ordOn = !!(u && u.role === 'admin');
   const when = new Date(r.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const pendNote = [pb.reviews && pb.reviews + ' to review', pb.past_due && pb.past_due + ' past due', pb.payments && plural(pb.payments, 'payment') + ' to confirm'].filter(Boolean).join(' · ') || 'All clear';
   const tile = (lab, val, note, cls = '', href = '') => href ? `<a class="kpi kpilink tap ${cls}" href="${href}"><span class="lab">${esc(lab)} ›</span><b>${esc(val)}</b><small>${esc(note || '')}</small></a>`
     : `<div class="kpi ${cls}"><span class="lab">${esc(lab)}</span><b>${esc(val)}</b><small>${esc(note || '')}</small></div>`;
-  let h = `<div class="dhead"><h2>Dashboard</h2><button class="lnk" id="dRef">Refresh</button></div><p class="muted">${esc(when)} PHT</p>
+  let h = `<div class="dhead"><h2>Dashboard</h2><span class="dheadacts">${D.ordOn ? '<button class="lnk" id="dOrdReset" hidden>Reset order</button>' : ''}<button class="lnk" id="dRef">Refresh</button></span></div><p class="muted">${esc(when)} PHT</p>
   <div class="kpis">${tile('Active jobs', c.active_jobs, r.locations ? 'being worked on' : plural(r.board.reduce((s, b) => s + b.count, 0), 'open job'), '', '#/dashboard/active')}
   ${tile('Pending work', c.pending_work, pendNote, c.pending_work ? 'warn' : '', '#/dashboard/pending')}
   ${can.consign ? tile('Consigned out', c.consigned_out, plural(new Set((r.consignments || []).map(x => x.consignee)).size, 'consignee'), '', '#/dashboard/consigned') : ''}
   ${can.consign ? tile('Overdue', c.overdue_consignments, 'out over ' + r.overdue_days + ' days', c.overdue_consignments ? 'gold' : '', '#/dashboard/overdue') : ''}
   ${can.sales ? tile(monthName(r.sales.month) + ' sales', peso(c.month_sales), 'confirmed payments', '', '#/dashboard/sales/' + r.sales.month) : ''}
-  ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>`;
+  ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>${D.ordOn ? '<p class="muted dordhint">Arrows move a section up or down. Drag the grip. The order is saved on this device.</p>' : ''}`;
 
+  const parts = {};
   const ib = pi && pi.ok && pi.inbox; D.inbox = ib || null;
-  if (ib && ib.items.length) h += inboxCard(ib, esc);
+  if (ib && ib.items.length) parts.msgs = inboxCard(ib, esc);
   if (r.locations) {
     const unset = r.locations.find(l => l.key === 'unset');
-    h += `<section class="dcard"><div class="dtitle"><h3>Location</h3><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
+    parts.loc = `<section class="dcard" data-dsec="loc"><div class="dtitle"><span class="dname">${ordBar(esc, 'Location')}<h3>Location</h3></span><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span></div><div class="locrow">${r.locations.filter(l => l.key !== 'unset').map(l =>
       `<a class="lc tap ${l.key === 'working' ? 'cur' : ''}${l.key === 'archived' ? ' arch' : ''}" href="#/dashboard/loc/${esc(l.key)}"${l.key === 'archived' ? ' title="JO on record, no physical piece · not counted as on hand"' : ''}><b>${l.count}</b><span class="lab">${esc(l.label)} ›</span></a>`).join('')}${unset && unset.count ? `<a class="lc gold" href="#/review"><b>${unset.count}</b><span class="lab">No location yet ›</span></a>` : ''}</div></section>`;
   }
 
   if (can.sales) {
     const max = Math.max(1, ...r.sales.months.map(m => m.total));
-    h += `<section class="dcard"><div class="dtitle"><h3>Sales</h3><span class="lab">Last 6 months · admin only</span></div><div class="bars">${r.sales.months.map((m, i, a) =>
+    parts.sales = `<section class="dcard" data-dsec="sales"><div class="dtitle"><span class="dname">${ordBar(esc, 'Sales')}<h3>Sales</h3></span><span class="lab">Last 6 months · admin only</span></div><div class="bars">${r.sales.months.map((m, i, a) =>
       `<a class="bar tap${i === a.length - 1 ? ' cur' : ''}" href="#/dashboard/sales/${esc(m.month)}" title="JOs sold in ${esc(monthName(m.month))}"><span class="v">${esc(short(m.total))}</span><i style="height:${Math.max(2, Math.round(m.total / max * 100))}%"></i><span class="lab">${esc(monthName(m.month))}</span></a>`).join('')}</div><p class="muted dhint">Tap a month to see the JOs sold</p></section>`;
   }
 
-  h += `<section class="dcard"><div class="dtitle"><h3>Job board</h3><span class="lab">${r.locations ? 'Being worked on · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
+  parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname">${ordBar(esc, 'Job board')}<h3>Job board</h3></span><span class="lab">${r.locations ? 'Being worked on · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
     <div class="kcol"><a class="khead tap" href="#/dashboard/stage/${esc(col.key)}"><span class="lab">${esc(col.label)} ›</span><span class="kn">${col.count}</span></a>${col.cards.map(j => `
       <div class="kcard tap${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
       <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
@@ -70,7 +102,7 @@ async function render(main, u, fresh) {
 
   if (can.consign) {
     const L = r.consignments || [];
-    h += `<section class="dcard"><div class="dtitle"><h3>Consignment</h3><span class="lab">Items out · oldest first</span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
+    parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname">${ordBar(esc, 'Consignment')}<h3>Consignment</h3></span><span class="lab">Items out · oldest first</span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
       <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}${x.jo ? ' · JO ' + esc(x.jo) : ''}</span></td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
       : `<p class="muted">${r.missing.includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
@@ -78,16 +110,18 @@ async function render(main, u, fresh) {
 
   if (can.payments) {
     const P = r.payments || [];
-    h += `<section class="dcard"><div class="dtitle"><h3>Recent payments</h3><span class="lab">Only confirmed ones count</span></div>${P.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Date</span></th><th><span class="lab">JO</span></th><th class="hm"><span class="lab">From</span></th><th class="hm"><span class="lab">Method</span></th><th class="r"><span class="lab">Amount</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${P.map(p => `
+    parts.pay = `<section class="dcard" data-dsec="pay"><div class="dtitle"><span class="dname">${ordBar(esc, 'Recent payments')}<h3>Recent payments</h3></span><span class="lab">Only confirmed ones count</span></div>${P.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Date</span></th><th><span class="lab">JO</span></th><th class="hm"><span class="lab">From</span></th><th class="hm"><span class="lab">Method</span></th><th class="r"><span class="lab">Amount</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${P.map(p => `
       <tr><td>${esc(day(p.date))}</td><td>${esc(p.jo)}</td><td class="hm">${esc(p.payer)}</td><td class="hm">${esc(p.method)}${p.source === 'telegram' ? ' <span class="muted">· Telegram</span>' : ''}</td><td class="r">${esc(peso(p.amount))}</td>
       <td><span class="chip ${p.status === 'pending' ? 'gold' : ''}">${esc(p.status === 'pending' ? 'To confirm' : p.status)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No payments yet.</p>'}</section>`;
   }
 
-  if ('inquiries' in r) h += `<section class="dcard soon" id="dInq"><div class="dtitle"><h3>Email inquiries</h3><span class="lab">Coming soon</span></div><p class="muted">Emails about a job will show here, matched to their JO. Replies go out only when you press Send.</p></section>`;
+  if ('inquiries' in r) parts.inq = `<section class="dcard soon" id="dInq" data-dsec="inq"><div class="dtitle"><span class="dname">${ordBar(esc, 'Email inquiries')}<h3>Email inquiries</h3></span><span class="lab">Coming soon</span></div><p class="muted">Emails about a job will show here, matched to their JO. Replies go out only when you press Send.</p></section>`;
+  h += `<div id="dsecs">${arrange(Object.keys(parts), D.ordOn ? readOrder(u) : null).map(id => parts[id]).join('')}</div>`;
   const miss = r.missing.filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u, true);
+  wireOrder(main, u);
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
   wireInbox(main, esc);
@@ -103,7 +137,7 @@ function inboxCard(ib, esc) {
     <div class="cmx">${esc(x.text)}${x.amount != null && x.kind === 'approval' ? '' : ''}</div>
     <div class="muted">${esc(x.from)} · ${x.via === 'account' ? 'portal account' : x.via === 'staff' ? 'marked in the back office' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : x.via === 'telegram' ? 'marked via Tessa' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : 'Track my order'}${x.version ? ' · quote v' + x.version : ''}${x.amount != null ? ' · ' + peso(x.amount) : ''}${x.status !== 'open' && x.handled_by ? ' · handled by ' + esc(x.handled_by) : ''}</div></div>
     ${x.status === 'open' ? `<button class="lnk cmok" data-id="${esc(x.id)}">Done</button>` : ''}</div>`;
-  return `<section class="dcard" id="dMsgs"><div class="dtitle"><h3>Client messages</h3><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · approvals and questions</span></div>
+  return `<section class="dcard" id="dMsgs" data-dsec="msgs"><div class="dtitle"><span class="dname">${ordBar(esc, 'Client messages')}<h3>Client messages</h3></span><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · approvals and questions</span></div>
     ${open.map(row).join('')}${done.length ? `<details class="cmold"><summary class="muted">Handled (${done.length})</summary>${done.map(row).join('')}</details>` : ''}
     <p class="muted dhint">The Telegram group gets each one too. Reply to the client yourself (phone / Viber / email); nothing is sent from here.</p></section>`;
 }
@@ -113,9 +147,60 @@ function wireInbox(main, esc) {
     const r = await window.OYP.call('portalInboxDone', { id: b.dataset.id });
     if (!r || !r.ok) { b.disabled = false; b.textContent = 'Done'; return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save'); }
     const sec = main.querySelector('#dMsgs'); if (!sec) return;
-    if (!r.inbox.items.length) return sec.remove();
-    sec.outerHTML = inboxCard(r.inbox, esc); wireInbox(main, esc);
+    if (!r.inbox.items.length) { sec.remove(); wireOrder(main, D.user); return; }
+    sec.outerHTML = inboxCard(r.inbox, esc); wireInbox(main, esc); wireOrder(main, D.user);
   });
+}
+function wireOrder(main, u) {
+  const box = main.querySelector('#dsecs');
+  if (!box || !u || u.role !== 'admin') return;
+  const secs = () => [...box.children].filter(s => s.dataset && s.dataset.dsec);
+  const paint = () => {
+    const all = secs();
+    all.forEach((s, i) => { const up = s.querySelector('[data-dup]'), dn = s.querySelector('[data-ddn]'); if (up) up.disabled = i === 0; if (dn) dn.disabled = i === all.length - 1; });
+    const rst = main.querySelector('#dOrdReset'); if (rst) rst.hidden = !readOrder(u);
+  };
+  const persist = () => { writeOrder(u, secs().map(s => s.dataset.dsec)); paint(); };
+  box.onclick = e => {
+    const b = e.target.closest('[data-dup],[data-ddn]'); if (!b || !box.contains(b)) return;
+    e.preventDefault();
+    const s = b.closest('[data-dsec]'); if (!s) return;
+    if (b.hasAttribute('data-dup')) { const p = s.previousElementSibling; if (p && p.dataset.dsec) box.insertBefore(s, p); }
+    else { const n = s.nextElementSibling; if (n && n.dataset.dsec) box.insertBefore(n, s); }
+    persist();
+  };
+  if (!box.dataset.wired) {
+    box.dataset.wired = '1';
+    box.addEventListener('pointerdown', e => {
+      const g = e.target.closest && e.target.closest('.dgrip'); if (!g || !box.contains(g)) return;
+      if (e.button != null && e.button !== 0) return;
+      e.preventDefault();
+      const s = g.closest('[data-dsec]'); if (!s) return;
+      s.classList.add('dragging'); s.style.pointerEvents = 'none';
+      try { g.setPointerCapture(e.pointerId); } catch (_) {}
+      const move = ev => {
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const over = el && el.closest && el.closest('[data-dsec]');
+        if (!over || over === s || !box.contains(over)) return;
+        const r = over.getBoundingClientRect();
+        const ref = ev.clientY > r.top + r.height / 2 ? over.nextSibling : over;
+        if (ref !== s) box.insertBefore(s, ref);
+      };
+      const up = () => {
+        s.classList.remove('dragging'); s.style.pointerEvents = '';
+        g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
+        persist();
+      };
+      g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+    });
+  }
+  const rst = main.querySelector('#dOrdReset');
+  if (rst) rst.onclick = () => {
+    try { localStorage.removeItem(ordKey(u)); } catch (e) {}
+    arrange(secs().map(s => s.dataset.dsec), null).forEach(id => { const s = box.querySelector('[data-dsec="' + id + '"]'); if (s) box.appendChild(s); });
+    paint();
+  };
+  paint();
 }
 
 /* ---------- drill-down lists (same list rows as To review; a JO opens in the To review card) ---------- */
