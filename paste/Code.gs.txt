@@ -8,6 +8,8 @@ Also paste paste/JobSync.gs.txt so jobParse_ stores each labeled line in parsed_
 
 The shared boxes are one Script Property, SCAN_ZONES. Reading them is doGet ?zones=1 (no token). Saving them is POST {op:'saveZones', token, zones} and uses the same TOKEN check as an upload.
 
+When a JO number box is saved, the phone can tap Scan JO with the number left blank. It then POSTs {op:'readJo', token, ocrBase64} with only the JO-number crop. readJo_ runs the same ocr_ and findJOs_ and returns the number. It does not create a Drive file. low is false only when exactly one JO was found and the crop text is 24 characters or shorter. Otherwise the phone asks for the number before it uploads the page.
+
 1. Replace doGet with this. A call with no parameters still returns the same service line as today.
 
 function doGet(e) {
@@ -16,14 +18,11 @@ function doGet(e) {
   return json_({ ok: true, service: 'OYP Card Scanner', auth: typeof handleAction_ === 'function' });
 }
 
-2. In doPost, just after the TOKEN check and just before deletePage, add one line:
-
-    if (req.op === 'saveZones') return json_(saveScanZones_(req));
-
-The two lines around it stay as they are:
+2. In doPost, just after the TOKEN check and just before deletePage, add the saveZones and readJo lines. The lines around them stay as they are:
 
     if (token && req.token !== token) return json_({ ok: false, error: 'Bad token' });
     if (req.op === 'saveZones') return json_(saveScanZones_(req));
+    if (req.op === 'readJo') return json_(readJo_(req));
     if (req.op === 'deletePage') return json_(deletePage_(req));
 
 3. Replace the OCR block that sets ocrText, calls ocr_ on the full photo, then findJOs_. It looks like this today:
@@ -107,6 +106,17 @@ function ocrCrops_(req, filename) {
     } catch (e2) { if (!ocrError) ocrError = String(e2); }
   }
   return { joText: joText, ocrText: ocrText, ocrError: ocrError };
+}
+function readJo_(req) {
+  if (!req.ocrBase64) return { ok: false, error: 'Missing image' };
+  if (String(req.ocrBase64).length > 2000000) return { ok: false, error: 'Too large' };
+  var text = '', ocrError = '';
+  try { text = ocr_(Utilities.newBlob(Utilities.base64Decode(String(req.ocrBase64)), 'image/jpeg', 'jo-read.jpg'), 'jo-read.jpg'); }
+  catch (err) { ocrError = String(err); }
+  var found = findJOs_(text);
+  var compact = String(text || '').replace(/\s+/g, ' ').trim();
+  var low = !(found.length === 1 && compact.length > 0 && compact.length <= 24);
+  return { ok: true, jo: found.length ? found[0] : '', found: found, low: low, text: compact.slice(0, 80), ocrError: ocrError };
 }
 
 Paste steps:

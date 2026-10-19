@@ -3,6 +3,8 @@
    Page 1 of a later scan sends the JO-number crop as ocrBase64 and the other crops as ocrFields [{id, label, image}].
    The full page still uploads as imageBase64. Code.gs checks the JO number on the JO crop only, and reads each
    other crop under its own label. Later pages stay full-page reads. No template = today's full-page read.
+   Once a JO number box is saved, Scan JO can be tapped with the field blank. The number is read from that box
+   before the page is filed. A missing or unclear read asks for the number. Typing one first uses that number.
    The shared template is a Script Property (paste/Code.gs.txt). Until that paste is deployed, a save stays on this phone. */
 (function (root) {
 'use strict';
@@ -253,7 +255,16 @@ function ensureCss() {
     '.ozrow{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:8px}',
     '.ozstatus{font-size:14px;color:#333;max-width:720px;min-height:1.2em}',
     '.oztok{display:flex;flex-direction:column;gap:4px;margin:8px 0 0;max-width:360px;font-size:12px;letter-spacing:.06em;text-transform:uppercase}',
-    '.oztok input{text-transform:none;letter-spacing:0;font:15px Inter,Helvetica,sans-serif;padding:8px 10px;border:1px solid #ddd;border-radius:10px}'
+    '.oztok input{text-transform:none;letter-spacing:0;font:15px Inter,Helvetica,sans-serif;padding:8px 10px;border:1px solid #ddd;border-radius:10px}',
+    '#joInput.oyp-ocr-hold{color:transparent}',
+    '.ozask{position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:16px}',
+    '.ozaskbox{background:#fff;border-radius:16px;padding:18px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px}',
+    '.ozaskbox b{font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:22px}',
+    '.ozaskbox p{margin:0;font-size:15px;line-height:1.4;color:#333}',
+    '.ozaskbox input{border:1.5px solid #111;border-radius:12px;padding:12px;font:500 20px Inter,Helvetica,sans-serif;color:#111}',
+    '.ozaskbox input.bad{border-color:#9a7b2f}',
+    '.ozaskrow{display:flex;gap:8px}',
+    '.ozaskrow button{flex:1}'
   ].join('');
   document.head.appendChild(s);
 }
@@ -452,6 +463,7 @@ function Editor(host, pop) {
       btn.disabled = false;
       paint(); renderList();
       setStatus(saveMessage(res, zones));
+      syncStart();
       host.dispatchEvent(new CustomEvent('oyp-zones-saved', { bubbles: true, detail: res }));
     });
   });
@@ -583,12 +595,284 @@ function mount(host) {
     Editor(host, false);
   });
 }
+/* Once a JO number box exists, Scan JO with a blank field reads that box before the page is filed.
+   The scanner itself still requires a non-empty field, so a blank tap is held as OCR until the read
+   replaces it. A typed number is left alone and is the override. */
+var HOLD = 'OCR';
+var ocrChain = Promise.resolve('');
+var lastFromCard = false;
+var lastFiled = null;
+var lastImage = '';
+var lastThumb = '';
+
+function normJo(s) {
+  if (typeof root.normJO === 'function') return root.normJO(s);
+  var m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
+  return m ? m[1] + '-' + m[2] + (m[3] || '') : String(s || '').trim().toUpperCase().replace(/^J\.?O\.?\s*#?\s*/, '');
+}
+function validJo(s) { return /^\d{2}-\d{3,4}[A-Z]?$/.test(normJo(s)); }
+function joField() { return document.getElementById('joInput'); }
+function dateTag() {
+  var m = new Date(Date.now() + 8 * 36e5).toISOString();
+  return m.slice(5, 7) + m.slice(8, 10) + m.slice(2, 4);
+}
+function say(t) {
+  var n = document.getElementById('note');
+  if (!n) return;
+  n.textContent = t;
+  n.classList.remove('hidden');
+}
+function holdOn() {
+  var input = joField();
+  if (!input) return;
+  input.value = HOLD;
+  input.classList.add('oyp-ocr-hold');
+  if (!input.hasAttribute('data-oyp-ph')) input.setAttribute('data-oyp-ph', input.getAttribute('placeholder') || '');
+  input.setAttribute('placeholder', 'Read from the card');
+}
+function clearHold() {
+  var input = joField();
+  if (!input || input.value !== HOLD) return;
+  input.value = '';
+  input.classList.remove('oyp-ocr-hold');
+  if (input.hasAttribute('data-oyp-ph')) input.setAttribute('placeholder', input.getAttribute('data-oyp-ph'));
+}
+function fillJo(jo) {
+  var input = joField();
+  if (!input) return;
+  input.classList.remove('oyp-ocr-hold');
+  input.value = jo;
+  if (input.hasAttribute('data-oyp-ph')) input.setAttribute('placeholder', input.getAttribute('data-oyp-ph'));
+  var label = document.getElementById('joLabel');
+  if (label) label.textContent = jo;
+}
+function syncStart() {
+  if (typeof document === 'undefined' || !isScanner()) return;
+  var help = document.querySelector('#startView .help');
+  if (!help) return;
+  if (!help.hasAttribute('data-oyp-help')) help.setAttribute('data-oyp-help', help.textContent);
+  help.textContent = hasJo(state.zones)
+    ? 'Tap Scan JO. The number is read from the card. Type a JO number first when you want to set it yourself.'
+    : help.getAttribute('data-oyp-help');
+}
+function scan() { return root.__scan || null; }
+function renameItem(item, jo) {
+  var m = String(item.filename || '').match(/-p(\d+)-(\d{6}[a-z]?)\.jpe?g$/i);
+  var page = m ? Number(m[1]) : (parseInt(item.page, 10) || 1);
+  var tag = m ? m[2] : dateTag();
+  var stamp = String(item.scan || '').split('@')[1] || Date.now().toString(36);
+  item.jo = jo;
+  item.page = page;
+  item.filename = jo + '-p' + page + '-' + tag + '.jpg';
+  item.scan = jo + '@' + stamp;
+}
+function syncState(item) {
+  var sc = scan();
+  if (!sc) return;
+  if (sc.state) { sc.state.jo = item.jo; sc.state.scan = item.scan; }
+  if (sc.photo && sc.photo.last && sc.photo.last.pg) {
+    var pg = sc.photo.last.pg;
+    if (pg.jo === HOLD || String(pg.filename || '').indexOf(HOLD + '-') === 0) {
+      pg.jo = item.jo; pg.page = item.page; pg.filename = item.filename; pg.scan = item.scan;
+    }
+  }
+}
+function rollback(item) {
+  var sc = scan();
+  if (sc && sc.state && sc.state.jo === HOLD && sc.state.page > 0) {
+    sc.state.page -= 1;
+    var lab = document.getElementById('pageLabel');
+    if (lab) lab.textContent = String(sc.state.page || 0);
+  }
+  if (sc && sc.photo && sc.photo.last && sc.photo.last.pg && sc.photo.last.pg.jo === HOLD && (!item || sc.photo.last.pg.page === item.page || sc.state.page === 0)) {
+    sc.photo.last = null;
+  }
+  var box = document.getElementById('lastScan');
+  if (box && sc && sc.photo && !sc.photo.last) box.classList.add('hidden');
+}
+function cropJo(dataUrl) {
+  var jo = null;
+  state.zones.forEach(function (z) { if (z.id === 'jo') jo = z; });
+  if (!jo) return Promise.resolve('');
+  var src = String(dataUrl || '');
+  if (src.indexOf('data:') !== 0) src = 'data:image/jpeg;base64,' + src;
+  return loadImage(src).then(function (img) { return img ? cropFrom(img, jo) : ''; });
+}
+function readJo(b64) {
+  return root.fetch(api(), {
+    method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ op: 'readJo', token: token(), ocrBase64: b64 })
+  }).then(function (res) { return res.json(); }).catch(function () { return { ok: false, error: 'offline' }; });
+}
+function askJo(opts) {
+  opts = opts || {};
+  ensureCss();
+  return new Promise(function (resolve) {
+    var old = document.getElementById('oypJoAsk');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var host = document.createElement('div');
+    host.id = 'oypJoAsk';
+    host.className = 'oz ozask';
+    host.setAttribute('role', 'dialog');
+    var guess = opts.jo && validJo(opts.jo) ? normJo(opts.jo) : '';
+    host.innerHTML = '<form class="ozaskbox"><b>' + esc(opts.title || 'Type the JO number') + '</b><p>' + esc(opts.msg || 'Type the JO number to save this page.') + '</p>'
+      + '<input data-ask="jo" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="26-001" value="' + esc(guess) + '">'
+      + '<div class="ozaskrow"><button type="button" class="ozghost" data-ask="cancel">' + esc(opts.cancel || "Don't save") + '</button><button type="submit" class="ozsave">Use this number</button></div></form>';
+    document.body.appendChild(host);
+    var input = host.querySelector('[data-ask="jo"]');
+    var done = function (jo) {
+      if (host.parentNode) host.parentNode.removeChild(host);
+      resolve(jo || '');
+    };
+    host.addEventListener('click', function (e) {
+      if (e.target === host || (e.target.closest && e.target.closest('[data-ask="cancel"]'))) done('');
+    });
+    host.querySelector('form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var n = normJo(input.value);
+      if (!validJo(n)) { input.classList.add('bad'); input.focus(); return; }
+      done(n);
+    });
+    setTimeout(function () { try { input.focus(); input.select(); } catch (e) {} }, 30);
+  });
+}
+function reasonMsg(r) {
+  if (!r || r.ok === false) return 'The number could not be read from the card. Type it to save this page.';
+  var found = r.found || [];
+  if (found.length > 1) return 'The box shows more than one number. Type the right one to save this page.';
+  if (!r.jo) return 'No JO number was read from the box. Type it to save this page.';
+  return 'The number in the box is unclear. Type it to save this page.';
+}
+function resolveJo(item) {
+  lastFromCard = false;
+  lastImage = item.image || lastImage;
+  lastThumb = item.thumb || lastThumb;
+  say('Reading the JO number…');
+  return cropJo(item.image).then(function (b64) {
+    if (!b64) return askJo({ msg: 'No JO number box on this photo. Type the JO number to save this page.' });
+    return readJo(b64).then(function (r) {
+      if (r && r.ok && r.jo && validJo(r.jo) && !r.low) { lastFromCard = true; return normJo(r.jo); }
+      return askJo({ jo: r && r.jo, msg: reasonMsg(r) });
+    });
+  });
+}
+function fileAs(item, jo) {
+  renameItem(item, jo);
+  syncState(item);
+  fillJo(jo);
+  lastFiled = { id: '', jo: jo, page: item.page, filename: item.filename, scan: item.scan };
+  return item;
+}
+function addCorrectBtn(box) {
+  if (!box || !lastFiled || !lastFiled.jo || box.querySelector('[data-oyp-correct]')) return;
+  var row = box.querySelector('.la') || box;
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'alt';
+  b.setAttribute('data-oyp-correct', '1');
+  b.textContent = 'Correct number';
+  row.appendChild(b);
+}
+function refile(jo) {
+  var sc = scan();
+  var q = sc && sc.queue;
+  if (!q || !lastImage) { say('Scan the page again under JO ' + jo + '.'); return Promise.resolve(null); }
+  var prev = lastFiled || {};
+  var it = prev.id && q.get ? q.get(prev.id) : null;
+  if (it && (it.state === 'waiting' || it.state === 'failed' || !it.state) && q.remove) q.remove(it.id);
+  else if (it && q.discard) q.discard(it.id);
+  var page = (it && it.page) || prev.page || 1;
+  var tagM = String(prev.filename || '').match(/-(\d{6}[a-z]?)\.jpe?g$/i);
+  var tag = tagM ? tagM[1] : dateTag();
+  var stamp = String(prev.scan || '').split('@')[1] || Date.now().toString(36);
+  var item = { jo: jo, page: page, filename: jo + '-p' + page + '-' + tag + '.jpg', scan: jo + '@' + stamp, image: lastImage, thumb: lastThumb || '' };
+  lastFiled = { id: '', jo: jo, page: page, filename: item.filename, scan: item.scan };
+  if (sc.state) { sc.state.jo = jo; sc.state.scan = item.scan; }
+  fillJo(jo);
+  return Promise.resolve(q.add(item)).then(function (saved) {
+    lastFiled.id = (saved && saved.id) || (jo + '|' + item.filename + '|' + item.scan);
+    say('JO ' + jo + '.');
+    addCorrectBtn(document.getElementById('lastScan'));
+    return saved;
+  });
+}
+function correct() {
+  if (!lastFiled || !lastFiled.jo) return;
+  askJo({ title: 'Correct the JO number', msg: 'This page will be filed as the number you type.', jo: lastFiled.jo, cancel: 'Cancel' }).then(function (jo) {
+    if (!jo || jo === lastFiled.jo) return;
+    refile(jo);
+  });
+}
+function installQueue(sc) {
+  var q = sc.queue;
+  if (!q || !q.add || q.add.__oypOcr) return;
+  var orig = q.add.bind(q);
+  function wrapped(item) {
+    if (!item || item.jo !== HOLD || !hasJo(state.zones)) return orig(item);
+    var page = parseInt(item.page, 10) || 1;
+    if (page === 1) ocrChain = resolveJo(item);
+    else ocrChain = ocrChain.then(function (jo) { return jo || ''; });
+    return ocrChain.then(function (jo) {
+      if (!jo || !validJo(jo)) { rollback(item); if (page === 1) say('Page not saved.'); return null; }
+      fileAs(item, jo);
+      if (page === 1) say(lastFromCard ? ('JO ' + jo + ', from the card.') : ('JO ' + jo + '.'));
+      return Promise.resolve(orig(item)).then(function (saved) {
+        lastFiled.id = (saved && saved.id) || (item.jo + '|' + item.filename + '|' + item.scan);
+        lastImage = item.image || lastImage;
+        addCorrectBtn(document.getElementById('lastScan'));
+        return saved;
+      });
+    });
+  }
+  wrapped.__oypOcr = true;
+  q.add = wrapped;
+}
+function onScanClick(e) {
+  if (!isScanner() || !hasJo(state.zones)) return;
+  var t = e.target;
+  if (!t || !t.closest) return;
+  if (t.closest('#btnStart')) { clearHold(); return; }
+  if (t.closest('#joInput')) { clearHold(); return; }
+  var scanBtn = t.closest('#btnScanJO, #lnkGallery');
+  if (!scanBtn) return;
+  if (scanBtn.classList.contains('busy') || scanBtn.classList.contains('dis')) return;
+  var n = normJo(joField() ? joField().value : '');
+  if (n && n !== HOLD) return;
+  holdOn();
+}
+function hookOcr() {
+  if (typeof document === 'undefined' || !isScanner()) return;
+  if (document.documentElement.getAttribute('data-oyp-ocr') === '1') return;
+  document.documentElement.setAttribute('data-oyp-ocr', '1');
+  document.addEventListener('click', onScanClick, true);
+  var box = document.getElementById('lastScan');
+  if (box && !box.__oypCorrect) {
+    box.__oypCorrect = true;
+    new MutationObserver(function () { addCorrectBtn(box); }).observe(box, { childList: true, subtree: true });
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-oyp-correct]');
+      if (!b) return;
+      e.preventDefault();
+      e.stopPropagation();
+      correct();
+    });
+  }
+  var n = 0;
+  (function wait() {
+    var sc = scan();
+    if (sc && sc.queue && sc.queue.add) { installQueue(sc); syncStart(); return; }
+    if (n++ < 50) setTimeout(wait, 120);
+  })();
+  root.addEventListener('oyp-zones-ready', syncStart);
+}
 function boot() {
   installFetch();
   if (typeof document === 'undefined') return;
+  hookOcr();
   state.zones = readLocal();
   try { state.shared = localStorage.getItem(SHARED) === '1'; } catch (e) { state.shared = false; }
   ensureCss();
+  syncStart();
   if (document.getElementById('menu')) hookMenu();
   else document.addEventListener('DOMContentLoaded', hookMenu);
   refreshP = refresh().then(function () {
