@@ -491,7 +491,10 @@ function Editor(host, pop) {
     if (selected < 0 && drag && drag.z) selected = zones.findIndex(function (z) { return z.id === drag.z.id; });
     drag = null;
     paint(); renderList();
-    host.dispatchEvent(new CustomEvent('oyp-zones-drawn', { bubbles: true }));
+    host.dispatchEvent(new CustomEvent('oyp-zones-drawn', {
+      bubbles: true,
+      detail: zones.map(function (z) { return { id: z.id, x: z.x, y: z.y, w: z.w, h: z.h }; })
+    }));
   }
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
