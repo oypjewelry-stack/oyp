@@ -159,22 +159,29 @@ function salesSpec(view) {
   rows.forEach(s => { const b = bars.find(x => x.key === s.date.slice(0, 4)); if (b) b.value += s.amount; });
   return { view, caption: (lo === y0 ? y0 : lo + '–' + y0) + ' · full sale amount', hint: 'Each bar is a calendar year. This is the sale amount, counted on the sale date.', bars };
 }
+function salesTabs(view) {
+  return `<div class="seg salestog" role="tablist" aria-label="Sales range">${[['day', 'Daily'], ['week', 'Weekly'], ['month', 'Monthly'], ['year', 'Annual']].map(([k, l]) => `<button type="button" role="tab" data-sv="${k}" class="${view === k ? 'on' : ''}" aria-selected="${view === k ? 'true' : 'false'}">${l}</button>`).join('')}</div>`;
+}
 function salesBody(esc, view) {
-  const spec = salesSpec(view);
-  if (spec.wait) return '<p class="muted">Loading the day-by-day sales…</p>';
-  if (spec.empty) return `<p class="muted">${esc(spec.empty)}</p>`;
+  const spec = salesSpec(view), tabs = salesTabs(view);
+  if (spec.wait) return `<p class="muted">Loading the day-by-day sales…</p>${tabs}`;
+  if (spec.empty) return `<p class="muted">${esc(spec.empty)}</p>${tabs}`;
   const max = Math.max(1, ...spec.bars.map(b => b.value)), total = spec.bars.reduce((t, b) => t + b.value, 0);
   const bars = spec.bars.map(b => { const h = spec.view === 'month' || b.value ? Math.max(2, Math.round(b.value / max * 100)) : 0;
     const inner = `<span class="v">${esc(spec.view === 'month' || b.value ? short(b.value) : '—')}</span><i style="height:${h}%"></i><span class="lab">${esc(b.label)}</span>`;
     return b.href ? `<a class="bar tap${b.cur ? ' cur' : ''}" href="${esc(b.href)}" title="${esc(b.title)}">${inner}</a>` : `<div class="bar${b.cur ? ' cur' : ''}" title="${esc(b.title)}">${inner}</div>`; }).join('');
-  return `<p class="salesum"><b>${esc(peso(total))}</b><span class="muted">${esc(spec.caption)}</span></p><div class="bars">${bars}</div><p class="muted dhint">${esc(spec.hint)}</p>`;
+  return `<p class="salesum"><b>${esc(peso(total))}</b><span class="muted">${esc(spec.caption)}</span></p><div class="bars">${bars}</div>${tabs}<p class="muted dhint">${esc(spec.hint)}</p>`;
 }
 function paintSales(main, esc) { const box = main.querySelector('#saleBody'); if (box) box.innerHTML = salesBody(esc, salesView()); }
 function ensureSales() { if (D.x) return Promise.resolve(D.x); if (!D.salesP) D.salesP = extra().then(x => x, () => null).then(x => { D.salesP = null; return x; }); return D.salesP; }
 function wireSales(main, esc) {
-  main.querySelectorAll('[data-sv]').forEach(b => b.onclick = () => {
-    D.salesView = b.dataset.sv; try { localStorage.setItem('oypDashSalesView', D.salesView); } catch (e) {}
-    main.querySelectorAll('[data-sv]').forEach(x => { const on = x.dataset.sv === D.salesView; x.classList.toggle('on', on); x.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  const sec = main.querySelector('[data-dsec="sales"]');
+  if (!sec || sec.dataset.svwire) return;
+  sec.dataset.svwire = '1';
+  sec.addEventListener('click', e => {
+    const b = e.target.closest('[data-sv]');
+    if (!b || !sec.contains(b)) return;
+    D.salesView = b.dataset.sv; try { localStorage.setItem('oypDashSalesView', D.salesView); } catch (err) {}
     paintSales(main, esc);
     if (D.salesView !== 'month' && !D.x) ensureSales().then(() => { if (window.OYP.here()()) paintSales(main, esc); });
   });
@@ -219,9 +226,7 @@ async function render(main, u, fresh) {
   }
 
   if (can.sales) {
-    const sv = salesView();
     parts.sales = `<section class="dcard" data-dsec="sales"><div class="dtitle"><span class="dname"><h3>Sales</h3></span><span class="lab">Admin only</span></div>
-      <div class="seg salestog" role="tablist" aria-label="Sales range">${[['day', 'Daily'], ['week', 'Weekly'], ['month', 'Monthly'], ['year', 'Annual']].map(([k, l]) => `<button type="button" role="tab" data-sv="${k}" class="${sv === k ? 'on' : ''}" aria-selected="${sv === k ? 'true' : 'false'}">${l}</button>`).join('')}</div>
       <div id="saleBody"></div></section>`;
   }
 
