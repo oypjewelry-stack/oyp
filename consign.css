@@ -7,8 +7,11 @@
 .cswarn{border:1px solid var(--gold);background:#fffdf6;border-radius:calc(12px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.45}
 .csseg{width:auto;max-width:calc(420px*var(--cw));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp))}
 .csrow{cursor:pointer}.csrow:hover td{background:#faf8f1}
-.csrowacts{display:flex;flex-direction:column;align-items:flex-start;gap:calc(6px*var(--sp))}
-.cshead .csrowacts{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.csfind{margin-bottom:0}
+.csfind .rvq{flex:1;margin:0}
+.csrowacts{display:flex;flex-wrap:wrap;gap:calc(4px*var(--sp)) calc(10px*var(--sp));align-items:center}
+td .csrowacts{flex-direction:column;align-items:flex-start}
+.cshead .csrowacts{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;max-width:none}
 .cssignbits{display:flex;flex-wrap:wrap;align-items:center;gap:calc(6px*var(--sp));margin-top:calc(4px*var(--sp))}
 .csthumb{line-height:0}
 .csthumb img{width:44px;height:44px;object-fit:cover;border:1px solid #eee;border-radius:calc(8px*var(--rad));background:#fff;display:block}
