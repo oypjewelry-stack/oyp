@@ -71,7 +71,8 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .laybar button{border:0;background:#fff;color:#111;border-radius:999px;padding:8px 14px;font-family:var(--label);font-weight:500;font-size:12px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
 html.layedit .main{padding-bottom:84px}
 html.layedit .menu{padding-bottom:72px}
-html.layedit .dcard[data-dsec]{cursor:grab;box-shadow:inset 0 0 0 1.5px #ddd;touch-action:none;user-select:none}
+html.layedit .dcard[data-dsec]{box-shadow:inset 0 0 0 1.5px #ddd;user-select:none}
+html.layedit .dcard>.dtitle{cursor:grab;touch-action:none}
 html.layedit .dcard[data-dsec].dragging,html.layedit .lctile.dragging,html.layedit a[data-nkey].dragging{opacity:.55}
 html.layedit .sidenav a[data-nkey],html.layedit .menu a[data-nkey]{cursor:grab;touch-action:none;user-select:none}
 html.layedit .lctile{position:relative;cursor:grab;touch-action:none;user-select:none}
@@ -87,7 +88,12 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;width:26px;height:2
 .kpi small{font-family:var(--label);font-size:calc(12px*var(--fs));color:#777}.kpi.warn b{color:#111}.kpi.gold{border-color:var(--gold);background:#fffdf6}.kpi.gold b{color:#a8861c}
 .dcard{border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(18px*var(--sp)) calc(20px*var(--sp));margin-bottom:calc(18px*var(--sp));max-width:calc(1200px*var(--cw))}.dcard.soon{border-style:dashed}.dcard .muted{color:#777}
 .dtitle{display:flex;align-items:center;justify-content:space-between;gap:calc(10px*var(--sp));margin-bottom:calc(12px*var(--sp))}.dtitle h3{font-family:var(--head);font-weight:500;font-size:calc(19px*var(--hs));text-transform:uppercase}
+/* Each dashboard section header is its own box. A wrap or a drag on one does not restyle or shift the next section's header. The size stays 19px, so the box control's heading scale does not move them together. */
+.dcard>.dtitle{align-items:flex-start;flex-wrap:wrap;width:100%;min-width:0;margin:0 0 calc(12px*var(--sp));contain:layout;position:relative}
+.dcard>.dtitle h3{margin:0;line-height:1.2;font-size:19px}
+.dcard>.dtitle .dname,.dcard>.dtitle .lab,.dcard>.dtitle .dlocacts,.dcard>.dtitle .csdash{min-width:0}
 .dname{display:flex;align-items:center;gap:calc(8px*var(--sp));min-width:0}.dord{display:inline-flex;align-items:center;gap:4px;flex:none}
+.dmove,.dgrip,.nord,.lcord,.dord{display:none!important}
 .dord[hidden],.dordhint[hidden],.lhint[hidden],.lcord[hidden]{display:none!important}
 .dmove,.dgrip{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #ddd;background:#fff;border-radius:8px;padding:0;font-family:var(--label);font-size:14px;line-height:1;color:#111;cursor:pointer}
 .dmove:disabled{opacity:.3;cursor:default}.dgrip{cursor:grab;font-weight:700;letter-spacing:-2px;user-select:none;touch-action:none}

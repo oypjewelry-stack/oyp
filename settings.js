@@ -489,14 +489,26 @@ async function save(main) {
 }
 function layoutBox() {
   const on = window.OYPLayoutEdit && window.OYPLayoutEdit.editing();
-  return `<div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Edit layout</span><span class="muted">While this is on, drag a section, a location tile, or a menu item into place. Location tiles show a hide mark, and Show and Reset appear for tiles you have changed. The dashboard and both menus stay clear when this is off.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="layEdit"${on ? ' checked' : ''}><span>${on ? 'On' : 'Off'}</span></label></div></div></div>
+  const u = window.OYP.user();
+  const hidden = u && window.OYPDash && window.OYPDash.layout.locations.hidden(u) || [];
+  const shown = hidden.indexOf('archived') < 0;
+  return `<div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Edit layout</span><span class="muted">While this is on, drag a section by its header, a location tile, or a menu item into place. Location tiles show a hide mark, and Show and Reset appear for tiles you have changed. The dashboard and both menus stay clear when this is off.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="layEdit"${on ? ' checked' : ''}><span>${on ? 'On' : 'Off'}</span></label></div></div></div>
+    <div id="layMore"${on ? '' : ' hidden'}><div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Archived location tile</span><span class="muted">On the dashboard Location row. The other tiles hide from their own mark while editing is on.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="layArch"${shown ? ' checked' : ''}><span>${shown ? 'Shown' : 'Hidden'}</span></label></div></div></div></div>
     <p class="muted">Open the dashboard to move its sections and the location tiles. The menu on this page, and the phone menu, move while editing is on.</p>`;
 }
 function layoutWire(main) {
   const box = main.querySelector('#layEdit');
   if (!box || !window.OYPLayoutEdit) return;
   const lab = box.nextElementSibling;
-  box.onchange = () => { window.OYPLayoutEdit.set(box.checked); if (lab) lab.textContent = box.checked ? 'On' : 'Off'; };
+  const more = document.getElementById('layMore');
+  const sync = on => { if (lab) lab.textContent = on ? 'On' : 'Off'; if (more) more.hidden = !on; };
+  box.onchange = () => { window.OYPLayoutEdit.set(box.checked); sync(box.checked); };
+  const arch = main.querySelector('#layArch');
+  if (arch) arch.onchange = () => {
+    const u = window.OYP.user();
+    if (u && window.OYPDash) window.OYPDash.layout.locations.setHidden(u, 'archived', !arch.checked);
+    if (arch.nextElementSibling) arch.nextElementSibling.textContent = arch.checked ? 'Shown' : 'Hidden';
+  };
   if (!S.layListen) {
     S.layListen = true;
     window.OYPLayoutEdit.listen(on => {
@@ -504,6 +516,8 @@ function layoutWire(main) {
       if (!b) return;
       b.checked = !!on;
       if (b.nextElementSibling) b.nextElementSibling.textContent = on ? 'On' : 'Off';
+      const m = document.getElementById('layMore');
+      if (m) m.hidden = !on;
     });
   }
 }
