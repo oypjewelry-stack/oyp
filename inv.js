@@ -402,13 +402,41 @@ window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.menu
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
    The Scan or type JO box takes the same scan when it is focused, including a slow typed number.
+   A sticker's QR is the JO itself (26-287 or 26-287A) or a link / prefixed text that contains one
+   (jo=26-287, or a path ending in /26-287). The same read is in consign.js.
    A trailing letter is the version and folds to the base JO, the same way jobMergeVersions_ does:
    26-287A and 26-287B are both 26-287. If more than one version is still its own tile, the newest letter is the one selected. */
-const SCAN_GAP = 50, SCAN_ENTER = 80;
+const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_MAX = 400;
 let scanBuf = '', scanAt = 0;
+function joPack_(yy, num, letter) {
+  letter = letter || '';
+  return { base: yy + '-' + num, letter: letter, text: yy + '-' + num + letter };
+}
+/** JO from a sticker. Plain 26-287 / 26-287A, or a URL or other text that contains one. */
+function joFromScan(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return null;
+  try { s = decodeURIComponent(s.replace(/\+/g, ' ')); } catch (e) {}
+  const u = s.toUpperCase();
+  if (/^CS-[A-Z0-9-]+$/.test(u)) return null;
+  let m = u.match(/(?:^|[?&#\s])JO=(\d{2})-?(\d{3,4})([A-Z])?(?![A-Z0-9])/);
+  if (m) return joPack_(m[1], m[2], m[3]);
+  const paths = [];
+  const pre = /\/(\d{2})-(\d{3,4})([A-Z])?(?![A-Z0-9])/g;
+  while ((m = pre.exec(u))) paths.push(m);
+  if (paths.length) { m = paths[paths.length - 1]; return joPack_(m[1], m[2], m[3]); }
+  m = u.match(/(?:^|[^A-Z0-9])JO\s*[:#]?\s*(\d{2})\s*[- ]?\s*(\d{3,4})\s*([A-Z])?(?![A-Z0-9])/);
+  if (m) return joPack_(m[1], m[2], m[3]);
+  const re = /(?:^|[^A-Z0-9])(\d{2})\s*[- ]\s*(\d{3,4})(?:\s*([A-Z])(?![A-Z0-9]))?/g;
+  let last = null;
+  while ((m = re.exec(u))) last = m;
+  if (last) return joPack_(last[1], last[2], last[3]);
+  if (!/[:/]/.test(u) && (m = u.match(/(\d{2})(\d{3,4})([A-Z])?$/))) return joPack_(m[1], m[2], m[3]);
+  return null;
+}
 function joParts(s) {
-  const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s*([A-Z])(?![A-Z0-9]))?/);
-  return m ? { base: m[1] + '-' + m[2], letter: m[3] || '' } : null;
+  const p = joFromScan(s);
+  return p ? { base: p.base, letter: p.letter } : null;
 }
 function ivVer(j) {
   const p = joParts(j.jo), v = String(j.version || (p && p.letter) || '').toUpperCase();
@@ -437,7 +465,9 @@ function ivTake(main, job, base, fromBox) {
 function ivScanCommit(raw, fromBox) {
   const main = document.getElementById('main');
   if (!main || !IV.r) return;
-  const p = joParts(raw), label = p ? p.base : String(raw || '').trim();
+  const p = joParts(raw);
+  const shown = p ? p.base : String(raw || '').trim().replace(/\s+/g, ' ');
+  const label = shown.length > 48 ? shown.slice(0, 45) + '…' : shown;
   if (!p || !ivFindBase(p.base)) {
     const had = IV.offer; IV.offer = '';
     window.OYP.toast('JO ' + (label || '—') + ' not in Inventory');
@@ -476,6 +506,6 @@ document.addEventListener('keydown', e => {
   const now = Date.now();
   if (scanBuf && now - scanAt > SCAN_GAP) scanBuf = '';
   scanBuf += e.key; scanAt = now;
-  if (scanBuf.length > 32) scanBuf = scanBuf.slice(-32);
+  if (scanBuf.length > SCAN_MAX) scanBuf = scanBuf.slice(-SCAN_MAX);
 }, true);
 })();
