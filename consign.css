@@ -7,6 +7,12 @@
 .cswarn{border:1px solid var(--gold);background:#fffdf6;border-radius:calc(12px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.45}
 .csseg{width:auto;max-width:calc(420px*var(--cw));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp))}
 .csrow{cursor:pointer}.csrow:hover td{background:#faf8f1}
+.csrowacts{display:flex;flex-direction:column;align-items:flex-start;gap:calc(6px*var(--sp))}
+.cshead .csrowacts{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.cssignbits{display:flex;flex-wrap:wrap;align-items:center;gap:calc(6px*var(--sp));margin-top:calc(4px*var(--sp))}
+.csthumb{line-height:0}
+.csthumb img{width:44px;height:44px;object-fit:cover;border:1px solid #eee;border-radius:calc(8px*var(--rad));background:#fff;display:block}
+.csfile{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
 .csmoney{display:block;margin-top:calc(3px*var(--sp));font-size:calc(13px*var(--fs));color:#333;line-height:1.35}
 td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
 .cspay{margin-top:calc(8px*var(--sp))}
