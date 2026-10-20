@@ -34,7 +34,7 @@
 .cssigns{display:grid;grid-template-columns:1fr 1fr;gap:calc(28px*var(--sp));margin-top:calc(28px*var(--sp))}
 .csline{border-bottom:1px solid #111;height:calc(42px*var(--bh));margin-bottom:calc(6px*var(--sp))}
 .cssigns .lab{margin-bottom:calc(2px*var(--sp))}
-html.cs-onprint .top,html.cs-onprint .side,html.cs-onprint .menu,html.cs-onprint #toast,html.cs-onprint .cs-noprint{display:none!important}
+html.cs-onprint .top,html.cs-onprint .side,html.cs-onprint .menu,html.cs-onprint #toast{display:none!important}
 html.cs-onprint .office{display:block}
 html.cs-onprint .main{padding:calc(18px*var(--sp))}
 html.cs-onprint .csheet{border:0;border-radius:0;max-width:none;padding:0}
