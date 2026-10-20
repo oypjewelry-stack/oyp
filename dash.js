@@ -19,11 +19,23 @@ const ago = d => { if (!d) return ''; const n = Math.round((Date.now() - Date.pa
 // per-JO lists that the dashboard does not carry (locations, sales, pending, consigned JOs) come once from dashDrill (DashboardDrill.gs).
 const D = { r: null, cc: null, x: null, at: 0, user: null, ordOn: false };
 // Section order on this device, per signed-in name. Empty = today's order. Design settings are the shared look, not a per-person preference, so this stays in localStorage.
-const SEC_ORDER = ['msgs', 'loc', 'sales', 'board', 'consign', 'pay', 'inq'];
+const SEC_ORDER = ['msgs', 'loc', 'sales', 'board', 'consign', 'pay']; // Messages took the old client-messages slot; email inquiries is no longer its own card
 const ordKey = u => 'oypDashOrder:' + (u && u.username || 'device');
 function readOrder(u) {
-  try { const a = JSON.parse(localStorage.getItem(ordKey(u)) || 'null'); return Array.isArray(a) ? a.filter(x => typeof x === 'string' && SEC_ORDER.includes(x)) : null; }
-  catch (e) { return null; }
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(ordKey(u)) || 'null'); } catch (e) { return null; }
+  if (!Array.isArray(raw)) return null;
+  const a = [];
+  raw.forEach(x => { if (typeof x === 'string' && SEC_ORDER.includes(x) && a.indexOf(x) < 0) a.push(x); }); // drops a saved 'inq'
+  const dirty = raw.length !== a.length || raw.some((x, i) => x !== a[i]);
+  if (dirty) {
+    try {
+      if (!a.length || a.join() === SEC_ORDER.join()) localStorage.removeItem(ordKey(u));
+      else localStorage.setItem(ordKey(u), JSON.stringify(a));
+    } catch (e) {}
+  }
+  if (!a.length || a.join() === SEC_ORDER.join()) return null;
+  return a;
 }
 function writeOrder(u, ids) {
   const present = ids.filter(id => SEC_ORDER.includes(id));
@@ -302,8 +314,9 @@ async function render(main, u, fresh) {
   ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>`;
 
   const parts = {};
-  const ib = pi && pi.ok && pi.inbox; D.inbox = ib || null;
-  if (ib && ib.items.length) parts.msgs = inboxCard(ib, esc);
+  D.inbox = (pin && pi && pi.ok && pi.inbox && Array.isArray(pi.inbox.items)) ? pi.inbox : null; // portal: admin + production manager, same as the old Client messages card
+  D.mail = (r && Object.prototype.hasOwnProperty.call(r, 'inquiries')) ? (Array.isArray(r.inquiries) ? r.inquiries : []) : null; // email: whoever the server already includes `inquiries` for
+  if ((D.inbox && D.inbox.items.length) || D.mail) parts.msgs = messagesCard(esc);
   if (r.locations) {
     loadLoc(r.locations, u);
     parts.loc = `<section class="dcard" data-dsec="loc"><div class="dtitle"><span class="dname"><h3>Location</h3></span><span class="dlocacts"><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span></span></div><div class="locrow" id="locRow"></div></section>`;
@@ -335,7 +348,6 @@ async function render(main, u, fresh) {
       <td><span class="chip ${p.status === 'pending' ? 'gold' : ''}">${esc(p.status === 'pending' ? 'To confirm' : p.status)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No payments yet.</p>'}</section>`;
   }
 
-  if ('inquiries' in r) parts.inq = `<section class="dcard soon" id="dInq" data-dsec="inq"><div class="dtitle"><span class="dname"><h3>Email inquiries</h3></span><span class="lab">Coming soon</span></div><p class="muted">Emails about a job will show here, matched to their JO. Replies go out only when you press Send.</p></section>`;
   h += `<div id="dsecs">${arrange(Object.keys(parts), D.ordOn ? readOrder(u) : null).map(id => parts[id]).join('')}</div>`;
   const miss = r.missing.filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
@@ -347,31 +359,88 @@ async function render(main, u, fresh) {
   if (can.sales) { paintSales(main, esc); wireSales(main, esc); ensureSales().then(() => { if (live() && salesView() !== 'month') paintSales(main, esc); }); }
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
-  wireInbox(main, esc);
+  wireMessages(main, esc);
   const nc = main.querySelector('#dNoCC'); if (nc) nc.onclick = () => { try { sessionStorage.setItem('oypReviewFilter', 'nocontact'); } catch (_) {} };
 }
 
-/* ---------- client messages (Portal.gs v3): quote approvals + questions from Track my order / My orders ---------- */
+/* ---------- Messages: portal ClientMessages + email inquiries, one list ---------- */
 const agoT = iso => { const m = Math.round((Date.now() - Date.parse(iso)) / 6e4); return !(m >= 0) ? '' : m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : plural(Math.round(m / 1440), 'day') + ' ago'; };
-function inboxCard(ib, esc) {
-  const open = ib.items.filter(x => x.status === 'open'), done = ib.items.filter(x => x.status !== 'open').slice(0, 5);
-  const row = x => `<div class="cmrow${x.status === 'open' ? '' : ' cmdone'}"><span class="cmico" aria-hidden="true">${x.kind === 'approval' ? '✓' : '?'}</span><div class="cmb">
-    <div class="cmt"><b>${x.kind === 'approval' ? 'Quote approved' : 'Question'} · JO ${esc(x.jo)}</b><span class="muted">${esc(agoT(x.at))}</span></div>
-    <div class="cmx">${esc(x.text)}${x.amount != null && x.kind === 'approval' ? '' : ''}</div>
-    <div class="muted">${esc(x.from)} · ${x.via === 'account' ? 'portal account' : x.via === 'staff' ? 'marked in the back office' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : x.via === 'telegram' ? 'marked via Tessa' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : 'Track my order'}${x.version ? ' · quote v' + x.version : ''}${x.amount != null ? ' · ' + peso(x.amount) : ''}${x.status !== 'open' && x.handled_by ? ' · handled by ' + esc(x.handled_by) : ''}</div></div>
-    ${x.status === 'open' ? `<button class="lnk cmok" data-id="${esc(x.id)}">Done</button>` : ''}</div>`;
-  return `<section class="dcard" id="dMsgs" data-dsec="msgs"><div class="dtitle"><span class="dname"><h3>Client messages</h3></span><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · approvals and questions</span></div>
-    ${open.map(row).join('')}${done.length ? `<details class="cmold"><summary class="muted">Handled (${done.length})</summary>${done.map(row).join('')}</details>` : ''}
-    <p class="muted dhint">The Telegram group gets each one too. Reply to the client yourself (phone / Viber / email); nothing is sent from here.</p></section>`;
+const msgTime = x => { const t = Date.parse(x && x.at); return isNaN(t) ? 0 : t; };
+function asEmail(x) { // fields the dashboard already sends, when an inquiry is an object. No new action.
+  if (!x || typeof x !== 'object') return null;
+  const subject = String(x.subject || ''), text = String(x.text || x.snippet || x.body || x.preview || '');
+  const from = String(x.from || x.sender || x.name || ''), jo = String(x.jo || x.job || ''), url = String(x.url || x.link || x.href || '');
+  if (!subject && !text && !from && !jo && !url) return null;
+  const open = !x.status || String(x.status).toLowerCase() === 'open';
+  return { src: 'email', id: String(x.id || x.inquiry_id || ''), at: String(x.at || x.date || x.received_at || x.received || x.time || ''), status: open ? 'open' : 'handled', jo, from, email: String(x.email || x.from_email || ''), text, subject, url };
 }
-function wireInbox(main, esc) {
-  main.querySelectorAll('.cmok').forEach(b => b.onclick = async () => {
+function msgRows(view) {
+  let rows = (D.inbox ? D.inbox.items.map(x => Object.assign({ src: 'portal' }, x)) : []).concat(D.mail ? D.mail.map(asEmail).filter(Boolean) : []);
+  if (view === 'portal') rows = rows.filter(x => x.src === 'portal');
+  if (view === 'email') rows = rows.filter(x => x.src === 'email');
+  rows.sort((a, b) => msgTime(b) - msgTime(a));
+  return rows;
+}
+function msgView() {
+  const v = D.msgView || 'all';
+  if (v === 'portal' && !D.inbox) return 'all';
+  if (v === 'email' && !D.mail) return 'all';
+  return v === 'portal' || v === 'email' ? v : 'all';
+}
+function messagesCard(esc) {
+  const view = msgView(), rows = msgRows(view);
+  const open = rows.filter(x => x.status === 'open'), done = rows.filter(x => x.status !== 'open').slice(0, 5);
+  const allOpen = msgRows('all').filter(x => x.status === 'open');
+  const pN = allOpen.filter(x => x.src === 'portal').length, eN = allOpen.filter(x => x.src === 'email').length;
+  const counts = (allOpen.length ? allOpen.length + ' open' : 'All handled') + (D.inbox && D.mail ? ' · ' + pN + ' portal · ' + eN + ' email' : '');
+  const chips = [['all', 'All']].concat(D.inbox ? [['portal', 'Portal']] : []).concat(D.mail ? [['email', 'Email']] : []);
+  const row = x => {
+    const portal = x.src === 'portal';
+    const title = portal ? (x.kind === 'approval' ? 'Quote approved' : 'Question') + (x.jo ? ' · JO ' + x.jo : '') : (x.subject || 'Email') + (x.jo ? ' · JO ' + x.jo : '');
+    const meta = portal
+      ? `${esc(x.from)} · ${x.via === 'account' ? 'portal account' : x.via === 'staff' ? 'marked in the back office' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(String(x.how).replace('_', ' ')) + ')' : '') : x.via === 'telegram' ? 'marked via Tessa' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(String(x.how).replace('_', ' ')) + ')' : '') : 'Track my order'}${x.version ? ' · quote v' + x.version : ''}${x.amount != null ? ' · ' + peso(x.amount) : ''}${x.status !== 'open' && x.handled_by ? ' · handled by ' + esc(x.handled_by) : ''}`
+      : `${esc(x.from || x.email || 'Email')}${x.email && x.from ? ' · ' + esc(x.email) : ''}`;
+    const acts = [];
+    if (x.jo) acts.push(`<button type="button" class="lnk cmjo" data-jo="${esc(x.jo)}" data-desc="${esc(portal ? x.text : (x.subject || x.text))}" data-from="${esc(x.from || '')}">Open JO</button>`);
+    if (!portal && x.url) acts.push(`<a class="lnk" href="${esc(x.url)}" target="_blank" rel="noopener">Open email</a>`);
+    if (portal && x.status === 'open') acts.push(`<button type="button" class="lnk cmok" data-id="${esc(x.id)}">Done</button>`);
+    return `<div class="cmrow${x.status === 'open' ? '' : ' cmdone'}" data-src="${x.src}"><span class="cmico" aria-hidden="true">${portal ? (x.kind === 'approval' ? '✓' : '?') : '✉'}</span><div class="cmb">
+      <div class="cmt"><span class="cmtl"><b>${esc(title)}</b><span class="chip">${portal ? 'Portal' : 'Email'}</span></span><span class="muted">${esc(agoT(x.at))}</span></div>
+      <div class="cmx">${esc(portal ? x.text : (x.text || ''))}</div>
+      <div class="muted">${meta}</div></div>${acts.length ? `<div class="cacts">${acts.join('')}</div>` : ''}</div>`;
+  };
+  const empty = !open.length && !done.length;
+  const soon = D.mail && !mailCount() && (view === 'email' || (view === 'all' && empty));
+  return `<section class="dcard" id="dMsgs" data-dsec="msgs"><div class="dtitle"><span class="dname"><h3>Messages</h3></span><span class="lab">${esc(counts)}</span></div>
+    <div class="msgf" role="tablist" aria-label="Message source">${chips.map(([k, lab]) => `<button type="button" role="tab" data-msrc="${k}" class="${view === k ? 'on' : ''}" aria-selected="${view === k ? 'true' : 'false'}">${lab}</button>`).join('')}</div>
+    ${open.map(row).join('')}${done.length ? `<details class="cmold"><summary class="muted">Handled (${done.length})</summary>${done.map(row).join('')}</details>` : ''}
+    ${empty && !soon ? '<p class="muted">No messages here.</p>' : ''}
+    ${soon ? '<p class="muted">Emails about a job will show here, matched to their JO. Replies go out only when you press Send.</p>' : ''}
+    ${D.inbox && view !== 'email' ? '<p class="muted dhint">The Telegram group gets each portal message too. Reply to the client yourself (phone / Viber / email); nothing is sent from here.</p>' : ''}</section>`;
+}
+function mailCount() { return D.mail ? D.mail.map(asEmail).filter(Boolean).length : 0; }
+function paintMessages(main, esc) {
+  const sec = main.querySelector('#dMsgs'); if (!sec) return;
+  const open = sec.querySelector('.cmold') && sec.querySelector('.cmold').open;
+  sec.outerHTML = messagesCard(esc);
+  const next = main.querySelector('#dMsgs .cmold'); if (next && open) next.open = true;
+  wireMessages(main, esc);
+}
+function wireMessages(main, esc) {
+  const sec = main.querySelector('#dMsgs'); if (!sec || sec.dataset.msgwire) return;
+  sec.dataset.msgwire = '1';
+  sec.addEventListener('click', async e => {
+    const tab = e.target.closest('[data-msrc]');
+    if (tab) { e.preventDefault(); D.msgView = tab.dataset.msrc; paintMessages(main, esc); return; }
+    const jo = e.target.closest('.cmjo');
+    if (jo) { openJO(jo.dataset.jo, { jo: jo.dataset.jo, description: jo.dataset.desc || '', client: jo.dataset.from || '' }, 'Messages'); return; }
+    const b = e.target.closest('.cmok'); if (!b) return;
     b.disabled = true; b.textContent = '…';
     const r = await window.OYP.call('portalInboxDone', { id: b.dataset.id });
-    if (!r || !r.ok) { b.disabled = false; b.textContent = 'Done'; return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save'); }
-    const sec = main.querySelector('#dMsgs'); if (!sec) return;
-    if (!r.inbox.items.length) { sec.remove(); return; }
-    sec.outerHTML = inboxCard(r.inbox, esc); wireInbox(main, esc);
+    if (!r || !r.ok || !r.inbox || !Array.isArray(r.inbox.items)) { b.disabled = false; b.textContent = 'Done'; return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save'); }
+    D.inbox = r.inbox;
+    if (!r.inbox.items.length && !D.mail) { const s = main.querySelector('#dMsgs'); if (s) s.remove(); return; }
+    paintMessages(main, esc);
   });
 }
 function wireLayout(main, u) {
@@ -548,7 +617,7 @@ async function drillPage(main, u, kind, key) {
   wire(); scrollTo(0, 0);
   const on = main.querySelector('.rvchips .fchip.on'); if (on) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20; // phone: the picked chip in view
 }
-const SEC_LABEL = { msgs: 'Client messages', loc: 'Location', sales: 'Sales', board: 'Job board', consign: 'Consignment', pay: 'Recent payments', inq: 'Email inquiries' };
+const SEC_LABEL = { msgs: 'Messages', loc: 'Location', sales: 'Sales', board: 'Job board', consign: 'Consignment', pay: 'Recent payments' };
 function layoutLocState(list, u) {
   const canon = locCanon(list), byKey = {};
   (list || []).forEach(l => { if (l && l.key) byKey[l.key] = l; });
