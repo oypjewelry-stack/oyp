@@ -178,8 +178,14 @@ function orderedNav(u) {
   return u.role === 'admin' ? arrangeMenu(canon, readNavOrder(u)) : canon;
 }
 function navLink(k, t, page) {
-  if (k === 'scanner') return `<a href="${scanUrl()}" data-nkey="scanner">${esc(t)}</a>`;
-  return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
+  if (k === 'scanner') return `<a href="${scanUrl()}">${esc(t)}</a>`;
+  return `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
+}
+function navRow(k, t, page, edit) {
+  const link = navLink(k, t, page);
+  if (!edit) return link;
+  const n = esc(t);
+  return `<div class="nitem${k === page ? ' on' : ''}" data-nkey="${esc(k)}"><span class="nord"><button type="button" class="dmove" data-nup aria-label="Move ${n} up" title="Move up">↑</button><button type="button" class="dmove" data-ndn aria-label="Move ${n} down" title="Move down">↓</button><span class="dgrip ngrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span></span>${link}</div>`;
 }
 function whoBlock(u) {
   return `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
@@ -188,32 +194,67 @@ function whoBlock(u) {
 let curPage = '';
 function renderNav(u, page) {
   curPage = page;
-  const rows = orderedNav(u).map(([k, t]) => navLink(k, t, page)).join('');
-  $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + '</div>' + whoBlock(u);
-  wireMenuDrag($('sideNav'), u);
+  const edit = u.role === 'admin';
+  const rows = orderedNav(u).map(([k, t]) => navRow(k, t, page, edit)).join('');
+  const reset = edit ? '<button type="button" class="nreset" hidden>Reset menu</button>' : '';
+  $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + reset + '</div>' + whoBlock(u);
+  wireNav($('sideNav'), u);
   const m = $('menu');
-  if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); wireMenuDrag(m, u); }
-}
-function wireMenuDrag(box, u) {
-  if (!box || !u || u.role !== 'admin' || box.dataset.ndrag || !window.OYPLayoutEdit) return;
-  box.dataset.ndrag = '1';
-  window.OYPLayoutEdit.drag(box, 'a[data-nkey]', 'y', () => {
-    writeNavOrder(u, [...box.querySelectorAll('a[data-nkey]')].map(a => a.dataset.nkey), (NAV[u.role] || []).map(n => n[0]));
-  });
+  if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); wireNav(m, u); }
 }
 function phoneInner(u) {
   if (!u) return `<a href="${SCANNER}">Card scanner</a>`;
   if ((u.role === 'staff' || !NAV[u.role]) && !(u.role === 'staff' && NAV.staff)) return `<a href="${scanUrl()}">Scan JO card</a><button data-logout>Log out</button>`;
   if (u.role === 'staff') return NAV.staff.map(([k, t]) => navLink(k, t, '')).join('') + '<button data-logout>Log out</button>';
-  return orderedNav(u).map(([k, t]) => navLink(k, t, curPage)).join('') + '<button data-logout>Log out</button>';
+  const edit = u.role === 'admin';
+  return orderedNav(u).map(([k, t]) => navRow(k, t, curPage, edit)).join('') + (edit ? '<button type="button" class="nreset" hidden>Reset menu</button>' : '') + '<button data-logout>Log out</button>';
 }
-// Settings › Layout turns editing on. While it is on, these rows drag. Nothing extra shows when it is off.
-window.OYPLayoutMenu = {
-  list: u => orderedNav(u).map(([k, t]) => ({ key: k, label: t })),
-  save(u, keys) { writeNavOrder(u, keys, (NAV[u.role] || []).map(n => n[0])); const me = user(); if (me && me.username === u.username) renderNav(me, curPage); },
-  reset(u) { try { localStorage.removeItem(navKey(u)); } catch (e) {} const me = user(); if (me && me.username === u.username) renderNav(me, curPage); },
-  custom: u => !!readNavOrder(u)
-};
+function wireNav(box, u) {
+  if (!box || !u || u.role !== 'admin') return;
+  const items = () => [...box.querySelectorAll(':scope > [data-nkey]')];
+  const paintEnds = () => {
+    const all = items();
+    all.forEach((s, i) => { const up = s.querySelector('[data-nup]'), dn = s.querySelector('[data-ndn]'); if (up) up.disabled = i === 0; if (dn) dn.disabled = i === all.length - 1; });
+    const rst = box.querySelector('.nreset'); if (rst) rst.hidden = !readNavOrder(u);
+  };
+  const persist = () => { writeNavOrder(u, items().map(s => s.dataset.nkey), (NAV[u.role] || []).map(n => n[0])); renderNav(u, curPage); };
+  box.addEventListener('click', e => {
+    if (e.target.closest('.nreset')) {
+      e.preventDefault(); e.stopPropagation();
+      try { localStorage.removeItem(navKey(u)); } catch (err) {}
+      renderNav(u, curPage); return;
+    }
+    const b = e.target.closest('[data-nup],[data-ndn]'); if (!b || !box.contains(b)) return;
+    e.preventDefault(); e.stopPropagation();
+    const s = b.closest('[data-nkey]'); if (!s) return;
+    if (b.hasAttribute('data-nup')) { const p = s.previousElementSibling; if (p && p.dataset.nkey) box.insertBefore(s, p); }
+    else { const n = s.nextElementSibling; if (n && n.dataset.nkey) box.insertBefore(n, s); }
+    persist();
+  });
+  box.addEventListener('pointerdown', e => {
+    const g = e.target.closest && e.target.closest('.ngrip'); if (!g || !box.contains(g)) return;
+    if (e.button != null && e.button !== 0) return;
+    e.preventDefault();
+    const s = g.closest('[data-nkey]'); if (!s) return;
+    s.classList.add('dragging'); s.style.pointerEvents = 'none';
+    try { g.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = ev => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const over = el && el.closest && el.closest('[data-nkey]');
+      if (!over || over === s || !box.contains(over)) return;
+      const r = over.getBoundingClientRect();
+      const ref = ev.clientY > r.top + r.height / 2 ? over.nextSibling : over;
+      if (ref !== s) box.insertBefore(s, ref);
+    };
+    const up = () => {
+      s.classList.remove('dragging'); s.style.pointerEvents = '';
+      g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
+      persist();
+    };
+    g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+  });
+  paintEnds();
+}
 
 // Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
 // reply for a page the user already left (e.g. the dashboard still loading) never draws over the page they are on now.
@@ -223,8 +264,6 @@ function show(id) { ['vLogin', 'vStaff', 'vOffice'].forEach(v => $(v).classList.
 function route() {
   routeSeq++;
   $('menu').classList.add('hidden');
-  const signed = user();
-  if (!signed || signed.role !== 'admin') window.OYPLayoutEdit.set(false);
   if (location.hash === '#/logout') { history.replaceState(null, '', location.pathname); if (user()) return logout(); } // Log out from the scanner menu
   const u = user();
   if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; warm(); return; }
@@ -297,7 +336,7 @@ $('btnMenu').onclick = () => {
   const u = user(), m = $('menu');
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
   m.innerHTML = phoneInner(u);
-  wireMenuDrag(m, u);
+  if (u && u.role === 'admin') wireNav(m, u);
   m.classList.remove('hidden');
 };
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu')) $('menu').classList.add('hidden'); });
@@ -489,93 +528,7 @@ async function shopPage() {
   $('slist').outerHTML = r.items.length ? `<table><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">Price</span></th><th><span class="lab">JO</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${r.items.map(i => `<tr><td><b class="cn">${esc(i.title)}</b><br><span class="muted">${esc(i.item_code)} · ${esc(i.category)}</span></td><td>${i.price_php ? '₱' + Number(i.price_php).toLocaleString() : '—'}</td><td>${esc(i.jo)}</td><td><span class="chip ${i.status === 'listed' ? 'gold' : ''}">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nothing listed yet.</p>';
 }
 
-// Display names for location keys. Dashboard.gs (DASH.LOCATIONS) and JobSync.gs (JOB_LOCATIONS) still send
-// "Being worked on" and "In vault". The site shows the names below, so those files do not need a paste.
-const LOC_LABEL = { working: 'In production', vault: 'Vault' };
-function locLabel(key, serverLabel) {
-  if (key && Object.prototype.hasOwnProperty.call(LOC_LABEL, key)) return LOC_LABEL[key];
-  if (key === 'unset') return 'No location yet';
-  return serverLabel || key || '';
-}
-window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel, locLabel }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
-// Edit layout is off on every load. Settings turns it on; Done turns it off. Order stays in localStorage either way.
-const LE = {
-  on: false, fns: [],
-  editing() { const u = user(); return this.on && !!(u && u.role === 'admin'); },
-  set(v) {
-    const u = user();
-    v = !!v && !!(u && u.role === 'admin');
-    if (v === this.on) return;
-    this.on = v;
-    document.documentElement.classList.toggle('layedit', v);
-    this.bar();
-    this.fns.slice().forEach(fn => { try { fn(v); } catch (e) {} });
-  },
-  listen(fn) { this.fns.push(fn); },
-  bar() {
-    let el = document.getElementById('layBar');
-    if (!this.on) { if (el) el.remove(); return; }
-    if (el) return;
-    el = document.createElement('div');
-    el.id = 'layBar'; el.className = 'laybar';
-    el.innerHTML = '<span>Drag into place</span><button type="button" id="layDone">Done</button>';
-    document.body.appendChild(el);
-    el.querySelector('#layDone').onclick = () => this.set(false);
-  },
-  // Whole card, tile, or menu row. A short move starts the drag; a tap still clicks. Touch uses the same pointer events.
-  drag(container, itemSel, axis, onDrop, skipSel) {
-    if (!container || container.dataset.oypdrag) return;
-    container.dataset.oypdrag = '1';
-    container.addEventListener('pointerdown', e => {
-      if (!this.editing()) return;
-      if (e.button != null && e.button !== 0) return;
-      if (skipSel && e.target.closest(skipSel)) return;
-      const item = e.target.closest(itemSel);
-      if (!item || !container.contains(item)) return;
-      const pid = e.pointerId, sx = e.clientX, sy = e.clientY;
-      let dragging = false;
-      const move = ev => {
-        if (ev.pointerId !== pid) return;
-        if (!dragging) {
-          if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 8) return;
-          dragging = true;
-          item.classList.add('dragging');
-          item.style.pointerEvents = 'none';
-        }
-        ev.preventDefault();
-        const el = document.elementFromPoint(ev.clientX, ev.clientY);
-        const over = el && el.closest(itemSel);
-        if (!over || over === item || !container.contains(over)) return;
-        const r = over.getBoundingClientRect();
-        const after = axis === 'x' ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2;
-        const ref = after ? over.nextSibling : over;
-        if (ref !== item) container.insertBefore(item, ref);
-      };
-      const up = ev => {
-        if (ev.pointerId !== pid) return;
-        document.removeEventListener('pointermove', move, true);
-        document.removeEventListener('pointerup', up, true);
-        document.removeEventListener('pointercancel', up, true);
-        if (!dragging) return;
-        item.classList.remove('dragging');
-        item.style.pointerEvents = '';
-        if (LE.kill) document.removeEventListener('click', LE.kill, true);
-        LE.kill = e2 => { e2.preventDefault(); e2.stopPropagation(); document.removeEventListener('click', LE.kill, true); LE.kill = null; };
-        document.addEventListener('click', LE.kill, true);
-        onDrop();
-      };
-      document.addEventListener('pointermove', move, true);
-      document.addEventListener('pointerup', up, true);
-      document.addEventListener('pointercancel', up, true);
-    });
-  }
-};
-window.OYPLayoutEdit = LE;
-LE.listen(() => {
-  const u = user();
-  if (u && u.role === 'admin' && !$('vOffice').classList.contains('hidden')) renderNav(u, curPage);
-  if (window.OYPDash && window.OYPDash.relayout) window.OYPDash.relayout();
-});
+window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 drawDots(); route();
 // re-check the session with the server on load (catches resets / deactivation)
 // redraw only if the role or name changed, so a page opened meanwhile (e.g. the estimator mid-typing) is not reset

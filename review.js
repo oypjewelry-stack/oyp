@@ -47,7 +47,7 @@ function photo(jo, fid, size) {
 const locChip = j => { const { esc } = window.OYP;
   return j.location === 'archived' ? '<span class="chip arch" title="JO on record, no physical piece">Archived</span>'
     : j.location ? `<span class="chip dark">${esc(locLabel(j.location))}</span>` : '<span class="chip gold">Needs location</span>'; };
-const locLabel = k => window.OYP.locLabel(k, (S.locations.find(l => l[0] === k) || [k, k])[1]);
+const locLabel = k => (S.locations.find(l => l[0] === k) || [k, k])[1];
 const views = {
   noloc: ['Needs location', j => !j.location],
   details: ['Missing details', j => j.missing.some(m => m !== 'location')],
@@ -115,7 +115,7 @@ function draw(main) {
     <input id="rvQ" class="rvq" placeholder="Search JO, client or description" value="${esc(S.q)}">
     <div class="bulk ${S.sel.size ? 'on' : ''}">
       <label class="ck"><input type="checkbox" id="rvAll" ${L.length && L.every(j => S.sel.has(j.jo)) ? 'checked' : ''}><span>${S.sel.size ? S.sel.size + ' selected' : 'Select all'}</span></label>
-      <select id="rvBulkLoc"><option value="">Set location…</option>${S.locations.map(l => `<option value="${l[0]}">${esc(locLabel(l[0]))}</option>`).join('')}</select>
+      <select id="rvBulkLoc"><option value="">Set location…</option>${S.locations.map(l => `<option value="${l[0]}">${esc(l[1])}</option>`).join('')}</select>
       <button class="pill sm" id="rvBulk" ${S.sel.size ? '' : 'disabled'}>SET</button>
     </div>
     <div class="rvrows">${L.map(j => `
@@ -155,7 +155,7 @@ function panel(j) {
     <div class="dhead"><h2>JO ${esc(j.jo)}${j.version ? ` <span class="chip big" title="Latest version of this JO${(j.versions || []).length > 1 ? ' (' + esc(j.versions.join(', ')) + ')' : ''}">Version ${esc(j.version)}</span>` : ''}${j.location === 'archived' ? ' <span class="chip arch big" title="JO on record, no physical piece">Archived</span>' : ''}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
     ${shotsHtml(j)}
     <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
-      <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(locLabel(l[0]))}</button>`).join('')}</div></div>
+      <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(l[1])}</button>`).join('')}</div></div>
     <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">What is it?</span>${flag('item_type')}</div>
       <div class="kinds">${S.itemTypes.map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}</div></div>
     <div class="fgrid">
