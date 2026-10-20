@@ -109,6 +109,10 @@ function draw(main) {
   if (scanning) main.insertAdjacentHTML('beforeend', camHtml());
   wire(main);
   if (scanning) startCam();
+  if (S.autoPrint && S.mode === 'print') {
+    S.autoPrint = false;
+    setTimeout(() => { try { window.print(); } catch (e) {} }, 0);
+  }
 }
 
 function drawList() {
@@ -122,7 +126,7 @@ function drawList() {
     ${head()}
     ${setupWarn()}
     ${tabs()}
-    ${open.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Consignee</span></th><th><span class="lab">Date out</span></th><th><span class="lab">Items</span></th><th><span class="lab">Days out</span></th><th><span class="lab">Overdue</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">${r.setup === false ? 'Nothing to show until the Consignment tab exists.' : 'No open consignment sheets.'}</p>`}
+    ${open.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Consignee</span></th><th><span class="lab">Date out</span></th><th><span class="lab">Items</span></th><th><span class="lab">Days out</span></th><th><span class="lab">Overdue</span></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">${r.setup === false ? 'Nothing to show until the Consignment tab exists.' : 'No open consignment sheets.'}</p>`}
     ${loose.length ? `<div class="csloose"><p class="muted">Marked consigned, not on a sheet.</p><div class="tw"><table class="dt"><tbody>${loose.map(j => `<tr><td><b class="cn">${esc(j.jo || j.item_id || '—')}</b><br><span class="muted">${esc(j.description || '')}</span></td><td><button type="button" class="lnk" data-loose="${esc(j.jo || '')}" data-item="${esc(j.item_id || '')}" data-desc="${esc(j.description || '')}">CONSIGN</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}
     ${closed.length ? `<button type="button" class="cstog" id="csClosed">${S.showClosed ? 'Hide closed' : 'Show closed (' + closed.length + ')'}</button>` : ''}
     ${S.showClosed && closed.length ? `<div class="tw"><table class="dt"><tbody>${closedRows}</tbody></table></div>` : ''}
@@ -134,7 +138,8 @@ function sheetRow(s, esc) {
   const money = moneyBits(s);
   return `<tr class="csrow${s.overdue ? ' od' : ''}" data-open="${esc(s.consignment_id)}"><td><b class="cn">${esc(s.consignee || '—')}</b><br><span class="muted">${esc(s.consignment_id)}</span>${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td>
     <td>${esc(day(s.date_out))}</td><td>${esc(items)}</td><td>${s.days_out == null ? '—' : esc(s.days_out)}</td>
-    <td>${s.overdue ? '<span class="chip gold">Overdue</span>' : (s.status === 'closed' ? '<span class="chip">Closed</span>' : '—')}</td></tr>`;
+    <td>${s.overdue ? '<span class="chip gold">Overdue</span>' : (s.status === 'closed' ? '<span class="chip">Closed</span>' : '—')}</td>
+    <td><button type="button" class="lnk" data-reprint="${esc(s.consignment_id)}">Reprint</button></td></tr>`;
 }
 function drawPeople() {
   const { esc } = window.OYP, r = S.r, ed = (r.consignees || []).find(c => c.consignee_id === S.edit);
@@ -172,7 +177,7 @@ function drawNew() {
   return `<div class="cs">
     <button type="button" class="csback" id="csBack">‹ Back</button>
     <div class="dhead cshead"><h2>Consign</h2></div>
-    <p class="muted">Lend a piece to someone outside the shop. Due back defaults to ${esc(dueHint())}.</p>
+    <p class="muted">Lend a piece to someone outside the shop. Due back defaults to ${esc(dueHint())}. A scan adds the piece to the list. Save prints the sheet.</p>
     <div class="csnew">
       <div class="addrow">
         <label><span class="lab">Consignee</span><input id="csName" list="csPeople" value="${esc(d.name)}" maxlength="80" autocomplete="off" placeholder="Name"></label>
@@ -190,7 +195,7 @@ function drawNew() {
         ${hits ? `<div class="cshits" id="csHits">${hits}</div>` : '<div id="csHits"></div>'}
       </div>
       ${d.items.length ? `<table class="dt"><thead><tr><th><span class="lab">Piece</span></th>${prices() ? '<th><span class="lab">Agreed value</span></th>' : ''}<th></th></tr></thead><tbody>${lines}</tbody></table>` : '<p class="muted">No pieces yet. Search, or scan a JO or item tag.</p>'}
-      <div class="csacts"><button type="button" class="pill" id="csSave" ${S.r.setup === false ? 'disabled' : ''}>CONSIGN</button></div>
+      <div class="csacts"><button type="button" class="pill" id="csSave" ${S.r.setup === false ? 'disabled' : ''}>SAVE</button></div>
     </div>
   </div>`;
 }
@@ -207,10 +212,10 @@ function drawSheet(printing) {
       ${!printing && stillOwes(it) ? `<button type="button" class="lnk cs-noprint" data-pay="${esc(it.line_id)}">Record payment</button>` : ''}</td></tr>`).join('');
   const tot = showVal ? (s.items || []).reduce((n, it) => n + (Number(it.value) || 0), 0) : 0;
   const sheet = `<article class="csheet">
+    <p class="csno"><span class="lab">Consignment</span>${esc(s.consignment_id)}</p>
     <div class="csbrand"><img src="${esc(logoSrc())}" alt=""><b>OYP Jewelry</b></div>
     <p class="cscontact">8892 1171 · oypjewelry@gmail.com</p>
-    <div class="csmeta"><div><span class="lab">Consignment</span><b>${esc(s.consignment_id)}</b></div>
-      <div><span class="lab">Date</span><b>${esc(dayLong(s.date_out))}</b></div>
+    <div class="csmeta"><div><span class="lab">Date</span><b>${esc(dayLong(s.date_out))}</b></div>
       <div><span class="lab">Due back</span><b>${esc(s.due_date ? dayLong(s.due_date) : '—')}</b></div></div>
     <p><span class="lab">Consignee</span><b class="cn">${esc(s.consignee || '—')}</b>${s.phone ? `<br><span class="muted">${esc(s.phone)}</span>` : ''}${s.notes ? `<br>${esc(s.notes)}` : ''}</p>
     <table><thead><tr><th><span class="lab">JO / item</span></th><th><span class="lab">Description</span></th>${showVal ? '<th class="r"><span class="lab">Agreed value</span></th>' : ''}<th><span class="lab">Status</span></th></tr></thead><tbody>${body}</tbody></table>
@@ -224,7 +229,7 @@ function drawSheet(printing) {
   const money = moneyBits(s);
   return `<div class="cs">
     <button type="button" class="csback cs-noprint" id="csBack">‹ Back</button>
-    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><button type="button" class="pill sm" id="csPrint">PRINT</button></div>
+    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><button type="button" class="pill sm" id="csPrint">REPRINT</button></div>
     <p class="muted cs-noprint">${esc(s.consignee || '')} · out ${esc(day(s.date_out))}${money ? ' · ' + esc(money) : ''}${s.overdue ? ' · overdue' : ''}${s.status === 'closed' ? ' · closed' : ''}</p>
     ${sheet}
     ${open ? `<div class="csacts cs-noprint"><input id="csBackCode" class="rvq" style="flex:1;margin:0" placeholder="Scan or type a JO or item" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="JO or item to return or mark sold">
@@ -291,6 +296,7 @@ function wire(main) {
   const nb = $('csNew'); if (nb) nb.onclick = () => { S.mode = 'new'; S.draft = blankDraft(); S.q = ''; S.hits = []; S.tab = 'sheets'; draw(main); };
   main.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.mode = 'list'; S.edit = ''; draw(main); });
   main.querySelectorAll('[data-open]').forEach(tr => tr.onclick = () => go(tr.dataset.open));
+  main.querySelectorAll('[data-reprint]').forEach(b => b.onclick = e => { e.stopPropagation(); openPrint(main, b.dataset.reprint); });
   const cl = $('csClosed'); if (cl) cl.onclick = () => { S.showClosed = !S.showClosed; draw(main); };
   main.querySelectorAll('[data-loose]').forEach(b => b.onclick = () => {
     S.mode = 'new'; S.draft = blankDraft([{ jo: b.dataset.loose || '', item_id: b.dataset.item || '', description: b.dataset.desc || '', value: '' }]);
@@ -310,7 +316,7 @@ function wire(main) {
   main.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { readDraft(); S.draft.items.splice(Number(b.dataset.rm), 1); draw(main); });
   const save = $('csSave'); if (save) save.onclick = () => saveSheet(main);
   const scan = $('csScan'); if (scan) scan.onclick = () => openScan(main);
-  const pr = $('csPrint'); if (pr) pr.onclick = () => { S.mode = 'print'; draw(main); };
+  const pr = $('csPrint'); if (pr) pr.onclick = () => openPrint(main, S.id);
   const dop = $('csDoPrint'); if (dop) dop.onclick = () => window.print();
   main.querySelectorAll('[data-back]').forEach(b => b.onclick = () => mark(main, b.dataset.back, 'returned'));
   main.querySelectorAll('[data-sold]').forEach(b => b.onclick = () => mark(main, b.dataset.sold, 'sold'));
@@ -376,8 +382,14 @@ async function saveSheet(main) {
   S.busy = false;
   if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not save');
   window.OYP.toast('Saved ' + (r.consignment_id || ''));
-  S.mode = 'sheet'; S.id = r.consignment_id || ''; S.draft = null; S.q = ''; S.hits = [];
-  await reload(main);
+  S.mode = 'print'; S.id = r.consignment_id || ''; S.draft = null; S.q = ''; S.hits = []; S.autoPrint = true;
+  const loaded = await reload(main);
+  if (!loaded) S.autoPrint = false;
+}
+function openPrint(main, id) {
+  if (!id) return;
+  S.mode = 'print'; S.id = id; S.tab = 'sheets'; S.pay = null; S.autoPrint = true;
+  draw(main);
 }
 async function mark(main, lineId, status) {
   if (S.busy) return;

@@ -36,6 +36,8 @@ td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
 .cscam .rvq{margin:0}
 /* printable sheet */
 .csheet{max-width:720px;margin:0 auto;border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(28px*var(--sp)) calc(28px*var(--sp)) calc(22px*var(--sp));background:#fff;color:#111}
+.csno{font-family:var(--head);font-weight:500;font-size:calc(36px*var(--hs));letter-spacing:.04em;line-height:1.1;margin:0 0 calc(14px*var(--sp))}
+.csno .lab{display:block;margin-bottom:calc(4px*var(--sp))}
 .csbrand{display:flex;align-items:center;gap:calc(12px*var(--sp));margin-bottom:calc(4px*var(--sp))}
 .csbrand img{height:42px;width:auto}
 .csbrand b{font-family:var(--head);font-weight:500;font-size:calc(28px*var(--hs));letter-spacing:.04em;text-transform:uppercase}
