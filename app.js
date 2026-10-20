@@ -178,8 +178,8 @@ function orderedNav(u) {
   return u.role === 'admin' ? arrangeMenu(canon, readNavOrder(u)) : canon;
 }
 function navLink(k, t, page) {
-  if (k === 'scanner') return `<a href="${scanUrl()}">${esc(t)}</a>`;
-  return `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
+  if (k === 'scanner') return `<a href="${scanUrl()}" data-nkey="scanner">${esc(t)}</a>`;
+  return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
 }
 function whoBlock(u) {
   return `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
@@ -190,8 +190,16 @@ function renderNav(u, page) {
   curPage = page;
   const rows = orderedNav(u).map(([k, t]) => navLink(k, t, page)).join('');
   $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + '</div>' + whoBlock(u);
+  wireMenuDrag($('sideNav'), u);
   const m = $('menu');
-  if (m && !m.classList.contains('hidden')) m.innerHTML = phoneInner(u);
+  if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); wireMenuDrag(m, u); }
+}
+function wireMenuDrag(box, u) {
+  if (!box || !u || u.role !== 'admin' || box.dataset.ndrag || !window.OYPLayoutEdit) return;
+  box.dataset.ndrag = '1';
+  window.OYPLayoutEdit.drag(box, 'a[data-nkey]', 'y', () => {
+    writeNavOrder(u, [...box.querySelectorAll('a[data-nkey]')].map(a => a.dataset.nkey), (NAV[u.role] || []).map(n => n[0]));
+  });
 }
 function phoneInner(u) {
   if (!u) return `<a href="${SCANNER}">Card scanner</a>`;
@@ -199,7 +207,7 @@ function phoneInner(u) {
   if (u.role === 'staff') return NAV.staff.map(([k, t]) => navLink(k, t, '')).join('') + '<button data-logout>Log out</button>';
   return orderedNav(u).map(([k, t]) => navLink(k, t, curPage)).join('') + '<button data-logout>Log out</button>';
 }
-// Settings › Layout reorders this device's menu. The side menu and the phone menu never show the arrows.
+// Settings › Layout turns editing on. While it is on, these rows drag. Nothing extra shows when it is off.
 window.OYPLayoutMenu = {
   list: u => orderedNav(u).map(([k, t]) => ({ key: k, label: t })),
   save(u, keys) { writeNavOrder(u, keys, (NAV[u.role] || []).map(n => n[0])); const me = user(); if (me && me.username === u.username) renderNav(me, curPage); },
@@ -215,6 +223,8 @@ function show(id) { ['vLogin', 'vStaff', 'vOffice'].forEach(v => $(v).classList.
 function route() {
   routeSeq++;
   $('menu').classList.add('hidden');
+  const signed = user();
+  if (!signed || signed.role !== 'admin') window.OYPLayoutEdit.set(false);
   if (location.hash === '#/logout') { history.replaceState(null, '', location.pathname); if (user()) return logout(); } // Log out from the scanner menu
   const u = user();
   if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; warm(); return; }
@@ -287,6 +297,7 @@ $('btnMenu').onclick = () => {
   const u = user(), m = $('menu');
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
   m.innerHTML = phoneInner(u);
+  wireMenuDrag(m, u);
   m.classList.remove('hidden');
 };
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu')) $('menu').classList.add('hidden'); });
@@ -479,6 +490,84 @@ async function shopPage() {
 }
 
 window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
+// Edit layout is off on every load. Settings turns it on; Done turns it off. Order stays in localStorage either way.
+const LE = {
+  on: false, fns: [],
+  editing() { const u = user(); return this.on && !!(u && u.role === 'admin'); },
+  set(v) {
+    const u = user();
+    v = !!v && !!(u && u.role === 'admin');
+    if (v === this.on) return;
+    this.on = v;
+    document.documentElement.classList.toggle('layedit', v);
+    this.bar();
+    this.fns.slice().forEach(fn => { try { fn(v); } catch (e) {} });
+  },
+  listen(fn) { this.fns.push(fn); },
+  bar() {
+    let el = document.getElementById('layBar');
+    if (!this.on) { if (el) el.remove(); return; }
+    if (el) return;
+    el = document.createElement('div');
+    el.id = 'layBar'; el.className = 'laybar';
+    el.innerHTML = '<span>Drag into place</span><button type="button" id="layDone">Done</button>';
+    document.body.appendChild(el);
+    el.querySelector('#layDone').onclick = () => this.set(false);
+  },
+  // Whole card, tile, or menu row. A short move starts the drag; a tap still clicks. Touch uses the same pointer events.
+  drag(container, itemSel, axis, onDrop, skipSel) {
+    if (!container || container.dataset.oypdrag) return;
+    container.dataset.oypdrag = '1';
+    container.addEventListener('pointerdown', e => {
+      if (!this.editing()) return;
+      if (e.button != null && e.button !== 0) return;
+      if (skipSel && e.target.closest(skipSel)) return;
+      const item = e.target.closest(itemSel);
+      if (!item || !container.contains(item)) return;
+      const pid = e.pointerId, sx = e.clientX, sy = e.clientY;
+      let dragging = false;
+      const move = ev => {
+        if (ev.pointerId !== pid) return;
+        if (!dragging) {
+          if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 8) return;
+          dragging = true;
+          item.classList.add('dragging');
+          item.style.pointerEvents = 'none';
+        }
+        ev.preventDefault();
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const over = el && el.closest(itemSel);
+        if (!over || over === item || !container.contains(over)) return;
+        const r = over.getBoundingClientRect();
+        const after = axis === 'x' ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2;
+        const ref = after ? over.nextSibling : over;
+        if (ref !== item) container.insertBefore(item, ref);
+      };
+      const up = ev => {
+        if (ev.pointerId !== pid) return;
+        document.removeEventListener('pointermove', move, true);
+        document.removeEventListener('pointerup', up, true);
+        document.removeEventListener('pointercancel', up, true);
+        if (!dragging) return;
+        item.classList.remove('dragging');
+        item.style.pointerEvents = '';
+        if (LE.kill) document.removeEventListener('click', LE.kill, true);
+        LE.kill = e2 => { e2.preventDefault(); e2.stopPropagation(); document.removeEventListener('click', LE.kill, true); LE.kill = null; };
+        document.addEventListener('click', LE.kill, true);
+        onDrop();
+      };
+      document.addEventListener('pointermove', move, true);
+      document.addEventListener('pointerup', up, true);
+      document.addEventListener('pointercancel', up, true);
+    });
+  }
+};
+window.OYPLayoutEdit = LE;
+LE.listen(() => {
+  const u = user();
+  if (u && u.role === 'admin' && !$('vOffice').classList.contains('hidden')) renderNav(u, curPage);
+  if (window.OYPDash && window.OYPDash.relayout) window.OYPDash.relayout();
+});
 drawDots(); route();
 // re-check the session with the server on load (catches resets / deactivation)
 // redraw only if the role or name changed, so a page opened meanwhile (e.g. the estimator mid-typing) is not reset

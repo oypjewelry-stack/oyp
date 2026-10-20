@@ -84,6 +84,7 @@ function loadLoc(list, u) {
   D.loc = { canon: canon, order: order, hide: hide, byKey: byKey };
 }
 function locName(l) { return l.key === 'unset' ? 'No location yet' : (l.label || l.key); }
+function editing() { return !!(window.OYPLayoutEdit && window.OYPLayoutEdit.editing() && D.ordOn); }
 function locTile(esc, l, on) {
   const arch = l.key === 'archived', unset = l.key === 'unset', name = locName(l);
   const cls = 'lc tap' + (l.key === 'working' ? ' cur' : '') + (arch ? ' arch' : '') + (unset ? ' gold' : '');
@@ -91,14 +92,23 @@ function locTile(esc, l, on) {
   const title = arch ? ' title="JO on record, no physical piece · not counted as on hand"' : '';
   const link = `<a class="${cls}" href="${href}"${title}><b>${l.count}</b><span class="lab">${esc(name)} ›</span></a>`;
   if (!on) return link;
-  const n = esc(name);
-  return `<div class="lctile" data-lkey="${esc(l.key)}">${link}<span class="lcord"><button type="button" class="dmove" data-lup aria-label="Move ${n} earlier" title="Move earlier">←</button><button type="button" class="dmove" data-ldn aria-label="Move ${n} later" title="Move later">→</button><span class="dgrip lgrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span><button type="button" class="dmove" data-lhide aria-label="Hide ${n}" title="Hide">✕</button></span></div>`;
+  return `<div class="lctile" data-lkey="${esc(l.key)}">${link}<button type="button" class="lx" data-lhide aria-label="Hide ${esc(name)}">✕</button></div>`;
 }
 function paintLoc(main, esc) {
   const row = main.querySelector('#locRow');
   if (!row || !D.loc) return;
+  const on = editing();
   const show = D.loc.order.filter(k => !D.loc.hide.has(k) && D.loc.byKey[k]);
-  row.innerHTML = show.map(k => locTile(esc, D.loc.byKey[k], false)).join('') || (D.ordOn && !show.length ? '<p class="muted">Every location tile is hidden. Show them in Settings, under Layout.</p>' : '');
+  row.classList.toggle('edit', on);
+  row.innerHTML = show.map(k => locTile(esc, D.loc.byKey[k], on)).join('') || (D.ordOn && !show.length ? '<p class="muted">Every location tile is hidden.</p>' : '');
+  const acts = main.querySelector('.dlocacts');
+  if (!acts) return;
+  let extra = acts.querySelector('.layloc');
+  if (!on) { if (extra) extra.remove(); return; }
+  if (!extra) { extra = document.createElement('span'); extra.className = 'layloc'; acts.appendChild(extra); }
+  const hidden = D.loc.order.filter(k => D.loc.hide.has(k) && D.loc.byKey[k]);
+  extra.innerHTML = hidden.map(k => `<button type="button" class="lnk" data-lshow="${esc(k)}">Show ${esc(locName(D.loc.byKey[k]))}</button>`).join('')
+    + `<button type="button" class="lnk" id="dLocReset"${readLocPref(D.user) ? '' : ' hidden'}>Reset</button>`;
 }
 function saveLoc(u) {
   const prev = readLocPref(u);
@@ -108,7 +118,6 @@ function saveLoc(u) {
   if (prev) prev.hide.forEach(k => { if (D.loc.canon.indexOf(k) < 0) hide.add(k); });
   writeLocPref(u, ord, hide, D.loc.canon);
 }
-function ordBar() { return ''; } // arrows live in Settings › Layout, never on the dashboard
 /* Sales card ranges. Monthly is the chart the dashboard already had (last 6 months of confirmed payments).
    Daily, weekly, and annual use each JO's sale date and full sale amount from dashDrill, so a range's number is the sum of its bars. */
 const todayPH = () => new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10);
@@ -211,12 +220,12 @@ async function render(main, u, fresh) {
 
   if (can.sales) {
     const sv = salesView();
-    parts.sales = `<section class="dcard" data-dsec="sales"><div class="dtitle"><span class="dname">${ordBar(esc, 'Sales')}<h3>Sales</h3></span><span class="lab">Admin only</span></div>
+    parts.sales = `<section class="dcard" data-dsec="sales"><div class="dtitle"><span class="dname"><h3>Sales</h3></span><span class="lab">Admin only</span></div>
       <div class="seg salestog" role="tablist" aria-label="Sales range">${[['day', 'Daily'], ['week', 'Weekly'], ['month', 'Monthly'], ['year', 'Annual']].map(([k, l]) => `<button type="button" role="tab" data-sv="${k}" class="${sv === k ? 'on' : ''}" aria-selected="${sv === k ? 'true' : 'false'}">${l}</button>`).join('')}</div>
       <div id="saleBody"></div></section>`;
   }
 
-  parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname">${ordBar(esc, 'Job board')}<h3>Job board</h3></span><span class="lab">${r.locations ? 'Being worked on · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
+  parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'Being worked on · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
     <div class="kcol"><a class="khead tap" href="#/dashboard/stage/${esc(col.key)}"><span class="lab">${esc(col.label)} ›</span><span class="kn">${col.count}</span></a>${col.cards.map(j => `
       <div class="kcard tap${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
       <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
@@ -224,7 +233,7 @@ async function render(main, u, fresh) {
 
   if (can.consign) {
     const L = r.consignments || [];
-    parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname">${ordBar(esc, 'Consignment')}<h3>Consignment</h3></span><span class="lab">Items out · oldest first</span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
+    parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="lab">Items out · oldest first</span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
       <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}${x.jo ? ' · JO ' + esc(x.jo) : ''}</span></td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
       : `<p class="muted">${r.missing.includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
@@ -232,18 +241,19 @@ async function render(main, u, fresh) {
 
   if (can.payments) {
     const P = r.payments || [];
-    parts.pay = `<section class="dcard" data-dsec="pay"><div class="dtitle"><span class="dname">${ordBar(esc, 'Recent payments')}<h3>Recent payments</h3></span><span class="lab">Only confirmed ones count</span></div>${P.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Date</span></th><th><span class="lab">JO</span></th><th class="hm"><span class="lab">From</span></th><th class="hm"><span class="lab">Method</span></th><th class="r"><span class="lab">Amount</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${P.map(p => `
+    parts.pay = `<section class="dcard" data-dsec="pay"><div class="dtitle"><span class="dname"><h3>Recent payments</h3></span><span class="lab">Only confirmed ones count</span></div>${P.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Date</span></th><th><span class="lab">JO</span></th><th class="hm"><span class="lab">From</span></th><th class="hm"><span class="lab">Method</span></th><th class="r"><span class="lab">Amount</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${P.map(p => `
       <tr><td>${esc(day(p.date))}</td><td>${esc(p.jo)}</td><td class="hm">${esc(p.payer)}</td><td class="hm">${esc(p.method)}${p.source === 'telegram' ? ' <span class="muted">· Telegram</span>' : ''}</td><td class="r">${esc(peso(p.amount))}</td>
       <td><span class="chip ${p.status === 'pending' ? 'gold' : ''}">${esc(p.status === 'pending' ? 'To confirm' : p.status)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No payments yet.</p>'}</section>`;
   }
 
-  if ('inquiries' in r) parts.inq = `<section class="dcard soon" id="dInq" data-dsec="inq"><div class="dtitle"><span class="dname">${ordBar(esc, 'Email inquiries')}<h3>Email inquiries</h3></span><span class="lab">Coming soon</span></div><p class="muted">Emails about a job will show here, matched to their JO. Replies go out only when you press Send.</p></section>`;
+  if ('inquiries' in r) parts.inq = `<section class="dcard soon" id="dInq" data-dsec="inq"><div class="dtitle"><span class="dname"><h3>Email inquiries</h3></span><span class="lab">Coming soon</span></div><p class="muted">Emails about a job will show here, matched to their JO. Replies go out only when you press Send.</p></section>`;
   h += `<div id="dsecs">${arrange(Object.keys(parts), D.ordOn ? readOrder(u) : null).map(id => parts[id]).join('')}</div>`;
   const miss = r.missing.filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u, true);
   if (r.locations) paintLoc(main, esc);
+  wireLayout(main, u);
   if (can.sales) { paintSales(main, esc); wireSales(main, esc); ensureSales().then(() => { if (live() && salesView() !== 'month') paintSales(main, esc); }); }
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
@@ -260,7 +270,7 @@ function inboxCard(ib, esc) {
     <div class="cmx">${esc(x.text)}${x.amount != null && x.kind === 'approval' ? '' : ''}</div>
     <div class="muted">${esc(x.from)} · ${x.via === 'account' ? 'portal account' : x.via === 'staff' ? 'marked in the back office' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : x.via === 'telegram' ? 'marked via Tessa' + (x.marked_by ? ' by ' + esc(x.marked_by) : '') + (x.how ? ' (' + esc(x.how.replace('_', ' ')) + ')' : '') : 'Track my order'}${x.version ? ' · quote v' + x.version : ''}${x.amount != null ? ' · ' + peso(x.amount) : ''}${x.status !== 'open' && x.handled_by ? ' · handled by ' + esc(x.handled_by) : ''}</div></div>
     ${x.status === 'open' ? `<button class="lnk cmok" data-id="${esc(x.id)}">Done</button>` : ''}</div>`;
-  return `<section class="dcard" id="dMsgs" data-dsec="msgs"><div class="dtitle"><span class="dname">${ordBar(esc, 'Client messages')}<h3>Client messages</h3></span><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · approvals and questions</span></div>
+  return `<section class="dcard" id="dMsgs" data-dsec="msgs"><div class="dtitle"><span class="dname"><h3>Client messages</h3></span><span class="lab">${open.length ? plural(open.length, 'new message') : 'All handled'} · approvals and questions</span></div>
     ${open.map(row).join('')}${done.length ? `<details class="cmold"><summary class="muted">Handled (${done.length})</summary>${done.map(row).join('')}</details>` : ''}
     <p class="muted dhint">The Telegram group gets each one too. Reply to the client yourself (phone / Viber / email); nothing is sent from here.</p></section>`;
 }
@@ -274,107 +284,43 @@ function wireInbox(main, esc) {
     sec.outerHTML = inboxCard(r.inbox, esc); wireInbox(main, esc);
   });
 }
-function wireOrder(main, u) {
+function wireLayout(main, u) {
+  if (!main || !u || u.role !== 'admin' || !window.OYPLayoutEdit) return;
   const box = main.querySelector('#dsecs');
-  if (!box || !u || u.role !== 'admin') return;
-  const secs = () => [...box.children].filter(s => s.dataset && s.dataset.dsec);
-  const paint = () => {
-    const all = secs();
-    all.forEach((s, i) => { const up = s.querySelector('[data-dup]'), dn = s.querySelector('[data-ddn]'); if (up) up.disabled = i === 0; if (dn) dn.disabled = i === all.length - 1; });
-    const rst = main.querySelector('#dOrdReset'); if (rst) rst.hidden = !readOrder(u);
-  };
-  const persist = () => { writeOrder(u, secs().map(s => s.dataset.dsec)); paint(); };
-  box.onclick = e => {
-    const b = e.target.closest('[data-dup],[data-ddn]'); if (!b || !box.contains(b)) return;
-    e.preventDefault();
-    const s = b.closest('[data-dsec]'); if (!s) return;
-    if (b.hasAttribute('data-dup')) { const p = s.previousElementSibling; if (p && p.dataset.dsec) box.insertBefore(s, p); }
-    else { const n = s.nextElementSibling; if (n && n.dataset.dsec) box.insertBefore(n, s); }
-    persist();
-  };
-  if (!box.dataset.wired) {
-    box.dataset.wired = '1';
-    box.addEventListener('pointerdown', e => {
-      const g = e.target.closest && e.target.closest('.dgrip'); if (!g || !box.contains(g) || g.closest('.lctile')) return;
-      if (e.button != null && e.button !== 0) return;
-      e.preventDefault();
-      const s = g.closest('[data-dsec]'); if (!s) return;
-      s.classList.add('dragging'); s.style.pointerEvents = 'none';
-      try { g.setPointerCapture(e.pointerId); } catch (_) {}
-      const move = ev => {
-        const el = document.elementFromPoint(ev.clientX, ev.clientY);
-        const over = el && el.closest && el.closest('[data-dsec]');
-        if (!over || over === s || !box.contains(over)) return;
-        const r = over.getBoundingClientRect();
-        const ref = ev.clientY > r.top + r.height / 2 ? over.nextSibling : over;
-        if (ref !== s) box.insertBefore(s, ref);
-      };
-      const up = () => {
-        s.classList.remove('dragging'); s.style.pointerEvents = '';
-        g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
-        persist();
-      };
-      g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
-    });
-  }
-  const rst = main.querySelector('#dOrdReset');
-  if (rst) rst.onclick = () => {
-    try { localStorage.removeItem(ordKey(u)); } catch (e) {}
-    arrange(secs().map(s => s.dataset.dsec), null).forEach(id => { const s = box.querySelector('[data-dsec="' + id + '"]'); if (s) box.appendChild(s); });
-    paint();
-  };
-  paint();
-}
-function wireLoc(main, esc, u) {
-  const sec = main.querySelector('[data-dsec="loc"]');
-  if (!sec || !u || u.role !== 'admin' || !D.loc) return;
-  const applyDom = () => {
-    const row = sec.querySelector('#locRow');
+  if (box) window.OYPLayoutEdit.drag(box, '[data-dsec]', 'y', () => {
+    writeOrder(u, [...box.children].filter(s => s.dataset && s.dataset.dsec).map(s => s.dataset.dsec));
+  }, '.lctile, .lx, .layloc, button, input, select, textarea, summary');
+  const row = main.querySelector('#locRow');
+  if (row && D.loc) window.OYPLayoutEdit.drag(row, '[data-lkey]', 'x', () => {
     const visible = [...row.querySelectorAll('[data-lkey]')].map(el => el.dataset.lkey);
     D.loc.order = arrangeList(D.loc.order, D.loc.order, visible);
-    saveLoc(u); paintLoc(main, esc);
-  };
-  sec.addEventListener('click', e => {
-    if (e.target.closest('#dLocReset')) {
-      try { localStorage.removeItem(locStoreKey(u)); } catch (err) {}
-      D.loc.order = D.loc.canon.slice(); D.loc.hide = new Set(); paintLoc(main, esc); return;
-    }
-    const show = e.target.closest('[data-lshow]');
-    if (show && sec.contains(show)) { D.loc.hide.delete(show.dataset.lshow); saveLoc(u); paintLoc(main, esc); return; }
-    const b = e.target.closest('[data-lup],[data-ldn],[data-lhide]');
-    if (!b || !sec.contains(b)) return;
-    e.preventDefault();
-    const t = b.closest('[data-lkey]'); if (!t) return;
-    const row = sec.querySelector('#locRow');
-    if (b.hasAttribute('data-lhide')) { D.loc.hide.add(t.dataset.lkey); saveLoc(u); paintLoc(main, esc); return; }
-    if (b.hasAttribute('data-lup')) { const p = t.previousElementSibling; if (p && p.dataset.lkey) row.insertBefore(t, p); }
-    else { const n = t.nextElementSibling; if (n && n.dataset.lkey) row.insertBefore(n, t); }
-    applyDom();
-  });
-  sec.addEventListener('pointerdown', e => {
-    const g = e.target.closest && e.target.closest('.lgrip');
-    if (!g || !sec.contains(g)) return;
-    if (e.button != null && e.button !== 0) return;
-    e.preventDefault(); e.stopPropagation();
-    const t = g.closest('[data-lkey]'); if (!t) return;
-    const row = sec.querySelector('#locRow');
-    t.classList.add('dragging'); t.style.pointerEvents = 'none';
-    try { g.setPointerCapture(e.pointerId); } catch (_) {}
-    const move = ev => {
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const over = el && el.closest && el.closest('[data-lkey]');
-      if (!over || over === t || !row.contains(over)) return;
-      const r = over.getBoundingClientRect();
-      const ref = ev.clientX > r.left + r.width / 2 ? over.nextSibling : over;
-      if (ref !== t) row.insertBefore(t, ref);
-    };
-    const up = () => {
-      t.classList.remove('dragging'); t.style.pointerEvents = '';
-      g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
-      applyDom();
-    };
-    g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
-  });
+    saveLoc(u);
+    paintLoc(main, window.OYP.esc);
+  }, '.lx');
+  const sec = main.querySelector('[data-dsec="loc"]');
+  if (sec && !sec.dataset.layhide) {
+    sec.dataset.layhide = '1';
+    sec.addEventListener('click', e => {
+      if (!editing()) return;
+      if (e.target.closest('#dLocReset')) {
+        try { localStorage.removeItem(locStoreKey(u)); } catch (err) {}
+        D.loc.order = D.loc.canon.slice(); D.loc.hide = new Set(); paintLoc(main, window.OYP.esc); return;
+      }
+      const show = e.target.closest('[data-lshow]');
+      if (show) { D.loc.hide.delete(show.dataset.lshow); saveLoc(u); paintLoc(main, window.OYP.esc); return; }
+      const hide = e.target.closest('[data-lhide]');
+      if (!hide) return;
+      const t = hide.closest('[data-lkey]'); if (!t) return;
+      D.loc.hide.add(t.dataset.lkey); saveLoc(u); paintLoc(main, window.OYP.esc);
+    });
+  }
+}
+function relayout() {
+  const main = document.getElementById('main');
+  if (!main || !D.user || !main.querySelector('#dsecs')) return;
+  if ((location.hash.match(/^#\/dashboard\/(\w+)/) || [])[1]) return;
+  if (D.loc) paintLoc(main, window.OYP.esc);
+  wireLayout(main, D.user);
 }
 
 /* ---------- drill-down lists (same list rows as To review; a JO opens in the To review card) ---------- */
@@ -515,8 +461,8 @@ function layoutLocState(list, u) {
   if (p) { order = arrangeList(canon, canon, p.order); p.hide.forEach(k => { if (canon.indexOf(k) >= 0 && hide.indexOf(k) < 0) hide.push(k); }); }
   return { canon, order, hide, byKey, custom: !!p };
 }
-// Settings › Layout is the only place the arrows show. The dashboard only reads the saved order.
-window.OYPDash = { render, layout: {
+// Settings › Layout turns editing on. While it is on, sections and tiles drag. The saved order applies either way.
+window.OYPDash = { render, relayout, layout: {
   sections: {
     labels: SEC_LABEL,
     list: u => arrange(SEC_ORDER.slice(), u && u.role === 'admin' ? readOrder(u) : null),
