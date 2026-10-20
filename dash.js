@@ -244,7 +244,7 @@ async function render(main, u, fresh) {
     parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname">${ordBar(esc, 'Consignment')}<h3>Consignment</h3></span><span class="csdash"><span class="lab">Items out · oldest first</span><a class="lnk" href="#/consignment">Open</a></span></div>${owedSlot}${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
       <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}${x.jo ? ' · JO ' + esc(x.jo) : ''}</span></td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
-      : `<p class="muted">${r.missing.includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
+      : `<p class="muted">${(r.missing || []).includes('Consignment') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
   }
 
   if (can.payments) {
@@ -256,7 +256,7 @@ async function render(main, u, fresh) {
 
   if ('inquiries' in r) parts.inq = `<section class="dcard soon" id="dInq" data-dsec="inq"><div class="dtitle"><span class="dname">${ordBar(esc, 'Email inquiries')}<h3>Email inquiries</h3></span><span class="lab">Coming soon</span></div><p class="muted">Emails about a job will show here, matched to their JO. Replies go out only when you press Send.</p></section>`;
   h += `<div id="dsecs">${arrange(Object.keys(parts), D.ordOn ? readOrder(u) : null).map(id => parts[id]).join('')}</div>`;
-  const miss = r.missing.filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
+  const miss = (r.missing || []).filter(t => !{ Settings: 1, Items: 1, Consignees: 1, Consignments: 1, ConsignmentItems: 1 }[t]); // Settings is optional. Items is inventory. Only a missing Consignment tab is a consignment warning.
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u, true);
