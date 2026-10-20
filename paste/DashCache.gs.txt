@@ -1,0 +1,245 @@
+PASTE INTO: a new script file named DashCache.
+
+No new OAuth scope. This uses CacheService, which the project already has. Do not add a scope. Do not paste this file over Dashboard.gs or DashboardDrill.gs. Those files stay as they are. This file stores their answers. It does not rebuild them.
+
+The page actions are `dashboard` and `dashDrill`. Each answer is stored per role (admin, production_manager, accounting, staff), because those roles do not see the same numbers. One person's answer is never served to another role. A failed answer is not stored. The stored text is the same JSON the page already receives. Nothing is added to it.
+
+An answer is kept for 15 minutes. A JO write, a payment write, or a consignment write drops every role's copy at once, so the next read rebuilds. The drop is a new generation key. Old copies are left to expire. CacheService cannot delete by prefix.
+
+CacheService does not skip Apps Script startup. A signed-in call still pays that startup. What it skips is reading the Sheet again inside that startup.
+
+Send these live files. They are not in the repo, so the lines below use the names on your JobSync hook (a, req, s.user). If your hook uses different names, use those.
+
+1. The file that contains the JobSync hook (`isJobAction_` / `handleJob_`). That is where `dashboard` and `dashDrill` are answered.
+2. The file that turns the POST into JSON and returns it to the browser (the `return` next to `handleAction_`). Often the same file.
+3. Dashboard.gs and DashboardDrill.gs. Nothing in them changes for this paste. The next paste (the 5-minute warmer) has to call the functions those files already have. Send them and that call will be filled in with their real names. Do not paste a guessed replacement over either file.
+
+What to change
+
+A. The dashboard line. Find the line that answers action `dashboard`. Keep the call on the right of `return`. Wrap it:
+
+    if (a === 'dashboard') return dashCacheRead_(s.user, 'dashboard', req, function () { return THE_CALL_ALREADY_ON_THAT_LINE; });
+
+B. The drill line. Same change for action `dashDrill`:
+
+    if (a === 'dashDrill') return dashCacheRead_(s.user, 'dashDrill', req, function () { return THE_CALL_ALREADY_ON_THAT_LINE; });
+
+`dashDrill` with `what` `jobs` or `job` is stored. Any other `what` is not stored and runs as it does today.
+
+C. One line where the JSON goes back to the browser, after `handleAction_` has returned and before that JSON is returned. Keep the return you already have. Add this line above it:
+
+    res = dashCacheNoteWrite_(req.action, res);
+
+If the answer is not in a variable named `res`, put the line on the value you already return. `dashCacheNoteWrite_` returns that same value, and drops the cache when the action is one of the writes listed in this file and the answer is `ok`.
+
+D. A write that does not go through that return. The scanner's `recordScan_`, and any Gmail or Telegram importer that writes JobOrders or Payments from a trigger, never reaches step C. At the end of each of those, after a successful write, add:
+
+    if (typeof dashCacheDrop_ === 'function') dashCacheDrop_();
+
+Send the function that does that write if you want the line placed on it. Do not add it to a read.
+
+Writes that drop the cache (only when the answer is ok): jobReviewSave, jobBulkLocation, contactSave, portalStepsSave, prodMove, prodAssign, prodSetTarget, prodTimer, prodSessionAdd, prodSessionVoid, portalMarkApproved, portalUnlockCost, invBulk, paySave, payConfirm, payReject, payQuoteSent, payQuoteDraft, consignSave, consignItem, consigneeSave, consignPay, consignSigned.
+
+Paste steps:
+1. In the staff Apps Script project, add a script named DashCache. Paste everything below COPY FROM HERE. Do not paste these instructions into the script.
+2. Make edits A, B, and C above. Save.
+3. Run `dashCacheSelfCheck` once from the editor. The log should show `ok true`, a cold time, a smaller warm time, and `builds 2`. That run only talks to CacheService. It does not read the Sheet.
+4. Deploy the web app the way you usually do (same deployment, new version).
+
+COPY FROM HERE
+
+/**
+ * CacheService for the dashboard and dashDrill answers, one copy per role.
+ * 15 minutes. A JO, payment, or consignment write bumps a generation key, so the next read rebuilds.
+ * No new OAuth scope. Does not replace Dashboard.gs or DashboardDrill.gs.
+ *
+ * Auth.gs (names from the JobSync hook; use yours if they differ):
+ *   if (a === 'dashboard') return dashCacheRead_(s.user, 'dashboard', req, function () { return THE_CALL_ALREADY_ON_THAT_LINE; });
+ *   if (a === 'dashDrill') return dashCacheRead_(s.user, 'dashDrill', req, function () { return THE_CALL_ALREADY_ON_THAT_LINE; });
+ *   res = dashCacheNoteWrite_(req.action, res); // the line before the JSON goes back to the browser
+ */
+var DASH_CACHE_TTL = 900;
+var DASH_CACHE_PART = 80000;
+var DASH_CACHE_PARTS = 8;
+var DASH_ROLES = { admin: 1, production_manager: 1, accounting: 1, staff: 1 };
+var DASH_WRITES = {
+  jobReviewSave: 1, jobBulkLocation: 1, contactSave: 1, portalStepsSave: 1,
+  prodMove: 1, prodAssign: 1, prodSetTarget: 1, prodTimer: 1, prodSessionAdd: 1, prodSessionVoid: 1,
+  portalMarkApproved: 1, portalUnlockCost: 1, invBulk: 1,
+  paySave: 1, payConfirm: 1, payReject: 1, payQuoteSent: 1, payQuoteDraft: 1,
+  consignSave: 1, consignItem: 1, consigneeSave: 1, consignPay: 1, consignSigned: 1
+};
+
+function dashCacheRead_(user, action, req, compute) {
+  if (!user || !DASH_ROLES[user.role]) return compute();
+  var spec = dashCacheSpec_(action, req);
+  if (!spec) return compute();
+  var hit = dashCacheGet_(user.role, spec);
+  if (hit) return hit;
+  var lock = null, locked = false;
+  try { lock = LockService.getScriptLock(); locked = lock.tryLock(8000); } catch (e0) { locked = false; }
+  try {
+    hit = dashCacheGet_(user.role, spec);
+    if (hit) return hit;
+    var fresh = compute();
+    if (fresh && fresh.ok) dashCachePut_(user.role, spec, fresh);
+    return fresh;
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch (e1) {} }
+  }
+}
+
+function dashCacheNoteWrite_(action, res) {
+  if (res && res.ok && DASH_WRITES[String(action || '')]) dashCacheDrop_();
+  return res;
+}
+
+function dashCacheDrop_() {
+  try { CacheService.getScriptCache().put('oypDashGen', String(Date.now()), 21600); } catch (e) {}
+  if (typeof dashPurgeEdge_ === 'function') { try { dashPurgeEdge_(); } catch (e2) {} }
+}
+
+function dashCacheSpec_(action, req) {
+  action = String(action || '');
+  if (action === 'dashboard') return { action: 'dashboard', what: '', jo: '' };
+  if (action !== 'dashDrill') return null;
+  var what = String(req && req.what || '');
+  if (what === 'jobs') return { action: 'dashDrill', what: 'jobs', jo: '' };
+  if (what !== 'job') return null;
+  var jo = String(req && req.jo || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 24);
+  if (!jo) return null;
+  return { action: 'dashDrill', what: 'job', jo: jo };
+}
+
+function dashGen_(create) {
+  var cache = CacheService.getScriptCache();
+  var g = cache.get('oypDashGen');
+  if (g) return g;
+  if (!create) return '';
+  g = String(Date.now());
+  try { cache.put('oypDashGen', g, 21600); } catch (e) { return ''; }
+  return g;
+}
+
+function dashHead_(gen, role, spec) {
+  return ['d1', gen, role, spec.action, spec.what || '-', spec.jo || '-'].join(':');
+}
+
+function dashBytes_(s) {
+  try { return Utilities.newBlob(String(s)).getBytes().length; } catch (e) { return String(s).length; }
+}
+
+function dashPieces_(s) {
+  var out = [], i = 0, s = String(s);
+  while (i < s.length && out.length < DASH_CACHE_PARTS) {
+    var end = Math.min(s.length, i + DASH_CACHE_PART);
+    var piece = s.slice(i, end);
+    while (piece.length > 1000 && dashBytes_(piece) > 90000) piece = piece.slice(0, Math.floor(piece.length * 0.9));
+    out.push(piece);
+    i += piece.length;
+  }
+  if (i < s.length) return null;
+  return out;
+}
+
+function dashCachePut_(role, spec, value) {
+  var gen = dashGen_(true);
+  if (!gen) return false;
+  var text;
+  try { text = JSON.stringify(value); } catch (e0) { return false; }
+  var parts = dashPieces_(text);
+  if (!parts) return false;
+  var cache = CacheService.getScriptCache(), head = dashHead_(gen, role, spec), i;
+  try {
+    cache.put(head, JSON.stringify({ n: parts.length }), DASH_CACHE_TTL);
+    for (i = 0; i < parts.length; i++) cache.put(head + ':p' + i, parts[i], DASH_CACHE_TTL);
+    dashRemember_(gen, head);
+  } catch (e1) { return false; }
+  return true;
+}
+
+function dashCacheGet_(role, spec) {
+  var gen = dashGen_(false);
+  if (!gen) return null;
+  var cache = CacheService.getScriptCache(), head = dashHead_(gen, role, spec), meta, info, parts = [], i, raw;
+  try { meta = cache.get(head); } catch (e0) { return null; }
+  if (!meta) return null;
+  try { info = JSON.parse(meta); } catch (e1) { return null; }
+  if (!info || !info.n || info.n > DASH_CACHE_PARTS) return null;
+  for (i = 0; i < info.n; i++) {
+    try { raw = cache.get(head + ':p' + i); } catch (e2) { return null; }
+    if (raw == null) return null;
+    parts.push(raw);
+  }
+  try { return JSON.parse(parts.join('')); } catch (e3) { return null; }
+}
+
+function dashCacheHas_(role, action, req) {
+  var spec = dashCacheSpec_(action, req);
+  return !!(spec && dashCacheGet_(role, spec));
+}
+
+function dashRemember_(gen, head) {
+  var cache = CacheService.getScriptCache(), key = 'd1:' + gen + ':idx', list = [];
+  try { list = JSON.parse(cache.get(key) || '[]'); } catch (e) { list = []; }
+  if (!list || list.indexOf(head) < 0) {
+    if (!list) list = [];
+    list.push(head);
+  }
+  if (list.length > 40) list = list.slice(list.length - 40);
+  try { cache.put(key, JSON.stringify(list), 21600); } catch (e2) {}
+}
+
+/** Re-puts every copy still in the cache so the 15 minutes starts again. Does not read the Sheet. */
+function dashCacheRefresh_() {
+  var gen = dashGen_(false);
+  if (!gen) return 0;
+  var cache = CacheService.getScriptCache(), key = 'd1:' + gen + ':idx', list = [], n = 0, i, j, head, meta, info, parts, raw;
+  try { list = JSON.parse(cache.get(key) || '[]'); } catch (e) { list = []; }
+  if (!list) return 0;
+  for (i = 0; i < list.length; i++) {
+    head = list[i];
+    try { meta = cache.get(head); } catch (e1) { continue; }
+    if (!meta) continue;
+    try { info = JSON.parse(meta); } catch (e2) { continue; }
+    if (!info || !info.n) continue;
+    parts = [];
+    for (j = 0; j < info.n; j++) {
+      try { raw = cache.get(head + ':p' + j); } catch (e3) { raw = null; }
+      if (raw == null) { parts = null; break; }
+      parts.push(raw);
+    }
+    if (!parts) continue;
+    try {
+      cache.put(head, meta, DASH_CACHE_TTL);
+      for (j = 0; j < parts.length; j++) cache.put(head + ':p' + j, parts[j], DASH_CACHE_TTL);
+      n++;
+    } catch (e4) {}
+  }
+  try { cache.put('oypDashGen', gen, 21600); } catch (e5) {}
+  try { cache.put(key, JSON.stringify(list), 21600); } catch (e6) {}
+  return n;
+}
+
+/** Editor only. Writes a tiny answer, reads it, drops it, reads it again. Does not touch the Sheet. */
+function dashCacheSelfCheck() {
+  var user = { username: 'selfcheck', role: 'admin' }, builds = 0;
+  function build() {
+    builds++;
+    var t = Date.now();
+    while (Date.now() - t < 80) {}
+    return { ok: true, marker: 'selfcheck', n: builds };
+  }
+  dashCacheDrop_();
+  var t0 = Date.now();
+  var cold = dashCacheRead_(user, 'dashboard', { action: 'dashboard' }, build);
+  var coldMs = Date.now() - t0;
+  var t1 = Date.now();
+  var warm = dashCacheRead_(user, 'dashboard', { action: 'dashboard' }, build);
+  var warmMs = Date.now() - t1;
+  dashCacheNoteWrite_('paySave', { ok: true });
+  var again = dashCacheRead_(user, 'dashboard', { action: 'dashboard' }, build);
+  var ok = !!(cold && cold.ok && warm && warm.marker === 'selfcheck' && warm.n === 1 && again && again.n === 2 && builds === 2);
+  Logger.log(JSON.stringify({ ok: ok, coldMs: coldMs, warmMs: warmMs, builds: builds }));
+  return { ok: ok, coldMs: coldMs, warmMs: warmMs, builds: builds };
+}
