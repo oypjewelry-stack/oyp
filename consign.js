@@ -1,7 +1,7 @@
 /* OYP back office: Consignment (#/consignment). Pieces lent to someone outside the shop.
    Admin and production manager. Agreed value, owed, paid, and balance are executive-only (the server omits them for everyone else).
    A sold piece is owed by the consignee. Record payment stores paid_amount and paid_at on the line (Consignment.gs consignPay).
-   Server: Consignment.gs (consignList, consignSearch, consignSave, consignItem, consigneeSave, consignPay). Run setupConsignment once. */
+   Server: Consignment.gs, one tab named Consignment, one row per piece. Run setupConsignment once. Names in the form are the distinct consignee names on that tab. */
 (() => {
 'use strict';
 const PASTE_NOTE = 'This page needs the Consignment paste in Apps Script (see the instructions).';
@@ -122,7 +122,7 @@ function drawList() {
     ${head()}
     ${setupWarn()}
     ${tabs()}
-    ${open.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Consignee</span></th><th><span class="lab">Date out</span></th><th><span class="lab">Items</span></th><th><span class="lab">Days out</span></th><th><span class="lab">Overdue</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">${r.setup === false ? 'Nothing to show until the tabs exist.' : 'No open consignment sheets.'}</p>`}
+    ${open.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Consignee</span></th><th><span class="lab">Date out</span></th><th><span class="lab">Items</span></th><th><span class="lab">Days out</span></th><th><span class="lab">Overdue</span></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">${r.setup === false ? 'Nothing to show until the Consignment tab exists.' : 'No open consignment sheets.'}</p>`}
     ${loose.length ? `<div class="csloose"><p class="muted">Marked consigned, not on a sheet.</p><div class="tw"><table class="dt"><tbody>${loose.map(j => `<tr><td><b class="cn">${esc(j.jo || j.item_id || '—')}</b><br><span class="muted">${esc(j.description || '')}</span></td><td><button type="button" class="lnk" data-loose="${esc(j.jo || '')}" data-item="${esc(j.item_id || '')}" data-desc="${esc(j.description || '')}">CONSIGN</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}
     ${closed.length ? `<button type="button" class="cstog" id="csClosed">${S.showClosed ? 'Hide closed' : 'Show closed (' + closed.length + ')'}</button>` : ''}
     ${S.showClosed && closed.length ? `<div class="tw"><table class="dt"><tbody>${closedRows}</tbody></table></div>` : ''}
@@ -138,29 +138,32 @@ function sheetRow(s, esc) {
 }
 function drawPeople() {
   const { esc } = window.OYP, r = S.r, ed = (r.consignees || []).find(c => c.consignee_id === S.edit);
-  const v = ed || { name: '', phone: '', notes: '' };
   const rows = (r.consignees || []).map(c => {
     const money = moneyBits(c);
-    return `<tr><td><b class="cn">${esc(c.name)}</b>${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td><td>${esc(c.phone || '—')}</td><td>${esc(c.notes || '—')}</td>
+    return `<tr><td><b class="cn">${esc(c.name)}</b>${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td><td>${esc(c.phone || '—')}</td>
     <td><button type="button" class="lnk" data-edit="${esc(c.consignee_id)}">Edit</button></td></tr>`;
   }).join('');
   return `<div class="cs">
     ${head()}
     ${setupWarn()}
     ${tabs()}
-    <div class="addrow">
-      <label><span class="lab">Name</span><input id="cgName" value="${esc(v.name)}" maxlength="80" autocomplete="off"></label>
-      <label><span class="lab">Phone</span><input id="cgPhone" value="${esc(v.phone || '')}" maxlength="40" autocomplete="off"></label>
-      <label class="grow"><span class="lab">Notes</span><input id="cgNotes" value="${esc(v.notes || '')}" maxlength="400" autocomplete="off"></label>
+    <p class="muted">Names come from the Consignment tab. On a new sheet, a name you have used before fills in the phone.</p>
+    ${ed ? `<div class="addrow">
+      <label><span class="lab">Name</span><input id="cgName" value="${esc(ed.name)}" maxlength="80" autocomplete="off"></label>
+      <label><span class="lab">Phone</span><input id="cgPhone" value="${esc(ed.phone || '')}" maxlength="40" autocomplete="off"></label>
       <button type="button" class="pill sm" id="cgSave">SAVE</button>
-      ${ed ? '<button type="button" class="lnk" id="cgCancel">Cancel</button>' : ''}
-    </div>
-    ${(r.consignees || []).length ? `<table><thead><tr><th><span class="lab">Name</span></th><th><span class="lab">Phone</span></th><th><span class="lab">Notes</span></th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No consignees yet. Add a name above. Consignees are kept.</p>'}
+      <button type="button" class="lnk" id="cgCancel">Cancel</button>
+    </div>` : ''}
+    ${(r.consignees || []).length ? `<table><thead><tr><th><span class="lab">Name</span></th><th><span class="lab">Phone</span></th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No consignees yet. A name is kept when you consign a piece.</p>'}
   </div>`;
+}
+function personByName(s) {
+  const n = String(s || '').trim().toLowerCase();
+  if (!n || !S.r) return null;
+  return (S.r.consignees || []).find(p => String(p.name || '').trim().toLowerCase() === n) || null;
 }
 function drawNew() {
   const { esc } = window.OYP, d = S.draft || blankDraft(), people = (S.r.consignees || []);
-  const showNew = !people.length || d.consignee_id === '__new';
   const hits = (S.hits || []).map((h, i) => `<button type="button" class="cshit" data-hit="${i}"><b>${esc(h.jo || h.item_id || 'Item')}</b> ${esc(h.description || '')}
     <span class="muted">${esc(h.location || '')}${h.blocked ? ' · ' + esc(h.blocked) : ''}</span></button>`).join('');
   const lines = d.items.map((it, i) => `<tr><td><b class="cn">${esc(it.jo || it.item_id || 'Item')}</b><br><span class="muted">${esc(it.description || '')}</span></td>
@@ -171,15 +174,10 @@ function drawNew() {
     <div class="dhead cshead"><h2>Consign</h2></div>
     <p class="muted">Lend a piece to someone outside the shop. Due back defaults to ${esc(dueHint())}.</p>
     <div class="csnew">
-      <div class="fsec"><span class="lab">Consignee</span>
-        <select id="csWho">${people.map(p => `<option value="${esc(p.consignee_id)}"${p.consignee_id === d.consignee_id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}
-        <option value="__new"${showNew ? ' selected' : ''}>Add someone new</option></select></div>
-      <div id="csNewWho" class="${showNew ? '' : 'hidden'}">
-        <div class="addrow">
-          <label><span class="lab">Name</span><input id="csName" value="${esc(d.name)}" maxlength="80" autocomplete="off"></label>
-          <label><span class="lab">Phone</span><input id="csPhone" value="${esc(d.phone)}" maxlength="40" autocomplete="off"></label>
-          <label class="grow"><span class="lab">Notes</span><input id="csPNotes" value="${esc(d.notes)}" maxlength="400" autocomplete="off"></label>
-        </div>
+      <div class="addrow">
+        <label><span class="lab">Consignee</span><input id="csName" list="csPeople" value="${esc(d.name)}" maxlength="80" autocomplete="off" placeholder="Name"></label>
+        <datalist id="csPeople">${people.map(p => `<option value="${esc(p.name)}"></option>`).join('')}</datalist>
+        <label><span class="lab">Phone</span><input id="csPhone" value="${esc(d.phone)}" maxlength="40" autocomplete="off" placeholder="Filled in for a known name"></label>
       </div>
       <div class="addrow">
         <label><span class="lab">Due back (optional)</span><input id="csDue" type="date" value="${esc(d.due)}"></label>
@@ -262,7 +260,7 @@ function head() {
 function setupWarn() {
   if (!S.r || S.r.setup !== false) return '';
   const miss = (S.r.missing || []).join(', ');
-  return `<div class="cswarn">Almost ready: run <b>setupConsignment</b> once in Apps Script (see the instructions).${miss ? ' Missing: ' + miss + '.' : ''}</div>`;
+  return `<div class="cswarn">Almost ready: run <b>setupConsignment</b> once in Apps Script. It adds the Consignment tab when that tab is missing.${miss ? ' Missing: ' + miss + '.' : ''}</div>`;
 }
 function noteHtml(where, esc) {
   const n = S.note && S.note.where === where ? S.note : null;
@@ -280,10 +278,8 @@ function camHtml() {
 
 function readDraft() {
   if (S.mode !== 'new' || !S.draft) return;
-  const who = $('csWho'); if (who) S.draft.consignee_id = who.value;
   const name = $('csName'); if (name) S.draft.name = name.value;
   const phone = $('csPhone'); if (phone) S.draft.phone = phone.value;
-  const notes = $('csPNotes'); if (notes) S.draft.notes = notes.value;
   const due = $('csDue'); if (due) S.draft.due = due.value;
   const note = $('csNote'); if (note) S.draft.sheetNotes = note.value;
   const q = $('csQ'); if (q) S.q = q.value;
@@ -308,7 +304,7 @@ function wire(main) {
     if (S.mode === 'print') { S.mode = 'sheet'; draw(main); return; }
     S.mode = 'list'; S.pay = null; document.documentElement.classList.remove('cs-onprint'); draw(main);
   };
-  const who = $('csWho'); if (who) who.onchange = () => { readDraft(); const box = $('csNewWho'); if (box) box.classList.toggle('hidden', who.value !== '__new'); };
+  const nm = $('csName'); if (nm) nm.oninput = () => { readDraft(); const p = personByName(nm.value); if (p && $('csPhone')) { S.draft.phone = p.phone || ''; $('csPhone').value = S.draft.phone; } };
   const q = $('csQ'); if (q) { q.oninput = () => { S.q = q.value; clearNote('add'); clearTimeout(qTimer); qTimer = setTimeout(() => search(main), 280); }; q.onkeydown = e => onScanKey(e, main, 'add', q); }
   main.querySelectorAll('[data-hit]').forEach(b => b.onclick = () => addHit(main, Number(b.dataset.hit)));
   main.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { readDraft(); S.draft.items.splice(Number(b.dataset.rm), 1); draw(main); });
@@ -373,12 +369,8 @@ async function saveSheet(main) {
   readDraft();
   const d = S.draft;
   if (!d.items.length) return window.OYP.toast('Add at least one piece');
-  const payload = { due_date: d.due || '', notes: d.sheetNotes || '', items: d.items.map(it => ({ jo: it.jo || '', item_id: it.item_id || '', description: it.description || '', value: prices() ? it.value : '' })) };
-  if (d.consignee_id && d.consignee_id !== '__new') payload.consignee_id = d.consignee_id;
-  else {
-    if (!(d.name || '').trim()) { window.OYP.toast('Type the consignee\'s name'); if ($('csName')) $('csName').focus(); return; }
-    payload.new_consignee = { name: d.name, phone: d.phone || '', notes: d.notes || '' };
-  }
+  if (!(d.name || '').trim()) { window.OYP.toast('Type the consignee\'s name'); if ($('csName')) $('csName').focus(); return; }
+  const payload = { consignee_name: d.name.trim(), consignee_phone: d.phone || '', due_date: d.due || '', notes: d.sheetNotes || '', items: d.items.map(it => ({ jo: it.jo || '', item_id: it.item_id || '', description: it.description || '', value: prices() ? it.value : '' })) };
   S.busy = true;
   const r = await window.OYP.call('consignSave', payload);
   S.busy = false;
