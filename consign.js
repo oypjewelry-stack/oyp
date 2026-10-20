@@ -11,9 +11,33 @@ const day = d => { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).
 const dayLong = d => { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).split('-').map(Number); return MON[m - 1] + ' ' + dd + ', ' + y; };
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 const addD = (day0, n) => { const d = new Date(String(day0).slice(0, 10) + 'T00:00:00Z'); if (isNaN(d.getTime())) return ''; d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const joOf = s => { const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})/); return m ? m[1] + '-' + m[2] : ''; };
+// JO on a tag or typed by hand: 26-001, JO 26-001, 26 001, 26-287B. The letter is the version and stays with the number.
+function joParse(s) {
+  const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s*([A-Z])(?![A-Z0-9]))?/);
+  if (!m) return null;
+  return { key: m[1] + '-' + m[2], version: m[3] || '', text: m[1] + '-' + m[2] + (m[3] || '') };
+}
+const joOf = s => { const p = joParse(s); return p ? p.text : ''; };
+function scanSpec(raw) {
+  const s = String(raw || '').trim().replace(/\s+/g, ' ');
+  if (!s) return { q: '', jo: null, exact: false };
+  const p = joParse(s);
+  if (!p) return { q: s, jo: null, exact: !/\s/.test(s) };
+  const compact = s.toUpperCase().replace(/^JO/, '').replace(/[\s\-.,\/]/g, '');
+  const expect = p.key.replace('-', '') + p.version;
+  if (compact === expect) return { q: p.text, jo: p, exact: true };
+  return { q: s, jo: p, exact: false };
+}
+function samePiece(a, b) {
+  const ak = joParse(a && a.jo), bk = joParse(b && b.jo);
+  if (ak && bk && ak.key === bk.key) return true;
+  const ai = String(a && a.item_id || '').toLowerCase(), bi = String(b && b.item_id || '').toLowerCase();
+  return !!(ai && bi && ai === bi && !ak && !bk);
+}
 const $ = id => document.getElementById(id);
-const S = { r: null, mode: 'list', tab: 'sheets', id: '', showClosed: false, draft: null, q: '', hits: [], scan: null, edit: '', pay: null, busy: false, stream: null, raf: 0 };
+const S = { r: null, mode: 'list', tab: 'sheets', id: '', showClosed: false, draft: null, q: '', hits: [], scan: null, edit: '', pay: null, busy: false, stream: null, raf: 0, markAs: 'returned', note: null };
+const scanQueue = [];
+let scanBusy = false, qTimer = 0;
 let camGen = 0, U = null;
 
 function prices() { return !!(S.r && S.r.prices); }
@@ -162,8 +186,9 @@ function drawNew() {
         <label class="grow"><span class="lab">Note on the sheet</span><input id="csNote" value="${esc(d.sheetNotes)}" maxlength="400" autocomplete="off"></label>
       </div>
       <div class="fsec"><span class="lab">Add a piece</span>
-        <div class="csacts"><input id="csQ" class="rvq" style="flex:1;margin:0" placeholder="JO number, item id, or description" value="${esc(S.q)}" autocomplete="off">
+        <div class="csacts"><input id="csQ" class="rvq" style="flex:1;margin:0" placeholder="Scan or type a JO, item, or description" value="${esc(S.q)}" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="JO or item">
         <button type="button" class="pill sm outline" id="csScan">SCAN</button></div>
+        ${noteHtml('add', esc)}
         ${hits ? `<div class="cshits" id="csHits">${hits}</div>` : '<div id="csHits"></div>'}
       </div>
       ${d.items.length ? `<table class="dt"><thead><tr><th><span class="lab">Piece</span></th>${prices() ? '<th><span class="lab">Agreed value</span></th>' : ''}<th></th></tr></thead><tbody>${lines}</tbody></table>` : '<p class="muted">No pieces yet. Search, or scan a JO or item tag.</p>'}
@@ -204,8 +229,9 @@ function drawSheet(printing) {
     <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><button type="button" class="pill sm" id="csPrint">PRINT</button></div>
     <p class="muted cs-noprint">${esc(s.consignee || '')} · out ${esc(day(s.date_out))}${money ? ' · ' + esc(money) : ''}${s.overdue ? ' · overdue' : ''}${s.status === 'closed' ? ' · closed' : ''}</p>
     ${sheet}
-    ${open ? `<div class="csacts cs-noprint"><input id="csBackCode" class="rvq" style="flex:1;margin:0" placeholder="Scan or type a JO or item to return" autocomplete="off">
-      <button type="button" class="pill sm outline" id="csScan">SCAN</button><button type="button" class="pill sm" id="csBackGo">RETURN</button></div>` : ''}
+    ${open ? `<div class="csacts cs-noprint"><input id="csBackCode" class="rvq" style="flex:1;margin:0" placeholder="Scan or type a JO or item" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="JO or item to return or mark sold">
+      <div class="csmode" role="tablist" aria-label="Return or sold"><button type="button" data-mark="returned" class="${S.markAs === 'sold' ? '' : 'on'}">Return</button><span aria-hidden="true">·</span><button type="button" data-mark="sold" class="${S.markAs === 'sold' ? 'on' : ''}">Sold</button></div>
+      <button type="button" class="pill sm outline" id="csScan">SCAN</button><button type="button" class="pill sm" id="csBackGo">${S.markAs === 'sold' ? 'SOLD' : 'RETURN'}</button></div>${noteHtml('mark', esc)}` : ''}
     ${owes ? `<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csPaySheet">Record payment</button></div>` : ''}
     ${S.pay && S.pay.consignment_id === s.consignment_id ? payForm(s) : ''}
   </div>`;
@@ -236,6 +262,10 @@ function setupWarn() {
   if (!S.r || S.r.setup !== false) return '';
   const miss = (S.r.missing || []).join(', ');
   return `<div class="cswarn">Almost ready: run <b>setupConsignment</b> once in Apps Script (see the instructions).${miss ? ' Missing: ' + miss + '.' : ''}</div>`;
+}
+function noteHtml(where, esc) {
+  const n = S.note && S.note.where === where ? S.note : null;
+  return `<p class="csnote${n ? ' ' + n.kind : ''}" id="csNote" role="status">${n ? esc(n.text) : ''}</p>`;
 }
 function tabs() {
   return `<div class="seg csseg" role="tablist">${[['sheets', 'Sheets'], ['people', 'Consignees']].map(([k, l]) => `<button type="button" data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -278,7 +308,7 @@ function wire(main) {
     S.mode = 'list'; S.pay = null; document.documentElement.classList.remove('cs-onprint'); draw(main);
   };
   const who = $('csWho'); if (who) who.onchange = () => { readDraft(); const box = $('csNewWho'); if (box) box.classList.toggle('hidden', who.value !== '__new'); };
-  const q = $('csQ'); if (q) { let t = 0; q.oninput = () => { S.q = q.value; clearTimeout(t); t = setTimeout(() => search(main), 280); }; q.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); search(main); } }; }
+  const q = $('csQ'); if (q) { q.oninput = () => { S.q = q.value; clearNote('add'); clearTimeout(qTimer); qTimer = setTimeout(() => search(main), 280); }; q.onkeydown = e => onScanKey(e, main, 'add', q); }
   main.querySelectorAll('[data-hit]').forEach(b => b.onclick = () => addHit(main, Number(b.dataset.hit)));
   main.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { readDraft(); S.draft.items.splice(Number(b.dataset.rm), 1); draw(main); });
   const save = $('csSave'); if (save) save.onclick = () => saveSheet(main);
@@ -291,10 +321,13 @@ function wire(main) {
   const ps = $('csPaySheet'); if (ps) ps.onclick = () => openPay(main, '');
   const pc = $('csPayCancel'); if (pc) pc.onclick = () => { S.pay = null; draw(main); };
   const pg = $('csPaySave'); if (pg) pg.onclick = () => savePay(main);
-  const bg = $('csBackGo'); if (bg) bg.onclick = () => returnCode(main, ($('csBackCode') && $('csBackCode').value) || '');
-  const code = $('csBackCode'); if (code) code.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); returnCode(main, code.value); } };
+  const bg = $('csBackGo'); if (bg) bg.onclick = () => { const code = $('csBackCode'); const v = (code && code.value) || ''; if (code) code.value = ''; pushScan(main, 'mark', v); };
+  const code = $('csBackCode'); if (code) { code.oninput = () => clearNote('mark'); code.onkeydown = e => onScanKey(e, main, 'mark', code); }
+  main.querySelectorAll('[data-mark]').forEach(b => b.onclick = () => { const pending = ($('csBackCode') && $('csBackCode').value) || ''; S.markAs = b.dataset.mark === 'sold' ? 'sold' : 'returned'; draw(main); const el = $('csBackCode'); if (el) { if (pending) el.value = pending; el.focus(); } });
   const stop = $('csCamStop'); if (stop) stop.onclick = () => { S.scan = null; stopCam(); draw(main); };
   const use = $('csCamUse'); if (use) use.onclick = () => { const v = ($('csCamCode') && $('csCamCode').value || '').trim(); if (!v) return $('csCamCode') && $('csCamCode').focus(); finishScan(main, v); };
+  const cam = $('csCamCode'); if (cam) cam.onkeydown = e => { if (!isEnter(e)) return; e.preventDefault(); const v = cam.value.trim(); if (!v) return cam.focus(); finishScan(main, v); };
+  focusScan();
 }
 
 async function savePerson(main) {
@@ -323,14 +356,16 @@ async function search(main) {
   $('csHits').querySelectorAll('[data-hit]').forEach(b => b.onclick = () => addHit(main, Number(b.dataset.hit)));
 }
 function addHit(main, i) {
-  const h = (S.hits || [])[i]; if (!h) return;
-  if (h.blocked) return window.OYP.toast(h.blocked);
+  const h = (S.hits || [])[i]; if (!h || S.mode !== 'new' || !S.draft) return;
+  if (h.blocked) { S.hits = []; setNote('dup', h.blocked, 'add'); beep('dup'); if ($('csQ')) $('csQ').value = ''; S.q = ''; return paintScan(main, 'csQ'); }
   readDraft();
-  const same = S.draft.items.some(it => (h.jo && it.jo === h.jo) || (h.item_id && it.item_id && it.item_id === h.item_id && !h.jo && !it.jo));
-  if (same) return window.OYP.toast('Already on this sheet');
+  if (onDraft(h)) { setNote('dup', 'Already on this sheet · ' + (h.jo || h.item_id || 'that piece'), 'add'); beep('dup'); if ($('csQ')) $('csQ').value = ''; S.q = ''; return paintScan(main, 'csQ'); }
   S.draft.items.push({ jo: h.jo || '', item_id: h.item_id || '', description: h.description || '', value: '' });
   S.q = ''; S.hits = [];
-  draw(main);
+  if ($('csQ')) $('csQ').value = '';
+  setNote('ok', addedText(h), 'add');
+  beep('ok');
+  paintScan(main, 'csQ');
 }
 async function saveSheet(main) {
   if (S.busy) return;
@@ -394,18 +429,144 @@ async function savePay(main) {
   window.OYP.toast('Payment recorded');
   await reload(main);
 }
-async function returnCode(main, code) {
-  code = String(code || '').trim();
-  if (!code) return window.OYP.toast('Type or scan a JO or item number');
-  if (S.busy) return;
-  if (!confirm('Mark the matching piece returned?')) return;
-  S.busy = true;
-  const r = await window.OYP.call('consignItem', { code: code, status: 'returned', consignment_id: S.id || '' });
-  S.busy = false;
-  if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'No matching piece out');
-  window.OYP.toast('Marked returned');
-  if (r.consignment_id) { S.mode = 'sheet'; S.id = r.consignment_id; }
-  await reload(main);
+function isEnter(e) { return e.key === 'Enter' || e.key === 'NumpadEnter'; }
+function onScanKey(e, main, kind, input) {
+  if (!isEnter(e)) return;
+  e.preventDefault();
+  clearTimeout(qTimer);
+  const v = input.value;
+  input.value = '';
+  if (kind === 'add') S.q = '';
+  pushScan(main, kind, v);
+}
+function focusScan() {
+  if (S.scan) { if ($('csCamCode')) $('csCamCode').focus(); return; }
+  if (S.pay) return;
+  const el = S.mode === 'new' ? $('csQ') : (S.mode === 'sheet' ? $('csBackCode') : null);
+  if (el) el.focus();
+}
+function setNote(kind, text, where) { S.note = { kind, text, where }; }
+function clearNote(where) {
+  if (!S.note || S.note.where !== where) return;
+  S.note = null;
+  const n = $('csNote'); if (n) { n.textContent = ''; n.className = 'csnote'; }
+}
+function addedText(h) { return 'Added ' + (h.jo || h.item_id || 'piece') + (h.description ? ' · ' + h.description : ''); }
+function onDraft(h) { return !!(S.draft && (S.draft.items || []).some(it => samePiece(it, h))); }
+function beep(kind) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = beep.ctx || (beep.ctx = new AC());
+    if (ctx.state === 'suspended') ctx.resume();
+    const tone = (freq, at, dur) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = freq; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.05, at + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      o.start(at); o.stop(at + dur + 0.02);
+    };
+    const t = ctx.currentTime;
+    if (kind === 'ok') tone(880, t, 0.09);
+    else if (kind === 'dup') { tone(520, t, 0.07); tone(520, t + 0.11, 0.07); }
+    else tone(196, t, 0.16);
+  } catch (e) {}
+}
+function flash(el) {
+  if (!el || !S.note) return;
+  el.classList.add('csflash', S.note.kind);
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => { el.classList.remove('csflash', 'ok', 'dup', 'bad'); }, 700);
+}
+function paintScan(main, id) {
+  if (S.mode === 'new') readDraft();
+  const pending = ($(id) && $(id).value) || '';
+  if (id === 'csQ') S.q = '';
+  draw(main);
+  const el = $(id);
+  if (!el) return;
+  if (pending) { el.value = pending; if (id === 'csQ') S.q = pending; }
+  el.focus();
+  try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {}
+  flash(el);
+}
+function chooseHit(hits, spec) {
+  const list = hits || [];
+  if (spec.jo) {
+    const exact = list.filter(h => { const p = joParse(h.jo || ''); return p && p.key === spec.jo.key; });
+    if (exact.length === 1) return { hit: exact[0] };
+    if (exact.length > 1) return { many: true, hits: exact };
+    return { none: true };
+  }
+  if (spec.exact) {
+    const item = list.filter(h => h.item_id && String(h.item_id).toLowerCase() === spec.q.toLowerCase());
+    if (item.length === 1) return { hit: item[0] };
+    if (item.length > 1) return { many: true, hits: item };
+  }
+  if (list.length === 1) return { hit: list[0] };
+  if (!list.length) return { none: true };
+  return { many: true, hits: list };
+}
+function pushScan(main, kind, raw) {
+  const code = String(raw || '').trim();
+  if (!code) { setNote('bad', 'Type or scan a JO or item number', kind === 'mark' ? 'mark' : 'add'); beep('bad'); paintScan(main, kind === 'mark' ? 'csBackCode' : 'csQ'); return; }
+  scanQueue.push({ kind, code, status: S.markAs === 'sold' ? 'sold' : 'returned' });
+  pumpScan(main);
+}
+async function pumpScan(main) {
+  if (scanBusy) return;
+  scanBusy = true;
+  while (scanQueue.length) {
+    const job = scanQueue.shift();
+    if (job.kind === 'mark') await commitMark(main, job.code, job.status);
+    else await commitAdd(main, job.code);
+  }
+  scanBusy = false;
+  focusScan();
+}
+async function commitAdd(main, raw) {
+  const spec = scanSpec(raw);
+  if (!spec.q || (spec.q.length < 2 && !spec.jo)) { setNote('bad', 'Type or scan a JO or item number', 'add'); beep('bad'); paintScan(main, 'csQ'); return; }
+  const live = window.OYP.here();
+  const r = await window.OYP.call('consignSearch', { q: spec.q });
+  if (!live() || S.mode !== 'new' || !S.draft) return;
+  if (!r || !r.ok) { setNote('bad', (r && r.error) || 'Could not search', 'add'); beep('bad'); paintScan(main, 'csQ'); return; }
+  const choice = chooseHit(r.hits || [], spec);
+  if (choice.none) { S.hits = []; setNote('bad', 'Nothing matches' + (spec.jo ? ' ' + spec.jo.text : ''), 'add'); beep('bad'); }
+  else if (choice.many) { S.hits = choice.hits || r.hits || []; setNote('dup', 'More than one match. Tap the piece.', 'add'); beep('dup'); }
+  else if (choice.hit.blocked) { S.hits = []; setNote('dup', choice.hit.blocked, 'add'); beep('dup'); }
+  else if (onDraft(choice.hit)) { S.hits = []; setNote('dup', 'Already on this sheet · ' + (choice.hit.jo || choice.hit.item_id || 'that piece'), 'add'); beep('dup'); }
+  else {
+    readDraft();
+    S.draft.items.push({ jo: choice.hit.jo || '', item_id: choice.hit.item_id || '', description: choice.hit.description || '', value: '' });
+    S.hits = []; S.q = '';
+    setNote('ok', addedText(choice.hit), 'add');
+    beep('ok');
+  }
+  paintScan(main, 'csQ');
+}
+async function commitMark(main, raw, status) {
+  const spec = scanSpec(raw), where = 'mark';
+  if (!spec.q) { setNote('bad', 'Type or scan a JO or item number', where); beep('bad'); paintScan(main, 'csBackCode'); return; }
+  const live = window.OYP.here();
+  const r = await window.OYP.call('consignItem', { code: spec.q, status: status === 'sold' ? 'sold' : 'returned', consignment_id: S.id || '' });
+  if (!live()) return;
+  if (!r || !r.ok) {
+    const err = (r && r.error) || 'No matching piece is still out';
+    const dup = /already/i.test(err);
+    setNote(dup ? 'dup' : 'bad', err, where);
+    beep(dup ? 'dup' : 'bad');
+    window.OYP.toast(err);
+  } else {
+    const label = status === 'sold' ? 'Marked sold' : 'Marked returned';
+    setNote('ok', label + (spec.jo ? ' · ' + spec.jo.text : ' · ' + spec.q), where);
+    beep('ok');
+    window.OYP.toast(label);
+    if (r.consignment_id) { S.mode = 'sheet'; S.id = r.consignment_id; }
+    await reload(main);
+  }
+  if (window.OYP.here()()) paintScan(main, 'csBackCode');
 }
 function openScan(main) {
   if (!window.isSecureContext) { window.OYP.toast('The camera needs a secure page. Type the number instead.'); return; }
@@ -417,13 +578,8 @@ function finishScan(main, text) {
   const purpose = S.scan && S.scan.purpose;
   S.scan = null;
   stopCam();
-  if (purpose === 'back') { draw(main); return returnCode(main, text); }
-  S.hits = [];
-  S.q = joOf(text) || String(text || '').trim();
   draw(main);
-  search(main).then(() => {
-    if ((S.hits || []).length === 1 && !S.hits[0].blocked) addHit(main, 0);
-  });
+  pushScan(main, purpose === 'back' ? 'mark' : 'add', text);
 }
 async function startCam() {
   const gen = ++camGen, video = $('csVid'), msg = $('csCamMsg');
