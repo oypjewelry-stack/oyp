@@ -96,7 +96,6 @@ function dashCacheNoteWrite_(action, res) {
 
 function dashCacheDrop_() {
   try { CacheService.getScriptCache().put('oypDashGen', String(Date.now()), 21600); } catch (e) {}
-  if (typeof dashPurgeEdge_ === 'function') { try { dashPurgeEdge_(); } catch (e2) {} }
 }
 
 function dashCacheSpec_(action, req) {
