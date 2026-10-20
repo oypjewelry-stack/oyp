@@ -1,0 +1,52 @@
+/* Consignment (#/consignment), consign.js */
+.cs{max-width:calc(1100px*var(--cw))}
+.cshead{align-items:center}
+.csdash{display:flex;align-items:center;gap:calc(12px*var(--sp));flex-wrap:wrap;justify-content:flex-end}
+.csdash .lnk{font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#111}
+.cs .dhead .pill{text-decoration:none}
+.cswarn{border:1px solid var(--gold);background:#fffdf6;border-radius:calc(12px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.45}
+.csseg{width:auto;max-width:calc(420px*var(--cw));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp))}
+.csrow{cursor:pointer}.csrow:hover td{background:#faf8f1}
+.csacts{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp));align-items:center;margin:calc(12px*var(--sp)) 0}
+.csback{background:none;border:0;cursor:pointer;padding:0;margin-bottom:calc(10px*var(--sp));display:inline-block;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#111}
+.csnew{border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(16px*var(--sp)) calc(18px*var(--sp));margin-bottom:calc(16px*var(--sp))}
+.csnew .fsec{margin-bottom:calc(12px*var(--sp))}
+.cshits{border:1px solid #eee;border-radius:calc(12px*var(--rad));margin:calc(-4px*var(--sp)) 0 calc(12px*var(--sp));overflow:hidden}
+.cshit{display:block;width:100%;text-align:left;background:#fff;border:0;border-top:1px solid #eee;padding:calc(10px*var(--sp)) calc(12px*var(--sp));cursor:pointer;color:#111;font:inherit}
+.cshit:first-child{border-top:0}.cshit:hover{background:#faf8f1}.cshit b{font-family:var(--head);font-weight:500}
+.csval{width:110px;border:1.5px solid #111;border-radius:calc(10px*var(--rad));padding:calc(8px*var(--sp));font-family:var(--body);font-size:calc(16px*var(--fs));background:#fff}
+.cstog{background:none;border:0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#111;padding:0;margin:calc(8px*var(--sp)) 0}
+.csloose{margin-top:calc(8px*var(--sp))}
+/* camera */
+.cscam{position:fixed;inset:0;background:#fff;z-index:40;display:flex;flex-direction:column;padding:calc(18px*var(--sp)) calc(16px*var(--sp));gap:calc(10px*var(--sp))}
+.cscam video{width:100%;max-height:52vh;background:#111;border-radius:calc(12px*var(--rad));object-fit:cover}
+.cscam .rvq{margin:0}
+/* printable sheet */
+.csheet{max-width:720px;margin:0 auto;border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(28px*var(--sp)) calc(28px*var(--sp)) calc(22px*var(--sp));background:#fff;color:#111}
+.csbrand{display:flex;align-items:center;gap:calc(12px*var(--sp));margin-bottom:calc(4px*var(--sp))}
+.csbrand img{height:42px;width:auto}
+.csbrand b{font-family:var(--head);font-weight:500;font-size:calc(28px*var(--hs));letter-spacing:.04em;text-transform:uppercase}
+.cscontact{font-family:var(--label);font-size:calc(13px*var(--fs));color:#333;margin:0 0 calc(16px*var(--sp))}
+.csmeta{display:flex;justify-content:space-between;gap:calc(16px*var(--sp));flex-wrap:wrap;margin-bottom:calc(14px*var(--sp));padding-bottom:calc(12px*var(--sp));border-bottom:1px solid #111}
+.csmeta b{font-family:var(--head);font-weight:500;font-size:calc(20px*var(--hs))}
+.csheet table{max-width:none}
+.cstot{text-align:right;font-family:var(--head);font-weight:500;font-size:calc(18px*var(--hs));margin:calc(12px*var(--sp)) 0 calc(22px*var(--sp))}
+.cssigns{display:grid;grid-template-columns:1fr 1fr;gap:calc(28px*var(--sp));margin-top:calc(28px*var(--sp))}
+.csline{border-bottom:1px solid #111;height:calc(42px*var(--bh));margin-bottom:calc(6px*var(--sp))}
+.cssigns .lab{margin-bottom:calc(2px*var(--sp))}
+html.cs-onprint .top,html.cs-onprint .side,html.cs-onprint .menu,html.cs-onprint #toast,html.cs-onprint .cs-noprint{display:none!important}
+html.cs-onprint .office{display:block}
+html.cs-onprint .main{padding:calc(18px*var(--sp))}
+html.cs-onprint .csheet{border:0;border-radius:0;max-width:none;padding:0}
+@media (max-width:760px){
+  .cssigns{grid-template-columns:1fr}
+  .csval{width:100%}
+  .csheet{padding:calc(16px*var(--sp))}
+}
+@media print{
+  .top,.side,.menu,#toast,.cs-noprint{display:none!important}
+  .office{display:block!important}
+  .main{padding:0!important}
+  .csheet{border:0;border-radius:0;max-width:none;padding:0}
+  body{background:#fff}
+}
