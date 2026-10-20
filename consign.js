@@ -1,7 +1,8 @@
 /* OYP back office: Consignment (#/consignment). Pieces lent to someone outside the shop.
    Admin and production manager. Agreed value, owed, paid, and balance are executive-only (the server omits them for everyone else).
    A sold piece is owed by the consignee. Record payment stores paid_amount and paid_at on the line (Consignment.gs consignPay).
-   Attach signed copy sends a photo or PDF (consignSigned). The server stores it in Drive and returns signed_copy_url.
+   Attach signed copy sends a photo or PDF (consignSigned). Attach signed return slip sends the same way with kind return. Both files stay in Drive under Consignments/<CS number>.
+   A sheet closes when no piece is still consigned. Returned pieces go back to prev_location and are left out of the owed amount. Sold pieces stay owed until a payment is recorded.
    Server: Consignment.gs, one tab named Consignment, one row per piece. Run setupConsignment once. Names in the form are the distinct consignee names on that tab. */
 (() => {
 'use strict';
@@ -102,15 +103,16 @@ function draw(main) {
   stopCam();
   if (S.mode === 'new' && !S.draft) S.draft = blankDraft();
   const scanning = S.scan;
-  document.documentElement.classList.toggle('cs-onprint', S.mode === 'print');
+  document.documentElement.classList.toggle('cs-onprint', S.mode === 'print' || S.mode === 'rprint');
   if (S.mode === 'new') main.innerHTML = drawNew();
+  else if (S.mode === 'rprint') main.innerHTML = drawReturn();
   else if (S.mode === 'sheet' || S.mode === 'print') main.innerHTML = drawSheet(S.mode === 'print');
   else if (S.tab === 'people') main.innerHTML = drawPeople();
   else main.innerHTML = drawList();
   if (scanning) main.insertAdjacentHTML('beforeend', camHtml());
   wire(main);
   if (scanning) startCam();
-  if (S.autoPrint && S.mode === 'print') {
+  if (S.autoPrint && (S.mode === 'print' || S.mode === 'rprint')) {
     S.autoPrint = false;
     setTimeout(() => { try { window.print(); } catch (e) {} }, 0);
   }
@@ -127,6 +129,11 @@ function drawList() {
     ${head()}
     ${setupWarn()}
     ${tabs()}
+    <div class="csacts csfind">
+      <input id="csFind" class="rvq" placeholder="CS number or scan a JO" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="CS number or JO">
+    </div>
+    ${noteHtml('find', esc)}
+    <p class="muted">Type a CS number or scan a JO to open that sheet. Mark each piece returned or sold. Returning one piece leaves the others out.</p>
     ${open.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Consignee</span></th><th><span class="lab">Date out</span></th><th><span class="lab">Items</span></th><th><span class="lab">Days out</span></th><th><span class="lab">Overdue</span></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">${r.setup === false ? 'Nothing to show until the Consignment tab exists.' : 'No open consignment sheets.'}</p>`}
     ${loose.length ? `<div class="csloose"><p class="muted">Marked consigned, not on a sheet.</p><div class="tw"><table class="dt"><tbody>${loose.map(j => `<tr><td><b class="cn">${esc(j.jo || j.item_id || '—')}</b><br><span class="muted">${esc(j.description || '')}</span></td><td><button type="button" class="lnk" data-loose="${esc(j.jo || '')}" data-item="${esc(j.item_id || '')}" data-desc="${esc(j.description || '')}">CONSIGN</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}
     ${closed.length ? `<button type="button" class="cstog" id="csClosed">${S.showClosed ? 'Hide closed' : 'Show closed (' + closed.length + ')'}</button>` : ''}
@@ -140,20 +147,26 @@ function sheetRow(s, esc) {
   return `<tr class="csrow${s.overdue ? ' od' : ''}" data-open="${esc(s.consignment_id)}"><td><b class="cn">${esc(s.consignee || '—')}</b><br><span class="muted">${esc(s.consignment_id)}</span>${signMark(s, esc)}${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td>
     <td>${esc(day(s.date_out))}</td><td>${esc(items)}</td><td>${s.days_out == null ? '—' : esc(s.days_out)}</td>
     <td>${s.overdue ? '<span class="chip gold">Overdue</span>' : (s.status === 'closed' ? '<span class="chip">Closed</span>' : '—')}</td>
-    <td><div class="csrowacts"><button type="button" class="lnk" data-reprint="${esc(s.consignment_id)}">Reprint</button>${signButton(s, esc)}</div></td></tr>`;
+    <td><div class="csrowacts"><button type="button" class="lnk" data-reprint="${esc(s.consignment_id)}">Reprint</button>${hasReturned(s) ? `<button type="button" class="lnk" data-rprint="${esc(s.consignment_id)}">Return slip</button>` : ''}${signButton(s, esc, 'copy')}${hasReturned(s) ? signButton(s, esc, 'return') : ''}</div></td></tr>`;
 }
-function signButton(s, esc) {
+function hasReturned(s) { return (s.items || []).some(it => it.status === 'returned'); }
+function signButton(s, esc, kind) {
   const id = esc(s.consignment_id);
-  return `<button type="button" class="lnk" data-sign="${id}">Attach signed copy</button><input type="file" class="csfile" data-file="${id}" accept="image/*,application/pdf" capture="environment" aria-label="Signed copy for ${id}">`;
+  const ret = kind === 'return';
+  const label = ret ? 'Attach signed return slip' : 'Attach signed copy';
+  return `<button type="button" class="lnk" data-sign="${id}" data-kind="${ret ? 'return' : 'copy'}">${label}</button><input type="file" class="csfile" data-file="${id}" data-kind="${ret ? 'return' : 'copy'}" accept="image/*,application/pdf" capture="environment" aria-label="${label} for ${id}">`;
 }
 function safeHttp(u) { return /^https:\/\//i.test(String(u || '')) ? String(u) : ''; }
-function signMark(s, esc) {
-  const url = safeHttp(s && s.signed_copy_url);
+function fileMark(s, esc, kind) {
+  const ret = kind === 'return';
+  const url = safeHttp(s && (ret ? s.return_slip_url : s.signed_copy_url));
   if (!url) return '';
-  const thumb = String(s.signed_thumb || '');
-  const img = thumb.indexOf('data:image/') === 0 ? `<a class="csthumb" href="${esc(url)}" target="_blank" rel="noopener"><img alt="Signed copy" src="${esc(thumb)}"></a>` : '';
-  return `<span class="cssignbits"><span class="chip">Signed</span> <a class="lnk cssigned" href="${esc(url)}" target="_blank" rel="noopener">Signed copy</a>${img}</span>`;
+  const thumb = String((ret ? s.return_slip_thumb : s.signed_thumb) || '');
+  const label = ret ? 'Signed return slip' : 'Signed copy';
+  const img = thumb.indexOf('data:image/') === 0 ? `<a class="csthumb" href="${esc(url)}" target="_blank" rel="noopener"><img alt="${label}" src="${esc(thumb)}"></a>` : '';
+  return `<span class="cssignbits"><span class="chip">${ret ? 'Return signed' : 'Signed'}</span> <a class="lnk cssigned" href="${esc(url)}" target="_blank" rel="noopener">${label}</a>${img}</span>`;
 }
+function signMark(s, esc) { return fileMark(s, esc, 'copy') + fileMark(s, esc, 'return'); }
 function drawPeople() {
   const { esc } = window.OYP, r = S.r, ed = (r.consignees || []).find(c => c.consignee_id === S.edit);
   const rows = (r.consignees || []).map(c => {
@@ -236,13 +249,13 @@ function drawSheet(printing) {
     <div class="cssigns"><div><div class="csline"></div><span class="lab">Consignee</span><b>${esc(s.consignee || '')}</b></div>
       <div><div class="csline"></div><span class="lab">OYP Jewelry</span></div></div>
   </article>`;
-  if (printing) return `<div class="cs">${sheet}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button>${signButton(s, esc)}</div>${signMark(s, esc) ? `<div class="cs-noprint">${signMark(s, esc)}</div>` : ''}</div>`;
+  if (printing) return `<div class="cs">${sheet}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button>${signButton(s, esc, 'copy')}</div>${signMark(s, esc) ? `<div class="cs-noprint">${signMark(s, esc)}</div>` : ''}</div>`;
   const open = (s.items || []).some(it => it.status === 'consigned');
   const owes = (s.items || []).some(stillOwes);
   const money = moneyBits(s);
   return `<div class="cs">
     <button type="button" class="csback cs-noprint" id="csBack">‹ Back</button>
-    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><div class="csrowacts"><button type="button" class="pill sm" id="csPrint">REPRINT</button>${signButton(s, esc)}</div></div>
+    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><div class="csrowacts"><button type="button" class="pill sm" id="csPrint">REPRINT</button>${hasReturned(s) ? `<button type="button" class="pill sm outline" id="csReturn">RETURN SLIP</button>` : ''}${signButton(s, esc, 'copy')}${hasReturned(s) ? signButton(s, esc, 'return') : ''}</div></div>
     <p class="muted cs-noprint">${esc(s.consignee || '')} · out ${esc(day(s.date_out))}${money ? ' · ' + esc(money) : ''}${s.overdue ? ' · overdue' : ''}${s.status === 'closed' ? ' · closed' : ''}</p>
     ${signMark(s, esc) ? `<div class="cs-noprint">${signMark(s, esc)}</div>` : ''}
     ${sheet}
@@ -253,6 +266,23 @@ function drawSheet(printing) {
     ${owes ? `<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csPaySheet">Record payment</button></div>` : ''}
     ${S.pay && S.pay.consignment_id === s.consignment_id ? payForm(s) : ''}
   </div>`;
+}
+function drawReturn() {
+  const { esc } = window.OYP, s = sheetBy(S.id);
+  if (!s) return `<div class="cs"><button type="button" class="csback" id="csBack">‹ Back</button><p class="muted">That sheet is not on the list.</p></div>`;
+  const back = (s.items || []).filter(it => it.status === 'returned');
+  const rows = back.map(it => `<tr><td><b class="cn">${esc(it.jo || it.item_id || '—')}</b></td><td>${esc(it.description || '—')}</td><td>${esc(day(it.returned_at) || day(S.r && S.r.today) || '—')}</td></tr>`).join('');
+  const slip = `<article class="csheet">
+    <p class="csno"><span class="lab">Return</span>${esc(s.consignment_id)}</p>
+    <div class="csbrand"><img src="${esc(logoSrc())}" alt=""><b>OYP Jewelry</b></div>
+    <p class="cscontact">8892 1171 · oypjewelry@gmail.com</p>
+    <div class="csmeta"><div><span class="lab">Date</span><b>${esc(dayLong((S.r && S.r.today) || ''))}</b></div></div>
+    <p><span class="lab">Consignee</span><b class="cn">${esc(s.consignee || '—')}</b>${s.phone ? `<br><span class="muted">${esc(s.phone)}</span>` : ''}</p>
+    <table><thead><tr><th><span class="lab">JO / item</span></th><th><span class="lab">Description</span></th><th><span class="lab">Returned</span></th></tr></thead><tbody>${rows || '<tr><td colspan="3">No returned pieces.</td></tr>'}</tbody></table>
+    <div class="cssigns"><div><div class="csline"></div><span class="lab">Consignee</span><b>${esc(s.consignee || '')}</b></div>
+      <div><div class="csline"></div><span class="lab">OYP Jewelry</span></div></div>
+  </article>`;
+  return `<div class="cs">${slip}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button>${signButton(s, esc, 'return')}</div>${fileMark(s, esc, 'return') ? `<div class="cs-noprint">${fileMark(s, esc, 'return')}</div>` : ''}</div>`;
 }
 function payForm(s) {
   const { esc } = window.OYP, p = S.pay || {};
@@ -311,9 +341,11 @@ function wire(main) {
   main.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.mode = 'list'; S.edit = ''; draw(main); });
   main.querySelectorAll('[data-open]').forEach(tr => tr.onclick = () => go(tr.dataset.open));
   main.querySelectorAll('[data-reprint]').forEach(b => b.onclick = e => { e.stopPropagation(); openPrint(main, b.dataset.reprint); });
+  main.querySelectorAll('[data-rprint]').forEach(b => b.onclick = e => { e.stopPropagation(); openReturn(main, b.dataset.rprint); });
   main.querySelectorAll('[data-sign]').forEach(b => b.onclick = e => {
     e.stopPropagation();
-    const input = b.parentNode && b.parentNode.querySelector('[data-file="' + b.dataset.sign + '"]');
+    const kind = b.dataset.kind || 'copy';
+    const input = b.parentNode && b.parentNode.querySelector('[data-file="' + b.dataset.sign + '"][data-kind="' + kind + '"]');
     if (input) input.click();
   });
   main.querySelectorAll('[data-file]').forEach(input => {
@@ -321,8 +353,9 @@ function wire(main) {
     input.onchange = () => {
       const file = input.files && input.files[0];
       const id = input.dataset.file;
+      const kind = input.dataset.kind || 'copy';
       input.value = '';
-      if (file) uploadSigned(main, id, file);
+      if (file) uploadSigned(main, id, file, kind);
     };
   });
   main.querySelectorAll('a.cssigned, a.csthumb').forEach(a => a.onclick = e => e.stopPropagation());
@@ -336,7 +369,7 @@ function wire(main) {
   const cg = $('cgSave'); if (cg) cg.onclick = () => savePerson(main);
   const back = $('csBack'); if (back) back.onclick = () => {
     stopCam(); S.scan = null;
-    if (S.mode === 'print') { S.mode = 'sheet'; draw(main); return; }
+    if (S.mode === 'print' || S.mode === 'rprint') { S.mode = 'sheet'; draw(main); return; }
     S.mode = 'list'; S.pay = null; document.documentElement.classList.remove('cs-onprint'); draw(main);
   };
   const nm = $('csName'); if (nm) nm.oninput = () => { readDraft(); const p = personByName(nm.value); if (p && $('csPhone')) { S.draft.phone = p.phone || ''; $('csPhone').value = S.draft.phone; } };
@@ -346,6 +379,8 @@ function wire(main) {
   const save = $('csSave'); if (save) save.onclick = () => saveSheet(main);
   const scan = $('csScan'); if (scan) scan.onclick = () => openScan(main);
   const pr = $('csPrint'); if (pr) pr.onclick = () => openPrint(main, S.id);
+  const rs = $('csReturn'); if (rs) rs.onclick = () => openReturn(main, S.id);
+  const find = $('csFind'); if (find) find.onkeydown = e => onFindKey(e, main);
   const dop = $('csDoPrint'); if (dop) dop.onclick = () => window.print();
   main.querySelectorAll('[data-back]').forEach(b => b.onclick = () => mark(main, b.dataset.back, 'returned'));
   main.querySelectorAll('[data-sold]').forEach(b => b.onclick = () => mark(main, b.dataset.sold, 'sold'));
@@ -446,18 +481,21 @@ function packSigned(file) {
   if (mime.indexOf('image/') === 0 && mime !== 'image/svg+xml') return shrinkSigned(file);
   return Promise.reject(new Error('Use a photo or a PDF'));
 }
-async function uploadSigned(main, id, file) {
+async function uploadSigned(main, id, file, kind) {
   if (S.busy || !id || !file) return;
   let packed;
   try { packed = await packSigned(file); }
   catch (e) { window.OYP.toast(e.message || 'Could not read that file'); return; }
   if (!packed.b64) return window.OYP.toast('Could not read that file');
   S.busy = true;
-  const r = await window.OYP.call('consignSigned', { consignment_id: id, file_base64: packed.b64, mime: packed.mime, name: packed.name || '' });
+  const r = await window.OYP.call('consignSigned', { consignment_id: id, file_base64: packed.b64, mime: packed.mime, name: packed.name || '', kind: kind === 'return' ? 'return' : 'copy' });
   S.busy = false;
   if (!window.OYP.here()()) return;
-  if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not attach the signed copy');
-  window.OYP.toast(r.replaced ? 'Replaced the signed copy. The previous file is still in Drive.' : 'Signed copy attached');
+  if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not attach the file');
+  const slip = kind === 'return';
+  window.OYP.toast(r.replaced
+    ? (slip ? 'Replaced the return slip. The previous file is still in Drive.' : 'Replaced the signed copy. The previous file is still in Drive.')
+    : (slip ? 'Return slip attached' : 'Signed copy attached'));
   await reload(main);
 }
 async function saveSheet(main) {
@@ -481,6 +519,13 @@ function openPrint(main, id) {
   S.mode = 'print'; S.id = id; S.tab = 'sheets'; S.pay = null; S.autoPrint = true;
   draw(main);
 }
+function openReturn(main, id) {
+  if (!id) return;
+  const s = sheetBy(id);
+  if (!s || !hasReturned(s)) { window.OYP.toast('No returned pieces on that sheet yet'); return; }
+  S.mode = 'rprint'; S.id = id; S.tab = 'sheets'; S.pay = null; S.autoPrint = true;
+  draw(main);
+}
 async function mark(main, lineId, status) {
   if (S.busy) return;
   if (!confirm(status === 'sold' ? 'Mark this item sold? The consignee then owes the agreed value.' : 'Mark this item returned?')) return;
@@ -488,8 +533,10 @@ async function mark(main, lineId, status) {
   const r = await window.OYP.call('consignItem', { line_id: lineId, status: status, consignment_id: S.id || '' });
   S.busy = false;
   if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not update');
-  window.OYP.toast(status === 'sold' ? 'Marked sold' : 'Marked returned');
+  const back = status === 'returned' && r.location ? ' · back to ' + r.location : '';
+  window.OYP.toast((status === 'sold' ? 'Marked sold' : 'Marked returned') + back + (r.closed ? ' · sheet closed' : ''));
   S.pay = null;
+  setNote('ok', (status === 'sold' ? 'Marked sold' : 'Marked returned') + back, 'mark');
   await reload(main);
 }
 function openPay(main, lineId) {
@@ -537,7 +584,7 @@ function onScanKey(e, main, kind, input) {
 function focusScan() {
   if (S.scan) { if ($('csCamCode')) $('csCamCode').focus(); return; }
   if (S.pay) return;
-  const el = S.mode === 'new' ? $('csQ') : (S.mode === 'sheet' ? $('csBackCode') : null);
+  const el = S.mode === 'new' ? $('csQ') : (S.mode === 'sheet' ? $('csBackCode') : (S.mode === 'list' && S.tab === 'sheets' ? $('csFind') : null));
   if (el) el.focus();
 }
 function setNote(kind, text, where) { S.note = { kind, text, where }; }
@@ -603,6 +650,55 @@ function chooseHit(hits, spec) {
   if (!list.length) return { none: true };
   return { many: true, hits: list };
 }
+function onFindKey(e, main) {
+  if (!isEnter(e)) return;
+  e.preventDefault();
+  const v = e.target.value;
+  e.target.value = '';
+  commitFind(main, v);
+}
+function matchSheetId(raw) {
+  const want = String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!/^CS-[A-Z0-9-]{1,40}$/.test(want)) return '';
+  const hit = ((S.r && S.r.sheets) || []).find(s => String(s.consignment_id || '').toUpperCase() === want);
+  return hit ? hit.consignment_id : '';
+}
+function findOutPiece(spec) {
+  const hits = [];
+  ((S.r && S.r.sheets) || []).forEach(s => (s.items || []).forEach(it => {
+    if (it.status !== 'consigned') return;
+    if (spec.jo) {
+      const p = joParse(it.jo || '');
+      if (p && p.key === spec.jo.key) hits.push({ sheet: s, item: it });
+    } else if (spec.exact && it.item_id && String(it.item_id).toLowerCase() === spec.q.toLowerCase()) hits.push({ sheet: s, item: it });
+  }));
+  const ids = [];
+  hits.forEach(h => { if (ids.indexOf(h.sheet.consignment_id) < 0) ids.push(h.sheet.consignment_id); });
+  if (!hits.length) return null;
+  if (ids.length > 1) return { many: true };
+  return hits[0];
+}
+function commitFind(main, raw) {
+  const text = String(raw || '').trim();
+  if (!text) { setNote('bad', 'Type a CS number or scan a JO', 'find'); beep('bad'); focusScan(); return; }
+  const id = matchSheetId(text);
+  if (id) {
+    S.mode = 'sheet'; S.id = id; S.tab = 'sheets'; S.pay = null;
+    setNote('ok', 'Opened ' + id, 'mark');
+    beep('ok');
+    draw(main);
+    return;
+  }
+  const spec = scanSpec(text);
+  if (!spec.jo && !spec.exact) { setNote('bad', 'Type a CS number or scan a JO', 'find'); beep('bad'); focusScan(); return; }
+  const found = findOutPiece(spec);
+  if (!found) { setNote('bad', 'No piece still out matches ' + (spec.jo ? spec.jo.text : spec.q), 'find'); beep('bad'); focusScan(); return; }
+  if (found.many) { setNote('dup', 'More than one sheet has that piece. Type the CS number.', 'find'); beep('dup'); focusScan(); return; }
+  S.mode = 'sheet'; S.id = found.sheet.consignment_id; S.tab = 'sheets'; S.pay = null;
+  setNote('ok', (found.item.jo || found.item.item_id || 'Piece') + ' is still out', 'mark');
+  beep('ok');
+  draw(main);
+}
 function pushScan(main, kind, raw) {
   const code = String(raw || '').trim();
   if (!code) { setNote('bad', 'Type or scan a JO or item number', kind === 'mark' ? 'mark' : 'add'); beep('bad'); paintScan(main, kind === 'mark' ? 'csBackCode' : 'csQ'); return; }
@@ -655,9 +751,10 @@ async function commitMark(main, raw, status) {
     window.OYP.toast(err);
   } else {
     const label = status === 'sold' ? 'Marked sold' : 'Marked returned';
-    setNote('ok', label + (spec.jo ? ' · ' + spec.jo.text : ' · ' + spec.q), where);
+    const back = status !== 'sold' && r.location ? ' · back to ' + r.location : '';
+    setNote('ok', label + (spec.jo ? ' · ' + spec.jo.text : ' · ' + spec.q) + back + (r.closed ? ' · sheet closed' : ''), where);
     beep('ok');
-    window.OYP.toast(label);
+    window.OYP.toast(label + back);
     if (r.consignment_id) { S.mode = 'sheet'; S.id = r.consignment_id; }
     await reload(main);
   }
