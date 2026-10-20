@@ -18,8 +18,9 @@ const ago = d => { if (!d) return ''; const n = Math.round((Date.now() - Date.pa
 // Drill-downs: #/dashboard/<kind>/<key>. The dashboard response is kept so a list opens without reloading;
 // per-JO lists that the dashboard does not carry (locations, sales, pending, consigned JOs) come once from dashDrill (DashboardDrill.gs).
 const D = { r: null, cc: null, x: null, at: 0, user: null, ordOn: false };
-// Section order on this device, per signed-in name. Empty = today's order. Design settings are the shared look, not a per-person preference, so this stays in localStorage.
-const SEC_ORDER = ['msgs', 'loc', 'sales', 'board', 'consign', 'pay']; // Messages took the old client-messages slot; email inquiries is no longer its own card
+// Section order on this device, per signed-in name. Empty, or a save of this order, means the default. Reset clears the save. KPI bubbles are not in this list: they stay above the sections.
+const SEC_ORDER = ['board', 'loc', 'sales', 'consign', 'msgs', 'pay'];
+const SEC_LEGACY = ['msgs', 'loc', 'sales', 'board', 'consign', 'pay']; // the previous default, so a device that stored it picks up the new one
 const ordKey = u => 'oypDashOrder:' + (u && u.username || 'device');
 function readOrder(u) {
   let raw = null;
@@ -27,14 +28,15 @@ function readOrder(u) {
   if (!Array.isArray(raw)) return null;
   const a = [];
   raw.forEach(x => { if (typeof x === 'string' && SEC_ORDER.includes(x) && a.indexOf(x) < 0) a.push(x); }); // drops a saved 'inq'
-  const dirty = raw.length !== a.length || raw.some((x, i) => x !== a[i]);
+  const legacy = a.join() === SEC_LEGACY.join();
+  const dirty = legacy || raw.length !== a.length || raw.some((x, i) => x !== a[i]);
   if (dirty) {
     try {
-      if (!a.length || a.join() === SEC_ORDER.join()) localStorage.removeItem(ordKey(u));
+      if (!a.length || legacy || a.join() === SEC_ORDER.join()) localStorage.removeItem(ordKey(u));
       else localStorage.setItem(ordKey(u), JSON.stringify(a));
     } catch (e) {}
   }
-  if (!a.length || a.join() === SEC_ORDER.join()) return null;
+  if (!a.length || legacy || a.join() === SEC_ORDER.join()) return null;
   return a;
 }
 function writeOrder(u, ids) {
@@ -316,7 +318,11 @@ async function render(main, u, fresh) {
   const parts = {};
   D.inbox = (pin && pi && pi.ok && pi.inbox && Array.isArray(pi.inbox.items)) ? pi.inbox : null; // portal: admin + production manager, same as the old Client messages card
   D.mail = (r && Object.prototype.hasOwnProperty.call(r, 'inquiries')) ? (Array.isArray(r.inquiries) ? r.inquiries : []) : null; // email: whoever the server already includes `inquiries` for
-  if ((D.inbox && D.inbox.items.length) || D.mail) parts.msgs = messagesCard(esc);
+  parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'In production · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
+    <div class="kcol"><a class="khead tap" href="#/dashboard/stage/${esc(col.key)}"><span class="lab">${esc(col.label)} ›</span><span class="kn">${col.count}</span></a>${col.cards.map(j => `
+      <div class="kcard tap${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
+      <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
+      <div class="kf">${j.due ? `<span class="chip ${j.late ? 'gold' : ''}">${j.late ? 'Late · ' : 'Due '}${esc(day(j.due))}</span>` : ''}${j.type === 'repair' ? '<span class="chip">Repair</span>' : ''}${j.review ? '<span class="chip">Review</span>' : ''}${noCC.has(j.jo) ? '<span class="chip nocc" title="No client mobile or email">No contact</span>' : ''}</div></div>`).join('') || '<div class="kempty">—</div>'}</div>`).join('')}</div></section>`;
   if (r.locations) {
     loadLoc(r.locations, u);
     parts.loc = `<section class="dcard" data-dsec="loc"><div class="dtitle"><span class="dname"><h3>Location</h3></span><span class="dlocacts"><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span></span></div><div class="locrow" id="locRow"></div></section>`;
@@ -327,12 +333,6 @@ async function render(main, u, fresh) {
       <div id="saleBody"></div></section>`;
   }
 
-  parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'In production · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
-    <div class="kcol"><a class="khead tap" href="#/dashboard/stage/${esc(col.key)}"><span class="lab">${esc(col.label)} ›</span><span class="kn">${col.count}</span></a>${col.cards.map(j => `
-      <div class="kcard tap${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
-      <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
-      <div class="kf">${j.due ? `<span class="chip ${j.late ? 'gold' : ''}">${j.late ? 'Late · ' : 'Due '}${esc(day(j.due))}</span>` : ''}${j.type === 'repair' ? '<span class="chip">Repair</span>' : ''}${j.review ? '<span class="chip">Review</span>' : ''}${noCC.has(j.jo) ? '<span class="chip nocc" title="No client mobile or email">No contact</span>' : ''}</div></div>`).join('') || '<div class="kempty">—</div>'}</div>`).join('')}</div></section>`;
-
   if (can.consign) {
     const L = r.consignments || [];
     parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="lab">Items out · oldest first</span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
@@ -340,6 +340,8 @@ async function render(main, u, fresh) {
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
       : `<p class="muted">${r.missing.includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
   }
+
+  if ((D.inbox && D.inbox.items.length) || D.mail) parts.msgs = messagesCard(esc);
 
   if (can.payments) {
     const P = r.payments || [];
