@@ -2,7 +2,7 @@
    Server: Production.gs (prodBoard, prodJob, prodWorkers, prodPhoto, prodMove, prodAssign, prodSetTarget, prodTimer, prodSessionAdd, prodSessionVoid, prodWorkerSave).
    Delayed = past a target date Susan or an admin set (whole JO or this step). No target = never Delayed. Workers are names; Susan logs their time.
    Routes: #/production (board) · #/production/jo/<JO> (board + card detail) · #/production/workers (who has what, hours this week).
-   Desktop: drag a card to the next column. Phone: one stage at a time, a big "Move to ..." button on every card.
+   Desktop: drag a card to the next column. Phone: one stage at a time, a big "Move to ..." button on every card (the JO's next step: a repair skips Design / Casting).
    No money on the board for anyone. Labor cost shows only in the card detail, only when the server sends it (admin + production manager). */
 (() => {
 'use strict';
@@ -29,7 +29,7 @@ const daysTxt = c => c.days == null ? '' : c.days === 0 ? 'Since today' : c.days
 const tgtOf = c => c.step_target && (c.delayed_by === 'step' || !c.target || c.step_target < c.target) ? { d: c.step_target, step: true } : c.target ? { d: c.target, step: false } : null; // the date that matters most
 const tgtChip = c => { const t = tgtOf(c); return t ? `<span class="chip ${c.delayed ? 'pover' : 'ptgt'}" title="${t.step ? 'Target for this step' : 'Target for the whole JO'}: ${dLong(t.d)}">${t.step ? 'Step · ' : 'Target '}${dShort(t.d)}</span>` : ''; }; // short so it fits a narrow column
 const col = k => S.r.columns.find(c => c.key === k) || { key: k, label: k };
-const nextCol = c => { const x = col(c.col); return x.next ? col(x.next) : null; };
+const nextCol = c => { if (c && c.next !== undefined) return c.next ? col(c.next) : null; const x = col(c.col); return x.next ? col(x.next) : null; }; // c.next = the JO's next step (a repair skips Design / Casting); older server: next column
 const can = () => (S.r && S.r.can) || {};
 
 /* ---------- photos (thumbnails cached per file) ---------- */
@@ -203,7 +203,7 @@ async function openJob(jo, live) {
 function wireSheetClose() { const x = $('pSX'), sh = $('pSheet'); if (x) x.onclick = () => { location.hash = '#/production'; }; if (sh) sh.onclick = e => { if (e.target.id === 'pSheet') location.hash = '#/production'; }; }
 function drawJob() {
   const r = S.job, c = r.card, cost = !!r.can.costs, box = $('pSheetBox'); if (!box) return;
-  const nx = (() => { const x = r.columns.find(k => k.key === c.col); return x && x.next ? r.columns.find(k => k.key === x.next) : null; })();
+  const nx = (() => { const x = r.columns.find(k => k.key === (c.next !== undefined ? c.next : c.col)); return c.next !== undefined ? x || null : x && x.next ? r.columns.find(k => k.key === x.next) : null; })();
   const me = r.me_worker, runs = r.sessions.filter(s => s.running);
   const wsel = (id, val, any) => `<select id="${id}">${any ? '<option value="">Pick…</option>' : ''}${r.workers.map(w => `<option value="${w.worker_id}" ${val === w.worker_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select>`;
   // sessions grouped by stage (stage visits in order)
