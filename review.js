@@ -86,8 +86,8 @@ function otherHits() {
   if (!f || f.q !== S.q.trim().toUpperCase().replace(/\s+/g, ' ') || S.q.trim().length < 2) return '';
   const inList = new Set(S.jobs.map(j => j.jo)), L = f.jobs.filter(j => !inList.has(j.jo));
   return `<div class="rvother"><div class="dtitle"><span class="lab">Other JOs matching “${esc(S.q.trim())}”</span><span class="lab">${L.length}${f.total > 50 ? ' of ' + f.total : ''}</span></div>${L.map(j => `
-    <div class="rvrow oth"><span></span><span></span><div class="rvi"><div class="kjo">${esc(j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.version ? `<span class="muted sm">Version ${esc(j.version)}</span>` : ''}</div>
-      <div class="kd">${esc(j.description || (j.client ? j.client.name : '') || 'No details')}${j.description && j.client ? ' · ' + esc(j.client.name) : ''}</div>
+    <div class="rvrow oth"><span></span><span></span><div class="rvi"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.version ? `<span class="muted sm">Version ${esc(j.version)}</span>` : ''}</div>
+      <div class="kd">${esc(j.description || 'No details')}</div>
       <div class="kf">${locChip(j)}${j.review_state === 'reviewed' ? '<span class="chip">Reviewed</span>' : ''}${ccChip(j.jo)}</div></div></div>`).join('') || '<p class="muted rvnone">No other JOs.</p>'}</div>`;
 }
 function searchAll(main) {
@@ -122,8 +122,8 @@ function draw(main) {
       <div class="rvrow ${S.open === j.jo ? 'on' : ''}" data-jo="${esc(j.jo)}">
         <label class="ck" onclick="event.stopPropagation()"><input type="checkbox" data-sel="${esc(j.jo)}" ${S.sel.has(j.jo) ? 'checked' : ''}></label>
         <div class="th" data-th="${esc(j.jo)}|${esc(j.pages[0] ? j.pages[0].file_id : '')}"></div>
-        <div class="rvi"><div class="kjo">${esc(j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.version ? `<span class="muted sm">Version ${esc(j.version)}</span>` : ''}</div>
-          <div class="kd">${esc(j.description || (j.client ? j.client.name : '') || 'No details yet')}</div>
+        <div class="rvi"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.version ? `<span class="muted sm">Version ${esc(j.version)}</span>` : ''}</div>
+          <div class="kd">${esc(j.description || 'No details yet')}</div>
           <div class="kf">${locChip(j)}
           ${j.missing.filter(m => m !== 'location').length ? `<span class="chip">${j.missing.filter(m => m !== 'location').length} missing</span>` : '<span class="chip">Details ✓</span>'}
           <span class="chip">${j.pages.length} pg</span>${ccChip(j.jo)}</div></div>

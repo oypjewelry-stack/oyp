@@ -99,11 +99,24 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;width:26px;height:2
 .kanban{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:calc(10px*var(--sp));overflow-x:auto;padding-bottom:calc(6px*var(--sp));-webkit-overflow-scrolling:touch}
 .kcol{background:#fafafa;border-radius:calc(12px*var(--rad));padding:calc(10px*var(--sp));min-height:calc(120px*var(--bh))}.khead{display:flex;justify-content:space-between;align-items:center;margin:0 calc(2px*var(--sp)) calc(8px*var(--sp))}.kn{font-family:var(--label);font-size:calc(12px*var(--fs));color:#777}
 .kcard{background:#fff;border:1px solid #eee;border-radius:calc(10px*var(--rad));padding:calc(10px*var(--sp)) calc(11px*var(--sp));margin-bottom:calc(8px*var(--sp))}.kcard.late{border-color:var(--gold);box-shadow:inset 3px 0 0 var(--gold)}
-.kjo{font-family:var(--head);font-weight:500;font-size:calc(16px*var(--hs));display:flex;align-items:center;gap:calc(6px*var(--sp))}.kjo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold)}
+.kjo{font-family:var(--head);font-weight:500;font-size:calc(16px*var(--hs));display:flex;align-items:center;gap:calc(6px*var(--sp))}.kjo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex:none}
 .kd{font-size:calc(14px*var(--fs));margin:calc(3px*var(--sp)) 0 calc(2px*var(--sp));line-height:1.3}.kc{font-family:var(--label);font-size:calc(12px*var(--fs));color:#777}.kf{display:flex;flex-wrap:wrap;gap:calc(4px*var(--sp));margin-top:calc(7px*var(--sp))}.kf .chip{font-size:calc(10px*var(--fs));padding:calc(2px*var(--sp)) calc(8px*var(--sp))}.kempty{color:#bbb;text-align:center;padding:calc(12px*var(--sp)) 0}
+/* Client name, then JO. Desktop: one line, the name ellipsizes, the JO stays. Phone: name above the JO. The title slot is a fixed height so a long name does not make one card taller than the next. */
+.piece{display:flex;align-items:baseline;min-width:0;max-width:100%;flex:1 1 auto;overflow:hidden}
+.piece .pname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.piece .psep,.piece .pjo{flex:none;white-space:nowrap}
+.dt .piece,.cshit .piece{display:inline-flex;vertical-align:baseline;max-width:100%}
+.kcard .kjo,.ivb .kjo,.rvi .kjo{min-width:0;overflow:hidden}
+.kcard .kjo{height:calc(22px*var(--hs));line-height:calc(22px*var(--hs));white-space:nowrap}
+.ivcard .ivb .kjo{height:calc(22px*var(--hs));line-height:calc(22px*var(--hs));flex-wrap:nowrap}
+.rvi .piece{min-width:0}
 .tw{overflow-x:auto}.dt{max-width:none;font-size:calc(15px*var(--fs))}.dt td{padding:calc(10px*var(--sp))}.dt .r{text-align:right}.dt tr.od td{background:#fffdf6}.dmiss{font-family:var(--label);font-size:calc(12px*var(--fs));max-width:calc(1200px*var(--cw))}
 @media (max-width:760px){.kpis{grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp))}.kpi{padding:calc(12px*var(--sp)) calc(14px*var(--sp))}.kpi b{font-size:calc(26px*var(--fs))}.dcard{padding:calc(14px*var(--sp)) calc(12px*var(--sp))}
-  .kanban{grid-template-columns:repeat(7,78%);scroll-snap-type:x mandatory}.kcol{scroll-snap-align:start}.dt .hm{display:none}.bars{height:140px;gap:calc(8px*var(--sp))}}
+  .kanban{grid-template-columns:repeat(7,78%);scroll-snap-type:x mandatory}.kcol{scroll-snap-align:start}.dt .hm{display:none}.bars{height:140px;gap:calc(8px*var(--sp))}
+  .piece{flex-direction:column;align-items:flex-start;line-height:1.15}
+  .piece .psep{display:none}
+  .piece .pname,.piece .pjo{max-width:100%}
+  .kcard .kjo,.ivcard .ivb .kjo,.rvi .kjo{height:calc(40px*var(--hs));line-height:calc(18px*var(--hs));white-space:normal;align-items:flex-start}}
 @media (max-width:760px){.kpi:last-child:nth-child(odd){grid-column:1/-1}.dt td{padding:calc(9px*var(--sp)) calc(6px*var(--sp));font-size:calc(14px*var(--fs))}.dt td:nth-child(2){white-space:nowrap}.dtitle .lab{font-size:calc(10px*var(--fs));text-align:right}}
 .dt .chip{white-space:nowrap}
 /* location counts (dashboard) */

@@ -113,3 +113,7 @@
 .perr{text-align:center;padding:calc(30px*var(--sp)) calc(16px*var(--sp))}.perr p{margin:0 0 calc(12px*var(--sp))!important;font-size:calc(15px*var(--fs))}
 .pnomatch{display:flex;align-items:center;gap:calc(10px*var(--sp));flex-wrap:wrap;border:1px dashed #ddd;border-radius:calc(12px*var(--rad));padding:calc(10px*var(--sp)) calc(14px*var(--sp));margin-bottom:calc(12px*var(--sp));font-size:calc(14px*var(--fs))}
 .pnojo b{color:#111}.pnojo p,.perr p{color:#555}
+/* phone board: the name sits above the JO, and every card reserves that second line */
+@media (max-width:760px){
+  .prplist .kjo,.pcard .kjo{height:calc(46px*var(--hs));line-height:calc(22px*var(--hs));white-space:normal;align-items:flex-start}
+}

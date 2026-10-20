@@ -35,6 +35,8 @@ td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
 .csnew .fsec{margin-bottom:calc(12px*var(--sp))}
 .cshits{border:1px solid #eee;border-radius:calc(12px*var(--rad));margin:calc(-4px*var(--sp)) 0 calc(12px*var(--sp));overflow:hidden}
 .cshit{display:block;width:100%;text-align:left;background:#fff;border:0;border-top:1px solid #eee;padding:calc(10px*var(--sp)) calc(12px*var(--sp));cursor:pointer;color:#111;font:inherit}
+.cs .piece .pname{max-width:240px}
+@media print{.cs .piece .pname,.cs .piece .psep{display:none!important}}
 .cshit:first-child{border-top:0}.cshit:hover{background:#faf8f1}.cshit b{font-family:var(--head);font-weight:500}
 .csval{width:110px;border:1.5px solid #111;border-radius:calc(10px*var(--rad));padding:calc(8px*var(--sp));font-family:var(--body);font-size:calc(16px*var(--fs));background:#fff}
 .cstog{background:none;border:0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#111;padding:0;margin:calc(8px*var(--sp)) 0}

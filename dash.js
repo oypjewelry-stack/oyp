@@ -565,8 +565,8 @@ function draw(main, u) {
   D.mail = (r && Object.prototype.hasOwnProperty.call(r, 'inquiries')) ? (Array.isArray(r.inquiries) ? r.inquiries : []) : null; // email: whoever the server already includes `inquiries` for
   parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'In production · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
     <div class="kcol"><a class="khead tap" href="#/dashboard/stage/${esc(col.key)}"><span class="lab">${esc(col.label)} ›</span><span class="kn">${col.count}</span></a>${col.cards.map(j => `
-      <div class="kcard tap${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
-      <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
+      <div class="kcard tap${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
+      <div class="kd">${esc(j.description || '—')}</div>
       <div class="kf">${j.due ? `<span class="chip ${j.late ? 'gold' : ''}">${j.late ? 'Late · ' : 'Due '}${esc(day(j.due))}</span>` : ''}${j.type === 'repair' ? '<span class="chip">Repair</span>' : ''}${j.review ? '<span class="chip">Review</span>' : ''}${noCC.has(j.jo) ? '<span class="chip nocc" title="No client mobile or email">No contact</span>' : ''}</div></div>`).join('') || '<div class="kempty">—</div>'}</div>`).join('')}</div></section>`;
   if (r.locations) {
     loadLoc(r.locations, u);
@@ -582,7 +582,7 @@ function draw(main, u) {
     const L = r.consignments || [];
     const owedSlot = (u && u.role === 'admin') ? '<div class="kpis dcowed" id="dConsignOwed" hidden></div>' : '';
     parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="csdash"><span class="lab">Items out · oldest first</span><a class="lnk" href="#/consignment">Open</a></span></div>${owedSlot}${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
-      <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}${x.jo ? ' · JO ' + esc(x.jo) : ''}</span></td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
+      <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}</span>${x.jo ? '<br>' + window.OYP.piece(x.client, x.jo) : ''}</td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
       : `<p class="muted">${(r.missing || []).includes('Consignment') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
   }
@@ -840,7 +840,7 @@ async function drillPage(main, u, kind, key, keepScroll, quiet) {
     title = kind === 'overdue' ? 'Overdue consignments' : 'Consigned out'; sub = kind === 'overdue' ? 'Out over ' + r.overdue_days + ' days, oldest first' : 'Items and JOs out on consignment, oldest first';
     chips = [['#/dashboard/consigned', 'Consigned out', r.counts.consigned_out, kind === 'consigned'], ['#/dashboard/overdue', 'Overdue', r.counts.overdue_consignments, kind === 'overdue']];
     show.stage = false; show.loc = false;
-    const L = (r.consignments || []).filter(c => kind === 'consigned' || c.overdue).map(c => ({ jo: c.jo, item: c.item_id, description: c.description || c.item_id, client: c.consignee,
+    const L = (r.consignments || []).filter(c => kind === 'consigned' || c.overdue).map(c => ({ jo: c.jo, item: c.item_id, description: c.description || c.item_id, client: c.client, with: c.consignee,
       chips: [c.date_out ? 'Out ' + day(c.date_out) : '', c.days_out != null ? plural(c.days_out, 'day') : ''], gold: c.overdue ? 'Overdue' : '', value: can.prices && c.value ? peso(c.value) : '' }));
     groups = [['On consignment sheets', L]];
     if (kind === 'consigned' && r.counts.consigned_jos) { const out = new Set(L.map(c => c.jo));
@@ -865,11 +865,11 @@ async function drillPage(main, u, kind, key, keepScroll, quiet) {
     if (x.value) c.push(`<span class="chip">${esc(x.value)}</span>`);
     if (x.jo && noCC.has(x.jo)) c.push('<span class="chip nocc">No contact</span>');
     const go = open && x.jo;
-    return `<div class="rvrow dr ${go ? 'go tap' : ''}"${go ? ` data-jo="${esc(x.jo)}"` : ''}><div class="rvi"><div class="kjo">${x.jo ? esc(x.jo) : `<span class="muted">${esc(x.item || '—')}</span>`}${x.parent_jo ? `<span class="muted sm">of ${esc(x.parent_jo)}</span>` : ''}${x.item && x.jo ? `<span class="muted sm">${esc(x.item)}</span>` : ''}</div>
-      <div class="kd">${esc(x.description || 'No details')}${x.client ? ' · ' + esc(x.client) : ''}</div><div class="kf">${c.join('')}</div></div>${go ? '<span class="chev">›</span>' : ''}</div>`;
+    return `<div class="rvrow dr ${go ? 'go tap' : ''}"${go ? ` data-jo="${esc(x.jo)}"` : ''}><div class="rvi"><div class="kjo">${x.jo ? window.OYP.piece(x.client, x.jo) : `<span class="muted">${esc(x.item || '—')}</span>`}${x.parent_jo ? `<span class="muted sm">of ${esc(x.parent_jo)}</span>` : ''}${x.item && x.jo ? `<span class="muted sm">${esc(x.item)}</span>` : ''}</div>
+      <div class="kd">${esc(x.description || 'No details')}${x.with ? ' · ' + esc(x.with) : ''}</div><div class="kf">${c.join('')}</div></div>${go ? '<span class="chev">›</span>' : ''}</div>`;
   };
   const q = () => ((main.querySelector('#drQ') || {}).value || '').trim().toUpperCase();
-  const hit = x => { const t = q(); return !t || [x.jo, x.description, x.client, x.item].some(v => String(v || '').toUpperCase().includes(t)); };
+  const hit = x => { const t = q(), name = x.client && typeof x.client === 'object' ? x.client.name : x.client; return !t || [x.jo, x.description, name, x.with, x.item].some(v => String(v || '').toUpperCase().includes(t)); };
   const list = () => {
     if (body) return body;
     const G = groups || [[null, rows]];

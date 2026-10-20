@@ -500,7 +500,24 @@ function locLabel(key, serverLabel) {
   if (key === 'unset') return 'No location yet';
   return serverLabel || key || '';
 }
-window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel, locLabel }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
+function pieceName(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'object' && v.name) return String(v.name).trim();
+  return '';
+}
+// Client name, then the JO. A missing name (bench staff, or no client on the job) is the JO alone.
+function piece(name, jo) {
+  const n = pieceName(name), id = String(jo || '').trim();
+  const bits = [];
+  if (n) bits.push(`<span class="pname">${esc(n)}</span>`);
+  if (n && id) bits.push('<span class="psep"> · </span>');
+  if (id) bits.push(`<span class="pjo">${esc(id)}</span>`);
+  if (!bits.length) return '';
+  const title = n && id ? n + ' · ' + id : (n || id);
+  return `<span class="piece" title="${esc(title)}">${bits.join('')}</span>`;
+}
+window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 // Edit layout is off on every load. Settings turns it on; Done turns it off. Order stays in localStorage either way.
 const LE = {
   on: false, fns: [],

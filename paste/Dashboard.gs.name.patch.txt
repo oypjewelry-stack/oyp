@@ -1,0 +1,40 @@
+Dashboard.gs — jewelry client on consignment rows that the drill list shows as a piece.
+Do not paste a new Dashboard.gs over the live file. Apply each FIND / REPLACE in order.
+This does not add a read action. Do not edit Fast.gs or DashCache.gs. No new oauth scope. No setup function.
+Names are added only when the role already may see clients (can.clients). The consignee stays in its own field.
+
+FIND
+function dashConsign_(today, limit, exec, liveJobs, missing) {
+
+REPLACE WITH
+function dashConsign_(today, limit, exec, liveJobs, missing, clients) {
+
+FIND
+  var rows = dashRead_('Consignment', missing);
+  var list = [], onSheet = {}, owed = 0, i, r, st, jo, agreed, paid, dout, due, days, late, row, value;
+
+REPLACE WITH
+  var rows = dashRead_('Consignment', missing);
+  var list = [], onSheet = {}, owed = 0, i, r, st, jo, agreed, paid, dout, due, days, late, row, value;
+  var nameByJo = {};
+  if (clients) (liveJobs || []).forEach(function (j) {
+    var k = joOf(j.jo), id = String(j.client_id || ''), rec = clients[id];
+    if (k && rec && rec.name) nameByJo[k] = String(rec.name);
+  });
+
+FIND
+      date_out: dout, days_out: days, overdue: !!late
+    };
+    value = num(r.agreed_value != null && String(r.agreed_value).trim() !== '' ? r.agreed_value : r.value);
+
+REPLACE WITH
+      date_out: dout, days_out: days, overdue: !!late
+    };
+    if (jo && nameByJo[jo]) row.client = nameByJo[jo];
+    value = num(r.agreed_value != null && String(r.agreed_value).trim() !== '' ? r.agreed_value : r.value);
+
+FIND
+    var cg = dashConsign_(today, out.overdue_days, exec, allJobs.filter(live), missing); // Consignment.gs tab; live is a predicate here, so pass the non-cancelled JOs
+
+REPLACE WITH
+    var cg = dashConsign_(today, out.overdue_days, exec, allJobs.filter(live), missing, can.clients ? clients : null); // Consignment.gs tab; live is a predicate here, so pass the non-cancelled JOs
