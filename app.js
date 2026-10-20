@@ -191,13 +191,14 @@ function whoBlock(u) {
   return `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
     <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
 }
-let curPage = '';
+let curPage = '', navEdit = false; // edit layout is off on every load; it is not saved
 function renderNav(u, page) {
   curPage = page;
-  const edit = u.role === 'admin';
+  const can = u.role === 'admin', edit = can && navEdit;
   const rows = orderedNav(u).map(([k, t]) => navRow(k, t, page, edit)).join('');
-  const reset = edit ? '<button type="button" class="nreset" hidden>Reset menu</button>' : '';
-  $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + reset + '</div>' + whoBlock(u);
+  const toggle = can ? `<button type="button" class="nedit" aria-pressed="${edit ? 'true' : 'false'}">${edit ? 'Done' : 'Edit layout'}</button>` : '';
+  const reset = edit ? '<button type="button" class="nreset"' + (readNavOrder(u) ? '' : ' hidden') + '>Reset menu</button>' : '';
+  $('side').innerHTML = '<div class="sidenav" id="sideNav">' + toggle + rows + reset + '</div>' + whoBlock(u);
   wireNav($('sideNav'), u);
   const m = $('menu');
   if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); wireNav(m, u); }
@@ -206,8 +207,9 @@ function phoneInner(u) {
   if (!u) return `<a href="${SCANNER}">Card scanner</a>`;
   if ((u.role === 'staff' || !NAV[u.role]) && !(u.role === 'staff' && NAV.staff)) return `<a href="${scanUrl()}">Scan JO card</a><button data-logout>Log out</button>`;
   if (u.role === 'staff') return NAV.staff.map(([k, t]) => navLink(k, t, '')).join('') + '<button data-logout>Log out</button>';
-  const edit = u.role === 'admin';
-  return orderedNav(u).map(([k, t]) => navRow(k, t, curPage, edit)).join('') + (edit ? '<button type="button" class="nreset" hidden>Reset menu</button>' : '') + '<button data-logout>Log out</button>';
+  const can = u.role === 'admin', edit = can && navEdit;
+  const toggle = can ? `<button type="button" class="nedit" aria-pressed="${edit ? 'true' : 'false'}">${edit ? 'Done' : 'Edit layout'}</button>` : '';
+  return toggle + orderedNav(u).map(([k, t]) => navRow(k, t, curPage, edit)).join('') + (edit ? '<button type="button" class="nreset"' + (readNavOrder(u) ? '' : ' hidden') + '>Reset menu</button>' : '') + '<button data-logout>Log out</button>';
 }
 function wireNav(box, u) {
   if (!box || !u || u.role !== 'admin') return;
@@ -219,6 +221,10 @@ function wireNav(box, u) {
   };
   const persist = () => { writeNavOrder(u, items().map(s => s.dataset.nkey), (NAV[u.role] || []).map(n => n[0])); renderNav(u, curPage); };
   box.addEventListener('click', e => {
+    if (e.target.closest('.nedit')) {
+      e.preventDefault(); e.stopPropagation();
+      navEdit = !navEdit; renderNav(u, curPage); return;
+    }
     if (e.target.closest('.nreset')) {
       e.preventDefault(); e.stopPropagation();
       try { localStorage.removeItem(navKey(u)); } catch (err) {}
