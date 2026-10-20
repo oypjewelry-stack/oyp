@@ -22,7 +22,7 @@ const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see
 const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, suppress: false, busy: false };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, suppress: false, busy: false, offer: '' };
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
@@ -66,6 +66,7 @@ async function renderJos(main, u) {
 }
 function ivDraw(main) {
   const { esc } = window.OYP, r = IV.r, can = r.can || {}, L = ivShown(), title = IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
+  if (IV.offer) { const hid = ivFindBase(IV.offer); if (!hid || L.some(j => j.jo === hid.jo)) IV.offer = ''; }
   const liveIds = new Set(r.jobs.map(j => j.jo));
   [...IV.sel].forEach(id => { if (!liveIds.has(id)) IV.sel.delete(id); });
   if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('iv-coarse');
@@ -91,6 +92,8 @@ function ivDraw(main) {
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     <div class="rvchips ivchips">${Object.keys(IVIEWS).map(k => `<button class="fchip tap ${IV.view === k ? 'on' : ''}" data-iv="${k}">${esc(IVIEWS[k][0])} <b>${cnt(k)}</b></button>`).join('')}</div>
     <input id="ivQ" class="rvq" placeholder="Search JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off">
+    ${edit ? `<input id="ivScan" class="rvq ivscan" placeholder="Scan or type JO" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Scan or type JO">` : ''}
+    ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
     <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
     ${edit && L.length ? `<label class="ivall"><input type="checkbox" id="ivAll" ${allOn ? 'checked' : ''}><span>Select all</span></label>${n ? `<span class="ivcount">${n} selected</span>` : ''}` : ''}
@@ -176,7 +179,15 @@ function ivWire(main) {
   $('#ivStage').onchange = e => { IV.stage = e.target.value; if (IV.stage && IV.view !== 'all' && IV.view !== 'making') IV.view = 'all'; ivDraw(main); };
   $('#ivLoc').onchange = e => { IV.loc = e.target.value; if (IV.loc) IV.view = IV.loc === 'archived' ? 'archived' : 'all'; ivDraw(main); };
   $('#ivType').onchange = e => { IV.type = e.target.value; ivDraw(main); };
-  if ($('#ivClr')) $('#ivClr').onclick = () => { IV.stage = IV.loc = IV.type = ''; ivDraw(main); };
+  if ($('#ivClr')) $('#ivClr').onclick = () => { IV.stage = IV.loc = IV.type = ''; IV.offer = ''; ivDraw(main); };
+  if ($('#ivScan')) $('#ivScan').onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const raw = e.target.value;
+    e.target.value = '';
+    ivScanCommit(raw, true);
+  };
+  if ($('#ivUnfilter')) $('#ivUnfilter').onclick = () => ivReveal(main);
   if ($('#ivAll')) $('#ivAll').onclick = e => {
     const ids = ivShown().map(j => j.jo);
     ids.forEach(id => e.target.checked ? IV.sel.add(id) : IV.sel.delete(id));
@@ -387,5 +398,114 @@ function mWire(main) {
   const med = $('.medit'); if (med) med.ontoggle = () => { MS.editing = med.open; };
 }
 // a fresh visit (menu / link) on a phone starts on the list; on a desktop the last item stays open
-window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.menu = ''; IV.anchor = ''; IV.picking = false; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
+window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.menu = ''; IV.anchor = ''; IV.picking = false; IV.offer = ''; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
+
+/* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
+   The Scan or type JO box takes the same scan when it is focused, including a slow typed number.
+   A sticker's QR is the JO itself (26-287 or 26-287A) or a link / prefixed text that contains one
+   (jo=26-287, or a path ending in /26-287). The same read is in consign.js.
+   A trailing letter is the version and folds to the base JO, the same way jobMergeVersions_ does:
+   26-287A and 26-287B are both 26-287. If more than one version is still its own tile, the newest letter is the one selected. */
+const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_MAX = 400;
+let scanBuf = '', scanAt = 0;
+function joPack_(yy, num, letter) {
+  letter = letter || '';
+  return { base: yy + '-' + num, letter: letter, text: yy + '-' + num + letter };
+}
+/** JO from a sticker. Plain 26-287 / 26-287A, or a URL or other text that contains one. */
+function joFromScan(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return null;
+  try { s = decodeURIComponent(s.replace(/\+/g, ' ')); } catch (e) {}
+  const u = s.toUpperCase();
+  if (/^CS-[A-Z0-9-]+$/.test(u)) return null;
+  let m = u.match(/(?:^|[?&#\s])JO=(\d{2})-?(\d{3,4})([A-Z])?(?![A-Z0-9])/);
+  if (m) return joPack_(m[1], m[2], m[3]);
+  const paths = [];
+  const pre = /\/(\d{2})-(\d{3,4})([A-Z])?(?![A-Z0-9])/g;
+  while ((m = pre.exec(u))) paths.push(m);
+  if (paths.length) { m = paths[paths.length - 1]; return joPack_(m[1], m[2], m[3]); }
+  m = u.match(/(?:^|[^A-Z0-9])JO\s*[:#]?\s*(\d{2})\s*[- ]?\s*(\d{3,4})\s*([A-Z])?(?![A-Z0-9])/);
+  if (m) return joPack_(m[1], m[2], m[3]);
+  const re = /(?:^|[^A-Z0-9])(\d{2})\s*[- ]\s*(\d{3,4})(?:\s*([A-Z])(?![A-Z0-9]))?/g;
+  let last = null;
+  while ((m = re.exec(u))) last = m;
+  if (last) return joPack_(last[1], last[2], last[3]);
+  if (!/[:/]/.test(u) && (m = u.match(/(\d{2})(\d{3,4})([A-Z])?$/))) return joPack_(m[1], m[2], m[3]);
+  return null;
+}
+function joParts(s) {
+  const p = joFromScan(s);
+  return p ? { base: p.base, letter: p.letter } : null;
+}
+function ivVer(j) {
+  const p = joParts(j.jo), v = String(j.version || (p && p.letter) || '').toUpperCase();
+  return v.length === 1 ? v.charCodeAt(0) : 0;
+}
+function ivFindBase(base) {
+  const hits = (IV.r.jobs || []).filter(j => { const p = joParts(j.jo); return p && p.base === base; });
+  hits.sort((a, b) => ivVer(b) - ivVer(a) || (joParts(a.jo).letter ? 1 : 0) - (joParts(b.jo).letter ? 1 : 0));
+  return hits[0] || null;
+}
+function ivScanOn() { return !!(IV.r && ivEdit() && /^#\/jos(?:$|[/?])/.test(location.hash)); }
+function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
+function ivRefocus(main) { const s = main.querySelector('#ivScan'); if (s) s.focus(); }
+function ivFlash(jo) {
+  const el = document.querySelector('.ivcard[data-jo="' + (window.CSS && CSS.escape ? CSS.escape(jo) : jo) + '"]');
+  if (!el) return;
+  el.scrollIntoView({ block: 'center' });
+  el.classList.remove('ivflash'); void el.offsetWidth; el.classList.add('ivflash');
+}
+function ivTake(main, job, base, fromBox) {
+  const already = IV.sel.has(job.jo);
+  IV.offer = ''; IV.sel.add(job.jo); IV.anchor = job.jo; IV.picking = true; IV.menu = '';
+  window.OYP.toast(already ? 'already selected' : base + ' selected (' + IV.sel.size + ')');
+  ivDraw(main); ivFlash(job.jo); if (fromBox) ivRefocus(main);
+}
+function ivScanCommit(raw, fromBox) {
+  const main = document.getElementById('main');
+  if (!main || !IV.r) return;
+  const p = joParts(raw);
+  const shown = p ? p.base : String(raw || '').trim().replace(/\s+/g, ' ');
+  const label = shown.length > 48 ? shown.slice(0, 45) + '…' : shown;
+  if (!p || !ivFindBase(p.base)) {
+    const had = IV.offer; IV.offer = '';
+    window.OYP.toast('JO ' + (label || '—') + ' not in Inventory');
+    if (had) ivDraw(main);
+    if (fromBox) ivRefocus(main);
+    return;
+  }
+  const job = ivFindBase(p.base);
+  if (!ivShown().some(j => j.jo === job.jo)) {
+    IV.offer = p.base;
+    window.OYP.toast('JO ' + p.base + ' is hidden by a filter');
+    ivDraw(main); if (fromBox) ivRefocus(main);
+    return;
+  }
+  ivTake(main, job, p.base, fromBox);
+}
+function ivReveal(main) {
+  const base = IV.offer, job = base && ivFindBase(base);
+  IV.offer = '';
+  if (!job) { ivDraw(main); return; }
+  IV.q = ''; IV.stage = ''; IV.loc = ''; IV.type = '';
+  if (!IVIEWS[IV.view][1](job)) IV.view = job.location === 'archived' ? 'archived' : 'all';
+  ivTake(main, job, base, false);
+}
+document.addEventListener('keydown', e => {
+  if (!ivScanOn() || ivField(document.activeElement) || e.isComposing) return;
+  if (e.key === 'Enter') {
+    const raw = scanBuf, fast = !!(raw && Date.now() - scanAt <= SCAN_ENTER);
+    scanBuf = '';
+    if (!fast) return;
+    e.preventDefault(); e.stopPropagation();
+    ivScanCommit(raw, false);
+    return;
+  }
+  if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+  const now = Date.now();
+  if (scanBuf && now - scanAt > SCAN_GAP) scanBuf = '';
+  scanBuf += e.key; scanAt = now;
+  if (scanBuf.length > SCAN_MAX) scanBuf = scanBuf.slice(-SCAN_MAX);
+}, true);
 })();
