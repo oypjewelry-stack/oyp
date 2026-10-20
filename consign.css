@@ -1,0 +1,76 @@
+/* Consignment (#/consignment), consign.js */
+.cs{max-width:calc(1100px*var(--cw))}
+.cshead{align-items:center}
+.csdash{display:flex;align-items:center;gap:calc(12px*var(--sp));flex-wrap:wrap;justify-content:flex-end}
+.csdash .lnk{font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#111}
+.cs .dhead .pill{text-decoration:none}
+.cswarn{border:1px solid var(--gold);background:#fffdf6;border-radius:calc(12px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.45}
+.csseg{width:auto;max-width:calc(420px*var(--cw));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp))}
+.csrow{cursor:pointer}.csrow:hover td{background:#faf8f1}
+.csfind{margin-bottom:0}
+.csfind .rvq{flex:1;margin:0}
+.csrowacts{display:flex;flex-wrap:wrap;gap:calc(4px*var(--sp)) calc(10px*var(--sp));align-items:center}
+td .csrowacts{flex-direction:column;align-items:flex-start}
+.cshead .csrowacts{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;max-width:none}
+.cssignbits{display:flex;flex-wrap:wrap;align-items:center;gap:calc(6px*var(--sp));margin-top:calc(4px*var(--sp))}
+.csthumb{line-height:0}
+.csthumb img{width:44px;height:44px;object-fit:cover;border:1px solid #eee;border-radius:calc(8px*var(--rad));background:#fff;display:block}
+.csfile{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+.csmoney{display:block;margin-top:calc(3px*var(--sp));font-size:calc(13px*var(--fs));color:#333;line-height:1.35}
+td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
+.cspay{margin-top:calc(8px*var(--sp))}
+.dcowed{max-width:280px;margin:0 0 calc(14px*var(--sp))}
+.csacts{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp));align-items:center;margin:calc(12px*var(--sp)) 0}
+.csnote{min-height:0;margin:0 0 calc(8px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.35}
+.csnote:empty{display:none}
+.csnote.ok{color:#245c2b}.csnote.dup{color:#7a5b00}.csnote.bad{color:#b00020}
+.csflash.ok{box-shadow:0 0 0 2px #245c2b;background:#e9f4ea}
+.csflash.dup{box-shadow:0 0 0 2px #9a7b2f;background:#fff8e8}
+.csflash.bad{box-shadow:0 0 0 2px #b00020;background:#fdecec}
+.csmode{display:inline-flex;align-items:center;gap:8px}
+.csmode button{background:none;border:0;padding:2px 0;font-family:var(--body);font-size:calc(13px*var(--fs));font-weight:400;letter-spacing:0;text-transform:none;color:#888;cursor:pointer}
+.csmode button.on{color:#111;text-decoration:underline}
+.csback{background:none;border:0;cursor:pointer;padding:0;margin-bottom:calc(10px*var(--sp));display:inline-block;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#111}
+.csnew{border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(16px*var(--sp)) calc(18px*var(--sp));margin-bottom:calc(16px*var(--sp))}
+.csnew .fsec{margin-bottom:calc(12px*var(--sp))}
+.cshits{border:1px solid #eee;border-radius:calc(12px*var(--rad));margin:calc(-4px*var(--sp)) 0 calc(12px*var(--sp));overflow:hidden}
+.cshit{display:block;width:100%;text-align:left;background:#fff;border:0;border-top:1px solid #eee;padding:calc(10px*var(--sp)) calc(12px*var(--sp));cursor:pointer;color:#111;font:inherit}
+.cshit:first-child{border-top:0}.cshit:hover{background:#faf8f1}.cshit b{font-family:var(--head);font-weight:500}
+.csval{width:110px;border:1.5px solid #111;border-radius:calc(10px*var(--rad));padding:calc(8px*var(--sp));font-family:var(--body);font-size:calc(16px*var(--fs));background:#fff}
+.cstog{background:none;border:0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#111;padding:0;margin:calc(8px*var(--sp)) 0}
+.csloose{margin-top:calc(8px*var(--sp))}
+/* camera */
+.cscam{position:fixed;inset:0;background:#fff;z-index:40;display:flex;flex-direction:column;padding:calc(18px*var(--sp)) calc(16px*var(--sp));gap:calc(10px*var(--sp))}
+.cscam video{width:100%;max-height:52vh;background:#111;border-radius:calc(12px*var(--rad));object-fit:cover}
+.cscam .rvq{margin:0}
+/* printable sheet */
+.csheet{max-width:720px;margin:0 auto;border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(28px*var(--sp)) calc(28px*var(--sp)) calc(22px*var(--sp));background:#fff;color:#111}
+.csno{font-family:var(--head);font-weight:500;font-size:calc(36px*var(--hs));letter-spacing:.04em;line-height:1.1;margin:0 0 calc(14px*var(--sp))}
+.csno .lab{display:block;margin-bottom:calc(4px*var(--sp))}
+.csbrand{display:flex;align-items:center;gap:calc(12px*var(--sp));margin-bottom:calc(4px*var(--sp))}
+.csbrand img{height:42px;width:auto}
+.csbrand b{font-family:var(--head);font-weight:500;font-size:calc(28px*var(--hs));letter-spacing:.04em;text-transform:uppercase}
+.cscontact{font-family:var(--label);font-size:calc(13px*var(--fs));color:#333;margin:0 0 calc(16px*var(--sp))}
+.csmeta{display:flex;justify-content:space-between;gap:calc(16px*var(--sp));flex-wrap:wrap;margin-bottom:calc(14px*var(--sp));padding-bottom:calc(12px*var(--sp));border-bottom:1px solid #111}
+.csmeta b{font-family:var(--head);font-weight:500;font-size:calc(20px*var(--hs))}
+.csheet table{max-width:none}
+.cstot{text-align:right;font-family:var(--head);font-weight:500;font-size:calc(18px*var(--hs));margin:calc(12px*var(--sp)) 0 calc(22px*var(--sp))}
+.cssigns{display:grid;grid-template-columns:1fr 1fr;gap:calc(28px*var(--sp));margin-top:calc(28px*var(--sp))}
+.csline{border-bottom:1px solid #111;height:calc(42px*var(--bh));margin-bottom:calc(6px*var(--sp))}
+.cssigns .lab{margin-bottom:calc(2px*var(--sp))}
+html.cs-onprint .top,html.cs-onprint .side,html.cs-onprint .menu,html.cs-onprint #toast{display:none!important}
+html.cs-onprint .office{display:block}
+html.cs-onprint .main{padding:calc(18px*var(--sp))}
+html.cs-onprint .csheet{border:0;border-radius:0;max-width:none;padding:0}
+@media (max-width:760px){
+  .cssigns{grid-template-columns:1fr}
+  .csval{width:100%}
+  .csheet{padding:calc(16px*var(--sp))}
+}
+@media print{
+  .top,.side,.menu,#toast,.cs-noprint{display:none!important}
+  .office{display:block!important}
+  .main{padding:0!important}
+  .csheet{border:0;border-radius:0;max-width:none;padding:0}
+  body{background:#fff}
+}

@@ -466,10 +466,11 @@ function draw(main, u) {
 
   if (can.consign) {
     const L = r.consignments || [];
-    parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="lab">Items out · oldest first</span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
+    const owedSlot = (u && u.role === 'admin') ? '<div class="kpis dcowed" id="dConsignOwed" hidden></div>' : '';
+    parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="csdash"><span class="lab">Items out · oldest first</span><a class="lnk" href="#/consignment">Open</a></span></div>${owedSlot}${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
       <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}${x.jo ? ' · JO ' + esc(x.jo) : ''}</span></td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
-      : `<p class="muted">${(r.missing || []).includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
+      : `<p class="muted">${(r.missing || []).includes('Consignment') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
   }
 
   if ((D.inbox && D.inbox.items.length) || D.mail) parts.msgs = messagesCard(esc);
@@ -482,7 +483,7 @@ function draw(main, u) {
   }
 
   h += `<div id="dsecs">${arrange(Object.keys(parts), D.ordOn ? readOrder(u) : null).map(id => parts[id]).join('')}</div>`;
-  const miss = (r.missing || []).filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
+  const miss = (r.missing || []).filter(t => !{ Settings: 1, Items: 1, Consignees: 1, Consignments: 1, ConsignmentItems: 1 }[t]); // Settings is optional. Items is inventory. Only a missing Consignment tab is a consignment warning.
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u, true);
@@ -496,6 +497,20 @@ function draw(main, u) {
   wireMessages(main, esc);
   const nc = main.querySelector('#dNoCC'); if (nc) nc.onclick = () => { try { sessionStorage.setItem('oypReviewFilter', 'nocontact'); } catch (_) {} };
   prefetchJobs(u);
+  if (u && u.role === 'admin' && can.consign) fillOwed(main, esc, live);
+}
+async function fillOwed(main, esc, live) {
+  const box = main.querySelector('#dConsignOwed');
+  if (!box) return;
+  let r = null;
+  try { r = await window.OYP.call('consignList'); } catch (e) { r = null; }
+  const still = main.querySelector('#dConsignOwed');
+  if (!live() || !still) return;
+  if (!r || !r.ok || r.balance == null) { still.remove(); return; }
+  const n = Number(r.balance) || 0;
+  const note = 'owed ' + peso(r.owed) + ' · paid ' + peso(r.paid);
+  still.hidden = false;
+  still.innerHTML = `<a class="kpi kpilink tap${n > 0 ? ' gold' : ''}" href="#/consignment"><span class="lab">Owed by consignees ›</span><b>${esc(peso(n))}</b><small>${esc(note)}</small></a>`;
 }
 
 /* ---------- Messages: portal ClientMessages + email inquiries, one list ---------- */
