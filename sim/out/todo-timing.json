@@ -1,0 +1,25 @@
+{
+  "jo": 500,
+  "ms": 6.6,
+  "tabs": {
+    "Clients": 1,
+    "JobOrders": 1,
+    "Reminders": 1,
+    "Appointments": 1,
+    "Settings": 1,
+    "Holidays": 1,
+    "JobStages": 1,
+    "Payments": 1,
+    "Quotes": 1,
+    "Consignment": 1,
+    "Materials": 1,
+    "Rates": 1,
+    "PriceLog": 1,
+    "ClientMessages": 1,
+    "ShopItems": 1,
+    "Shop": 1
+  },
+  "items": 60,
+  "total": 187,
+  "note": "in-memory cache miss: the builder ran with no CacheService hit; sheet I/O is not included"
+}

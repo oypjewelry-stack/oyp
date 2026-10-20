@@ -16,6 +16,8 @@ var TODO_COL = [
 var TODO_HREF = { appt: '#/appts', prod: '#/production', pay: '#/payments', quote: '#/quotes', cons: '#/consignment', stock: '#/inventory', msg: '#dMsgs', shop: '#/shop', rev: '#/review' };
 var TODO_TAG = { appt: 'Appointments', prod: 'Production', pay: 'Payments', quote: 'Quotes', cons: 'Consignment', stock: 'Stock', msg: 'Messages', shop: 'Shop', rev: 'To review' };
 
+var TODO_MAX = 60; // lines sent to the card; the card shows 8 until Show all
+
 function isTodoAction_(a) { return a === 'todoDone' || a === 'todoSnooze'; }
 
 function handleTodo_(req, user) {
@@ -24,6 +26,25 @@ function handleTodo_(req, user) {
   if (req.action === 'todoDone') return todoDismiss_(req, user, 'done');
   if (req.action === 'todoSnooze') return todoDismiss_(req, user, 'snooze');
   return { ok: false, error: 'Unknown action' };
+}
+
+/** Own read. The dashboard paints first; dash.js asks for this afterwards. Cached like dashboard (Fast.gs + DashCache.gs). */
+function todoList_(req, user) {
+  if (!user) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  if (typeof DASH_ROLES !== 'undefined' && !DASH_ROLES[user.role]) return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  var role = String(user.role || '');
+  var can0 = DASH_ROLES[role], exec = typeof isExec_ === 'function' ? !!isExec_(user) : role === 'admin', can = {};
+  Object.keys(can0).forEach(function (k) { can[k] = can0[k]; });
+  can.prices = exec;
+  var pack = dashTodo_({
+    now: new Date(), role: role, exec: exec, can: can,
+    read: function (name) {
+      if (typeof dashRead_ !== 'function') return [];
+      var rows = dashRead_(name, []); // private missing list: a gap here must not light the dashboard footer
+      return Array.isArray(rows) ? rows : [];
+    }
+  });
+  return { ok: true, items: pack.items, total: pack.total };
 }
 
 function dashTodo_(ctx) {
@@ -35,8 +56,13 @@ function dashTodo_(ctx) {
   var money = !!ctx.exec;
   var can = ctx.can || {};
   var read = ctx.read || function (name) { return typeof dashRead_ === 'function' ? dashRead_(name, []) : []; };
-  var take = function (name) { try { var rows = read(name); return Array.isArray(rows) ? rows : []; } catch (e) { return []; } };
-  var clients = ctx.clients || {};
+  var memo = {}; // each tab is read once per build
+  var take = function (name) { if (memo[name]) return memo[name]; try { var rows = read(name); return (memo[name] = Array.isArray(rows) ? rows : []); } catch (e) { return (memo[name] = []); } };
+  var clients = ctx.clients;
+  if (!clients) {
+    clients = {};
+    if (can.clients) take('Clients').forEach(function (c) { var id = String(c.client_id || ''); if (id) clients[id] = c; });
+  }
   var jobs = Array.isArray(ctx.jobs) ? ctx.jobs : take('JobOrders');
   var hidden = todoHiddenMap_(take('Reminders'), now.getTime());
   var items = [];
@@ -45,17 +71,19 @@ function dashTodo_(ctx) {
   if (areas.prod || areas.rev) todoJobs_(push, jobs, take, clients, role, today, areas);
   if (areas.pay && can.payments !== false) todoPay_(push, jobs, take, clients, role, today, money);
   if (areas.quote) todoQuotes_(push, jobs, take, clients, role, today);
-  if (areas.cons && can.consign !== false) todoCons_(push, ctx.consignments || [], role);
+  if (areas.cons && can.consign !== false) todoCons_(push, take, jobs, clients, role, today, ctx.consignments);
   if (areas.stock) todoStock_(push, take, today);
   if (areas.msg) todoMsgs_(push, take, now.getTime());
   if (areas.shop) todoShop_(push, take);
   var rank = { today: 0, week: 1, idea: 2 };
   items.sort(function (a, b) { return (rank[a.bucket] - rank[b.bucket]) || ((b.late || 0) - (a.late || 0)) || String(a.text).localeCompare(String(b.text)); });
-  return { items: items };
+  var total = items.length;
+  if (items.length > TODO_MAX) items = items.slice(0, TODO_MAX);
+  return { items: items, total: total };
 }
 
 function todoAppts_(push, take, today, role) {
-  var rows = take('Appointments'), hours = todoHours_(), closed = todoClosed_(take('Holidays'));
+  var rows = take('Appointments'), hours = todoHours_(take), closed = todoClosed_(take('Holidays'));
   var booked = [], reqs = [], i, a;
   for (i = 0; i < rows.length; i++) {
     a = todoAppt_(rows[i]);
@@ -187,22 +215,41 @@ function todoQuotes_(push, jobs, take, clients, role, today) {
   });
 }
 
-function todoCons_(push, rows, role) {
-  var g = {}, i, r, id, slot;
+function todoCons_(push, take, jobs, clients, role, today, preset) {
+  var rows = Array.isArray(preset) ? preset : take('Consignment');
+  var jobBy = {}, i, jid;
+  for (i = 0; i < (jobs || []).length; i++) { jid = todoJo_(jobs[i].jo); if (jid) jobBy[jid] = jobs[i]; }
+  var g = {}, r, id, slot, days, jo, late, st, dout, client;
   for (i = 0; i < rows.length; i++) {
-    r = rows[i]; id = String(r.consignment_id || r.item_id || '');
-    if (!id || r.days_out == null || !(r.days_out >= 14)) continue;
-    slot = g[id] || (g[id] = { id: id, who: role === 'staff' ? '' : String(r.consignee || ''), days: r.days_out, n: 0, late: 0, jo: '' });
+    r = rows[i];
+    if (r.days_out == null) {
+      st = String(r.status || '').trim().toLowerCase();
+      if (st && st !== 'consigned' && st !== 'open' && st !== 'out') continue;
+      dout = todoDay_(r.date_out);
+      days = dout ? todoDays_(dout, today) : null;
+      var due = todoDay_(r.due_back || r.due_date);
+      late = due && today > due ? 1 : 0;
+    } else {
+      days = r.days_out;
+      late = r.overdue ? 1 : 0;
+    }
+    if (days == null || !(Number(days) >= 14)) continue;
+    id = String(r.consignment_id || r.item_id || '');
+    if (!id) continue;
+    jo = todoJo_(r.jo);
+    slot = g[id] || (g[id] = { id: id, shop: role === 'staff' ? '' : String(r.consignee_name || r.consignee || ''), days: Number(days), n: 0, late: 0, jo: '', jos: 0, client: '', mixed: 0 });
     slot.n++;
-    if (r.days_out > slot.days) slot.days = r.days_out;
-    if (r.overdue) slot.late = 1;
-    if (!slot.jo && r.jo) slot.jo = String(r.jo);
-    if (!slot.who && r.consignee && role !== 'staff') slot.who = String(r.consignee);
+    if (Number(days) > slot.days) slot.days = Number(days);
+    if (late) slot.late = 1;
+    if (jo) { slot.jos++; if (!slot.jo) slot.jo = jo; else if (slot.jo !== jo) slot.jo = ''; }
+    if (!slot.shop && role !== 'staff') slot.shop = String(r.consignee_name || r.consignee || '');
+    client = jo && jobBy[jo] ? todoClient_(jobBy[jo], clients, role) : todoWho_(r.client || '', role);
+    if (client) { if (!slot.client) slot.client = client; else if (slot.client !== client) slot.mixed = 1; }
   }
   Object.keys(g).forEach(function (k) {
-    var s = g[k], ref = s.n === 1 && s.jo ? s.jo : s.id;
-    var rest = (s.n === 1 && s.jo ? s.id + ' has been out ' : 'out ') + todoDayWord_(s.days) + ', ' + s.n + ' piece' + (s.n === 1 ? '' : 's') + ' unsold.';
-    push(todoItem_('cons-out-' + s.id, 'cons', s.late ? 'today' : 'week', s.late, 0, s.late ? 'Late' : '', todoLine_(s.who, ref, rest), '#/consignment', s.jo || ''));
+    var s = g[k], name = s.mixed ? '' : s.client, ref = s.n === 1 && s.jo ? s.jo : s.id;
+    var rest = (s.shop ? 'with consignee ' + s.shop + ' ' : 'out ') + todoDayWord_(s.days) + (s.n > 1 ? ', ' + s.n + ' pieces' : '') + '.';
+    push(todoItem_('cons-out-' + s.id, 'cons', s.late ? 'today' : 'week', s.late, 0, s.late ? 'Late' : '', todoLine_(name, ref, rest), '#/consignment', s.n === 1 ? (s.jo || '') : ''));
   });
 }
 
@@ -355,12 +402,29 @@ function todoAppt_(r) {
   var minutes = ems > ms ? Math.round((ems - ms) / 6e4) : (Number(r.minutes) || 60);
   return { id: String(r.appt_id || ms), status: st, day: local.toISOString().slice(0, 10), min: local.getUTCHours() * 60 + local.getUTCMinutes(), minutes: minutes, type: String(r.type || 'fitting'), staff: String(r.staff || ''), name: String(r.client_name || ''), jo: todoJo_(r.jo) };
 }
-function todoHours_() {
+function todoHm_(v) {
+  var m = String(v == null ? '' : v).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  var h = Number(m[1]), min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+function todoHours_(take) {
   var open = 9 * 60, close = 16 * 60, days = [1, 2, 3, 4, 5];
   if (typeof APPT !== 'undefined' && APPT) {
     if (APPT.OPEN_MIN) open = APPT.OPEN_MIN;
     if (APPT.CLOSE_MIN) close = APPT.CLOSE_MIN;
-    if (APPT.DAYS) days = APPT.DAYS;
+    if (APPT.DAYS && APPT.DAYS.length) days = APPT.DAYS.slice();
+  }
+  var rows = take ? take('Settings') : [], map = {}, i, k, d;
+  for (i = 0; i < rows.length; i++) { k = String(rows[i].key || '').trim(); if (k && String(rows[i].value == null ? '' : rows[i].value).trim() !== '') map[k] = rows[i].value; }
+  var o = todoHm_(map['store.open']), c = todoHm_(map['store.close']);
+  if (o != null) open = o;
+  if (c != null) close = c;
+  if (map['store.days'] != null) {
+    d = [];
+    String(map['store.days']).split(',').forEach(function (x) { x = String(x).trim(); if (/^\d$/.test(x)) d.push(Number(x)); });
+    if (d.length) days = d;
   }
   return { open: open, close: close, days: days };
 }
@@ -376,7 +440,10 @@ function todoClosed_(rows) {
 function todoFit_(v, booked, hours, closed) {
   var dow = new Date(v.day + 'T00:00:00Z').getUTCDay();
   var outside = closed[v.day] || hours.days.indexOf(dow) < 0 || v.min < hours.open || v.min + v.minutes > hours.close;
-  var clash = v.staff && booked.some(function (b) { return b.day === v.day && b.staff === v.staff && b.type === v.type && b.min < v.min + v.minutes && v.min < b.min + b.minutes; });
+  var hit = function (b) { return b.day === v.day && b.min < v.min + v.minutes && v.min < b.min + b.minutes; };
+  var clash = String(v.staff || '')
+    ? booked.some(function (b) { return hit(b) && b.staff === v.staff && b.type === v.type; })
+    : booked.some(hit); // no staff named: any booked visit on that time
   if (clash) return 'That time is already booked.';
   if (outside) return 'The store is closed then.';
   return 'The schedule is free.';

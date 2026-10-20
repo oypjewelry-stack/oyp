@@ -1,0 +1,16 @@
+Fast.gs — two short edits. todoList is a read, so it is remembered and it does not clear the other pages.
+Do not add todoDone, todoSnooze, or apptRequest. Those stay writes.
+
+The FIND lines are the attached Fast.gs. If the live READS line begins `consignList: 1, consignSearch: 1,`, the second FIND still matches the dashDrill part of that line.
+
+1. CACHE. FIND
+  CACHE: { dashboard: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1, pplList: 1,
+
+REPLACE WITH
+  CACHE: { dashboard: 1, todoList: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1, pplList: 1,
+
+2. READS. FIND
+    dashDrill: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1, jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1,
+
+REPLACE WITH
+    dashDrill: 1, todoList: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1, jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1,

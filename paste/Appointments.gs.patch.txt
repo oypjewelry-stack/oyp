@@ -1,4 +1,4 @@
-Appointments.gs — five small edits. Booked and cancelled keep today's meaning.
+Appointments.gs — six small edits. Booked and cancelled keep today's meaning.
 A requested row has status "requested", no calendar event, and is ignored by every check that already requires status booked
 (day list, overlap, heads-up, morning bulletin, calendar sync). Confirming it is a normal save: that creates the calendar event and sets status booked.
 
@@ -34,7 +34,14 @@ REPLACE WITH
     if (/^\/?request\b/i.test(cmd)) return apptBotRequest_(cmd, req, actor);
     if (!apptLooksBook_(cmd, today)) { // not a booking: a schedule question in everyday words, or not about appointments at all
 
-5. Insert these two functions immediately above function apptSave_(req, user, source).
+5. Confirming a request runs the same outside-hours warning as a new booking. A booked visit whose time did not change is still not asked again. FIND
+  var outside = same && old && Number(old.minutes) === minutes ? null : apptOutside_(day, start, minutes); // an unchanged time is not asked again
+
+REPLACE WITH
+  var confirming = old && (jobStr_(old.status) || 'booked') === 'requested'; // confirming a request asks the same outside-hours warning, even when the time did not change
+  var outside = !confirming && same && old && Number(old.minutes) === minutes ? null : apptOutside_(day, start, minutes); // an unchanged booked time is not asked again
+
+6. Insert these functions immediately above function apptSave_(req, user, source).
 
 function apptStartMin_(v) {
   if (typeof v === 'number' && isFinite(v)) return v;
@@ -64,7 +71,7 @@ function apptRequest_(req, user) {
   return { ok: true, appt_id: row.appt_id, status: 'requested' };
 }
 function apptBotRequest_(cmd, req, actor) {
-  var p = apptParse_(cmd, apptToday_());
+  var p = apptParse_(cmd.replace(/^\s*\/?request\b\s*/i, ''), apptToday_());
   if (!p.name || !p.day || p.start === undefined) return apptOut_([{ text: '\ud83d\udcc5 To file a request: @OypJewelry_bot request <name> <day> <time>. It stays Requested until someone confirms it on Appointments.' }]);
   var r = withLock_(function () { return apptRequest_({ type: p.type || 'fitting', day: p.day, start: p.start, minutes: p.minutes, jo: p.jo, client: { name: p.name, email: p.email || '', mobile: p.mobile || '' }, source: 'telegram', actor: actor, notes: 'Requested via Tessa' }, null); });
   if (!r.ok) return apptOut_([{ text: '\u26a0\ufe0f ' + r.error }]);

@@ -1,0 +1,11 @@
+DashWarm.gs — one line, against the live file (the attached DashWarm.gs).
+The timer already installed by installDashWarm keeps running. No new setup function.
+
+FIND
+    if (typeof dashboard_ === 'function') asks.push([{ action: 'dashboard' }, dashboard_]);
+    if (typeof dashDrill_ === 'function') asks.push([{ action: 'dashDrill', what: 'jobs' }, dashDrill_]);
+
+REPLACE WITH
+    if (typeof dashboard_ === 'function') asks.push([{ action: 'dashboard' }, dashboard_]);
+    if (typeof dashDrill_ === 'function') asks.push([{ action: 'dashDrill', what: 'jobs' }, dashDrill_]);
+    if (typeof todoList_ === 'function') asks.push([{ action: 'todoList' }, todoList_]);
