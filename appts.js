@@ -34,8 +34,25 @@ const shut = day => isWe(day) || (hol(day) && hol(day).status === 'closed'); // 
 const holAsk = day => !!hol(day) && hol(day).status !== 'open'; // closed or not decided: booking needs the confirm
 const offHrs = (a, h) => isWe(a.day) || holAsk(a.day) || a.start_min < h.open || a.start_min + a.minutes > h.close; // outside store hours (booked after a confirm)
 let G = { open: 540, close: 960 }; // the hours the grid shows: store hours, stretched to fit visits booked outside them
-const S = { view: null, day: null, staff: '', r: null, key: '', open: null, form: null, back: null, busy: false, showCx: localStorage.getItem('oypApptShowCx') === '1' }; // cancelled visits hidden unless "Show cancelled" is on (per device)
+const S = { view: null, day: null, r: null, key: '', open: null, form: null, back: null, busy: false, showCx: localStorage.getItem('oypApptShowCx') === '1' }; // cancelled visits hidden unless "Show cancelled" is on (per device)
+const HIDE_KEY = 'oypApptStaffHide'; // usernames hidden on this device. Empty = every staff member (new people show up on their own).
 const vis = a => S.showCx || a.status !== 'cancelled';
+function staffRoster() { // back-office list (apptList.staff, same names as the booking picker) plus anyone still on a visit after they were turned off
+  const map = new Map();
+  (S.r.staff || []).forEach(s => map.set(s.username, s.name));
+  (S.r.appts || []).forEach(a => { if (a.staff && !map.has(a.staff)) map.set(a.staff, (a.staff_name || a.staff) + ' (off)'); });
+  return [...map.entries()].map(([username, name]) => ({ username, name }));
+}
+function saveHide(list) { try { localStorage.setItem(HIDE_KEY, JSON.stringify(list)); } catch (e) {} }
+function hiddenSet() {
+  let raw = []; try { raw = JSON.parse(localStorage.getItem(HIDE_KEY) || '[]'); } catch (e) { raw = []; }
+  if (!Array.isArray(raw)) raw = [];
+  const known = new Set(staffRoster().map(s => s.username));
+  const next = raw.filter(u => typeof u === 'string' && known.has(u));
+  if (next.length !== raw.length || next.some((u, i) => u !== raw[i])) saveHide(next);
+  return new Set(next);
+}
+function apptVisible(a) { const hide = hiddenSet(); if (!hide.size) return true; return !!a.staff && !hide.has(a.staff); }
 let U = null;
 
 function range() {
@@ -63,13 +80,14 @@ async function reload(main, force) { const live = window.OYP.here(); const r = a
 
 /* ---------- page ---------- */
 function draw(main) {
-  const { esc } = window.OYP, r = S.r, sel = S.staff;
-  const mine = r.appts.filter(a => !sel || a.staff === sel), list = mine.filter(vis);
+  const { esc } = window.OYP, r = S.r;
+  const mine = r.appts.filter(apptVisible), list = mine.filter(vis);
   const [rf, rt] = range(), nCx = mine.filter(a => a.status === 'cancelled' && a.day >= rf && a.day <= rt && (S.view !== 'day' || a.day === S.day)).length;
   const lab = S.view === 'day' ? dLab(S.day, true) + (S.day === todayPH() ? ' · Today' : '')
     : S.view === 'week' ? (() => { const sh = shown(monday(S.day)), a = sh[0], b = sh[sh.length - 1]; return MN[Number(a.slice(5, 7)) - 1] + ' ' + Number(a.slice(8)) + ' – ' + (a.slice(5, 7) === b.slice(5, 7) ? '' : MN[Number(b.slice(5, 7)) - 1] + ' ') + Number(b.slice(8)) + ', ' + b.slice(0, 4); })()
     : MONTHS[Number(S.day.slice(5, 7)) - 1] + ' ' + S.day.slice(0, 4);
-  const staffChips = `<div class="rvchips apstaff"><button class="fchip ${!sel ? 'on' : ''}" data-st="">All staff</button>${r.staff.map(s => `<button class="fchip ${sel === s.username ? 'on' : ''}" data-st="${esc(s.username)}">${esc(s.name)}</button>`).join('')}</div>`;
+  const hide = hiddenSet(), roster = staffRoster(), allOn = !hide.size, some = hide.size > 0 && hide.size < roster.length, none = roster.length > 0 && hide.size >= roster.length;
+  const staffFilter = `<div class="apstafff" role="group" aria-label="Which staff to show"><label class="apchk all"><input type="checkbox" data-stall="" ${allOn ? 'checked' : ''} ${some ? 'data-ind="1"' : ''}>All staff</label>${roster.map(s => `<label class="apchk"><input type="checkbox" data-st="${esc(s.username)}" ${hide.has(s.username) ? '' : 'checked'}>${esc(s.name)}</label>`).join('')}${none ? '<span class="muted">No staff selected. Check a name, or All staff.</span>' : ''}</div>`;
   const [f0, t0] = range(); span(list.filter(a => a.day >= f0 && a.day <= t0 && (S.view !== 'day' || a.day === S.day)));
   const body = S.view === 'month' ? monthView(list) : S.view === 'week' ? (narrow() ? weekList(list) : weekGrid(list)) : (narrow() ? dayList(list) : dayGrid(list));
   main.innerHTML = `<div class="ap">
@@ -79,7 +97,7 @@ function draw(main) {
     <div class="aptools"><div class="seg apseg">${['day', 'week', 'month'].map(v => `<button class="${S.view === v ? 'on' : ''}" data-v="${v}">${v.toUpperCase()}</button>`).join('')}</div>
       <div class="apnav"><button class="apar" data-go="-1" aria-label="Previous">‹</button><b class="aplab">${esc(lab)}</b><button class="apar" data-go="1" aria-label="Next">›</button>
       <button class="lnk aptoday" data-go="0">Today</button></div></div>
-    ${staffChips}
+    ${staffFilter}
     <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span class="muted">Store hours ${hrsTxt(S.r.hours)}</span><button class="fchip apcx ${S.showCx ? 'on' : ''}" data-cx aria-pressed="${S.showCx}">Show cancelled${nCx ? `<b>${nCx}</b>` : ''}</button></div>
     ${body}
   </div>${S.open ? sheet(S.open) : ''}${S.form ? formSheet() : ''}`;
@@ -96,7 +114,13 @@ function wire(main) {
     else { const [y, m] = S.day.split('-').map(Number), d = new Date(Date.UTC(y, m - 1 + n, 1)); S.day = openDay(d.toISOString().slice(0, 10)); }
     reload(main);
   });
-  main.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { S.staff = b.dataset.st; draw(main); });
+  main.querySelectorAll('[data-stall]').forEach(el => { if (el.dataset.ind === '1') el.indeterminate = true; });
+  main.querySelectorAll('.apstafff input').forEach(el => el.onchange = () => {
+    const people = staffRoster(), names = people.map(s => s.username);
+    if ('stall' in el.dataset) saveHide(el.checked ? [] : names);
+    else { const hide = hiddenSet(); if (el.checked) hide.delete(el.dataset.st); else hide.add(el.dataset.st); saveHide(names.every(u => !hide.has(u)) ? [] : names.filter(u => hide.has(u))); }
+    draw(main);
+  });
   main.querySelectorAll('[data-cx]').forEach(b => b.onclick = () => { S.showCx = !S.showCx; localStorage.setItem('oypApptShowCx', S.showCx ? '1' : '0'); draw(main); });
   main.querySelectorAll('[data-day]').forEach(b => b.onclick = e => { if (e.target.closest('[data-ap]')) return; S.back = { view: S.view, day: S.day }; S.view = 'day'; S.day = b.dataset.day; reload(main); });
   main.querySelectorAll('[data-ap]').forEach(b => b.onclick = e => { e.stopPropagation(); S.open = r.appts.find(a => a.appt_id === b.dataset.ap); S.form = null; draw(main); });
@@ -157,10 +181,15 @@ function lines(day) { // half-hour lines; outside store hours shaded
   return s + (isWe(day) || holAsk(day) ? off(h.open, h.close) : off(h.open, st.open) + off(st.close, h.close));
 }
 function dayGrid(list) {
-  const { esc } = window.OYP, h = G, H = (h.close - h.open) / 60 * PX, d = S.day;
-  const staff = S.staff ? S.r.staff.filter(s => s.username === S.staff) : S.r.staff.filter(s => list.some(a => a.day === d && a.staff === s.username)).concat(S.r.staff.filter(s => !list.some(a => a.day === d && a.staff === s.username)));
-  const gone = [...new Set(list.filter(a => a.day === d && !S.r.staff.some(s => s.username === a.staff)).map(a => a.staff))];
-  const cols = staff.map(s => [s.username, s.name]).concat(gone.map(x => [x, x ? x + ' (off)' : 'Unassigned']));
+  const { esc } = window.OYP, h = G, H = (h.close - h.open) / 60 * PX, d = S.day, hide = hiddenSet();
+  let cols;
+  if (hide.size) cols = staffRoster().filter(s => !hide.has(s.username)).map(s => [s.username, s.name]);
+  else {
+    const staff = S.r.staff.filter(s => list.some(a => a.day === d && a.staff === s.username)).concat(S.r.staff.filter(s => !list.some(a => a.day === d && a.staff === s.username)));
+    const gone = [...new Set(list.filter(a => a.day === d && !S.r.staff.some(s => s.username === a.staff)).map(a => a.staff))];
+    cols = staff.map(s => [s.username, s.name]).concat(gone.map(x => [x, x ? x + ' (off)' : 'Unassigned']));
+  }
+  if (!cols.length) return '<p class="muted apempty">No staff selected. Check a name above to see the day.</p>';
   return `<div class="apgrid dy" style="--n:${cols.length}"><div class="aphd"><span></span>${cols.map(([k, n]) => `<div class="apdh st"><b>${esc(n)}</b><small>${list.filter(a => a.day === d && a.staff === k && a.status !== 'cancelled').length || ''}</small></div>`).join('')}</div>
     <div class="apbody">${hoursCol()}${cols.map(([k]) => `<div class="apcol ${d < todayPH() ? 'past' : ''}" data-slot="${d}|${esc(k)}" data-y="1" style="height:${H}px">${lines(d)}${lanes(list.filter(a => a.day === d && a.staff === k)).map(block).join('')}${nowLine(d)}</div>`).join('')}</div></div>
     <p class="muted apnote">One column per staff member. Tap an empty time to book it for them.</p>`;

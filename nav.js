@@ -21,4 +21,37 @@ const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', a
 const scannerLink = role => SCANNER + (role ? '?role=' + encodeURIComponent(role) : '');
 root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, scannerLink };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPNav;
+// The scanner cannot take a repo change from this site, but it already loads this file.
+// JO card zones (scan-zones.js) ride along so a phone can label every section of the card without a scanner release.
+// The start screen's stone photo is replaced with plain white the same way.
+if (typeof document !== 'undefined' && document.createElement) {
+  var cs = document.currentScript, tags, i, src;
+  if (!cs) {
+    tags = document.getElementsByTagName('script');
+    for (i = tags.length - 1; i >= 0; i--) {
+      src = tags[i].src || tags[i].getAttribute('src') || '';
+      if (/(^|\/)nav\.js(\?|$)/.test(src)) { cs = tags[i]; break; }
+    }
+  }
+  src = cs && (cs.src || '');
+  var base = src ? src.replace(/[^/]*$/, '') : '';
+  if (base && !document.querySelector('script[src*="scan-zones.js"]')) {
+    var zs = document.createElement('script');
+    zs.src = base + 'scan-zones.js?v=3';
+    (document.head || document.documentElement).appendChild(zs);
+  }
+  // Card Scanner start screen: drop the stone photo. Other screens are already white.
+  var scanFlag = document.documentElement.getAttribute('data-oyp-scanner');
+  var path = (typeof location !== 'undefined' && location && location.pathname) || '';
+  var onScanner = scanFlag === '1' ? true : scanFlag === '0' ? false
+    : /jo-scanner/.test(path)
+    || !!(document.getElementById('btnMenu') && document.getElementById('menu') && !document.getElementById('vOffice'));
+  if (onScanner && !document.getElementById('oyp-scan-plain')) {
+    var plain = document.createElement('style');
+    plain.id = 'oyp-scan-plain';
+    plain.textContent = 'html.on-start,html.on-start body{background-color:#fff !important;background-image:none !important}'
+      + 'html.on-start body::before{background-color:#fff !important;background-image:none !important}';
+    (document.head || document.documentElement).appendChild(plain);
+  }
+}
 })(typeof window !== 'undefined' ? window : globalThis);

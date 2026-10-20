@@ -26,7 +26,7 @@
 .tbal.paid .tdue b{color:#a8861c}
 .tagain{text-align:center;margin-top:calc(22px*var(--sp))}.tload{text-align:center;padding:calc(30px*var(--sp)) 0}
 .tsave{margin-top:calc(16px*var(--sp))}
-.trackpg .card{margin-top:calc(8px*var(--sp))}.trackpg h2{font-family:var(--head);font-weight:500;font-size:calc(26px*var(--hs));margin:0 0 calc(4px*var(--sp))}
+.trackpg .card{margin-top:calc(8px*var(--sp))}.trackpg h2{font-family:var(--d-hbody-f,var(--head));font-weight:var(--d-hbody-g,500);font-size:var(--d-hbody-fp,calc(26px*var(--hs)));color:var(--d-hbody-c,#111);margin:0 0 calc(4px*var(--sp))}
 @media (min-width:900px){
   .cwrap.trackpg.has{max-width:calc(1000px*var(--cw))}
   .trk2.full{display:grid;grid-template-columns:1fr 1fr;gap:calc(44px*var(--sp));align-items:start}
