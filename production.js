@@ -89,7 +89,7 @@ function drawBoard(main) {
   const filtered = !!(S.q || S.worker || S.stage || S.delayed || S.mine);
   if (!r.cards.length) { // nothing in production at all
     if (!$('pWrap')) main.innerHTML = '<div class="prod" id="pWrap"></div><div id="pSheetBox"></div><div id="pMoveBox"></div>';
-    $('pWrap').innerHTML = `${head('board')}<div class="kempty pempty pnojo"><b>No JOs in production right now.</b><p class="muted">A JO shows here once it is scanned and marked “Being worked on” or “In queue”, and stays until it is picked up.</p></div>`;
+    $('pWrap').innerHTML = `${head('board')}<div class="kempty pempty pnojo"><b>No JOs in production right now.</b><p class="muted">A JO shows here once it is scanned and marked “In production” or “In queue”, and stays until it is picked up.</p></div>`;
     return;
   }
   const sum = `<p class="muted psum">${r.cards.length} JO${r.cards.length === 1 ? '' : 's'} in production${nd ? ` · <b class="gold">${nd} delayed</b>` : ''}${list.length !== r.cards.length ? ` · showing ${list.length}` : ''} · ${phone ? 'Tap a card to see it, or Move when it is done.' : 'Drag a card to the next stage when it is done. Click a card for photos and time.'}</p>`;

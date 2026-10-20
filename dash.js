@@ -47,11 +47,12 @@ function arrangeList(canon, ids, saved) { // saved null = canon order. An id tha
 function arrange(ids, saved) { return arrangeList(SEC_ORDER, ids, saved); }
 // Location tiles: order and hidden names on this device, per signed-in name. Empty = the row the server sends.
 const locStoreKey = u => 'oypDashLoc:' + (u && u.username || 'device');
-function locCanon(list) { // today's row: every place except "no location yet", then that one at the end when it has a count
+function locCount(l) { const n = Number(l && l.count); return n > 0 ? n : 0; }
+function locCanon(list) { // today's row: every place the server sends, including Archived at 0. "No location yet" is last, and only while its count is above 0.
   const keys = [];
   (list || []).forEach(l => { if (l && l.key && l.key !== 'unset' && keys.indexOf(l.key) < 0) keys.push(l.key); });
   const unset = (list || []).find(l => l && l.key === 'unset');
-  if (unset && unset.count) keys.push('unset');
+  if (unset && locCount(unset) > 0) keys.push('unset');
   return keys;
 }
 function readLocPref(u) {
@@ -83,7 +84,11 @@ function loadLoc(list, u) {
   }
   D.loc = { canon: canon, order: order, hide: hide, byKey: byKey };
 }
-function locName(l) { return l.key === 'unset' ? 'No location yet' : (l.label || l.key); }
+function locName(l) { return window.OYP.locLabel(l && l.key, l && l.key === 'unset' ? 'No location yet' : ((l && l.label) || (l && l.key) || '')); }
+function locTileOn(k) { // a hidden "No location yet" must not linger in Show once its count is 0
+  const l = D.loc && D.loc.byKey[k];
+  return !!(l && (k !== 'unset' || locCount(l) > 0));
+}
 function editing() { return !!(window.OYPLayoutEdit && window.OYPLayoutEdit.editing() && D.ordOn); }
 // Sold tile period, remembered on this device. this year -> this month -> all time.
 const SOLD_PERIOD = ['year', 'month', 'all'];
@@ -177,7 +182,7 @@ function paintLoc(main, esc) {
   const row = main.querySelector('#locRow');
   if (!row || !D.loc) return;
   const on = editing();
-  const show = D.loc.order.filter(k => !D.loc.hide.has(k) && D.loc.byKey[k]);
+  const show = D.loc.order.filter(k => !D.loc.hide.has(k) && locTileOn(k));
   row.classList.toggle('edit', on);
   row.innerHTML = show.map(k => locTile(esc, D.loc.byKey[k], on)).join('') || (D.ordOn && !show.length ? '<p class="muted">Every location tile is hidden.</p>' : '');
   const acts = main.querySelector('.dlocacts');
@@ -185,7 +190,7 @@ function paintLoc(main, esc) {
   let extra = acts.querySelector('.layloc');
   if (!on) { if (extra) extra.remove(); return; }
   if (!extra) { extra = document.createElement('span'); extra.className = 'layloc'; acts.appendChild(extra); }
-  const hidden = D.loc.order.filter(k => D.loc.hide.has(k) && D.loc.byKey[k]);
+  const hidden = D.loc.order.filter(k => D.loc.hide.has(k) && locTileOn(k));
   extra.innerHTML = hidden.map(k => `<button type="button" class="lnk" data-lshow="${esc(k)}">Show ${esc(locName(D.loc.byKey[k]))}</button>`).join('')
     + `<button type="button" class="lnk" id="dLocReset"${readLocPref(D.user) ? '' : ' hidden'}>Reset</button>`;
 }
@@ -289,7 +294,7 @@ async function render(main, u, fresh) {
   const tile = (lab, val, note, cls = '', href = '') => href ? `<a class="kpi kpilink tap ${cls}" href="${href}"><span class="lab">${esc(lab)} ›</span><b>${esc(val)}</b><small>${esc(note || '')}</small></a>`
     : `<div class="kpi ${cls}"><span class="lab">${esc(lab)}</span><b>${esc(val)}</b><small>${esc(note || '')}</small></div>`;
   let h = `<div class="dhead"><h2>Dashboard</h2><span class="dheadacts"><button class="lnk" id="dRef">Refresh</button></span></div><p class="muted">${esc(when)} PHT</p>
-  <div class="kpis">${tile('Active jobs', c.active_jobs, r.locations ? 'being worked on' : plural(r.board.reduce((s, b) => s + b.count, 0), 'open job'), '', '#/dashboard/active')}
+  <div class="kpis">${tile('Active jobs', c.active_jobs, r.locations ? 'in production' : plural(r.board.reduce((s, b) => s + b.count, 0), 'open job'), '', '#/dashboard/active')}
   ${tile('Pending work', c.pending_work, pendNote, c.pending_work ? 'warn' : '', '#/dashboard/pending')}
   ${can.consign ? tile('Consigned out', c.consigned_out, plural(new Set((r.consignments || []).map(x => x.consignee)).size, 'consignee'), '', '#/dashboard/consigned') : ''}
   ${can.consign ? tile('Overdue', c.overdue_consignments, 'out over ' + r.overdue_days + ' days', c.overdue_consignments ? 'gold' : '', '#/dashboard/overdue') : ''}
@@ -309,7 +314,7 @@ async function render(main, u, fresh) {
       <div id="saleBody"></div></section>`;
   }
 
-  parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'Being worked on · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
+  parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'In production · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
     <div class="kcol"><a class="khead tap" href="#/dashboard/stage/${esc(col.key)}"><span class="lab">${esc(col.label)} ›</span><span class="kn">${col.count}</span></a>${col.cards.map(j => `
       <div class="kcard tap${j.late ? ' late' : ''}" data-jo="${esc(j.jo)}"><div class="kjo">${esc(j.jo)}${j.review ? '<span class="dot" title="Needs review"></span>' : ''}</div>
       <div class="kd">${esc(j.description || '—')}</div>${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
@@ -430,7 +435,7 @@ function needsPaste() {
 
 async function drillPage(main, u, kind, key) {
   const { esc } = window.OYP, r = D.r, can = r.can, noCC = new Set(D.cc && D.cc.ok ? D.cc.missing_jos : []);
-  const locLab = k => ((r.locations || []).find(l => l.key === k) || { label: k === 'unset' ? 'No location yet' : k }).label;
+  const locLab = k => window.OYP.locLabel(k, ((r.locations || []).find(l => l.key === k) || {}).label);
   const allBoard = () => r.board.reduce((a, col) => a.concat(col.cards.map(j => boardRow(j, col))), []);
   const capped = cols => cols.filter(c => c.count > c.cards.length).map(c => c.label + ': first ' + c.cards.length + ' of ' + c.count).join(' · ');
   let title = '', sub = '', chips = [], groups = null, rows = [], note = '', body = '', show = { loc: true, stage: true };
@@ -443,13 +448,13 @@ async function drillPage(main, u, kind, key) {
     chips = [['#/dashboard/active', 'All active', r.board.reduce((s, b) => s + b.count, 0), kind === 'active']].concat(r.board.map(b => ['#/dashboard/stage/' + b.key, b.label, b.count, col === b]));
     show.loc = false;
     if (col) {
-      title = col.label; sub = (r.locations ? 'Being worked on · ' : '') + 'what is being done in this stage, late first';
+      title = col.label; sub = (r.locations ? 'In production · ' : '') + 'what is being done in this stage, late first';
       rows = col.cards.map(j => boardRow(j, col));
       const by = {}; rows.forEach(x => (by[x.stage_label] = by[x.stage_label] || []).push(x)); // what is being done: one group per stage step
       groups = Object.keys(by).map(k => [k, by[k]]); show.days = true; // the group already names the step
       note = capped([col]);
     } else {
-      title = 'Active jobs'; sub = (r.locations ? 'Being worked on' : 'Open jobs') + ' · by stage, late first';
+      title = 'Active jobs'; sub = (r.locations ? 'In production' : 'Open jobs') + ' · by stage, late first';
       rows = allBoard(); groups = r.board.filter(b => b.cards.length).map(b => [b.label, rows.filter(x => x.col === b.key), '#/dashboard/stage/' + b.key]);
       note = capped(r.board);
     }
@@ -464,7 +469,7 @@ async function drillPage(main, u, kind, key) {
       if (key === 'working') groups = r.board.map(b => [b.label, rows.filter(j => j.col === b.key), '#/dashboard/stage/' + b.key]).filter(g => g[1].length);
     }
     const soldN = key === 'sold' && period !== 'all' && x ? rows.length : null;
-    chips = (r.locations || []).filter(l => l.count || l.key === key).map(l => ['#/dashboard/loc/' + l.key, l.label, l.key === 'sold' && soldN != null ? soldN : l.count, l.key === key]);
+    chips = (r.locations || []).filter(l => l.key === 'unset' ? locCount(l) > 0 : (l.count || l.key === key)).map(l => ['#/dashboard/loc/' + l.key, locLab(l.key), l.key === 'sold' && soldN != null ? soldN : l.count, l.key === key]);
     show.loc = false; show.stage = key === 'working';
     if (key === 'unset') note = 'The cards still to review are also in To review › Needs location.';
   } else if (kind === 'sales') {
