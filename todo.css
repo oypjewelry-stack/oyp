@@ -1,0 +1,28 @@
+.todo .dname{gap:10px}
+.tdcount{font-family:var(--label);font-size:12px;font-weight:600;background:#111;color:#fff;border-radius:11px;padding:2px 9px;line-height:18px}
+.todo .chip.arch{margin-left:2px}
+.tdchips{flex-wrap:wrap;scrollbar-width:none;padding-bottom:2px;margin-bottom:14px}.tdchips .fchip{white-space:nowrap}
+.tdgrp{margin-top:6px}.tdgrp+.tdgrp{margin-top:16px}
+.tdgh{display:flex;align-items:center;gap:8px;border-bottom:1px solid #111;padding-bottom:6px;margin-bottom:2px}.tdgh .lab{color:#111;letter-spacing:.1em}
+.tdrow{display:grid;grid-template-columns:128px 1fr auto 18px;align-items:center;gap:12px;padding:11px 8px 11px 10px;border-bottom:1px solid #eee;cursor:pointer;font-size:15px;line-height:1.35}
+.tdrow:hover{background:#fafafa}
+.tdrow.late{box-shadow:inset 3px 0 0 var(--gold);background:#fffdf6}
+.tdrow.sug .tdtxt{color:#555;font-style:italic}
+.tdtag{justify-self:start;white-space:nowrap;font-size:10px;padding:2px 8px}
+.tdgo{font-family:var(--label);font-size:18px;color:#999;text-align:right}
+.tdmore{background:none;border:0;font-size:18px;color:#bbb;cursor:pointer;padding:0 4px;line-height:1}
+.tdrow.open{background:#fafafa;border-radius:10px;border:1px solid #111;margin:6px 0}
+.tdrow.open .tdmore{color:#111}
+.tdacts{grid-column:2/-1;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:4px}
+.tdacts .pill.sm{padding:7px 16px;font-size:14px;text-decoration:none}
+.tdsnz{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:6px}.tdsnz .lab{margin-right:2px}.tdsnz .fchip{padding:5px 10px;font-size:11px}
+.tdfoot{font-family:var(--label);font-size:12px;margin:12px 0 0!important}
+@media (max-width:760px){
+ .tdrow{grid-template-columns:1fr auto 16px;gap:4px 8px;padding:10px 4px 10px 8px;font-size:14px}
+ .tdtag{grid-column:1/-1;grid-row:1}
+ .tdtxt{grid-column:1;grid-row:2}.tdmore{grid-row:2;grid-column:2}.tdgo{grid-row:2;grid-column:3}
+ .tdacts{grid-column:1/-1;grid-row:3}.tdsnz{margin-left:0}
+ .todo .dtitle{flex-wrap:wrap}.todo .dtitle>.lab{width:100%;text-align:left!important}
+ .todo .dtitle h3{font-size:19px}
+}
+@media (max-width:760px){.tdchips{flex-wrap:nowrap;overflow-x:auto}}

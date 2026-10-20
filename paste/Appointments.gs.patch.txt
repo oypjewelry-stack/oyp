@@ -1,0 +1,72 @@
+Appointments.gs — five small edits. Booked and cancelled keep today's meaning.
+A requested row has status "requested", no calendar event, and is ignored by every check that already requires status booked
+(day list, overlap, heads-up, morning bulletin, calendar sync). Confirming it is a normal save: that creates the calendar event and sets status booked.
+
+1. Route. FIND
+  if (a === 'apptSave') return req.dry_run ? apptSave_(req, user, 'backoffice') : withLock_(function () { return apptSave_(req, user, 'backoffice'); });
+
+REPLACE WITH
+  if (a === 'apptRequest') return withLock_(function () { return apptRequest_(req, user); });
+  if (a === 'apptSave') return req.dry_run ? apptSave_(req, user, 'backoffice') : withLock_(function () { return apptSave_(req, user, 'backoffice'); });
+
+2. Let a save confirm a request. A cancelled row still cannot be saved. FIND
+    if ((jobStr_(old.status) || 'booked') !== 'booked') return { ok: false, error: 'This appointment was cancelled' };
+
+REPLACE WITH
+    var oldSt = jobStr_(old.status) || 'booked';
+    if (oldSt !== 'booked' && oldSt !== 'requested') return { ok: false, error: 'This appointment was cancelled' };
+
+3. Promoting a request creates the calendar event (apptEvUpdate_ already does that when event_id is empty) and sets status booked. FIND
+    ev = apptEvUpdate_(cal, old, row, info); row.invite = ev.invite || jobStr_(old.invite); if (ev.id) row.event_id = ev.id;
+    apptSet_(APPT.TAB, old._row, row); row.appt_id = String(old.appt_id);
+
+REPLACE WITH
+    ev = apptEvUpdate_(cal, old, row, info); row.invite = ev.invite || jobStr_(old.invite); if (ev.id) row.event_id = ev.id;
+    if ((jobStr_(old.status) || 'booked') === 'requested') row.status = 'booked';
+    apptSet_(APPT.TAB, old._row, row); row.appt_id = String(old.appt_id);
+
+4. Tessa files a request instead of a booking when the message starts with "request". FIND
+    var hx = apptHoursAsk_(cmd, today, actor); if (hx) return hx;   // "we are open next Sunday 9-5PM" -> confirm with buttons, then saved in Holidays
+    if (!apptLooksBook_(cmd, today)) { // not a booking: a schedule question in everyday words, or not about appointments at all
+
+REPLACE WITH
+    var hx = apptHoursAsk_(cmd, today, actor); if (hx) return hx;   // "we are open next Sunday 9-5PM" -> confirm with buttons, then saved in Holidays
+    if (/^\/?request\b/i.test(cmd)) return apptBotRequest_(cmd, req, actor);
+    if (!apptLooksBook_(cmd, today)) { // not a booking: a schedule question in everyday words, or not about appointments at all
+
+5. Insert these two functions immediately above function apptSave_(req, user, source).
+
+function apptStartMin_(v) {
+  if (typeof v === 'number' && isFinite(v)) return v;
+  var n = Number(v);
+  if (String(v).indexOf(':') < 0 && isFinite(n) && n >= 0 && n < 24 * 60) return n;
+  return apptHm_(v);
+}
+function apptRequest_(req, user) {
+  var actor = user && user.username ? user.username : String(req.actor || 'portal');
+  var source = String(req.source || 'portal');
+  if (source !== 'portal' && source !== 'telegram' && source !== 'backoffice') source = 'portal';
+  if (!apptSheet_(APPT.TAB)) return { ok: false, code: 'NO_SETUP', error: 'Appointments is not set up yet: run setupAppointments once in Apps Script.' };
+  var type = String(req.type || 'fitting');
+  if (!APPT.MIN_MIN[type]) return { ok: false, error: 'Unknown visit type' };
+  var day = String(req.day || ''), start = apptStartMin_(req.start);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || isNaN(start)) return { ok: false, error: 'Need a day and a time' };
+  var minutes = Number(req.minutes || APPT.MIN_MIN[type] || APPT.DEFAULT_MIN);
+  var cl = req.client || {}, name = String(cl.name || req.client_name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  if (name.length < 2) return { ok: false, error: 'Need the client name' };
+  var jo = req.jo ? (typeof jobKey_ === 'function' ? (jobKey_(req.jo) || '') : String(req.jo)) : '';
+  var t = now_(), row = { appt_id: 'ap-' + randHex_(8), event_id: '', start_at: apptIso_(day, start), end_at: apptIso_(day, start + minutes), minutes: minutes,
+    type: type, staff: String(req.staff || ''), client_id: String(cl.client_id || ''), client_name: name, client_email: String(cl.email || ''),
+    client_phone: String(cl.phone || cl.mobile || ''), jo: jo, notes: String(req.notes || '').slice(0, 500), status: 'requested', invite: 'none', source: source,
+    created_at: t, created_by: actor, updated_at: t, updated_by: actor };
+  apptAppend_(APPT.TAB, row);
+  audit_(actor, 'apptRequest', row.appt_id, req.device_id || '', type + ' ' + row.start_at + ' source ' + source);
+  return { ok: true, appt_id: row.appt_id, status: 'requested' };
+}
+function apptBotRequest_(cmd, req, actor) {
+  var p = apptParse_(cmd, apptToday_());
+  if (!p.name || !p.day || p.start === undefined) return apptOut_([{ text: '\ud83d\udcc5 To file a request: @OypJewelry_bot request <name> <day> <time>. It stays Requested until someone confirms it on Appointments.' }]);
+  var r = withLock_(function () { return apptRequest_({ type: p.type || 'fitting', day: p.day, start: p.start, minutes: p.minutes, jo: p.jo, client: { name: p.name, email: p.email || '', mobile: p.mobile || '' }, source: 'telegram', actor: actor, notes: 'Requested via Tessa' }, null); });
+  if (!r.ok) return apptOut_([{ text: '\u26a0\ufe0f ' + r.error }]);
+  return apptOut_([{ text: '\ud83d\udcc5 Requested: ' + p.name + ' stays Requested until someone confirms it on Appointments. The To do list says whether that time is free.' }]);
+}

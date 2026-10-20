@@ -1,0 +1,13 @@
+Auth.gs — one line in handleAction_, after the dashDrill line.
+Do not paste a new Auth.gs over the live file.
+
+FIND
+  if (a === 'dashDrill' && typeof dashDrill_ === 'function') return typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, dashDrill_) : dashDrill_(req, s.user); // DashboardDrill.gs + DashCache.gs
+  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);
+
+REPLACE WITH
+  if (a === 'dashDrill' && typeof dashDrill_ === 'function') return typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, dashDrill_) : dashDrill_(req, s.user); // DashboardDrill.gs + DashCache.gs
+  if (typeof isTodoAction_ === 'function' && isTodoAction_(a)) return handleTodo_(req, s.user); // Todo.gs (todoDone, todoSnooze)
+  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);
+
+todoDone and todoSnooze are writes. They are not added to Fast.gs FAST.READS / FAST.CACHE or DashCache.gs DCACHE.READS, so both caches bump.

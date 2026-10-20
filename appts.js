@@ -98,7 +98,7 @@ function draw(main) {
       <div class="apnav"><button class="apar" data-go="-1" aria-label="Previous">‹</button><b class="aplab">${esc(lab)}</b><button class="apar" data-go="1" aria-label="Next">›</button>
       <button class="lnk aptoday" data-go="0">Today</button></div></div>
     ${staffFilter}
-    <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span class="muted">Store hours ${hrsTxt(S.r.hours)}</span><button class="fchip apcx ${S.showCx ? 'on' : ''}" data-cx aria-pressed="${S.showCx}">Show cancelled${nCx ? `<b>${nCx}</b>` : ''}</button></div>
+    <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span><i class="apdot rq"></i>Requested</span><span class="muted">Store hours ${hrsTxt(S.r.hours)}</span><button class="fchip apcx ${S.showCx ? 'on' : ''}" data-cx aria-pressed="${S.showCx}">Show cancelled${nCx ? `<b>${nCx}</b>` : ''}</button></div>
     ${body}
   </div>${S.open ? sheet(S.open) : ''}${S.form ? formSheet() : ''}`;
   wire(main);
@@ -155,8 +155,8 @@ function lanes(list) { // side-by-side when visits overlap in one column
 function block(a) {
   const { esc } = window.OYP, h = G, top = (a.start_min - h.open) / 60 * PX, ht = Math.max(a.minutes / 60 * PX - 3, 20), w = 100 / (a._lanes || 1);
   const small = a.minutes < 60;
-  return `<button class="apblk t-${a.type} ${a.status === 'cancelled' ? 'cx' : ''} ${small ? 'sm' : ''}" data-ap="${esc(a.appt_id)}" style="top:${top}px;height:${ht}px;left:calc(${w * (a._lane || 0)}% + 2px);width:calc(${w}% - 4px)">
-    <span class="apt">${clock(a.start_min, true)}–${clock(a.start_min + a.minutes, true)}${a.status === 'cancelled' ? ' · CANCELLED' : ''}</span>
+  return `<button class="apblk t-${a.type} ${a.status === 'cancelled' ? 'cx' : ''} ${a.status === 'requested' ? 'rq' : ''} ${small ? 'sm' : ''}" data-ap="${esc(a.appt_id)}" style="top:${top}px;height:${ht}px;left:calc(${w * (a._lane || 0)}% + 2px);width:calc(${w}% - 4px)">
+    <span class="apt">${clock(a.start_min, true)}–${clock(a.start_min + a.minutes, true)}${a.status === 'cancelled' ? ' · CANCELLED' : ''}${a.status === 'requested' ? ' · REQUESTED' : ''}</span>
     <b>${esc(a.client_name)}</b>${small ? '' : `<span class="aps">${esc(tLab(a.type))} · ${esc(a.staff_name)}${a.jo ? ' · ' + esc(a.jo) : ''}</span>`}</button>`;
 }
 function hoursCol() {
@@ -196,15 +196,15 @@ function dayGrid(list) {
 }
 function card(a) {
   const { esc } = window.OYP;
-  return `<button class="apcard t-${a.type} ${a.status === 'cancelled' ? 'cx' : ''}" data-ap="${esc(a.appt_id)}"><span class="apct">${clock(a.start_min)}<small>${dur(a.minutes)}</small></span>
+  return `<button class="apcard t-${a.type} ${a.status === 'cancelled' ? 'cx' : ''} ${a.status === 'requested' ? 'rq' : ''}" data-ap="${esc(a.appt_id)}"><span class="apct">${clock(a.start_min)}<small>${dur(a.minutes)}</small></span>
     <span class="apcb"><b>${esc(a.client_name)}</b><span class="aps">${esc(tLab(a.type))} · ${esc(a.staff_name)}${a.jo ? ' · JO ' + esc(a.jo) : ''}</span>
-    ${offHrs(a, S.r.hours) ? '<span class="apinv off">Outside store hours</span>' : ''}${a.status === 'cancelled' ? '<span class="chip">Cancelled</span>' : a.invite === 'sent' ? '<span class="apinv">Invite sent</span>' : '<span class="apinv no">No invite · mobile only</span>'}</span><span class="chev">›</span></button>`;
+    ${offHrs(a, S.r.hours) ? '<span class="apinv off">Outside store hours</span>' : ''}${a.status === 'cancelled' ? '<span class="chip">Cancelled</span>' : a.status === 'requested' ? '<span class="chip gold">Requested</span>' : a.invite === 'sent' ? '<span class="apinv">Invite sent</span>' : '<span class="apinv no">No invite · mobile only</span>'}</span><span class="chev">›</span></button>`;
 }
 function dayList(list) { // phone: the day as a list with the free hours in between
   const h = S.r.hours, d = S.day, L = list.filter(a => a.day === d).sort((a, b) => a.start_min - b.start_min), out = [];
   let t = h.open; const past = d < todayPH() || (d === todayPH());
   const free = (a, b) => { for (let m = a; m + 60 <= b; m += 60) { if (d === todayPH() && m < nowMinPH()) continue; if (d < todayPH()) continue; out.push(`<button class="apfree" data-slot="${d}|" data-min="${m}"><span>${clock(m)}</span><b>+ Free · book</b></button>`); } };
-  if (!shut(d)) { L.filter(a => a.status !== 'cancelled').forEach(a => { free(Math.min(t, h.close), Math.min(a.start_min, h.close)); t = Math.max(t, a.start_min + a.minutes); }); free(Math.min(t, h.close), h.close); }
+  if (!shut(d)) { L.filter(a => a.status !== 'cancelled' && a.status !== 'requested').forEach(a => { free(Math.min(t, h.close), Math.min(a.start_min, h.close)); t = Math.max(t, a.start_min + a.minutes); }); free(Math.min(t, h.close), h.close); }
   const items = L.map(a => [a.start_min, card(a)]).concat(out.map(x => [Number((x.match(/data-min="(\d+)"/) || [])[1]), x])).sort((a, b) => a[0] - b[0]).map(x => x[1]);
   return `<div class="aplist">${isWe(d) ? `<p class="muted apempty">${dow(d) === 0 || dow(d) === 6 ? 'Weekend' : 'Closed day'}: the store is closed. Visits booked anyway are listed here.</p>` : hol(d) ? `<p class="muted apempty aphold">Holiday: ${window.OYP.esc(hol(d).name)} · ${hol(d).status === 'closed' ? 'store closed' : hol(d).status === 'open' ? 'store open' : 'not decided yet (bookings need a confirm)'}</p>` : ''}${L.length ? '' : '<p class="muted apempty">Nothing booked yet.</p>'}${items.join('')}</div>${past && !L.length && d < todayPH() ? '' : ''}`;
 }
@@ -229,7 +229,7 @@ function monthView(list) {
 function sheet(a) {
   const { esc } = window.OYP, can = a.status !== 'cancelled' && S.r.setup;
   return `<div class="ivsheet" id="apSheet"><div class="ivsbox apsbox"><button class="lnk dback" id="apSX">‹ BACK</button>
-    <div class="apsh t-${a.type}"><span class="chip">${esc(tLab(a.type))}</span>${offHrs(a, S.r.hours) ? ' <span class="chip gold">Outside store hours</span>' : ''}${a.status === 'cancelled' ? ' <span class="chip">Cancelled</span>' : ''}${a.source === 'telegram' ? ' <span class="chip">Telegram</span>' : ''}${a.source === 'calendar' ? ' <span class="chip">Added in Google Calendar</span>' : a.updated_by === 'calendar' ? ' <span class="chip">Changed in Google Calendar</span>' : ''}${!a.staff ? ' <span class="chip red">No staff: pick one</span>' : ''}
+    <div class="apsh t-${a.type}"><span class="chip">${esc(tLab(a.type))}</span>${offHrs(a, S.r.hours) ? ' <span class="chip gold">Outside store hours</span>' : ''}${a.status === 'cancelled' ? ' <span class="chip">Cancelled</span>' : ''}${a.status === 'requested' ? ' <span class="chip gold">Requested</span>' : ''}${a.source === 'telegram' ? ' <span class="chip">Telegram</span>' : ''}${a.source === 'calendar' ? ' <span class="chip">Added in Google Calendar</span>' : a.updated_by === 'calendar' ? ' <span class="chip">Changed in Google Calendar</span>' : ''}${!a.staff ? ' <span class="chip red">No staff: pick one</span>' : ''}
     <h3>${esc(a.client_name)}</h3><p class="apwhen">${dLab(a.day, true)} · ${clock(a.start_min)}–${clock(a.start_min + a.minutes)} <span class="muted">(${dur(a.minutes)})</span></p></div>
     <div class="ivfs"><div class="ivf"><span class="lab">Staff</span><b>${esc(a.staff_name)}</b></div><div class="ivf"><span class="lab">JO</span><b>${esc(a.jo) || '—'}</b></div>
     <div class="ivf"><span class="lab">Mobile</span><b>${esc(a.client_phone) || '—'}</b></div><div class="ivf"><span class="lab">Email</span><b class="apem">${esc(a.client_email) || '—'}</b></div></div>
@@ -237,7 +237,7 @@ function sheet(a) {
     ${a.notes ? `<div class="apnotes"><span class="lab">Notes · staff only</span><p>${esc(a.notes)}</p></div>` : ''}
     ${a.status === 'cancelled' ? `<p class="muted">Cancelled by ${esc(a.cancelled_by)}${a.cancel_reason ? ': ' + esc(a.cancel_reason) : ''}</p>` : ''}
     <p class="muted apby">Booked by ${esc(a.created_by)}${a.updated_by && a.updated_by !== a.created_by ? ' · last change by ' + esc(a.updated_by) : ''}</p>
-    ${can ? `<div class="apacts"><button class="pill" id="apEdit">MOVE / EDIT</button><button class="pill outline" id="apCx">CANCEL VISIT</button></div>
+    ${can ? `<div class="apacts">${a.status === 'requested' ? '<button class="pill" id="apConfirm">CONFIRM</button>' : ''}<button class="pill${a.status === 'requested' ? ' outline' : ''}" id="apEdit">MOVE / EDIT</button><button class="pill outline" id="apCx">CANCEL VISIT</button></div>
     <div id="apCxBox" class="apcx hidden"><label class="fsec"><span class="lab">Why? (optional, staff only)</span><input id="apCxWhy" placeholder="e.g. client asked to move it"></label>
       <p class="muted">${a.invite === 'sent' ? (S.r.notify_changes ? 'The client gets a cancellation email from Google Calendar.' : 'The client is not emailed about this: tell them.') : 'Mobile only: text or call the client.'} The row stays in the Sheet as cancelled.</p>
       <div class="apacts"><button class="pill" id="apCxYes">YES, CANCEL IT</button><button class="lnk" id="apCxNo">Keep it</button></div></div>` : ''}
@@ -248,7 +248,11 @@ function wireSheet(main) {
   $('apSX').onclick = close; $('apSheet').onclick = e => { if (e.target.id === 'apSheet') close(); };
   if (!$('apEdit')) return;
   $('apEdit').onclick = () => { S.form = { id: a.appt_id, base: a.updated_at, type: a.type, day: a.day, start: a.start_min, minutes: a.minutes, staff: a.staff, jo: a.jo, notes: a.notes,
-    client: { client_id: a.client_id, name: a.client_name, email: a.client_email, phone: a.client_phone }, locked: true }; S.open = null; draw(main); check(main); };
+    client: { client_id: a.client_id, name: a.client_name, email: a.client_email, phone: a.client_phone }, locked: true, requested: a.status === 'requested' }; S.open = null; draw(main); check(main); };
+  const confirm = $('apConfirm');
+  if (confirm) confirm.onclick = () => { S.form = { id: a.appt_id, base: a.updated_at, type: a.type, day: a.day, start: a.start_min, minutes: a.minutes, staff: a.staff, jo: a.jo, notes: a.notes,
+    client: { client_id: a.client_id, name: a.client_name, email: a.client_email, phone: a.client_phone }, locked: true, requested: true }; S.open = null;
+    if (!a.staff) { draw(main); return; } save(main, false); };
   $('apCx').onclick = () => { $('apCxBox').classList.remove('hidden'); $('apCx').classList.add('hidden'); $('apCxWhy').focus(); };
   $('apCxNo').onclick = () => { $('apCxBox').classList.add('hidden'); $('apCx').classList.remove('hidden'); };
   $('apCxYes').onclick = async () => {
@@ -296,7 +300,7 @@ function formSheet() {
     : w.ok ? (w.others && w.others.length ? `<div class="apinfo">Also at this time: ${w.others.map(x => esc(x.staff_name) + ' · ' + esc(tLab(x.type))).join(', ')}. That is fine (other staff or other type).</div>` : '')
     : `<div class="apclash red"><b>⚠ ${esc(w.error)}</b></div>`;
   return `<div class="ivsheet" id="apFS"><div class="ivsbox apsbox apform"><button class="lnk dback" id="apFX">‹ BACK</button>
-    <h3 class="apfh">${f.id ? 'Move / edit visit' : 'New appointment'}</h3>
+    <h3 class="apfh">${f.requested ? 'Confirm request' : f.id ? 'Move / edit visit' : 'New appointment'}</h3>
     <div class="fsec"><span class="lab">Type</span><div class="seg aptypes">${TYPES.map(([k, l]) => `<button class="${f.type === k ? 'on' : ''}" data-ty="${k}">${l}</button>`).join('')}</div></div>
     ${cl}
     <div class="fgrid"><label class="fsec"><span class="lab">Day</span><input type="date" id="apD" value="${f.day}" min="${f.id ? '' : todayPH()}"></label>
@@ -307,7 +311,7 @@ function formSheet() {
     <div class="fgrid"><label class="fsec"><span class="lab">JO · optional</span><input id="apJ" value="${esc(f.jo)}" placeholder="26-101"></label>
       <label class="fsec"><span class="lab">Notes · staff only</span><input id="apNo" value="${esc(f.notes)}" placeholder="not in the invite"></label></div>
     <div id="apWarn">${warn}</div>
-    <div class="apacts"><button class="pill" id="apSave">${f.id ? 'SAVE CHANGES' : 'BOOK'}</button><button class="lnk" id="apFX2">Cancel</button></div>
+    <div class="apacts"><button class="pill" id="apSave">${f.requested ? 'CONFIRM' : f.id ? 'SAVE CHANGES' : 'BOOK'}</button><button class="lnk" id="apFX2">Cancel</button></div>
   </div></div>`;
 }
 let qT = null, cT = null;
@@ -360,7 +364,7 @@ async function save(main, force) {
   if (!r.ok) { if (r.code === 'OVERLAP' || r.code === 'OUTSIDE_HOURS') { f.warn = r; f.tried = true; draw(main); const el = $('apWarn'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' }); return; }
     if (b) b.disabled = false; f.warn = { error: r.error }; draw(main); return toast(r.error); }
   const a = r.appt;
-  toast((f.id ? 'Saved' : 'Booked') + ': ' + tLab(a.type) + ' · ' + a.client_name + ', ' + dLab(a.day) + ' ' + clock(a.start_min) + (r.invite === 'sent' ? (f.id ? (r.notified ? ' · client emailed' : ' · client not emailed, tell them') : ' · invite emailed') : ' · no invite (mobile only)'));
+  toast((f.requested ? 'Confirmed' : f.id ? 'Saved' : 'Booked') + ': ' + tLab(a.type) + ' · ' + a.client_name + ', ' + dLab(a.day) + ' ' + clock(a.start_min) + (r.invite === 'sent' ? (f.id ? (r.notified ? ' · client emailed' : ' · client not emailed, tell them') : ' · invite emailed') : ' · no invite (mobile only)'));
   S.form = null; S.day = a.day; reload(main, true);
 }
 

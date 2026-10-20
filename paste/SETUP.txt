@@ -1,0 +1,52 @@
+To do card — what to paste, and what not to run.
+
+New file
+  Apps Script: + Script, name it Todo, paste paste/Todo.gs (the whole file, no extra header).
+  Save.
+
+Patches, against the live files (exact FIND / REPLACE in the .patch.txt files)
+  Dashboard.gs     paste/Dashboard.gs.patch.txt
+  Auth.gs          paste/Auth.gs.patch.txt
+  Appointments.gs  paste/Appointments.gs.patch.txt
+  Production.gs is not part of this change.
+
+Do not edit Fast.gs or DashCache.gs.
+  The list is built inside the dashboard answer, which those files already cache.
+  todoDone and todoSnooze are writes. Leave them out of FAST.READS, FAST.CACHE, and DCACHE.READS so a Done or Snooze bumps both caches.
+  The live Fast.gs READS line starts `READS: { consignList: 1, consignSearch: 1, ping: 1,`. Still do not add the writes there.
+
+oauthScopes
+  None. No appsscript.json change. No Calendar scope is added. A request does not create a calendar event. Confirming it uses the booking path that already exists.
+
+Setup function
+  None new. Done and Snooze write the existing Reminders tab from setupAppointments.
+  If that tab is missing, the card still loads and Done says to run setupAppointments once.
+
+Then
+  Deploy > Manage deployments > pencil > New version > Deploy.
+  Do not use New deployment.
+
+Site
+  staff/index.html, dash.js, todo.css, appts.js, and appts.css ship on GitHub Pages (branch main). The card is the first dashboard section after the KPI bubbles. An admin can drag it with the other sections.
+
+Appointment status
+  requested is new. booked and cancelled are unchanged.
+  Portal or Tessa: action apptRequest { day:'2026-10-21', start:'14:00', type:'fitting', client:{ name:'Ana Ruiz' }, source:'portal' }
+  Or in the staff group: @OypJewelry_bot request Ana Ruiz Tue 2pm fitting
+  The row stays Requested (no calendar event) until someone opens it on Appointments and confirms. The To do line says whether that time is free against booked visits and store hours.
+
+Done and Snooze
+  Both write a Reminders row whose id starts with td- and whose status is done or snoozed, never open, so the bot does not ping it.
+  Snooze (tomorrow, 3 days, 1 week) hides the line until that time, then shows it again only if the rule still matches.
+  Done hides that exact line until the episode changes (the JO leaves the stage, the quote is accepted, the request is confirmed, the count of jobs in the line changes).
+
+Role
+  Admin sees every area, including peso amounts. No line shows a margin or an SRP.
+  Production manager sees the same work with no money lines and no peso amounts.
+  Accounting sees appointments, payments, and quotes, with no peso amounts.
+  Staff see job and stage lines only, and no client names (same rule as the rest of the dashboard).
+
+Rules the lines follow
+  Stuck means 5 or more days in the current production stage. There is no standard number of days for a stage. A step target (JobStages.target_date) or a JO target (JobOrders.prod_target) is used when it is set.
+  A piece is written client name, then the JO: Elena Tan · 26-287: stuck in Setting 6 days.
+  There is no "in Vault over 90 days" line.
