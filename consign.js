@@ -231,7 +231,8 @@ function drawSheet(printing) {
     ${sheet}
     ${open ? `<div class="csacts cs-noprint"><input id="csBackCode" class="rvq" style="flex:1;margin:0" placeholder="Scan or type a JO or item" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="JO or item to return or mark sold">
       <div class="csmode" role="tablist" aria-label="Return or sold"><button type="button" data-mark="returned" class="${S.markAs === 'sold' ? '' : 'on'}">Return</button><span aria-hidden="true">·</span><button type="button" data-mark="sold" class="${S.markAs === 'sold' ? 'on' : ''}">Sold</button></div>
-      <button type="button" class="pill sm outline" id="csScan">SCAN</button><button type="button" class="pill sm" id="csBackGo">${S.markAs === 'sold' ? 'SOLD' : 'RETURN'}</button></div>${noteHtml('mark', esc)}` : ''}
+      <button type="button" class="pill sm outline" id="csScan">SCAN</button><button type="button" class="pill sm" id="csBackGo">${S.markAs === 'sold' ? 'SOLD' : 'RETURN'}</button></div>` : ''}
+    ${noteHtml('mark', esc)}
     ${owes ? `<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csPaySheet">Record payment</button></div>` : ''}
     ${S.pay && S.pay.consignment_id === s.consignment_id ? payForm(s) : ''}
   </div>`;
@@ -265,7 +266,7 @@ function setupWarn() {
 }
 function noteHtml(where, esc) {
   const n = S.note && S.note.where === where ? S.note : null;
-  return `<p class="csnote${n ? ' ' + n.kind : ''}" id="csNote" role="status">${n ? esc(n.text) : ''}</p>`;
+  return `<p class="csnote${n ? ' ' + n.kind : ''}" id="csScanNote" role="status">${n ? esc(n.text) : ''}</p>`;
 }
 function tabs() {
   return `<div class="seg csseg" role="tablist">${[['sheets', 'Sheets'], ['people', 'Consignees']].map(([k, l]) => `<button type="button" data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -449,7 +450,7 @@ function setNote(kind, text, where) { S.note = { kind, text, where }; }
 function clearNote(where) {
   if (!S.note || S.note.where !== where) return;
   S.note = null;
-  const n = $('csNote'); if (n) { n.textContent = ''; n.className = 'csnote'; }
+  const n = $('csScanNote'); if (n) { n.textContent = ''; n.className = 'csnote'; }
 }
 function addedText(h) { return 'Added ' + (h.jo || h.item_id || 'piece') + (h.description ? ' · ' + h.description : ''); }
 function onDraft(h) { return !!(S.draft && (S.draft.items || []).some(it => samePiece(it, h))); }
