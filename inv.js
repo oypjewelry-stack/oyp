@@ -39,7 +39,7 @@ const specs = j => {
   if (j.weight_g) s.push(j.weight_g + ' g');
   return s.filter(Boolean).join(' · ');
 };
-const locLab = k => window.OYP.locLabel(k, ((IV.r && IV.r.locations || []).find(l => l[0] === k) || [k, k])[1]);
+const locLab = k => ((IV.r && IV.r.locations || []).find(l => l[0] === k) || [k, k])[1];
 const typeLab = k => ((IV.r && IV.r.item_types || []).find(t => t[0] === k) || [k, k])[1];
 function ivHay(j) {
   return [j.jo, j.parent_jo, j.description, j.client, j.metal, kar(j.karat), j.karat, j.stone_type, j.stone_size, j.grade, j.material, j.size,
@@ -75,7 +75,7 @@ function ivDraw(main) {
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     <div class="rvchips ivchips">${Object.keys(IVIEWS).map(k => `<button class="fchip tap ${IV.view === k ? 'on' : ''}" data-iv="${k}">${esc(IVIEWS[k][0])} <b>${cnt(k)}</b></button>`).join('')}</div>
     <input id="ivQ" class="rvq" placeholder="Search JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off">
-    <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
+    <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
     <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
   </div>${IV.open ? ivSheet(r.jobs.find(j => j.jo === IV.open)) : ''}`;

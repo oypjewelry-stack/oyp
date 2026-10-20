@@ -18,7 +18,6 @@ const SECS = [
   ['scanner', 'Scanner', 'Page rotation, auto-snap, and where the JO number is read'],
   ['portal', 'Customer pages', 'Contact line, deposit and quote validity on Track my order / My orders'],
   ['design', 'Design', 'Text size in pixels, fonts, spacing, corners, and each button, header and shape'],
-  ['layout', 'Layout', 'Drag the side menu, the dashboard sections, and the location tiles on this device'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
 // The values stay in the Settings tab and in the Change history; nothing is deleted. Remove a key here to show the section again.
@@ -80,13 +79,6 @@ function summary(k) {
   if (k === 'portal') { const it = item('portal.contact'), v = it ? eff(it) : '', dp = item('portal.deposit_pct'), qd = item('portal.quote_days');
     const extra = [dp && (eff(dp) === '0' ? 'no deposit shown' : 'deposit ' + eff(dp) + '%'), qd && 'quotes valid ' + eff(qd) + ' days'].filter(Boolean).join(' · ');
     return (/^(none|off|-)$/i.test(v.trim()) ? 'No contact line' : v) + (extra ? ' · ' + extra : ''); }
-  if (k === 'layout') {
-    const u = window.OYP.user(), bits = [];
-    if (u && window.OYPLayoutMenu && window.OYPLayoutMenu.custom(u)) bits.push('menu');
-    if (u && window.OYPDash && window.OYPDash.layout && window.OYPDash.layout.sections.custom(u)) bits.push('dashboard');
-    if (u && window.OYPDash && window.OYPDash.layout && window.OYPDash.layout.locations.custom(u)) bits.push('locations');
-    return bits.length ? 'Custom on this device: ' + bits.join(', ') : 'Today\'s order on this device';
-  }
   if (k === 'log') { const l = S.r.log[0]; return l ? 'Last: ' + when(l.at) + ' by ' + l.by : 'No changes yet'; }
   return '';
 }
@@ -139,14 +131,13 @@ function section(s) {
   if (s === 'portal') return head(t[1], 'Clients see this line under their order on <b>Track my order</b> (oypjewelry.com/track), and when an order isn\'t found. Phone numbers and emails in it become tap-to-call and tap-to-email links. Type <b>none</b> to hide the line.')
     + `<div class="setbox">${field('portal.contact', 'Contact line')}${item('portal.deposit_pct') ? field('portal.deposit_pct', 'Deposit asked on a quote (%)', 'Shown on the client\'s quote as "Deposit to start". 0 = no deposit line.') : ''}${item('portal.quote_days') ? field('portal.quote_days', 'Quote valid for (days)', 'Counted from the day the quote was marked sent. After that the client can\'t approve it and is asked to message you for an updated price.') : ''}</div>` + saveBar();
   if (s === 'design') return head(t[1], 'Drag a slider and this page changes right away, so you can see it before saving. <b>SAVE</b> makes it the look for everyone: every staff phone and computer, and the customer pages (order lookup, shop). Other devices pick it up within a few minutes.') + designBox();
-  if (s === 'layout') return head(t[1], 'Turn editing on, then drag the side menu, the dashboard sections, and the location tiles into place. Done puts the controls away. The order is saved on this device only.') + layoutBox();
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
   return '';
 }
 /* ---------- Design (sliders -> CSS variables, design.js) ---------- */
 const DS = { // key -> [short name, label, what it changes]
   text: ['Text', 'Text size', 'Everyday text: descriptions, tables, labels, menus, form fields'],
-  head: ['Headings', 'Heading size', 'JO numbers, names, big numbers and the black buttons. Page titles, the menu header and the pricing header have their own size below.'],
+  head: ['Headings', 'Heading size', 'Page titles, JO numbers, names, big numbers and the black buttons'],
   space: ['Spacing', 'Spacing', 'Space inside and between boxes, cards, rows and buttons'],
   radius: ['Corners', 'Corner roundness', 'How round the corners of cards, boxes, fields and buttons are (0 = square)'],
   box: ['Card height', 'Card and box height', 'Minimum height of board columns and boxes. 120 px is today\'s height'],
@@ -160,7 +151,7 @@ function dsStart() { const D = window.OYPDesign, o = {}, loc = D.local();
   return D.sliderOf(o); } // box and width come back as pixels; the server still stores the same ratio as before
 /* ---------- Buttons & shapes (one row per type; design.js PARTS, app.css --d-<type>-<control>) ---------- */
 const PRV = { // preview markup = the real classes, styled by the real CSS
-  hmenu: '<span class="title">Back office</span><div class="menu"><a>Dashboard</a><a>Material prices</a></div>',
+  hmenu: '<span class="title">OYP Jewelry</span>',
   hbody: '<h2 style="margin:0">Appointments</h2>',
   hprice: '<div class="prices"><div class="dtitle" style="margin:0"><h3>Metals</h3></div><div class="pname"><b>18k yellow gold</b></div></div>',
   arrow: '<button class="apar" type="button" tabindex="-1" aria-hidden="true">‹</button><button class="apar" type="button" tabindex="-1" aria-hidden="true">›</button>',
@@ -181,7 +172,7 @@ const PRV = { // preview markup = the real classes, styled by the real CSS
   modal: '<div class="pmbox"><span class="lab">JO 1234</span><b class="dpmh">Move to Casting?</b><button class="pill wide" type="button" tabindex="-1">YES, MOVE</button></div>',
   toast: '<div class="toast">Saved for everyone</div>' };
 const DP = { // type -> [name, where it is used, height label, width label]
-  hmenu: ['Menu header', 'The name in the top bar, and the titles in the side menu and the phone menu. They share one size once you set it (top bar 20 px, side menu 12 px, phone menu 13 px until then)', 'Size', ''],
+  hmenu: ['Menu header', 'The name in the top bar', 'Size', ''],
   hbody: ['Body header', 'Page titles on staff pages and customer pages', 'Size', ''],
   hprice: ['Pricing header', 'Material prices title, section titles and material names. They share one size once you set it (26 px, 19 px and 17 px until then)', 'Size', ''],
   arrow: ['Left and right arrows', 'Previous / next on the calendar and on Production', 'Circle size', ''],
@@ -190,7 +181,7 @@ const DP = { // type -> [name, where it is used, height label, width label]
   btnbig: ['Big and full-width buttons', 'Home page tiles, Move to…, Yes / OK in pop-ups', 'Height', ''],
   btnsm: ['Small buttons', 'Add, Edit, Rotate inside lists and panels', 'Height', 'Width'],
   link: ['Text links', 'Reset, Back, Show more (underlined words)', '', ''],
-  menu: ['Menu items', 'Side menu, phone menu and the name menu. Text size applies until a menu header size is set', 'Height', ''],
+  menu: ['Menu items', 'Side menu, phone menu and the name menu', 'Height', ''],
   tabs: ['Tabs', 'Day / Week / Month, Board / Workers, Cash / GCash', 'Height', ''],
   sw: ['Switches', 'On / off toggles', '', ''],
   fchip: ['Filter chips', 'All / Late filters, day buttons in Settings', 'Height', 'Width'],
@@ -202,7 +193,7 @@ const DP = { // type -> [name, where it is used, height label, width label]
   modal: ['Pop-ups and side panels', 'Move JO pop-up, inventory panel, menus', 'Padding', 'Width'],
   toast: ['Notices', 'The black "Saved" message at the bottom', 'Height', ''] };
 const DP_GROUPS = [
-  ['Headers', ['hmenu', 'hbody', 'hprice'], 'Menu header, body header and pricing header are separate. Each one changes only its own text, and none of them follows the Headings slider. The menu header is the name in the top bar and the titles in the side menu and the phone menu. The side menu has no extra section headings.'],
+  ['Headers', ['hmenu', 'hbody', 'hprice'], 'Menu header, body header and pricing header are separate. Until you change one, it follows the Headings slider and the Headings font above, so today\'s saved header is the start for all three.'],
   ['Navigation arrows', ['arrow'], 'Size and color of the left and right arrows. The calendar arrows are 20 px and the Production arrows are 24 px until you set one size for both.'],
   ['Buttons, boxes and type', ['btn', 'btnout', 'btnbig', 'btnsm', 'link', 'menu', 'tabs', 'sw', 'fchip', 'chip', 'field', 'card', 'box', 'pcard', 'modal', 'toast'], 'Numbers are the real pixels, so a black button and a white button can be set to the same width. Each of these also has its own font, weight and color. Reset puts that one control back to the size the sliders above make.']];
 const dpPasted = () => !!item('design.parts');
@@ -469,7 +460,6 @@ function wire(main) {
     S.code = r.code ? { username: r.username, code: r.code } : null; reload(main); });
   if (!sec() || sec() !== 'staff') S.code = null;
   if (sec() === 'design') dsWire(main);
-  if (sec() === 'layout') layoutWire(main);
   if (sec() === 'scanner') {
     const go = () => { const h = $('zoneHost'); if (h && window.OYPZones) window.OYPZones.mount(h); };
     if (window.OYPZones) go(); else window.addEventListener('oyp-zones-ready', go, { once: true });
@@ -486,26 +476,6 @@ async function save(main) {
   Object.keys(values).forEach(k => { seen[k] = item(k).changed_at || ''; });
   if (Object.keys(values).length) { const r = await call('settingsSave', { values, seen }); if (!r.ok) return fail(r.error); }
   S.busy = false; S.types = null; S.typesDirty = false; toast('Saved'); reload(main);
-}
-function layoutBox() {
-  const on = window.OYPLayoutEdit && window.OYPLayoutEdit.editing();
-  return `<div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Edit layout</span><span class="muted">While this is on, drag a section, a location tile, or a menu item into place. Location tiles show a hide mark, and Show and Reset appear for tiles you have changed. The dashboard and both menus stay clear when this is off.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="layEdit"${on ? ' checked' : ''}><span>${on ? 'On' : 'Off'}</span></label></div></div></div>
-    <p class="muted">Open the dashboard to move its sections and the location tiles. The menu on this page, and the phone menu, move while editing is on.</p>`;
-}
-function layoutWire(main) {
-  const box = main.querySelector('#layEdit');
-  if (!box || !window.OYPLayoutEdit) return;
-  const lab = box.nextElementSibling;
-  box.onchange = () => { window.OYPLayoutEdit.set(box.checked); if (lab) lab.textContent = box.checked ? 'On' : 'Off'; };
-  if (!S.layListen) {
-    S.layListen = true;
-    window.OYPLayoutEdit.listen(on => {
-      const b = document.getElementById('layEdit');
-      if (!b) return;
-      b.checked = !!on;
-      if (b.nextElementSibling) b.nextElementSibling.textContent = on ? 'On' : 'Off';
-    });
-  }
 }
 window.addEventListener('hashchange', () => { S.types = null; S.typesDirty = false; if ((S.ds || S.dp || S.df) && sec() !== 'design') { S.ds = null; S.dp = null; S.df = null; if (window.OYPDesign) window.OYPDesign.restore(); } }); // leaving Design unsaved: back to the saved look
 window.OYPSettings = { render };

@@ -47,8 +47,7 @@
   };
   // which global a legacy percent follows, so the pixel on the slider matches the screen. none = the sample's own px.
   var AXIS = {
-    // Headers do not follow Headings or body text. A saved pixel is the size, and only that header's elements read it.
-    t: { btn: 'hs', btnout: 'hs', btnbig: 'hs', btnsm: 'hs', hmenu: 'none', hbody: 'none', hprice: 'none' },
+    t: { btn: 'hs', btnout: 'hs', btnbig: 'hs', btnsm: 'hs', hmenu: 'hs', hbody: 'hs', hprice: 'hs' },
     h: { arrow: 'none' },
     w: { card: 'none', box: 'cw', modal: 'cw' },
     r: {}
@@ -58,7 +57,6 @@
   // outer width = content * fontRatio + pad * spacing * widthPercent. Used only to label a legacy percent; a saved pixel sets the width itself.
   var WPART = { btn: [45, 56], btnout: [74, 56], btnsm: [30, 36], fchip: [47, 26], chip: [73, 20] };
   var ABS = { t: 'fp', h: 'hp', w: 'wp', r: 'rp' };
-  var HEADER = { hmenu: 1, hbody: 1, hprice: 1 }; // pixel only: do not also publish a --d-<type>-t ratio other scopes could multiply
   var WEIGHTS = { 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold' };
   // the fonts already loaded on every staff and customer page (Google Fonts link in each page's <head>): code: [name, the stack app.css uses]
   var FONTS = { libre: ['Libre Bodoni', "'Libre Bodoni','Bodoni 72',Didot,serif"], moda: ['Bodoni Moda', "'Bodoni Moda','Bodoni 72',Didot,serif"],
@@ -154,11 +152,9 @@
       var nPx = px[c] && px[c][k];
       if (nPx != null) {
         root.style.setProperty(abs, nPx + 'px');
-        // Header CSS reads only the pixel (--d-h*-fp). Do not also publish --d-h*-t; nothing else should scale from it.
-        if (HEADER[c]) { root.style.removeProperty(name); }
         // Button / chip width is a real width (the percent only padded). Other pixels keep the multiplier in step
         // so inner text that follows --fs / --hs / --sp lands on the same pixel.
-        else if (k === 'w' && WPART[c]) { if (rec[k] == null) root.style.removeProperty(name); else root.style.setProperty(name, String(rec[k] / 100)); }
+        if (k === 'w' && WPART[c]) { if (rec[k] == null) root.style.removeProperty(name); else root.style.setProperty(name, String(rec[k] / 100)); }
         else {
           var ratio = pxToRatio(c, k, nPx, v);
           if (!isFinite(ratio) || ratio < 0.35) ratio = 0.35;
