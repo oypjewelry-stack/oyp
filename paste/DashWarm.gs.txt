@@ -1,0 +1,89 @@
+PASTE INTO: a new script file named DashWarm.
+
+No new OAuth scope. Do not add a scope. Paste `paste/DashCache.gs.txt` first. This file only refreshes that cache. It does not read the Sheet until `dashWarmBuild_` points at the functions Dashboard.gs and DashboardDrill.gs already have.
+
+A time trigger runs every 5 minutes, all day. From 8:00 through 7:59pm Manila time it refreshes the copies already in the cache, so the 15 minutes does not run out during the day. Before 8:00 and from 8:00pm on it returns immediately and does not touch the cache.
+
+It can also build a missing copy, for admin, production manager, and accounting, for `dashboard` and for `dashDrill` `what: 'jobs'`. That build is `dashWarmBuild_` below. It returns null until you send Dashboard.gs and DashboardDrill.gs. Do not invent those functions here. When you send the two files, replace only the body of `dashWarmBuild_` with the same calls the dashboard lines in Auth.gs already make, and pass the `user` argument this function receives (`user.role` is the role to build). A signed-in request is what fills the cache until that body is connected.
+
+`installDashWarm` adds the trigger. Run it once from the editor. Running it again removes the previous `dashWarm_` trigger first, so you do not get two. `removeDashWarm` deletes it.
+
+Apps Script still starts the trigger. A run that only refreshes is a CacheService read and write. A run that builds does the same Sheet work as a signed-in dashboard. The free consumer account allows about 90 minutes of triggers a day. Refreshing six small copies every 5 minutes through a 12-hour day stays inside that. Six full Sheet builds every 5 minutes would not. Leave `dashWarmBuild_` returning null until the cache is already being filled by real sign-ins, or connect it so it builds only on a miss (that is what `dashWarmFill_` already does).
+
+Send Dashboard.gs and DashboardDrill.gs. The only edit inside them is none. The only edit inside this file, after they arrive, is the body of `dashWarmBuild_`.
+
+Paste steps:
+1. Confirm DashCache is already in the project.
+2. Add a script named DashWarm. Paste everything below COPY FROM HERE.
+3. In the editor, select `installDashWarm` and Run it once. Allow the trigger when Google asks.
+4. Select `dashWarm_` and Run it once during the day. The log should show `ok true` and `skipped` absent. Before 8:00 or after 8:00pm Manila it shows `skipped: closed`.
+
+COPY FROM HERE
+
+/**
+ * Keeps the DashCache copies warm. Every 5 minutes. Does the work only from 08:00 to 20:00 Asia/Manila.
+ * No new OAuth scope. Requires DashCache.gs.
+ * Run installDashWarm once. Run removeDashWarm to stop it.
+ *
+ * dashWarmBuild_ is the only function to edit once Dashboard.gs and DashboardDrill.gs are in hand.
+ * Use the same calls Auth.gs already wraps. Pass `user` through. user.role is admin, production_manager, or accounting.
+ */
+function installDashWarm() {
+  var gone = dashWarmClear_();
+  ScriptApp.newTrigger('dashWarm_').timeBased().everyMinutes(5).create();
+  return { ok: true, removed: gone, every: '5 minutes', hours: '08:00-20:00 Asia/Manila' };
+}
+
+function removeDashWarm() {
+  return { ok: true, removed: dashWarmClear_() };
+}
+
+function dashWarmClear_() {
+  var gone = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'dashWarm_') { ScriptApp.deleteTrigger(t); gone++; }
+  });
+  return gone;
+}
+
+function dashWarmOpen_() {
+  var h = Number(Utilities.formatDate(new Date(), 'Asia/Manila', 'H'));
+  return h >= 8 && h < 20;
+}
+
+function dashWarm_() {
+  if (!dashWarmOpen_()) return { ok: true, skipped: 'closed' };
+  if (typeof dashCacheRefresh_ !== 'function') return { ok: false, error: 'Paste DashCache.gs first' };
+  var kept = dashCacheRefresh_();
+  var built = dashWarmFill_();
+  Logger.log(JSON.stringify({ ok: true, kept: kept, built: built }));
+  return { ok: true, kept: kept, built: built };
+}
+
+function dashWarmFill_() {
+  if (typeof dashCacheHas_ !== 'function' || typeof dashCachePut_ !== 'function') return [];
+  var roles = ['admin', 'production_manager', 'accounting'];
+  var jobs = [], r, built = [], i, job, user, fresh;
+  for (r = 0; r < roles.length; r++) {
+    jobs.push({ role: roles[r], action: 'dashboard', req: { action: 'dashboard' } });
+    jobs.push({ role: roles[r], action: 'dashDrill', req: { action: 'dashDrill', what: 'jobs' } });
+  }
+  for (i = 0; i < jobs.length; i++) {
+    job = jobs[i];
+    if (typeof dashCacheSpec_ !== 'function') return built;
+    job.spec = dashCacheSpec_(job.action, job.req);
+    if (!job.spec || dashCacheHas_(job.role, job.action, job.req)) continue;
+    user = { username: 'warm', role: job.role, display_name: 'Warm' };
+    try { fresh = dashWarmBuild_(user, job.action, job.req); } catch (e) { fresh = null; }
+    if (!fresh || !fresh.ok) continue;
+    if (dashCachePut_(job.role, job.spec, fresh)) built.push(job.role + ' ' + (job.action === 'dashboard' ? 'dashboard' : 'jobs'));
+  }
+  return built;
+}
+
+function dashWarmBuild_(user, action, req) {
+  // Replace this body with the calls already in your project. Do not add a new Sheet reader here.
+  //   if (action === 'dashboard') return the dashboard call Auth.gs wraps, passing user;
+  //   if (action === 'dashDrill') return the dashDrill call Auth.gs wraps, passing user;
+  return null;
+}
