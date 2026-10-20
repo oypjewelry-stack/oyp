@@ -88,9 +88,9 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;width:26px;height:2
 .kpi small{font-family:var(--label);font-size:calc(12px*var(--fs));color:#777}.kpi.warn b{color:#111}.kpi.gold{border-color:var(--gold);background:#fffdf6}.kpi.gold b{color:#a8861c}
 .dcard{border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(18px*var(--sp)) calc(20px*var(--sp));margin-bottom:calc(18px*var(--sp));max-width:calc(1200px*var(--cw))}.dcard.soon{border-style:dashed}.dcard .muted{color:#777}
 .dtitle{display:flex;align-items:center;justify-content:space-between;gap:calc(10px*var(--sp));margin-bottom:calc(12px*var(--sp))}.dtitle h3{font-family:var(--head);font-weight:500;font-size:calc(19px*var(--hs));text-transform:uppercase}
-/* Each dashboard section header is its own box. A wrap or a drag on one does not restyle or shift the next section's header. The size stays 19px, so the box control's heading scale does not move them together. */
+/* Each dashboard section header is its own box. A wrap or a drag on one does not restyle or shift the next section's header. */
 .dcard>.dtitle{align-items:flex-start;flex-wrap:wrap;width:100%;min-width:0;margin:0 0 calc(12px*var(--sp));contain:layout;position:relative}
-.dcard>.dtitle h3{margin:0;line-height:1.2;font-size:19px}
+.dcard>.dtitle h3{margin:0;line-height:1.2}
 .dcard>.dtitle .dname,.dcard>.dtitle .lab,.dcard>.dtitle .dlocacts,.dcard>.dtitle .csdash{min-width:0}
 .dname{display:flex;align-items:center;gap:calc(8px*var(--sp));min-width:0}.dord{display:inline-flex;align-items:center;gap:4px;flex:none}
 .dmove,.dgrip,.nord,.lcord,.dord{display:none!important}
@@ -347,6 +347,18 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.
 .prices h2,.plog h2{font-family:var(--d-hprice-f,var(--Ghead,var(--head)));font-weight:var(--d-hprice-g,500);font-size:var(--d-hprice-fp,26px);color:var(--d-hprice-c,#111)}
 .prices .dtitle h3{font-family:var(--d-hprice-f,var(--Ghead,var(--head)));font-weight:var(--d-hprice-g,500);font-size:var(--d-hprice-fp,19px);color:var(--d-hprice-c,#111)}
 .prices .pname b{font-family:var(--d-hprice-f,var(--Ghead,var(--head)));font-weight:var(--d-hprice-g,500);font-size:var(--d-hprice-fp,17px);color:var(--d-hprice-c,#111)}
+/* Dashboard titles. Each one is its own pixel, font and weight. Unset, a section title follows the global heading
+   (--Ghs, --Ghead, weight 500), not the box around it and not the menu, page title or pricing header.
+   Active jobs is the KPI label and stays that small label until it is set. */
+.kpis>.kpi>.lab,.dsecprev[data-dsec="hkpi"]{font-family:var(--d-hkpi-f,var(--Glabel,var(--label)));font-weight:var(--d-hkpi-g,500);font-size:var(--d-hkpi-fp,calc(12px*var(--Gfs,1)))}
+.dcard[data-dsec="todo"]>.dtitle h3,.dsecprev[data-dsec="todo"]{font-family:var(--d-htodo-f,var(--Ghead,var(--head)));font-weight:var(--d-htodo-g,500);font-size:var(--d-htodo-fp,calc(19px*var(--Ghs,1)))}
+.dcard[data-dsec="board"]>.dtitle h3,.dsecprev[data-dsec="board"]{font-family:var(--d-hboard-f,var(--Ghead,var(--head)));font-weight:var(--d-hboard-g,500);font-size:var(--d-hboard-fp,calc(19px*var(--Ghs,1)))}
+.dcard[data-dsec="loc"]>.dtitle h3,.dsecprev[data-dsec="loc"]{font-family:var(--d-hloc-f,var(--Ghead,var(--head)));font-weight:var(--d-hloc-g,500);font-size:var(--d-hloc-fp,calc(19px*var(--Ghs,1)))}
+.dcard[data-dsec="sales"]>.dtitle h3,.dsecprev[data-dsec="sales"]{font-family:var(--d-hsales-f,var(--Ghead,var(--head)));font-weight:var(--d-hsales-g,500);font-size:var(--d-hsales-fp,calc(19px*var(--Ghs,1)))}
+.dcard[data-dsec="consign"]>.dtitle h3,.dsecprev[data-dsec="consign"]{font-family:var(--d-hconsign-f,var(--Ghead,var(--head)));font-weight:var(--d-hconsign-g,500);font-size:var(--d-hconsign-fp,calc(19px*var(--Ghs,1)))}
+.dcard[data-dsec="msgs"]>.dtitle h3,.dsecprev[data-dsec="msgs"]{font-family:var(--d-hmsgs-f,var(--Ghead,var(--head)));font-weight:var(--d-hmsgs-g,500);font-size:var(--d-hmsgs-fp,calc(19px*var(--Ghs,1)))}
+.dcard[data-dsec="pay"]>.dtitle h3,.dsecprev[data-dsec="pay"]{font-family:var(--d-hpay-f,var(--Ghead,var(--head)));font-weight:var(--d-hpay-g,500);font-size:var(--d-hpay-fp,calc(19px*var(--Ghs,1)))}
+.dsecprev{text-transform:uppercase;line-height:1.2}
 /* dashboard: client messages (Portal.gs v3) + JO review chip */
 .cmrow{display:flex;gap:calc(12px*var(--sp));align-items:flex-start;padding:calc(10px*var(--sp)) 0;border-top:1px solid #f0f0f0}.cmrow:first-of-type{border-top:0}
 .cmico{width:26px;height:26px;border-radius:50%;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;margin-top:2px}

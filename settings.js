@@ -163,6 +163,14 @@ const PRV = { // preview markup = the real classes, styled by the real CSS
   hmenu: '<span class="title">Back office</span><div class="menu"><a>Dashboard</a><a>Material prices</a></div>',
   hbody: '<h2 style="margin:0">Appointments</h2>',
   hprice: '<div class="prices"><div class="dtitle" style="margin:0"><h3>Metals</h3></div><div class="pname"><b>18k yellow gold</b></div></div>',
+  hkpi: '<span class="dsecprev" data-dsec="hkpi">Active jobs</span>',
+  htodo: '<span class="dsecprev" data-dsec="todo">To do</span>',
+  hboard: '<span class="dsecprev" data-dsec="board">Job board</span>',
+  hloc: '<span class="dsecprev" data-dsec="loc">Location</span>',
+  hsales: '<span class="dsecprev" data-dsec="sales">Sales</span>',
+  hconsign: '<span class="dsecprev" data-dsec="consign">Consignment</span>',
+  hmsgs: '<span class="dsecprev" data-dsec="msgs">Messages</span>',
+  hpay: '<span class="dsecprev" data-dsec="pay">Recent payments</span>',
   arrow: '<button class="apar" type="button" tabindex="-1" aria-hidden="true">‹</button><button class="apar" type="button" tabindex="-1" aria-hidden="true">›</button>',
   btn: '<button class="pill" type="button" tabindex="-1">SAVE</button>',
   btnout: '<button class="pill outline" type="button" tabindex="-1">CANCEL</button>',
@@ -184,6 +192,14 @@ const DP = { // type -> [name, where it is used, height label, width label]
   hmenu: ['Menu header', 'The name in the top bar, and the titles in the side menu and the phone menu. They share one size once you set it (top bar 20 px, side menu 12 px, phone menu 13 px until then)', 'Size', ''],
   hbody: ['Body header', 'Page titles on staff pages and customer pages', 'Size', ''],
   hprice: ['Pricing header', 'Material prices title, section titles and material names. They share one size once you set it (26 px, 19 px and 17 px until then)', 'Size', ''],
+  hkpi: ['Active jobs', 'The label on each dashboard count: Active jobs, Pending work, and the rest. Until you set it, it stays the small label.', 'Size', ''],
+  htodo: ['To do', 'The To do title on the dashboard. Until you set it, it follows the heading font and the Headings slider.', 'Size', ''],
+  hboard: ['Job board', 'The Job board title on the dashboard. Until you set it, it follows the heading font and the Headings slider.', 'Size', ''],
+  hloc: ['Location', 'The Location title on the dashboard. Until you set it, it follows the heading font and the Headings slider.', 'Size', ''],
+  hsales: ['Sales', 'The Sales title on the dashboard. Until you set it, it follows the heading font and the Headings slider.', 'Size', ''],
+  hconsign: ['Consignment', 'The Consignment title on the dashboard. Until you set it, it follows the heading font and the Headings slider.', 'Size', ''],
+  hmsgs: ['Messages', 'The Messages title on the dashboard. Until you set it, it follows the heading font and the Headings slider.', 'Size', ''],
+  hpay: ['Recent payments', 'The Recent payments title on the dashboard. Until you set it, it follows the heading font and the Headings slider.', 'Size', ''],
   arrow: ['Left and right arrows', 'Previous / next on the calendar and on Production', 'Circle size', ''],
   btn: ['Black buttons', 'Save, Upload, Confirm, and other black buttons that are not full width', 'Height', 'Width'],
   btnout: ['White buttons', 'Cancel and Edit. Full-width white buttons stay full width. Customer Sign in uses this color', 'Height', 'Width'],
@@ -203,6 +219,7 @@ const DP = { // type -> [name, where it is used, height label, width label]
   toast: ['Notices', 'The black "Saved" message at the bottom', 'Height', ''] };
 const DP_GROUPS = [
   ['Headers', ['hmenu', 'hbody', 'hprice'], 'Menu header, body header and pricing header are separate. Each one changes only its own text, and none of them follows the Headings slider. The menu header is the name in the top bar and the titles in the side menu and the phone menu. The side menu has no extra section headings.'],
+  ['Dashboard headers', ['hkpi', 'htodo', 'hboard', 'hloc', 'hsales', 'hconsign', 'hmsgs', 'hpay'], 'Each dashboard title has its own size, font and weight. Until you set one, a section title keeps today\'s heading, and Active jobs keeps the small label. Setting one does not change the others, the menu header, the page title, or the pricing header. They save with the other Design settings, for every staff phone and computer.'],
   ['Navigation arrows', ['arrow'], 'Size and color of the left and right arrows. The calendar arrows are 20 px and the Production arrows are 24 px until you set one size for both.'],
   ['Buttons, boxes and type', ['btn', 'btnout', 'btnbig', 'btnsm', 'link', 'menu', 'tabs', 'sw', 'fchip', 'chip', 'field', 'card', 'box', 'pcard', 'modal', 'toast'], 'Numbers are the real pixels, so a black button and a white button can be set to the same width. Each of these also has its own font, weight and color. Reset puts that one control back to the size the sliders above make.']];
 const dpPasted = () => !!item('design.parts');
@@ -244,7 +261,8 @@ const shownPx = (c, k, src) => {
 };
 const dpOn = (c, src) => { const p = src || S.dp; return !!((p[c] && Object.keys(p[c]).length) || (p._px && p._px[c])); };
 const dpCount = p => { const s = new Set(Object.keys(p || {}).filter(k => k !== '_px' && p[k] && Object.keys(p[k]).length)); if (p && p._px) Object.keys(p._px).forEach(k => s.add(k)); return s.size; };
-const dpLab = (c, k) => k === 'f' ? 'Font' : k === 'g' ? 'Weight' : k === 'c' ? 'Color' : k === 't' ? (c === 'arrow' ? 'Arrow size' : (c === 'hmenu' || c === 'hbody' || c === 'hprice' ? 'Size' : 'Text size')) : k === 'r' ? 'Corners' : k === 'h' ? (DP[c][2] || 'Height') : (DP[c][3] || 'Width');
+const DASH_H = { hkpi: 1, htodo: 1, hboard: 1, hloc: 1, hsales: 1, hconsign: 1, hmsgs: 1, hpay: 1 };
+const dpLab = (c, k) => k === 'f' ? 'Font' : k === 'g' ? 'Weight' : k === 'c' ? 'Color' : k === 't' ? (c === 'arrow' ? 'Arrow size' : (c === 'hmenu' || c === 'hbody' || c === 'hprice' || DASH_H[c] ? 'Size' : 'Text size')) : k === 'r' ? 'Corners' : k === 'h' ? (DP[c][2] || 'Height') : (DP[c][3] || 'Width');
 const dpFmtVal = (k, v) => k === 'f' ? fName(v) : k === 'g' ? (window.OYPDesign.WEIGHTS[v] || v) : k === 'c' ? v : v + ' px';
 function dpBits(c, src) {
   const D = window.OYPDesign, p = src || S.dp, g = gNow(), raw = p[c] || {}, px = (p._px && p._px[c]) || {}, o = {};
