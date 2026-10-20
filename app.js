@@ -489,7 +489,15 @@ async function shopPage() {
   $('slist').outerHTML = r.items.length ? `<table><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">Price</span></th><th><span class="lab">JO</span></th><th><span class="lab">Status</span></th></tr></thead><tbody>${r.items.map(i => `<tr><td><b class="cn">${esc(i.title)}</b><br><span class="muted">${esc(i.item_code)} · ${esc(i.category)}</span></td><td>${i.price_php ? '₱' + Number(i.price_php).toLocaleString() : '—'}</td><td>${esc(i.jo)}</td><td><span class="chip ${i.status === 'listed' ? 'gold' : ''}">${esc(i.status)}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted">Nothing listed yet.</p>';
 }
 
-window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
+// Display names for location keys. Dashboard.gs (DASH.LOCATIONS) and JobSync.gs (JOB_LOCATIONS) still send
+// "Being worked on" and "In vault". The site shows the names below, so those files do not need a paste.
+const LOC_LABEL = { working: 'In production', vault: 'Vault' };
+function locLabel(key, serverLabel) {
+  if (key && Object.prototype.hasOwnProperty.call(LOC_LABEL, key)) return LOC_LABEL[key];
+  if (key === 'unset') return 'No location yet';
+  return serverLabel || key || '';
+}
+window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel, locLabel }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 // Edit layout is off on every load. Settings turns it on; Done turns it off. Order stays in localStorage either way.
 const LE = {
   on: false, fns: [],
