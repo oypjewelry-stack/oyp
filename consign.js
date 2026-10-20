@@ -1,6 +1,7 @@
 /* OYP back office: Consignment (#/consignment). Pieces lent to someone outside the shop.
    Admin and production manager. Agreed value, owed, paid, and balance are executive-only (the server omits them for everyone else).
    A sold piece is owed by the consignee. Record payment stores paid_amount and paid_at on the line (Consignment.gs consignPay).
+   Attach signed copy sends a photo or PDF (consignSigned). The server stores it in Drive and returns signed_copy_url.
    Server: Consignment.gs, one tab named Consignment, one row per piece. Run setupConsignment once. Names in the form are the distinct consignee names on that tab. */
 (() => {
 'use strict';
@@ -136,10 +137,22 @@ function sheetRow(s, esc) {
   const n = (s.items || []).length, out = (s.items || []).filter(i => i.status === 'consigned').length;
   const items = s.status === 'closed' ? plural(n, 'item') : (out === n ? plural(n, 'item') : out + ' of ' + n + ' still out');
   const money = moneyBits(s);
-  return `<tr class="csrow${s.overdue ? ' od' : ''}" data-open="${esc(s.consignment_id)}"><td><b class="cn">${esc(s.consignee || '—')}</b><br><span class="muted">${esc(s.consignment_id)}</span>${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td>
+  return `<tr class="csrow${s.overdue ? ' od' : ''}" data-open="${esc(s.consignment_id)}"><td><b class="cn">${esc(s.consignee || '—')}</b><br><span class="muted">${esc(s.consignment_id)}</span>${signMark(s, esc)}${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td>
     <td>${esc(day(s.date_out))}</td><td>${esc(items)}</td><td>${s.days_out == null ? '—' : esc(s.days_out)}</td>
     <td>${s.overdue ? '<span class="chip gold">Overdue</span>' : (s.status === 'closed' ? '<span class="chip">Closed</span>' : '—')}</td>
-    <td><button type="button" class="lnk" data-reprint="${esc(s.consignment_id)}">Reprint</button></td></tr>`;
+    <td><div class="csrowacts"><button type="button" class="lnk" data-reprint="${esc(s.consignment_id)}">Reprint</button>${signButton(s, esc)}</div></td></tr>`;
+}
+function signButton(s, esc) {
+  const id = esc(s.consignment_id);
+  return `<button type="button" class="lnk" data-sign="${id}">Attach signed copy</button><input type="file" class="csfile" data-file="${id}" accept="image/*,application/pdf" capture="environment" aria-label="Signed copy for ${id}">`;
+}
+function safeHttp(u) { return /^https:\/\//i.test(String(u || '')) ? String(u) : ''; }
+function signMark(s, esc) {
+  const url = safeHttp(s && s.signed_copy_url);
+  if (!url) return '';
+  const thumb = String(s.signed_thumb || '');
+  const img = thumb.indexOf('data:image/') === 0 ? `<a class="csthumb" href="${esc(url)}" target="_blank" rel="noopener"><img alt="Signed copy" src="${esc(thumb)}"></a>` : '';
+  return `<span class="cssignbits"><span class="chip">Signed</span> <a class="lnk cssigned" href="${esc(url)}" target="_blank" rel="noopener">Signed copy</a>${img}</span>`;
 }
 function drawPeople() {
   const { esc } = window.OYP, r = S.r, ed = (r.consignees || []).find(c => c.consignee_id === S.edit);
@@ -223,14 +236,15 @@ function drawSheet(printing) {
     <div class="cssigns"><div><div class="csline"></div><span class="lab">Consignee</span><b>${esc(s.consignee || '')}</b></div>
       <div><div class="csline"></div><span class="lab">OYP Jewelry</span></div></div>
   </article>`;
-  if (printing) return `<div class="cs">${sheet}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button></div></div>`;
+  if (printing) return `<div class="cs">${sheet}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button>${signButton(s, esc)}</div>${signMark(s, esc) ? `<div class="cs-noprint">${signMark(s, esc)}</div>` : ''}</div>`;
   const open = (s.items || []).some(it => it.status === 'consigned');
   const owes = (s.items || []).some(stillOwes);
   const money = moneyBits(s);
   return `<div class="cs">
     <button type="button" class="csback cs-noprint" id="csBack">‹ Back</button>
-    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><button type="button" class="pill sm" id="csPrint">REPRINT</button></div>
+    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><div class="csrowacts"><button type="button" class="pill sm" id="csPrint">REPRINT</button>${signButton(s, esc)}</div></div>
     <p class="muted cs-noprint">${esc(s.consignee || '')} · out ${esc(day(s.date_out))}${money ? ' · ' + esc(money) : ''}${s.overdue ? ' · overdue' : ''}${s.status === 'closed' ? ' · closed' : ''}</p>
+    ${signMark(s, esc) ? `<div class="cs-noprint">${signMark(s, esc)}</div>` : ''}
     ${sheet}
     ${open ? `<div class="csacts cs-noprint"><input id="csBackCode" class="rvq" style="flex:1;margin:0" placeholder="Scan or type a JO or item" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="JO or item to return or mark sold">
       <div class="csmode" role="tablist" aria-label="Return or sold"><button type="button" data-mark="returned" class="${S.markAs === 'sold' ? '' : 'on'}">Return</button><span aria-hidden="true">·</span><button type="button" data-mark="sold" class="${S.markAs === 'sold' ? 'on' : ''}">Sold</button></div>
@@ -297,6 +311,21 @@ function wire(main) {
   main.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.mode = 'list'; S.edit = ''; draw(main); });
   main.querySelectorAll('[data-open]').forEach(tr => tr.onclick = () => go(tr.dataset.open));
   main.querySelectorAll('[data-reprint]').forEach(b => b.onclick = e => { e.stopPropagation(); openPrint(main, b.dataset.reprint); });
+  main.querySelectorAll('[data-sign]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const input = b.parentNode && b.parentNode.querySelector('[data-file="' + b.dataset.sign + '"]');
+    if (input) input.click();
+  });
+  main.querySelectorAll('[data-file]').forEach(input => {
+    input.onclick = e => e.stopPropagation();
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      const id = input.dataset.file;
+      input.value = '';
+      if (file) uploadSigned(main, id, file);
+    };
+  });
+  main.querySelectorAll('a.cssigned, a.csthumb').forEach(a => a.onclick = e => e.stopPropagation());
   const cl = $('csClosed'); if (cl) cl.onclick = () => { S.showClosed = !S.showClosed; draw(main); };
   main.querySelectorAll('[data-loose]').forEach(b => b.onclick = () => {
     S.mode = 'new'; S.draft = blankDraft([{ jo: b.dataset.loose || '', item_id: b.dataset.item || '', description: b.dataset.desc || '', value: '' }]);
@@ -369,6 +398,67 @@ function addHit(main, i) {
   setNote('ok', addedText(h), 'add');
   beep('ok');
   paintScan(main, 'csQ');
+}
+function fileMime(file) {
+  const t = String(file.type || '').toLowerCase();
+  if (t) return t;
+  const n = String(file.name || '').toLowerCase();
+  if (/\.pdf$/.test(n)) return 'application/pdf';
+  if (/\.png$/.test(n)) return 'image/png';
+  if (/\.webp$/.test(n)) return 'image/webp';
+  if (/\.gif$/.test(n)) return 'image/gif';
+  if (/\.heic$/.test(n) || /\.heif$/.test(n)) return 'image/heic';
+  if (/\.jpe?g$/.test(n)) return 'image/jpeg';
+  return '';
+}
+function readRaw(file, mime) {
+  return new Promise((ok, no) => {
+    if (file.size > 8 * 1024 * 1024) return no(new Error('That file is too large. Use a photo or a PDF under 8 MB.'));
+    const fr = new FileReader();
+    fr.onload = () => ok({ b64: String(fr.result || '').split(',')[1] || '', mime, name: file.name || '' });
+    fr.onerror = () => no(new Error('Could not read that file'));
+    fr.readAsDataURL(file);
+  });
+}
+function shrinkSigned(file) {
+  return new Promise((ok, no) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, 1600 / Math.max(img.width, img.height, 1));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.width * s));
+      c.height = Math.max(1, Math.round(img.height * s));
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const data = c.toDataURL('image/jpeg', 0.85);
+      ok({ b64: data.split(',')[1] || '', mime: 'image/jpeg', name: String(file.name || 'signed').replace(/\.\w+$/, '') + '.jpg' });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); readRaw(file, fileMime(file) || 'image/jpeg').then(ok, no); };
+    img.src = url;
+  });
+}
+function packSigned(file) {
+  const mime = fileMime(file);
+  if (mime === 'application/pdf') return readRaw(file, mime);
+  if (mime.indexOf('image/') === 0 && mime !== 'image/svg+xml') return shrinkSigned(file);
+  return Promise.reject(new Error('Use a photo or a PDF'));
+}
+async function uploadSigned(main, id, file) {
+  if (S.busy || !id || !file) return;
+  let packed;
+  try { packed = await packSigned(file); }
+  catch (e) { window.OYP.toast(e.message || 'Could not read that file'); return; }
+  if (!packed.b64) return window.OYP.toast('Could not read that file');
+  S.busy = true;
+  const r = await window.OYP.call('consignSigned', { consignment_id: id, file_base64: packed.b64, mime: packed.mime, name: packed.name || '' });
+  S.busy = false;
+  if (!window.OYP.here()()) return;
+  if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not attach the signed copy');
+  window.OYP.toast(r.replaced ? 'Replaced the signed copy. The previous file is still in Drive.' : 'Signed copy attached');
+  await reload(main);
 }
 async function saveSheet(main) {
   if (S.busy) return;
