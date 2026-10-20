@@ -1,0 +1,13 @@
+name = "oyp-dash"
+main = "oyp-dash.js"
+compatibility_date = "2026-10-01"
+
+# Free workers.dev host. Do not add a route, a Durable Object, or a paid binding.
+[vars]
+APPS_SCRIPT_EXEC = "https://script.google.com/macros/s/AKfycbzUmacbdvb0V2nw9ekharFhZPYdSqVgpFpADKiPM2qhSUUF3G5pJ_cAZ46eQPxeawhV/exec"
+
+# npx wrangler kv namespace create OY_KV
+# Then replace the id. OY_PURGE_SECRET is a secret, not a var: npx wrangler secret put OY_PURGE_SECRET
+[[kv_namespaces]]
+binding = "OY_KV"
+id = "REPLACE_WITH_wrangler_kv_namespace_create"

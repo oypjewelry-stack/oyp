@@ -1,0 +1,46 @@
+PASTE INTO: a new script file named DashPurge.
+
+One new OAuth scope, only for this file. Add it if the project does not already have it:
+
+    https://www.googleapis.com/auth/script.external_request
+
+That scope is UrlFetchApp. It is how a JO, payment, or consignment write tells the Cloudflare Worker to drop its copies. Do not add any other scope. DashCache.gs and DashWarm.gs add none.
+
+Paste DashCache.gs first. Its dashCacheDrop_ already calls dashPurgeEdge_ when this file is present. No edit to DashCache if that call is there. If your dashCacheDrop_ does not contain it, add this at the end of dashCacheDrop_:
+
+    if (typeof dashPurgeEdge_ === 'function') { try { dashPurgeEdge_(); } catch (e) {} }
+
+Script properties, set in Project Settings, Script properties. Do not put the secret in the script.
+
+    OY_PURGE_URL     the worker origin, like https://oyp-dash.<account>.workers.dev
+    OY_PURGE_SECRET  the same string you set with `npx wrangler secret put OY_PURGE_SECRET`
+
+The worker caches only `dashboard` and `dashDrill` (`what` jobs or job), per role, for 60 seconds. A purge bumps a generation key. The next read of those two actions misses. Client pages, the shop, and every write are forwarded and are not stored.
+
+The staff page still posts to script.google.com until you change its API to the worker URL. Do that after `npx wrangler deploy` returns a URL. The value is localStorage `oypApi`, or DEFAULT_API in app.js. Leave DEFAULT_API on script.google.com in the repo until that URL exists.
+
+Paste steps:
+1. Deploy the worker in worker/ (see the note at the top of worker/oyp-dash.js). Free tier: do not add a custom domain route or a Durable Object.
+2. Set the two script properties.
+3. Add the external-request scope if it is missing, then deploy a new web app version.
+4. Add a script named DashPurge. Paste everything below COPY FROM HERE.
+5. Save a JO or record a payment. The next dashboard read should miss the worker and hit Apps Script once, then the one after that should come back from the worker.
+
+COPY FROM HERE
+
+/** Tells the Cloudflare Worker to drop cached dashboard and dashDrill answers. Called from dashCacheDrop_. */
+function dashPurgeEdge_() {
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('OY_PURGE_URL');
+  var secret = props.getProperty('OY_PURGE_SECRET');
+  if (!url || !secret) return;
+  try {
+    UrlFetchApp.fetch(String(url).replace(/\/$/, '') + '/purge', {
+      method: 'post',
+      contentType: 'text/plain;charset=utf-8',
+      headers: { 'X-Oyp-Purge': secret },
+      muteHttpExceptions: true,
+      payload: '{}'
+    });
+  } catch (e) {}
+}
