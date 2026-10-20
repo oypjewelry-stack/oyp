@@ -1,6 +1,7 @@
 /* OYP back office: Consignment (#/consignment). Pieces lent to someone outside the shop.
-   Admin and production manager. Agreed value is executive-only (the server strips it for everyone else).
-   Server: Consignment.gs (consignList, consignSearch, consignSave, consignItem, consigneeSave). Run setupConsignment once. */
+   Admin and production manager. Agreed value, owed, paid, and balance are executive-only (the server omits them for everyone else).
+   A sold piece is owed by the consignee. Record payment stores paid_amount and paid_at on the line (Consignment.gs consignPay).
+   Server: Consignment.gs (consignList, consignSearch, consignSave, consignItem, consigneeSave, consignPay). Run setupConsignment once. */
 (() => {
 'use strict';
 const PASTE_NOTE = 'This page needs the Consignment paste in Apps Script (see the instructions).';
@@ -12,10 +13,24 @@ const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 const addD = (day0, n) => { const d = new Date(String(day0).slice(0, 10) + 'T00:00:00Z'); if (isNaN(d.getTime())) return ''; d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const joOf = s => { const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})/); return m ? m[1] + '-' + m[2] : ''; };
 const $ = id => document.getElementById(id);
-const S = { r: null, mode: 'list', tab: 'sheets', id: '', showClosed: false, draft: null, q: '', hits: [], scan: null, edit: '', busy: false, stream: null, raf: 0 };
+const S = { r: null, mode: 'list', tab: 'sheets', id: '', showClosed: false, draft: null, q: '', hits: [], scan: null, edit: '', pay: null, busy: false, stream: null, raf: 0 };
 let camGen = 0, U = null;
 
 function prices() { return !!(S.r && S.r.prices); }
+function moneyBits(o) {
+  if (!prices() || !o || o.sold == null) return '';
+  return 'Sold ' + o.sold + ' · owed ' + peso(o.owed) + ' · paid ' + peso(o.paid) + ' · balance ' + peso(o.balance);
+}
+function itemMoney(it) {
+  if (!prices() || !it || it.status !== 'sold') return '';
+  if (it.owed == null || it.owed === '') return 'Sold · no agreed value yet';
+  return 'owed ' + peso(it.owed) + ' · paid ' + peso(it.paid) + ' · balance ' + peso(it.balance);
+}
+function stillOwes(it) {
+  if (!prices() || !it || it.status !== 'sold') return false;
+  if (it.owed == null || it.owed === '') return false;
+  return Number(it.balance) > 0.009;
+}
 function sheetBy(id) { return (S.r.sheets || []).find(s => s.consignment_id === id) || null; }
 function dueHint() {
   const n = (S.r && S.r.overdue_days) || 30, t = S.r && S.r.today;
@@ -92,15 +107,19 @@ function drawList() {
 function sheetRow(s, esc) {
   const n = (s.items || []).length, out = (s.items || []).filter(i => i.status === 'consigned').length;
   const items = s.status === 'closed' ? plural(n, 'item') : (out === n ? plural(n, 'item') : out + ' of ' + n + ' still out');
-  return `<tr class="csrow${s.overdue ? ' od' : ''}" data-open="${esc(s.consignment_id)}"><td><b class="cn">${esc(s.consignee || '—')}</b><br><span class="muted">${esc(s.consignment_id)}</span></td>
+  const money = moneyBits(s);
+  return `<tr class="csrow${s.overdue ? ' od' : ''}" data-open="${esc(s.consignment_id)}"><td><b class="cn">${esc(s.consignee || '—')}</b><br><span class="muted">${esc(s.consignment_id)}</span>${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td>
     <td>${esc(day(s.date_out))}</td><td>${esc(items)}</td><td>${s.days_out == null ? '—' : esc(s.days_out)}</td>
     <td>${s.overdue ? '<span class="chip gold">Overdue</span>' : (s.status === 'closed' ? '<span class="chip">Closed</span>' : '—')}</td></tr>`;
 }
 function drawPeople() {
   const { esc } = window.OYP, r = S.r, ed = (r.consignees || []).find(c => c.consignee_id === S.edit);
   const v = ed || { name: '', phone: '', notes: '' };
-  const rows = (r.consignees || []).map(c => `<tr><td><b class="cn">${esc(c.name)}</b></td><td>${esc(c.phone || '—')}</td><td>${esc(c.notes || '—')}</td>
-    <td><button type="button" class="lnk" data-edit="${esc(c.consignee_id)}">Edit</button></td></tr>`).join('');
+  const rows = (r.consignees || []).map(c => {
+    const money = moneyBits(c);
+    return `<tr><td><b class="cn">${esc(c.name)}</b>${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td><td>${esc(c.phone || '—')}</td><td>${esc(c.notes || '—')}</td>
+    <td><button type="button" class="lnk" data-edit="${esc(c.consignee_id)}">Edit</button></td></tr>`;
+  }).join('');
   return `<div class="cs">
     ${head()}
     ${setupWarn()}
@@ -160,7 +179,9 @@ function drawSheet(printing) {
     <td>${esc(it.description || '—')}</td>
     ${showVal ? `<td class="r">${it.value != null && it.value !== '' ? esc(peso(it.value)) : '—'}</td>` : ''}
     <td>${it.status === 'consigned' ? (it.overdue ? '<span class="chip gold">Overdue</span>' : '<span class="chip">Out</span>') : `<span class="chip">${esc(it.status === 'sold' ? 'Sold' : 'Returned')}</span>`}
-      ${!printing && it.status === 'consigned' ? `<button type="button" class="lnk" data-back="${esc(it.line_id)}">Returned</button><button type="button" class="lnk" data-sold="${esc(it.line_id)}">Sold</button>` : ''}</td></tr>`).join('');
+      ${!printing && itemMoney(it) ? `<span class="csmoney cs-noprint">${esc(itemMoney(it))}</span>` : ''}
+      ${!printing && it.status === 'consigned' ? `<button type="button" class="lnk" data-back="${esc(it.line_id)}">Returned</button><button type="button" class="lnk" data-sold="${esc(it.line_id)}">Sold</button>` : ''}
+      ${!printing && stillOwes(it) ? `<button type="button" class="lnk cs-noprint" data-pay="${esc(it.line_id)}">Record payment</button>` : ''}</td></tr>`).join('');
   const tot = showVal ? (s.items || []).reduce((n, it) => n + (Number(it.value) || 0), 0) : 0;
   const sheet = `<article class="csheet">
     <div class="csbrand"><img src="${esc(logoSrc())}" alt=""><b>OYP Jewelry</b></div>
@@ -176,18 +197,40 @@ function drawSheet(printing) {
   </article>`;
   if (printing) return `<div class="cs">${sheet}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button></div></div>`;
   const open = (s.items || []).some(it => it.status === 'consigned');
+  const owes = (s.items || []).some(stillOwes);
+  const money = moneyBits(s);
   return `<div class="cs">
     <button type="button" class="csback cs-noprint" id="csBack">‹ Back</button>
     <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><button type="button" class="pill sm" id="csPrint">PRINT</button></div>
-    <p class="muted cs-noprint">${esc(s.consignee || '')} · out ${esc(day(s.date_out))}${s.overdue ? ' · overdue' : ''}${s.status === 'closed' ? ' · closed' : ''}</p>
+    <p class="muted cs-noprint">${esc(s.consignee || '')} · out ${esc(day(s.date_out))}${money ? ' · ' + esc(money) : ''}${s.overdue ? ' · overdue' : ''}${s.status === 'closed' ? ' · closed' : ''}</p>
     ${sheet}
     ${open ? `<div class="csacts cs-noprint"><input id="csBackCode" class="rvq" style="flex:1;margin:0" placeholder="Scan or type a JO or item to return" autocomplete="off">
       <button type="button" class="pill sm outline" id="csScan">SCAN</button><button type="button" class="pill sm" id="csBackGo">RETURN</button></div>` : ''}
+    ${owes ? `<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csPaySheet">Record payment</button></div>` : ''}
+    ${S.pay && S.pay.consignment_id === s.consignment_id ? payForm(s) : ''}
+  </div>`;
+}
+function payForm(s) {
+  const { esc } = window.OYP, p = S.pay || {};
+  const methods = [['cash', 'Cash'], ['gcash', 'GCash'], ['bank', 'Bank'], ['other', 'Other']];
+  return `<div class="csnew cspay cs-noprint" id="csPay">
+    <span class="lab">Record payment</span>
+    <p class="muted">Payer is ${esc(s.consignee || 'the consignee')}. This counts as soon as you save it.</p>
+    <div class="addrow">
+      <label><span class="lab">Amount</span><input id="csPayAmt" inputmode="decimal" value="${esc(p.amount == null ? '' : p.amount)}"></label>
+      <label><span class="lab">Date</span><input id="csPayDate" type="date" value="${esc(p.date || '')}"></label>
+      <label><span class="lab">Method</span><select id="csPayMethod">${methods.map(([k, l]) => `<option value="${k}"${p.method === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label><span class="lab">Reference</span><input id="csPayRef" value="${esc(p.reference || '')}" maxlength="80" autocomplete="off"></label>
+      <label class="grow"><span class="lab">Note</span><input id="csPayNote" value="${esc(p.note || '')}" maxlength="300" autocomplete="off"></label>
+    </div>
+    <div class="csacts"><button type="button" class="pill sm" id="csPaySave">SAVE</button><button type="button" class="lnk" id="csPayCancel">Cancel</button></div>
   </div>`;
 }
 function head() {
+  const roll = moneyBits(S.r);
   return `<div class="dhead cshead"><h2>Consignment</h2><button type="button" class="pill sm" id="csNew">CONSIGN</button></div>
-    <p class="muted">Pieces lent out. Overdue after ${((S.r && S.r.overdue_days) || 30)} days. Nothing on this page is deleted.</p>`;
+    <p class="muted">Pieces lent out. Overdue after ${((S.r && S.r.overdue_days) || 30)} days. Nothing on this page is deleted.</p>
+    ${roll ? `<p class="csmoney">${window.OYP.esc(roll)}</p>` : ''}`;
 }
 function setupWarn() {
   if (!S.r || S.r.setup !== false) return '';
@@ -232,7 +275,7 @@ function wire(main) {
   const back = $('csBack'); if (back) back.onclick = () => {
     stopCam(); S.scan = null;
     if (S.mode === 'print') { S.mode = 'sheet'; draw(main); return; }
-    S.mode = 'list'; document.documentElement.classList.remove('cs-onprint'); draw(main);
+    S.mode = 'list'; S.pay = null; document.documentElement.classList.remove('cs-onprint'); draw(main);
   };
   const who = $('csWho'); if (who) who.onchange = () => { readDraft(); const box = $('csNewWho'); if (box) box.classList.toggle('hidden', who.value !== '__new'); };
   const q = $('csQ'); if (q) { let t = 0; q.oninput = () => { S.q = q.value; clearTimeout(t); t = setTimeout(() => search(main), 280); }; q.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); search(main); } }; }
@@ -244,6 +287,10 @@ function wire(main) {
   const dop = $('csDoPrint'); if (dop) dop.onclick = () => window.print();
   main.querySelectorAll('[data-back]').forEach(b => b.onclick = () => mark(main, b.dataset.back, 'returned'));
   main.querySelectorAll('[data-sold]').forEach(b => b.onclick = () => mark(main, b.dataset.sold, 'sold'));
+  main.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => openPay(main, b.dataset.pay));
+  const ps = $('csPaySheet'); if (ps) ps.onclick = () => openPay(main, '');
+  const pc = $('csPayCancel'); if (pc) pc.onclick = () => { S.pay = null; draw(main); };
+  const pg = $('csPaySave'); if (pg) pg.onclick = () => savePay(main);
   const bg = $('csBackGo'); if (bg) bg.onclick = () => returnCode(main, ($('csBackCode') && $('csBackCode').value) || '');
   const code = $('csBackCode'); if (code) code.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); returnCode(main, code.value); } };
   const stop = $('csCamStop'); if (stop) stop.onclick = () => { S.scan = null; stopCam(); draw(main); };
@@ -306,13 +353,45 @@ async function saveSheet(main) {
 }
 async function mark(main, lineId, status) {
   if (S.busy) return;
-  const word = status === 'sold' ? 'sold' : 'returned';
-  if (!confirm('Mark this item ' + word + '?')) return;
+  if (!confirm(status === 'sold' ? 'Mark this item sold? The consignee then owes the agreed value.' : 'Mark this item returned?')) return;
   S.busy = true;
   const r = await window.OYP.call('consignItem', { line_id: lineId, status: status, consignment_id: S.id || '' });
   S.busy = false;
   if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not update');
   window.OYP.toast(status === 'sold' ? 'Marked sold' : 'Marked returned');
+  S.pay = null;
+  await reload(main);
+}
+function openPay(main, lineId) {
+  const s = sheetBy(S.id);
+  if (!s || !prices()) return;
+  let amount = s.balance || 0;
+  if (lineId) {
+    const it = (s.items || []).find(x => x.line_id === lineId);
+    if (!it || !stillOwes(it)) return;
+    amount = it.balance;
+  } else if (!((s.items || []).some(stillOwes))) return;
+  S.pay = { line_id: lineId || '', consignment_id: s.consignment_id, amount: amount ? String(amount) : '', date: (S.r && S.r.today) || '', method: 'cash', reference: '', note: '' };
+  draw(main);
+  if ($('csPayAmt')) $('csPayAmt').focus();
+}
+async function savePay(main) {
+  if (S.busy || !S.pay) return;
+  const amount = ($('csPayAmt') && $('csPayAmt').value || '').trim();
+  if (!amount) return $('csPayAmt') && $('csPayAmt').focus();
+  if (!confirm('Record this payment? It counts right away.')) return;
+  const payload = {
+    amount: amount, date: ($('csPayDate') && $('csPayDate').value) || '', method: ($('csPayMethod') && $('csPayMethod').value) || 'cash',
+    reference: ($('csPayRef') && $('csPayRef').value) || '', note: ($('csPayNote') && $('csPayNote').value) || '',
+    consignment_id: S.pay.consignment_id || S.id || ''
+  };
+  if (S.pay.line_id) payload.line_id = S.pay.line_id;
+  S.busy = true;
+  const r = await window.OYP.call('consignPay', payload);
+  S.busy = false;
+  if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not record the payment');
+  S.pay = null;
+  window.OYP.toast('Payment recorded');
   await reload(main);
 }
 async function returnCode(main, code) {
