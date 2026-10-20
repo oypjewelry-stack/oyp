@@ -158,9 +158,9 @@ function cycleSoldPeriod(main) {
 }
 function wireSoldPeriod(main) {
   const row = main && main.querySelector('#locRow');
-  if (!row || row.dataset.soldper) return;
-  row.dataset.soldper = '1';
-  const hit = e => e.target.closest && e.target.closest('[data-soldper]');
+  if (!row || row.dataset.soldwire) return;
+  row.dataset.soldwire = '1';
+  const hit = e => e.target.closest && e.target.closest('.lcper');
   row.addEventListener('pointerdown', e => { if (hit(e)) e.stopPropagation(); }, true);
   row.addEventListener('click', e => {
     if (!hit(e)) return;
