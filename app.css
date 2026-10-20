@@ -113,6 +113,7 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;width:26px;height:2
 .lcord{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;margin-top:calc(6px*var(--sp))}.lcord .dmove,.lcord .dgrip{width:26px;height:26px}
 .lchide{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp));align-items:center;margin-top:calc(10px*var(--sp))}.lchide[hidden]{display:none}.lhint{margin:calc(8px*var(--sp)) 0 0}
 .lc{border:1px solid #eee;border-radius:calc(12px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));text-decoration:none;color:#111;display:block}.lc b{display:block;font-family:var(--head);font-weight:500;font-size:calc(28px*var(--hs));line-height:1.1}
+.lcper{display:inline-block;margin-top:calc(3px*var(--sp));padding:calc(2px*var(--sp)) 0;font-family:var(--body);font-size:calc(11px*var(--fs));font-weight:400;letter-spacing:0;text-transform:none;color:#888;line-height:1.2;cursor:pointer}
 .lc.cur{border-color:#111}.lc.gold{border-color:var(--gold);background:#fffdf6}.lc.gold b{color:#a8861c}
 /* to review */
 .rv{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:calc(26px*var(--sp));max-width:calc(1400px*var(--cw));align-items:start}

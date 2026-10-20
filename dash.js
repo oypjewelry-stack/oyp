@@ -85,14 +85,93 @@ function loadLoc(list, u) {
 }
 function locName(l) { return l.key === 'unset' ? 'No location yet' : (l.label || l.key); }
 function editing() { return !!(window.OYPLayoutEdit && window.OYPLayoutEdit.editing() && D.ordOn); }
+// Sold tile period, remembered on this device. this year -> this month -> all time.
+const SOLD_PERIOD = ['year', 'month', 'all'];
+const SOLD_LAB = { year: 'this year', month: 'this month', all: 'all time' };
+function soldPeriod() {
+  let s = ''; try { s = localStorage.getItem('oypDashSoldPeriod') || ''; } catch (e) {}
+  return s === 'month' || s === 'all' ? s : 'year';
+}
+function manilaDay(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s) && /T|\s\d{1,2}:/.test(s)) {
+    const t = Date.parse(s); if (!isNaN(t)) return new Date(t + 8 * 36e5).toISOString().slice(0, 10);
+  }
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '';
+}
+function saleDateByJo(sales) { // the date Daily/Weekly uses (sales[].date), one per JO
+  const map = {};
+  (sales || []).forEach(s => {
+    const jo = s && s.jo, date = manilaDay(s && s.date);
+    if (!jo || !date) return;
+    const prev = map[jo], sold = s.how === 'sold';
+    if (!prev || (sold && !prev.sold) || (sold === prev.sold && date < prev.date)) map[jo] = { date, sold };
+  });
+  return map;
+}
+function jobSoldDay(j, byJo) {
+  const sale = j && byJo && byJo[j.jo];
+  if (sale && sale.date) return sale.date;
+  return manilaDay(j && j.updated_at);
+}
+function soldInPeriod(day, period) {
+  if (period === 'all') return true;
+  if (!day) return false;
+  const today = todayPH();
+  return period === 'month' ? day.slice(0, 7) === today.slice(0, 7) : day.slice(0, 4) === today.slice(0, 4);
+}
+function soldJobs(period) {
+  const x = D.x;
+  if (!x || !x.ok || !Array.isArray(x.jobs)) return null;
+  const byJo = saleDateByJo(x.sales);
+  return x.jobs.filter(j => j && j.location === 'sold' && soldInPeriod(jobSoldDay(j, byJo), period));
+}
+function soldCount(period) {
+  const l = D.loc && D.loc.byKey.sold;
+  if (period === 'all') return l ? l.count : 0;
+  if (!D.x) return null;
+  const rows = soldJobs(period);
+  return rows ? rows.length : (l ? l.count : 0);
+}
 function locTile(esc, l, on) {
   const arch = l.key === 'archived', unset = l.key === 'unset', name = locName(l);
   const cls = 'lc tap' + (l.key === 'working' ? ' cur' : '') + (arch ? ' arch' : '') + (unset ? ' gold' : '');
   const href = unset ? '#/review' : '#/dashboard/loc/' + esc(l.key);
   const title = arch ? ' title="JO on record, no physical piece · not counted as on hand"' : '';
-  const link = `<a class="${cls}" href="${href}"${title}><b>${l.count}</b><span class="lab">${esc(name)} ›</span></a>`;
+  let count = l.count, per = '';
+  if (l.key === 'sold') {
+    const p = soldPeriod(), n = soldCount(p);
+    count = n == null ? '…' : n;
+    per = `<span class="lcper" data-soldper tabindex="0" role="button" aria-label="Sold period, ${esc(SOLD_LAB[p])}">${esc(SOLD_LAB[p])}</span>`;
+  }
+  const link = `<a class="${cls}" href="${href}"${title}><b>${count}</b><span class="lab">${esc(name)} ›</span>${per}</a>`;
   if (!on) return link;
   return `<div class="lctile" data-lkey="${esc(l.key)}">${link}<button type="button" class="lx" data-lhide aria-label="Hide ${esc(name)}">✕</button></div>`;
+}
+function cycleSoldPeriod(main) {
+  const order = SOLD_PERIOD, i = order.indexOf(soldPeriod());
+  try { localStorage.setItem('oypDashSoldPeriod', order[(i + 1) % order.length]); } catch (e) {}
+  if (D.loc) paintLoc(main, window.OYP.esc);
+  if (soldPeriod() !== 'all' && !(D.x && D.x.ok)) ensureSales().then(() => { if (main.querySelector('#locRow')) paintLoc(main, window.OYP.esc); });
+}
+function wireSoldPeriod(main) {
+  const row = main && main.querySelector('#locRow');
+  if (!row || row.dataset.soldper) return;
+  row.dataset.soldper = '1';
+  const hit = e => e.target.closest && e.target.closest('[data-soldper]');
+  row.addEventListener('pointerdown', e => { if (hit(e)) e.stopPropagation(); }, true);
+  row.addEventListener('click', e => {
+    if (!hit(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    cycleSoldPeriod(main);
+  });
+  row.addEventListener('keydown', e => {
+    if (!hit(e) || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault(); e.stopPropagation();
+    cycleSoldPeriod(main);
+  });
 }
 function paintLoc(main, esc) {
   const row = main.querySelector('#locRow');
@@ -259,6 +338,7 @@ async function render(main, u, fresh) {
   main.querySelector('#dRef').onclick = () => render(main, u, true);
   if (r.locations) paintLoc(main, esc);
   wireLayout(main, u);
+  if ((r.locations || []).some(l => l.key === 'sold') && soldPeriod() !== 'all') ensureSales().then(() => { if (live() && main.querySelector('#locRow')) paintLoc(main, esc); });
   if (can.sales) { paintSales(main, esc); wireSales(main, esc); ensureSales().then(() => { if (live() && salesView() !== 'month') paintSales(main, esc); }); }
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
@@ -290,18 +370,19 @@ function wireInbox(main, esc) {
   });
 }
 function wireLayout(main, u) {
+  wireSoldPeriod(main);
   if (!main || !u || u.role !== 'admin' || !window.OYPLayoutEdit) return;
   const box = main.querySelector('#dsecs');
   if (box) window.OYPLayoutEdit.drag(box, '[data-dsec]', 'y', () => {
     writeOrder(u, [...box.children].filter(s => s.dataset && s.dataset.dsec).map(s => s.dataset.dsec));
-  }, '.lctile, .lx, .layloc, button, input, select, textarea, summary');
+  }, '.lctile, .lx, .layloc, .lcper, button, input, select, textarea, summary');
   const row = main.querySelector('#locRow');
   if (row && D.loc) window.OYPLayoutEdit.drag(row, '[data-lkey]', 'x', () => {
     const visible = [...row.querySelectorAll('[data-lkey]')].map(el => el.dataset.lkey);
     D.loc.order = arrangeList(D.loc.order, D.loc.order, visible);
     saveLoc(u);
     paintLoc(main, window.OYP.esc);
-  }, '.lx');
+  }, '.lx, .lcper');
   const sec = main.querySelector('[data-dsec="loc"]');
   if (sec && !sec.dataset.layhide) {
     sec.dataset.layhide = '1';
@@ -373,13 +454,18 @@ async function drillPage(main, u, kind, key) {
       note = capped(r.board);
     }
   } else if (kind === 'loc') {
-    title = locLab(key); sub = key === 'unset' ? 'JOs with no location set' : 'JOs at this location';
-    chips = (r.locations || []).filter(l => l.count || l.key === key).map(l => ['#/dashboard/loc/' + l.key, l.label, l.count, l.key === key]);
-    show.loc = false; show.stage = key === 'working';
     const x = await extra();
+    const period = key === 'sold' ? soldPeriod() : 'all';
+    title = locLab(key); sub = key === 'unset' ? 'JOs with no location set' : period === 'year' ? 'Sold this year' : period === 'month' ? 'Sold this month' : 'JOs at this location';
     if (!x) body = needsPaste();
-    else { rows = x.jobs.filter(j => key === 'unset' ? !j.location || !(r.locations || []).some(l => l.key === j.location && l.key !== 'unset') : j.location === key);
-      if (key === 'working') groups = r.board.map(b => [b.label, rows.filter(j => j.col === b.key), '#/dashboard/stage/' + b.key]).filter(g => g[1].length); }
+    else {
+      rows = x.jobs.filter(j => key === 'unset' ? !j.location || !(r.locations || []).some(l => l.key === j.location && l.key !== 'unset') : j.location === key);
+      if (key === 'sold' && period !== 'all') { const byJo = saleDateByJo(x.sales); rows = rows.filter(j => soldInPeriod(jobSoldDay(j, byJo), period)); }
+      if (key === 'working') groups = r.board.map(b => [b.label, rows.filter(j => j.col === b.key), '#/dashboard/stage/' + b.key]).filter(g => g[1].length);
+    }
+    const soldN = key === 'sold' && period !== 'all' && x ? rows.length : null;
+    chips = (r.locations || []).filter(l => l.count || l.key === key).map(l => ['#/dashboard/loc/' + l.key, l.label, l.key === 'sold' && soldN != null ? soldN : l.count, l.key === key]);
+    show.loc = false; show.stage = key === 'working';
     if (key === 'unset') note = 'The cards still to review are also in To review › Needs location.';
   } else if (kind === 'sales') {
     if (!can.sales) { location.hash = '#/dashboard'; return; }
