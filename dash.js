@@ -262,13 +262,13 @@ function salesTabs(view) {
 }
 function salesBody(esc, view) {
   const spec = salesSpec(view), tabs = salesTabs(view);
-  if (spec.wait) return `<p class="muted">Loading the day-by-day sales…</p>${tabs}`;
+  if (spec.wait) return `<p class="muted">Loading the day-by-day sales…${D.jobsUpdating || D.updating ? '<span class="dupd"> · updating…</span>' : ''}</p>${tabs}`;
   if (spec.empty) return `<p class="muted">${esc(spec.empty)}</p>${tabs}`;
   const max = Math.max(1, ...spec.bars.map(b => b.value)), total = spec.bars.reduce((t, b) => t + b.value, 0);
   const bars = spec.bars.map(b => { const h = spec.view === 'month' || b.value ? Math.max(2, Math.round(b.value / max * 100)) : 0;
     const inner = `<span class="v">${esc(spec.view === 'month' || b.value ? short(b.value) : '—')}</span><i style="height:${h}%"></i><span class="lab">${esc(b.label)}</span>`;
     return b.href ? `<a class="bar tap${b.cur ? ' cur' : ''}" href="${esc(b.href)}" title="${esc(b.title)}">${inner}</a>` : `<div class="bar${b.cur ? ' cur' : ''}" title="${esc(b.title)}">${inner}</div>`; }).join('');
-  return `<p class="salesum"><b>${esc(peso(total))}</b><span class="muted">${esc(spec.caption)}</span></p><div class="bars">${bars}</div>${tabs}<p class="muted dhint">${esc(spec.hint)}</p>`;
+  return `<p class="salesum"><b>${esc(peso(total))}</b><span class="muted">${esc(spec.caption)}${spec.view !== 'month' && D.jobsUpdating ? '<span class="dupd"> · updating…</span>' : ''}</span></p><div class="bars">${bars}</div>${tabs}<p class="muted dhint">${esc(spec.hint)}</p>`;
 }
 function paintSales(main, esc) { const box = main.querySelector('#saleBody'); if (box) box.innerHTML = salesBody(esc, salesView()); }
 function ensureSales() { if (D.x) return Promise.resolve(D.x); if (!D.salesP) D.salesP = extra().then(x => x, () => null).then(x => { D.salesP = null; return x; }); return D.salesP; }
@@ -285,8 +285,11 @@ function wireSales(main, esc) {
   });
 }
 
-// Last dashboard answer for this person, so a refresh or a direct link to a drill can draw before the server answers.
+// Last dashboard answer, the dashDrill jobs list, and the portal inbox, per signed-in name.
+// A revisit or a drill draws from these, then the live answer replaces them.
 const snapKey = u => 'oypDashSnap:' + (u && u.username || '');
+const jobsKey = u => 'oypDashJobs:' + (u && u.username || '');
+const inboxKey = u => 'oypDashInbox:' + (u && u.username || '');
 function readSnap(u) {
   try {
     const r = JSON.parse(sessionStorage.getItem(snapKey(u)) || 'null');
@@ -296,6 +299,70 @@ function readSnap(u) {
 function writeSnap(u, r) {
   if (!u || !r || !r.ok) return;
   try { sessionStorage.setItem(snapKey(u), JSON.stringify(r)); } catch (e) {}
+}
+function readJobs(u) {
+  try {
+    const x = JSON.parse(sessionStorage.getItem(jobsKey(u)) || 'null');
+    return x && x.ok && Array.isArray(x.jobs) ? x : null;
+  } catch (e) { return null; }
+}
+function writeJobs(u, x) {
+  if (!u || !x || !x.ok || !Array.isArray(x.jobs)) return;
+  try { sessionStorage.setItem(jobsKey(u), JSON.stringify(x)); } catch (e) {}
+}
+function readInbox(u) {
+  try {
+    const x = JSON.parse(sessionStorage.getItem(inboxKey(u)) || 'null');
+    return x && Array.isArray(x.items) ? x : null;
+  } catch (e) { return null; }
+}
+function writeInbox(u, inbox) {
+  if (!u) return;
+  try {
+    if (!inbox || !Array.isArray(inbox.items)) sessionStorage.removeItem(inboxKey(u));
+    else sessionStorage.setItem(inboxKey(u), JSON.stringify({ items: inbox.items }));
+  } catch (e) {}
+}
+function restoreJobs(u) {
+  if (D.x && D.x.ok && Array.isArray(D.x.jobs)) return D.x;
+  const saved = readJobs(u || D.user);
+  if (saved) D.x = saved;
+  return D.x && D.x.ok ? D.x : null;
+}
+let jobsAt = 0, jobsP = null, drillGen = 0;
+function refreshJobs(u) { // one dashDrill at a time. A list already in memory is kept until this replaces it.
+  const who = u || D.user;
+  if (jobsP) return jobsP;
+  if (D.x && D.x.ok && jobsAt && Date.now() - jobsAt < 20000) return Promise.resolve({ x: D.x, changed: false });
+  D.jobsUpdating = true;
+  jobsP = window.OYP.call('dashDrill', { what: 'jobs' }).then(x => {
+    jobsP = null;
+    D.jobsUpdating = false;
+    jobsAt = Date.now();
+    if (x && x.ok && Array.isArray(x.jobs)) {
+      const changed = !samePayload(x, D.x);
+      D.x = x; D.jobErr = ''; writeJobs(who, x);
+      return { x, changed };
+    }
+    D.jobErr = (x && x.error) || 'Could not load';
+    return { x: D.x, changed: false };
+  }, () => { jobsP = null; D.jobsUpdating = false; return { x: D.x, changed: false }; });
+  return jobsP;
+}
+function prefetchJobs(u) { // after the dashboard is on screen, so the first location / sales / pending tap is already warm
+  const run = () => {
+    if (!window.OYP.here()()) return;
+    refreshJobs(u).then(() => {
+      if (!window.OYP.here()() || currentDrill()[0]) return;
+      const main = document.getElementById('main');
+      if (!main) return;
+      if (!D.updating) main.querySelectorAll('#dUpd, .dupd').forEach(n => n.remove());
+      if (main.querySelector('#locRow')) paintLoc(main, window.OYP.esc);
+      if (main.querySelector('#saleBody')) paintSales(main, window.OYP.esc);
+    });
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 400 });
+  else setTimeout(run, 30);
 }
 function samePayload(a, b) {
   if (a === b) return true;
@@ -318,9 +385,11 @@ async function render(main, u, fresh) { // fresh (Refresh) still paints what we 
   const gen = ++dashGen;
   const still = () => live() && gen === dashGen;
   const drill = currentDrill();
-  if (D.user && u && D.user.username !== u.username) { D.r = null; D.cc = null; D.inbox = null; D.mail = null; D.x = null; D.at = 0; }
+  if (D.user && u && D.user.username !== u.username) { D.r = null; D.cc = null; D.inbox = null; D.mail = null; D.x = null; D.at = 0; jobsAt = 0; }
   D.user = u; D.ordOn = !!(u && u.role === 'admin');
   if (!D.r || !D.r.ok) { const saved = readSnap(u); if (saved) { D.r = saved; D.at = D.at || Date.now(); } }
+  restoreJobs(u);
+  if (!D.inbox) { const savedIn = readInbox(u); if (savedIn && savedIn.items.length) D.inbox = savedIn; }
   const had = !!(D.r && D.r.ok);
   // portalSteps {inbox:1}: client approvals / questions (Portal.gs v3; admin + production manager). An older Portal.gs answers without
   // "inbox" -> no card. (portalSteps, not a new action name, so a server without v3 never sees an unknown action.)
@@ -340,7 +409,7 @@ async function render(main, u, fresh) { // fresh (Refresh) still paints what we 
     if (!still()) return;
     const inbox = (pi && pi.ok && pi.inbox && Array.isArray(pi.inbox.items)) ? pi.inbox : null;
     if (samePayload(inbox, D.inbox || null)) return;
-    D.inbox = inbox;
+    D.inbox = inbox; writeInbox(u, inbox);
     if (still() && !currentDrill()[0] && D.r && D.r.ok) draw(main, u); // messages sit on the dashboard, not on a drill
   });
   let r = null;
@@ -349,11 +418,11 @@ async function render(main, u, fresh) { // fresh (Refresh) still paints what we 
   D.updating = false;
   if (r && r.ok) {
     const changed = !samePayload(r, D.r);
-    if (changed) D.x = null;
     D.r = r; D.at = Date.now(); writeSnap(u, r);
+    if (changed) refreshJobs(u); // keep the jobs list on screen; the refresh replaces it
     if (!still()) return;
     if (changed || !had) paintNow(main, u);
-    else { const hint = main.querySelector('#dUpd'); if (hint) hint.remove(); }
+    else if (!D.jobsUpdating) { const hint = main.querySelector('#dUpd'); if (hint) hint.remove(); }
     return;
   }
   if (had) { const hint = main.querySelector('#dUpd'); if (hint) hint.remove(); return; }
@@ -419,12 +488,14 @@ function draw(main, u) {
   main.querySelector('#dRef').onclick = () => render(main, u, true);
   if (r.locations) paintLoc(main, esc);
   wireLayout(main, u);
+  if (!(D.x && D.x.ok && jobsAt && Date.now() - jobsAt < 20000)) D.jobsUpdating = true;
   if ((r.locations || []).some(l => l.key === 'sold') && soldPeriod() !== 'all') ensureSales().then(() => { if (live() && main.querySelector('#locRow')) paintLoc(main, esc); });
   if (can.sales) { paintSales(main, esc); wireSales(main, esc); ensureSales().then(() => { if (live() && salesView() !== 'month') paintSales(main, esc); }); }
   main.querySelectorAll('.kcard[data-jo]').forEach(k => k.onclick = () => { const col = r.board.find(b => b.cards.some(x => x.jo === k.dataset.jo));
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
   wireMessages(main, esc);
   const nc = main.querySelector('#dNoCC'); if (nc) nc.onclick = () => { try { sessionStorage.setItem('oypReviewFilter', 'nocontact'); } catch (_) {} };
+  prefetchJobs(u);
 }
 
 /* ---------- Messages: portal ClientMessages + email inquiries, one list ---------- */
@@ -475,7 +546,7 @@ function messagesCard(esc) {
   };
   const empty = !open.length && !done.length;
   const soon = D.mail && !mailCount() && (view === 'email' || (view === 'all' && empty));
-  return `<section class="dcard" id="dMsgs" data-dsec="msgs"><div class="dtitle"><span class="dname"><h3>Messages</h3></span><span class="lab">${esc(counts)}</span></div>
+  return `<section class="dcard" id="dMsgs" data-dsec="msgs"><div class="dtitle"><span class="dname"><h3>Messages</h3></span><span class="lab">${esc(counts)}${D.updating ? '<span class="dupd"> · updating…</span>' : ''}</span></div>
     <div class="msgf" role="tablist" aria-label="Message source">${chips.map(([k, lab]) => `<button type="button" role="tab" data-msrc="${k}" class="${view === k ? 'on' : ''}" aria-selected="${view === k ? 'true' : 'false'}">${lab}</button>`).join('')}</div>
     ${open.map(row).join('')}${done.length ? `<details class="cmold"><summary class="muted">Handled (${done.length})</summary>${done.map(row).join('')}</details>` : ''}
     ${empty && !soon ? '<p class="muted">No messages here.</p>' : ''}
@@ -557,16 +628,18 @@ function openJO(jo, row, label) {
   try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo, back: location.hash || '#/dashboard', label: label === 'Dashboard' ? 'Dashboard' : 'Back to ' + label, row })); } catch (_) {}
   location.hash = '#/review';
 }
-async function extra() { // all live JOs (+ sales list for executives) in one read-only call; cached with the dashboard
-  if (!D.x) D.x = await window.OYP.call('dashDrill', { what: 'jobs' });
-  return D.x && D.x.ok ? D.x : null;
+async function extra() { // dashDrill jobs list. A saved copy is used at once; refreshJobs replaces it.
+  restoreJobs(D.user);
+  if (D.x && D.x.ok && jobsAt && Date.now() - jobsAt < 20000) return D.x;
+  const got = await refreshJobs(D.user);
+  return got && got.x && got.x.ok ? got.x : (D.x && D.x.ok ? D.x : null);
 }
 function needsPaste() {
-  const e = D.x && D.x.error;
+  const e = D.jobErr || (D.x && D.x.error);
   return `<p class="muted rvnone">${window.OYP.esc(!e || e === 'Unknown action' ? 'This list needs the DashboardDrill paste in Apps Script (see the instructions). The count on the dashboard is right; the per-JO list is not sent yet.' : e)}</p>`;
 }
 
-async function drillPage(main, u, kind, key, keepScroll) {
+async function drillPage(main, u, kind, key, keepScroll, quiet) {
   const { esc } = window.OYP, r = D.r, can = r.can, noCC = new Set(D.cc && D.cc.ok ? D.cc.missing_jos : []);
   const locLab = k => window.OYP.locLabel(k, ((r.locations || []).find(l => l.key === k) || {}).label);
   const allBoard = () => r.board.reduce((a, col) => a.concat(col.cards.map(j => boardRow(j, col))), []);
@@ -574,7 +647,13 @@ async function drillPage(main, u, kind, key, keepScroll) {
   let title = '', sub = '', chips = [], groups = null, rows = [], note = '', body = '', show = { loc: true, stage: true };
   const live = window.OYP.here();
   const y = keepScroll ? (window.scrollY || 0) : 0;
-  main.innerHTML = '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
+  const gen = ++drillGen;
+  restoreJobs(u);
+  const x0 = (D.x && D.x.ok && Array.isArray(D.x.jobs)) ? D.x : null;
+  const jobsFresh = !!(x0 && jobsAt && Date.now() - jobsAt < 20000);
+  const usesJobs = kind === 'loc' || kind === 'sales' || kind === 'pending' || (kind === 'consigned' && r.counts && r.counts.consigned_jos);
+  if (!quiet && usesJobs && !jobsFresh) D.jobsUpdating = true;
+  const x = x0;
 
   if (kind === 'active' || kind === 'stage') {
     const col = kind === 'stage' ? r.board.find(b => b.key === key) : null;
@@ -593,10 +672,9 @@ async function drillPage(main, u, kind, key, keepScroll) {
       note = capped(r.board);
     }
   } else if (kind === 'loc') {
-    const x = await extra();
     const period = key === 'sold' ? soldPeriod() : 'all';
     title = locLab(key); sub = key === 'unset' ? 'JOs with no location set' : period === 'year' ? 'Sold this year' : period === 'month' ? 'Sold this month' : 'JOs at this location';
-    if (!x) body = needsPaste();
+    if (!x) { if (quiet) body = needsPaste(); }
     else {
       rows = x.jobs.filter(j => key === 'unset' ? !j.location || !(r.locations || []).some(l => l.key === j.location && l.key !== 'unset') : j.location === key);
       if (key === 'sold' && period !== 'all') { const byJo = saleDateByJo(x.sales); rows = rows.filter(j => soldInPeriod(jobSoldDay(j, byJo), period)); }
@@ -611,8 +689,7 @@ async function drillPage(main, u, kind, key, keepScroll) {
     const m = (r.sales.months.find(x => x.month === key) || r.sales.months[r.sales.months.length - 1]).month;
     title = monthName(m) + ' ' + m.slice(0, 4) + ' sales'; show.stage = false;
     chips = r.sales.months.map(x => ['#/dashboard/sales/' + x.month, monthName(x.month), short(x.total), x.month === m]);
-    const x = await extra();
-    if (!x) { body = needsPaste(); sub = 'Payments received this month: ' + peso((r.sales.months.find(y => y.month === m) || {}).total); }
+    if (!x) { if (quiet) body = needsPaste(); sub = 'Payments received this month: ' + peso((r.sales.months.find(y => y.month === m) || {}).total); }
     else if (!x.sales) body = '<p class="muted rvnone">Sales lists are for executives only.</p>';
     else {
       rows = x.sales.filter(y => y.month === m).sort((a, b) => String(a.date).localeCompare(String(b.date))).map(y => Object.assign({}, y, { sale: true }));
@@ -622,8 +699,8 @@ async function drillPage(main, u, kind, key, keepScroll) {
     }
   } else if (kind === 'pending') {
     title = 'Pending work'; sub = 'To review, past due' + (can.payments ? ', payments to confirm' : '');
-    const x = await extra(), P = can.payments ? (r.payments || []).filter(p => p.status === 'pending') : [];
-    if (!x) body = needsPaste();
+    const P = can.payments ? (r.payments || []).filter(p => p.status === 'pending') : [];
+    if (!x) { if (quiet) body = needsPaste(); }
     else groups = [['To review', x.jobs.filter(j => j.review), '#/review'], ['Past due', x.jobs.filter(j => j.late)]];
     if (P.length) (groups = groups || []).push(['Payments to confirm', P.map(p => ({ jo: p.jo, description: peso(p.amount) + ' · ' + (p.payer || p.method || 'payment'), chips: ['Paid ' + day(p.date), p.method] }))]);
     if (groups) { groups = groups.filter(g => g[1].length); rows = groups.reduce((a, g) => a.concat(g[1]), []); }
@@ -635,8 +712,8 @@ async function drillPage(main, u, kind, key, keepScroll) {
     const L = (r.consignments || []).filter(c => kind === 'consigned' || c.overdue).map(c => ({ jo: c.jo, item: c.item_id, description: c.description || c.item_id, client: c.consignee,
       chips: [c.date_out ? 'Out ' + day(c.date_out) : '', c.days_out != null ? plural(c.days_out, 'day') : ''], gold: c.overdue ? 'Overdue' : '', value: can.prices && c.value ? peso(c.value) : '' }));
     groups = [['On consignment sheets', L]];
-    if (kind === 'consigned' && r.counts.consigned_jos) { const x = await extra(); const out = new Set(L.map(c => c.jo));
-      groups.push(['JOs marked Consigned', x ? x.jobs.filter(j => j.location === 'consigned' && !out.has(j.jo)) : []]); if (!x) body = needsPaste(); }
+    if (kind === 'consigned' && r.counts.consigned_jos) { const out = new Set(L.map(c => c.jo));
+      groups.push(['JOs marked Consigned', x ? x.jobs.filter(j => j.location === 'consigned' && !out.has(j.jo)) : []]); if (!x && quiet) body = needsPaste(); }
     groups = groups.filter(g => g[1].length); rows = groups.reduce((a, g) => a.concat(g[1]), []);
   } else { location.hash = '#/dashboard'; return; }
   if (!live()) return; // a list (extra()) still loading after the user moved on
@@ -671,7 +748,7 @@ async function drillPage(main, u, kind, key, keepScroll) {
   const n = new Set(rows.map(x => x.jo || x.item)).size;
   main.innerHTML = `<div class="drill"><a class="lnk dback tap" href="#/dashboard">‹ Dashboard</a>
     <div class="dhead"><h2>${esc(title)}</h2><span class="lab">${body && !rows.length ? '' : esc(plural(n, 'item'))}</span></div>
-    <p class="muted">${esc(sub)}${D.updating ? '<span id="dUpd"> · updating…</span>' : ''}</p>
+    <p class="muted">${esc(sub)}${D.updating || D.jobsUpdating ? '<span id="dUpd"> · updating…</span>' : ''}</p>
     ${chips.length ? `<div class="rvchips">${chips.map(([h, lab, cnt, on]) => `<a class="fchip tap ${on ? 'on' : ''}" href="${h}">${esc(lab)} <b>${esc(cnt)}</b></a>`).join('')}</div>` : ''}
     ${rows.length > 6 ? '<input id="drQ" class="rvq" placeholder="Search JO, client or description">' : ''}
     <div class="rvrows" id="drRows">${list()}</div>
@@ -681,6 +758,14 @@ async function drillPage(main, u, kind, key, keepScroll) {
   const qi = main.querySelector('#drQ'); if (qi) qi.oninput = () => { main.querySelector('#drRows').innerHTML = list(); wire(); };
   wire(); scrollTo(0, y);
   const on = main.querySelector('.rvchips .fchip.on'); if (on) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20; // phone: the picked chip in view
+  if (quiet || !usesJobs || jobsFresh) return;
+  if (!x && !rows.length && !body) main.innerHTML = '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
+  const hash = location.hash;
+  const res = await refreshJobs(u);
+  if (gen !== drillGen || location.hash !== hash || !live()) return;
+  D.jobsUpdating = false;
+  if (!x || (res && res.changed)) return drillPage(main, u, kind, key, true, true);
+  const hint = main.querySelector('#dUpd'); if (hint) hint.remove();
 }
 const SEC_LABEL = { msgs: 'Messages', loc: 'Location', sales: 'Sales', board: 'Job board', consign: 'Consignment', pay: 'Recent payments' };
 function layoutLocState(list, u) {
