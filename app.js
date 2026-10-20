@@ -31,9 +31,9 @@ async function net(action, data) {
    asked again in the background, and the page redraws if the answer changed (unless the user already started using it).
    Cleared on log in, log out, session expiry and after any change (save / move / confirm ...), so a save always re-reads. */
 const CACHED = { dashboard: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1,
-  pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1 };
+  pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1, consignList: 1 };
 const READS = Object.assign({ me: 1, admCustAudit: 1, apptClients: 1, costQuotes: 1, dashDrill: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1,
-  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, portalSteps: 1 }, CACHED); // anything else changes data
+  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, portalSteps: 1, consignSearch: 1 }, CACHED); // anything else changes data
 const C = { mem: new Map(), fly: new Map(), gen: 0, servedStale: 0, touched: 0, redraw: 0, busy: 0 };
 const FRESH = 20e3, MAX_AGE = 12 * 36e5, CP = 'oypC1:';
 const ns = () => { const t = localStorage.getItem(K.s) || ''; let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return CP + (h >>> 0).toString(36) + ':'; };
@@ -147,7 +147,7 @@ document.addEventListener('click', e => {
 const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.OFFICE_NAV || window.OYPNav.NAV; // nav.js: same menu in the scanner, minus back-office-only pages (Production)
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
 const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
-  payments: true, quotes: true, balances: true, clients: true }; // pay.js: payments, quotes, balances, clients
+  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment
 // Menu order on this device, per signed-in name. Empty = today's menu. The scanner keeps the shared list in nav.js.
 const navKey = u => 'oypNavOrder:' + (u && u.username || 'device');
 function readNavOrder(u) {
@@ -222,6 +222,7 @@ const here = () => { const my = routeSeq; return () => my === routeSeq; };
 function show(id) { ['vLogin', 'vStaff', 'vOffice'].forEach(v => $(v).classList.toggle('hidden', v !== id)); }
 function route() {
   routeSeq++;
+  document.documentElement.classList.remove('cs-onprint');
   $('menu').classList.add('hidden');
   const signed = user();
   if (!signed || signed.role !== 'admin') window.OYPLayoutEdit.set(false);
@@ -247,6 +248,7 @@ function route() {
   if (page === 'settings' && window.OYPSettings) return window.OYPSettings.render($('main'), u); // settings.js (admin only: only the admin menu has it)
   if (page === 'production' && window.OYPProd) return window.OYPProd.render($('main'), u); // production.js
   if (page === 'appts' && window.OYPAppts) return window.OYPAppts.render($('main'), u); // appts.js
+  if (page === 'consignment' && window.OYPConsign) return window.OYPConsign.render($('main'), u); // consign.js
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
@@ -264,7 +266,8 @@ window.addEventListener('hashchange', route);
 const PAGE_READS = { dashboard: [['dashboard'], ['contactList']], review: [['jobReviewList'], ['contactList']], estimate: [['costRates'], ['priceGet']],
   jos: [['invList']], production: [['prodBoard']], inventory: [['matList']], prices: [['priceGet']], customers: [['pplList']], shop: [['admShopList']],
   payments: [['payData']], quotes: [['payData']], balances: [['payData']], clients: [['payData']], settings: [['settingsGet']],
-  appts: [['apptList', () => window.OYPAppts && window.OYPAppts.range && window.OYPAppts.range()]] };
+  appts: [['apptList', () => window.OYPAppts && window.OYPAppts.range && window.OYPAppts.range()]],
+  consignment: [['consignList']] };
 let pfT = 0, pfRun = false;
 function schedulePrefetch(nav, page) {
   clearTimeout(pfT);

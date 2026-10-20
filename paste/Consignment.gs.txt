@@ -1,0 +1,481 @@
+PASTE INTO: Consignment.gs
+
+No new OAuth scopes. Do not add any scopes. This file only uses the spreadsheet helpers the project already has (ss_, jobRows_, jobAppend_, jobSet_, jobHeader_, jobKey_, jobStr_, jobDay_, withLock_, audit_, now_, randHex_, isExec_, stripPricing_). sessionFrom_ already runs in Auth.gs before the hook below; handleConsign_ calls it only if that hook did not pass a user. The camera stays in the browser. Nothing here calls Drive, Gmail, or UrlFetch.
+
+Dashboard.gs already reads Consignees, Consignments, ConsignmentItems, and Items, and the Settings key consign_overdue_days (default 30). This file writes those same columns. It never deletes a row. setupConsignment adds the three tabs with a header row only when the tab is missing. A tab that already exists is not opened for edits, not resized, and not given new columns.
+
+Headers created when the tab is missing:
+- Consignees: consignee_id, name, phone, notes, created_at, created_by, updated_at, updated_by
+- Consignments: consignment_id, consignee_id, consignee_name, date_out, due_date, status, notes, created_at, created_by, updated_at, updated_by, closed_at
+- ConsignmentItems: line_id, consignment_id, consignee, item_id, jo, description, value, status, date_out, due_date, prev_location, returned_at, sold_at, created_at, created_by
+
+If a tab already exists, writes fill whichever of those header names are already on row 1 (value is also written to agreed_value when that header exists; the line id is also written to id when that header exists). A missing header is left missing.
+
+Agreed value is executive-only. isExec_ / stripPricing_ decide that, the same way prices work everywhere else. A production manager can consign, return, and sell, and does not receive value.
+
+Hook — one line. In Auth.gs, inside handleAction_, on its own line immediately after the JobSync hook:
+
+    if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user); // JobSync.gs
+
+add:
+
+    if (typeof isConsignAction_ === 'function' && isConsignAction_(a)) return handleConsign_(req, s.user); // Consignment.gs
+
+That line uses the same names as the JobSync hook: a (the action), req (the request), s.user (the person sessionFrom_ already resolved). If your JobSync line uses different names, use those names. Put the line before the unknown-action error. Do not add a second session check in Auth.gs.
+
+Paste steps:
+1. Open the Apps Script project that serves the staff site (the one with Auth.gs and JobSync.gs).
+2. Add a script file named Consignment. Paste everything below the line COPY FROM HERE. Do not paste these instructions into the script.
+3. In Auth.gs, add the one hook line shown above, directly under the JobSync hook.
+4. Save. Select setupConsignment and Run it once. If a tab is already there, it is left unchanged. If it is missing, it is added with the header row only.
+5. Deploy the web app the way you usually do (same deployment, new version). Do not add OAuth scopes.
+6. Sign in as admin or production manager. Open Consignment. CONSIGN a piece, print the sheet, then mark it returned.
+
+COPY FROM HERE
+
+/**
+ * Consignment sheets: pieces lent to someone outside the shop (a relative, a consignee).
+ * Web actions (admin + production manager): consignList, consignSearch, consignSave, consignItem, consigneeSave.
+ * One-time: run setupConsignment. It adds Consignees, Consignments, ConsignmentItems only when that tab is missing.
+ * Never deletes a row. Never edits a tab that already exists.
+ *
+ * Auth.gs handleAction_, immediately after the JobSync line:
+ *   if (typeof isConsignAction_ === 'function' && isConsignAction_(a)) return handleConsign_(req, s.user); // Consignment.gs
+ */
+var CONSIGN_TABS = {
+  Consignees: ['consignee_id', 'name', 'phone', 'notes', 'created_at', 'created_by', 'updated_at', 'updated_by'],
+  Consignments: ['consignment_id', 'consignee_id', 'consignee_name', 'date_out', 'due_date', 'status', 'notes', 'created_at', 'created_by', 'updated_at', 'updated_by', 'closed_at'],
+  ConsignmentItems: ['line_id', 'consignment_id', 'consignee', 'item_id', 'jo', 'description', 'value', 'status', 'date_out', 'due_date', 'prev_location', 'returned_at', 'sold_at', 'created_at', 'created_by']
+};
+var CONSIGN_ROLES = { admin: true, production_manager: true };
+
+/** ONE-TIME. Adds the three tabs with headers only if the tab is missing. Does not change a tab that exists. */
+function setupConsignment() {
+  var run = function () {
+    var ss = ss_(), added = [], kept = [], name, sh, cols;
+    for (name in CONSIGN_TABS) if (CONSIGN_TABS.hasOwnProperty(name)) {
+      cols = CONSIGN_TABS[name];
+      sh = ss.getSheetByName(name);
+      if (sh) { kept.push(name); continue; }
+      sh = ss.insertSheet(name);
+      sh.getRange(1, 1, 1, cols.length).setValues([cols]);
+      sh.setFrozenRows(1);
+      added.push(name);
+    }
+    return { added: added, kept: kept, url: ss.getUrl() };
+  };
+  var res = (typeof withLock_ === 'function') ? withLock_(run) : run();
+  try { audit_('setup', 'setupConsignment', '', '', 'added ' + (res.added.join(', ') || 'none') + '; kept ' + (res.kept.join(', ') || 'none')); } catch (e) {}
+  Logger.log('Added: ' + (res.added.join(', ') || 'none') + '\nLeft as they were: ' + (res.kept.join(', ') || 'none') + '\n' + res.url);
+  return res;
+}
+
+function isConsignAction_(a) {
+  return { consignList: 1, consignSearch: 1, consignSave: 1, consignItem: 1, consigneeSave: 1 }[String(a || '')] === 1;
+}
+function handleConsign_(req, user) {
+  if (!user || !user.username) {
+    try {
+      var sess = (typeof sessionFrom_ === 'function') ? sessionFrom_(req || {}) : null;
+      if (sess && sess.user) user = sess.user;
+      else if (sess && sess.username) user = sess;
+    } catch (e) {}
+  }
+  var acts = { consignList: consignList_, consignSearch: consignSearch_, consignSave: consignSave_, consignItem: consignItem_, consigneeSave: consigneeSave_ };
+  if (!req || !acts[req.action]) return { ok: false, error: 'Unknown action' };
+  if (!user || !CONSIGN_ROLES[user.role]) {
+    try { audit_((user && user.username) || '', 'denied', req.action, req.device_id, 'role ' + ((user && user.role) || '')); } catch (e2) {}
+    return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  }
+  if (!isExec_(user) && consignSentValue_(req)) {
+    try { audit_(user.username, 'denied', req.action, req.device_id, 'agreed value from role ' + user.role); } catch (e3) {}
+    return { ok: false, error: 'Agreed value is for executives only', code: 'FORBIDDEN' };
+  }
+  var write = req.action === 'consignSave' || req.action === 'consignItem' || req.action === 'consigneeSave';
+  var res;
+  try { res = write ? withLock_(function () { return acts[req.action](req, user); }) : acts[req.action](req, user); }
+  catch (err) { res = { ok: false, error: String(err && err.message || err).slice(0, 300) }; }
+  return (typeof stripPricing_ === 'function') ? stripPricing_(res, user) : res;
+}
+function consignSentValue_(req) {
+  var items = req.items || [], i, v;
+  for (i = 0; i < items.length; i++) {
+    v = items[i] && (items[i].value != null ? items[i].value : items[i].agreed_value);
+    if (String(v == null ? '' : v).trim() !== '') return true;
+  }
+  return false;
+}
+
+/* ---------- reads ---------- */
+function consignList_(req, user) {
+  var miss = consignMissing_(), today = consignToday_(), limit = consignOverdueDays_(), people = consignPeople_(), sheets = [];
+  if (miss.length === 0) sheets = consignSheets_(people, today, limit);
+  return {
+    ok: true, setup: miss.length === 0, missing: miss, overdue_days: limit, today: today, prices: isExec_(user),
+    consignees: people.map(function (p) { return { consignee_id: p.consignee_id, name: p.name, phone: p.phone, notes: p.notes }; }),
+    sheets: sheets, loose: miss.length ? [] : consignLoose_(sheets)
+  };
+}
+function consignSearch_(req, user) {
+  var q = String(req.q || '').trim(), uq = q.toUpperCase().replace(/\s+/g, ' '), joQ = jobKey_(q);
+  if (uq.length < 2 && !joQ) return { ok: true, q: q, hits: [] };
+  var hits = [], seen = {};
+  if (ss_().getSheetByName('JobOrders')) jobRows_('JobOrders').forEach(function (j) {
+    if (jobStr_(j.status) === 'cancelled') return;
+    var jo = jobKey_(j.jo), item = jobStr_(j.item_id), desc = jobStr_(j.description), loc = consignLoc_(j.location);
+    if (!jo) return;
+    var hay = (jo + ' ' + item + ' ' + desc).toUpperCase();
+    if (!(joQ && jo.indexOf(joQ) >= 0) && hay.indexOf(uq) < 0 && (!item || item.toUpperCase().indexOf(uq) < 0)) return;
+    consignPushHit_(hits, seen, { jo: jo, item_id: item, description: desc, location: loc });
+  });
+  if (ss_().getSheetByName('Items')) jobRows_('Items').forEach(function (r) {
+    var item = jobStr_(consignCell_(r, ['item_id', 'sku', 'code'])), jo = jobKey_(consignCell_(r, ['jo', 'job', 'jo_number'])), desc = jobStr_(consignCell_(r, ['description', 'name', 'title'])), loc = consignLoc_(consignCell_(r, ['location']));
+    if (!item && !jo) return;
+    var hay = (jo + ' ' + item + ' ' + desc).toUpperCase();
+    if (!(joQ && jo && jo.indexOf(joQ) >= 0) && hay.indexOf(uq) < 0) return;
+    consignPushHit_(hits, seen, { jo: jo, item_id: item, description: desc, location: loc });
+  });
+  hits.forEach(function (h) { h.blocked = consignBlockReason_(h.jo, h.item_id, h.location); });
+  hits.sort(function (a, b) { return consignCmp_(a.jo || a.item_id, b.jo || b.item_id); });
+  return { ok: true, q: q, hits: hits.slice(0, 30) };
+}
+
+/* ---------- writes (handleConsign_ already holds the lock) ---------- */
+function consigneeSave_(req, user) {
+  var miss = consignMissing_(), bad = consignHeadersOk_();
+  if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
+  if (bad) return { ok: false, error: bad };
+  var name = consignClean_(req.name, 80);
+  if (!name) return { ok: false, error: 'Type the consignee\'s name' };
+  var phone = consignClean_(req.phone, 40), notes = consignClean_(req.notes, 400);
+  var t = now_(), by = user.username, id = jobStr_(req.consignee_id);
+  if (id) {
+    var row = consignFind_('Consignees', ['consignee_id', 'id'], id);
+    if (!row) return { ok: false, error: 'No such consignee' };
+    var prev = jobStr_(consignCell_(row, ['name', 'consignee_name', 'consignee']));
+    consignUpdate_('Consignees', row._row, { name: name, consignee: name, consignee_name: name, phone: phone, mobile: phone, notes: notes, updated_at: t, updated_by: by });
+    audit_(by, 'consigneeSave', id, req.device_id, prev + ' -> ' + name + (phone ? ' · ' + phone : ''));
+    return { ok: true, consignee_id: id };
+  }
+  id = 'cg-' + randHex_(8);
+  consignAppend_('Consignees', { consignee_id: id, id: id, name: name, consignee: name, consignee_name: name, phone: phone, mobile: phone, notes: notes, created_at: t, created_by: by, updated_at: t, updated_by: by });
+  audit_(by, 'consigneeSave', id, req.device_id, 'added ' + name + (phone ? ' · ' + phone : ''));
+  return { ok: true, consignee_id: id };
+}
+function consignSave_(req, user) {
+  var miss = consignMissing_(), bad = consignHeadersOk_();
+  if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
+  if (bad) return { ok: false, error: bad };
+  var items = req.items;
+  if (!Array.isArray(items) || !items.length) return { ok: false, error: 'Add at least one piece' };
+  if (items.length > 40) return { ok: false, error: 'At most 40 pieces on a sheet' };
+  var today = consignToday_(), limit = consignOverdueDays_(), due = jobStr_(req.due_date);
+  if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return { ok: false, error: 'Due date must look like 2026-11-19' };
+  if (!due) due = consignAddDays_(today, limit);
+  var who = consignResolvePerson_(req, user);
+  if (who.error) return who;
+  var prepared = [], seenJo = {}, i, it, jo, rawJo, itemId, desc, val, job, loc, block;
+  for (i = 0; i < items.length; i++) {
+    it = items[i] || {};
+    rawJo = jobStr_(it.jo); jo = rawJo ? jobKey_(rawJo) : '';
+    if (rawJo && !jo) return { ok: false, error: 'JO number does not look right' };
+    itemId = consignClean_(it.item_id, 40);
+    if (!jo && !itemId) return { ok: false, error: 'Each piece needs a JO number or an item id' };
+    if (jo && seenJo[jo]) return { ok: false, error: 'JO ' + jo + ' is on this sheet twice' };
+    if (jo) seenJo[jo] = true;
+    job = jo ? consignJob_(jo) : null;
+    if (jo && !job) return { ok: false, error: 'No JO ' + jo };
+    loc = job ? consignLoc_(job.location) : consignLoc_(it.location);
+    block = consignBlockReason_(jo, itemId, loc);
+    if (block) return { ok: false, error: block };
+    desc = consignClean_(it.description, 300) || (job ? jobStr_(job.description) : '');
+    if (!itemId && job) itemId = jobStr_(job.item_id);
+    try { val = isExec_(user) ? consignMoney_(it.value != null ? it.value : it.agreed_value) : ''; }
+    catch (e) { return { ok: false, error: e.message }; }
+    prepared.push({ jo: jo, item_id: itemId, description: desc, value: val, prev: (loc && loc !== 'consigned') ? loc : 'vault', row: job });
+  }
+  var t = now_(), by = user.username, cid = consignNextId_(), notes = consignClean_(req.notes, 400);
+  consignAppend_('Consignments', {
+    consignment_id: cid, id: cid, consignee_id: who.id, consignee_name: who.name, consignee: who.name,
+    date_out: today, due_date: due, status: 'open', notes: notes, created_at: t, created_by: by, updated_at: t, updated_by: by, closed_at: ''
+  });
+  var moved = [];
+  prepared.forEach(function (p) {
+    var lid = 'cl-' + randHex_(8);
+    consignAppend_('ConsignmentItems', {
+      line_id: lid, id: lid, consignment_id: cid, consignee: who.name, consignee_name: who.name,
+      item_id: p.item_id, jo: p.jo, description: p.description, value: p.value, agreed_value: p.value,
+      status: 'consigned', date_out: today, due_date: due, prev_location: p.prev, returned_at: '', sold_at: '',
+      created_at: t, created_by: by
+    });
+    if (p.jo && !consignOthersOut_(p.jo, lid)) {
+      consignSetLoc_(p.row, 'consigned', user, t);
+      moved.push(p.jo + ' ' + p.prev + ' -> consigned');
+    }
+  });
+  audit_(by, 'consignSave', cid, req.device_id, who.name + ' · ' + prepared.length + ' piece(s)' + (moved.length ? ' · ' + moved.join('; ') : '') + (isExec_(user) ? ' · values set' : ''));
+  return { ok: true, consignment_id: cid };
+}
+function consignItem_(req, user) {
+  var miss = consignMissing_(), bad = consignHeadersOk_();
+  if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
+  if (bad) return { ok: false, error: bad };
+  var status = String(req.status || '').toLowerCase();
+  if (status !== 'returned' && status !== 'sold') return { ok: false, error: 'Status must be returned or sold' };
+  var row = null, lineId = jobStr_(req.line_id);
+  if (lineId) row = consignFind_('ConsignmentItems', ['line_id', 'id'], lineId);
+  else row = consignMatchCode_(jobStr_(req.code), jobStr_(req.consignment_id));
+  if (row && row.error) return row;
+  if (!row) return { ok: false, error: lineId ? 'No such line' : 'No matching piece is still out' };
+  lineId = jobStr_(consignCell_(row, ['line_id', 'id']));
+  if (!consignItemOpen_(consignCell_(row, ['status']))) return { ok: false, error: 'That piece is already ' + jobStr_(consignCell_(row, ['status'])) };
+  var t = now_(), by = user.username, jo = jobKey_(consignCell_(row, ['jo'])), cid = jobStr_(consignCell_(row, ['consignment_id']));
+  var changes = { status: status, updated_at: t, updated_by: by };
+  if (status === 'returned') changes.returned_at = t; else changes.sold_at = t;
+  consignUpdate_('ConsignmentItems', row._row, changes);
+  var locNote = '';
+  if (jo && !consignOthersOut_(jo, lineId)) {
+    var back = status === 'sold' ? 'sold' : (consignLoc_(consignCell_(row, ['prev_location', 'previous_location'])) || 'vault');
+    if (back === 'consigned') back = 'vault';
+    var job = consignJob_(jo);
+    if (job) { consignSetLoc_(job, back, user, t); locNote = jo + ' -> ' + back; }
+  } else if (jo) locNote = jo + ' still has another piece out';
+  consignMaybeClose_(cid, user, t);
+  audit_(by, status === 'sold' ? 'consignSold' : 'consignReturn', lineId, req.device_id, cid + (locNote ? ' · ' + locNote : ''));
+  return { ok: true, line_id: lineId, consignment_id: cid, status: status };
+}
+
+/* ---------- sheet building ---------- */
+function consignSheets_(people, today, limit) {
+  var byId = {}; people.forEach(function (p) { byId[p.consignee_id] = p; });
+  var items = {}, order = [];
+  jobRows_('ConsignmentItems').forEach(function (r) {
+    var cid = jobStr_(consignCell_(r, ['consignment_id'])); if (!cid) return;
+    if (!items[cid]) { items[cid] = []; order.push(cid); }
+    items[cid].push(r);
+  });
+  var out = [], seen = {};
+  jobRows_('Consignments').forEach(function (sh) {
+    var cid = jobStr_(consignCell_(sh, ['consignment_id', 'id'])); if (!cid || seen[cid]) return; seen[cid] = true;
+    out.push(consignSheetView_(sh, items[cid] || [], byId, today, limit));
+  });
+  order.forEach(function (cid) { if (!seen[cid]) out.push(consignSheetView_({ consignment_id: cid }, items[cid], byId, today, limit)); });
+  out.sort(function (a, b) { return consignCmp_(a.date_out, b.date_out) || consignCmp_(a.consignment_id, b.consignment_id); });
+  return out;
+}
+function consignSheetView_(sh, rows, byId, today, limit) {
+  var gid = jobStr_(consignCell_(sh, ['consignee_id'])), person = byId[gid];
+  var name = person ? person.name : jobStr_(consignCell_(sh, ['consignee_name', 'consignee', 'name']));
+  var dateOut = consignDay_(consignCell_(sh, ['date_out', 'date'])) || consignDay_(rows[0] && consignCell_(rows[0], ['date_out']));
+  var due = consignDay_(consignCell_(sh, ['due_date', 'due']));
+  var viewItems = rows.map(function (r) {
+    var st = consignNormStatus_(consignCell_(r, ['status']));
+    var dout = consignDay_(consignCell_(r, ['date_out'])) || dateOut;
+    var idue = consignDay_(consignCell_(r, ['due_date'])) || due;
+    var open = st === 'consigned';
+    var o = {
+      line_id: jobStr_(consignCell_(r, ['line_id', 'id'])), item_id: jobStr_(consignCell_(r, ['item_id', 'sku', 'code'])),
+      jo: jobKey_(consignCell_(r, ['jo'])) || jobStr_(consignCell_(r, ['jo'])), description: jobStr_(consignCell_(r, ['description', 'name'])),
+      status: st, date_out: dout, due_date: idue, prev_location: consignLoc_(consignCell_(r, ['prev_location', 'previous_location'])),
+      returned_at: jobStr_(consignCell_(r, ['returned_at'])), sold_at: jobStr_(consignCell_(r, ['sold_at'])),
+      days_out: consignSpan_(dout, today), overdue: open && consignIsOverdue_(dout, idue, today, limit)
+    };
+    var val = consignCell_(r, ['value', 'agreed_value']);
+    if (val !== '' && val != null) o.value = consignMoneySafe_(val);
+    return o;
+  });
+  var anyOpen = viewItems.some(function (it) { return it.status === 'consigned'; });
+  var stored = jobStr_(consignCell_(sh, ['status'])).toLowerCase();
+  return {
+    consignment_id: jobStr_(consignCell_(sh, ['consignment_id', 'id'])) || (rows[0] && jobStr_(consignCell_(rows[0], ['consignment_id']))),
+    consignee_id: gid, consignee: name, phone: person ? person.phone : '', notes: jobStr_(consignCell_(sh, ['notes'])),
+    date_out: dateOut, due_date: due, status: (!viewItems.length ? (stored === 'closed' ? 'closed' : 'open') : (anyOpen ? 'open' : 'closed')),
+    days_out: consignSpan_(dateOut, today), overdue: anyOpen && viewItems.some(function (it) { return it.overdue; }), items: viewItems
+  };
+}
+function consignLoose_(sheets) {
+  var outJo = {};
+  sheets.forEach(function (s) { (s.items || []).forEach(function (it) { if (it.status === 'consigned' && it.jo) outJo[jobKey_(it.jo)] = true; }); });
+  var loose = [];
+  if (!ss_().getSheetByName('JobOrders')) return loose;
+  jobRows_('JobOrders').forEach(function (j) {
+    var k = jobKey_(j.jo);
+    if (!k || outJo[k] || consignLoc_(j.location) !== 'consigned' || jobStr_(j.status) === 'cancelled') return;
+    loose.push({ jo: k, item_id: jobStr_(j.item_id), description: jobStr_(j.description), location: 'consigned' });
+  });
+  loose.sort(function (a, b) { return consignCmp_(a.jo, b.jo); });
+  return loose;
+}
+function consignPeople_() {
+  if (!ss_().getSheetByName('Consignees')) return [];
+  var list = jobRows_('Consignees').map(function (r) {
+    return { consignee_id: jobStr_(consignCell_(r, ['consignee_id', 'id'])), name: jobStr_(consignCell_(r, ['name', 'consignee_name', 'consignee'])), phone: jobStr_(consignCell_(r, ['phone', 'mobile'])), notes: jobStr_(consignCell_(r, ['notes'])) };
+  }).filter(function (p) { return p.consignee_id && p.name; });
+  list.sort(function (a, b) { return consignCmp_(a.name.toLowerCase(), b.name.toLowerCase()); });
+  return list;
+}
+
+/* ---------- row helpers ---------- */
+function consignHas_(name, keys) {
+  var sh = ss_().getSheetByName(name); if (!sh) return false;
+  var h = jobHeader_(sh), i;
+  for (i = 0; i < keys.length; i++) if (h.indexOf(keys[i]) >= 0) return true;
+  return false;
+}
+function consignHeadersOk_() {
+  if (!consignHas_('Consignees', ['name']) || !consignHas_('Consignees', ['consignee_id', 'id'])) return 'Consignees needs a consignee_id column and a name column. Run setupConsignment if the tab is missing. An existing tab is not changed.';
+  if (!consignHas_('Consignments', ['consignment_id', 'id']) || !consignHas_('Consignments', ['status'])) return 'Consignments needs consignment_id and status columns. An existing tab is not changed.';
+  if (!consignHas_('ConsignmentItems', ['consignment_id']) || !consignHas_('ConsignmentItems', ['status']) || !consignHas_('ConsignmentItems', ['line_id', 'id'])) return 'ConsignmentItems needs line_id, consignment_id, and status columns. An existing tab is not changed.';
+  return '';
+}
+function consignMissing_() {
+  var ss = ss_(), miss = [], name;
+  for (name in CONSIGN_TABS) if (CONSIGN_TABS.hasOwnProperty(name) && !ss.getSheetByName(name)) miss.push(name);
+  return miss;
+}
+function consignCell_(row, keys) {
+  var i, v; if (!row) return '';
+  for (i = 0; i < keys.length; i++) { v = row[keys[i]]; if (v != null && String(v).trim() !== '') return v; }
+  return '';
+}
+function consignAppend_(name, obj) { jobAppend_(name, obj); }
+function consignUpdate_(name, row, obj) { jobSet_(name, row, obj); }
+function consignFind_(name, keys, id) {
+  var want = String(id), hit = null;
+  jobRows_(name).forEach(function (r) { if (!hit && jobStr_(consignCell_(r, keys)) === want) hit = r; });
+  return hit;
+}
+function consignJob_(jo) {
+  var key = jobKey_(jo), hit = null;
+  if (!key || !ss_().getSheetByName('JobOrders')) return null;
+  jobRows_('JobOrders').forEach(function (j) { if (!hit && jobKey_(j.jo) === key) hit = j; });
+  return hit;
+}
+function consignResolvePerson_(req, user) {
+  var id = jobStr_(req.consignee_id), t = now_();
+  if (id) {
+    var row = consignFind_('Consignees', ['consignee_id', 'id'], id);
+    if (!row) return { error: 'Pick a consignee', ok: false };
+    return { id: id, name: jobStr_(consignCell_(row, ['name', 'consignee_name', 'consignee'])) };
+  }
+  var neu = req.new_consignee || {}, name = consignClean_(neu.name, 80);
+  if (!name) return { ok: false, error: 'Type the consignee\'s name' };
+  var phone = consignClean_(neu.phone, 40), notes = consignClean_(neu.notes, 400);
+  id = 'cg-' + randHex_(8);
+  consignAppend_('Consignees', { consignee_id: id, id: id, name: name, consignee: name, consignee_name: name, phone: phone, mobile: phone, notes: notes, created_at: t, created_by: user.username, updated_at: t, updated_by: user.username });
+  audit_(user.username, 'consigneeSave', id, req.device_id, 'added with sheet · ' + name);
+  return { id: id, name: name };
+}
+function consignNextId_() {
+  var n = 0;
+  jobRows_('Consignments').forEach(function (r) {
+    var m = String(consignCell_(r, ['consignment_id', 'id']) || '').match(/^CS-(\d+)$/i);
+    if (m) n = Math.max(n, parseInt(m[1], 10) || 0);
+  });
+  var next = n + 1, pad = String(next);
+  while (pad.length < 3) pad = '0' + pad;
+  return 'CS-' + pad;
+}
+function consignSetLoc_(job, loc, user, t) {
+  if (!job || !job._row) return;
+  var cur = consignLoc_(job.location);
+  if (cur === loc) return;
+  var ch = { location: loc, updated_at: t, updated_by: user.username };
+  var st = jobStr_(job.status);
+  if ((st === 'draft' || !st) && typeof JOB_LOC_STATUS !== 'undefined' && JOB_LOC_STATUS[loc]) ch.status = JOB_LOC_STATUS[loc];
+  jobSet_('JobOrders', job._row, ch);
+  job.location = loc;
+}
+function consignOthersOut_(jo, exceptId) {
+  var key = jobKey_(jo);
+  if (!key) return false;
+  return jobRows_('ConsignmentItems').some(function (r) {
+    if (jobStr_(consignCell_(r, ['line_id', 'id'])) === exceptId) return false;
+    if (jobKey_(consignCell_(r, ['jo'])) !== key) return false;
+    return consignItemOpen_(consignCell_(r, ['status']));
+  });
+}
+function consignMaybeClose_(cid, user, t) {
+  if (!cid) return;
+  var rows = [], open = false;
+  jobRows_('ConsignmentItems').forEach(function (r) {
+    if (jobStr_(consignCell_(r, ['consignment_id'])) !== cid) return;
+    rows.push(r);
+    if (consignItemOpen_(consignCell_(r, ['status']))) open = true;
+  });
+  if (!rows.length || open) return;
+  var sh = consignFind_('Consignments', ['consignment_id', 'id'], cid);
+  if (!sh || jobStr_(consignCell_(sh, ['status'])).toLowerCase() === 'closed') return;
+  consignUpdate_('Consignments', sh._row, { status: 'closed', closed_at: t, updated_at: t, updated_by: user.username });
+  audit_(user.username, 'consignClose', cid, '', 'every piece is returned or sold');
+}
+function consignMatchCode_(code, onlySheet) {
+  var jo = jobKey_(code), raw = String(code || '').trim().toLowerCase(), hits = [];
+  if (!jo && !raw) return null;
+  jobRows_('ConsignmentItems').forEach(function (r) {
+    if (!consignItemOpen_(consignCell_(r, ['status']))) return;
+    var cid = jobStr_(consignCell_(r, ['consignment_id']));
+    if (onlySheet && cid !== onlySheet) return;
+    var rjo = jobKey_(consignCell_(r, ['jo'])), item = jobStr_(consignCell_(r, ['item_id', 'sku', 'code'])).toLowerCase();
+    if ((jo && rjo === jo) || (raw && item && item === raw)) hits.push(r);
+  });
+  if (!hits.length && onlySheet) return consignMatchCode_(code, '');
+  if (hits.length > 1) return { ok: false, error: 'More than one piece matches. Tap the row.' };
+  return hits[0] || null;
+}
+function consignBlockReason_(jo, itemId, loc) {
+  if (loc === 'sold') return (jo || itemId || 'This piece') + ' is already sold';
+  if (loc === 'archived') return (jo || itemId || 'This piece') + ' is archived';
+  var key = jobKey_(jo), id = jobStr_(itemId).toLowerCase(), hit = false;
+  if (!ss_().getSheetByName('ConsignmentItems')) return '';
+  jobRows_('ConsignmentItems').forEach(function (r) {
+    if (hit || !consignItemOpen_(consignCell_(r, ['status']))) return;
+    if (key && jobKey_(consignCell_(r, ['jo'])) === key) hit = true;
+    else if (!key && id && jobStr_(consignCell_(r, ['item_id', 'sku', 'code'])).toLowerCase() === id) hit = true;
+  });
+  return hit ? (key || itemId) + ' is already on an open sheet' : '';
+}
+function consignPushHit_(hits, seen, h) {
+  var k = (h.jo || '') + '|' + (h.item_id || '');
+  if (seen[k]) return; seen[k] = true; hits.push(h);
+}
+function consignItemOpen_(st) { st = String(st || '').trim().toLowerCase(); return st === '' || st === 'consigned' || st === 'open' || st === 'out'; }
+function consignNormStatus_(st) { return consignItemOpen_(st) ? 'consigned' : (String(st || '').trim().toLowerCase() === 'sold' ? 'sold' : 'returned'); }
+function consignLoc_(v) { return jobStr_(v).toLowerCase(); }
+function consignClean_(v, n) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').slice(0, n); }
+function consignToday_() { return new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10); }
+function consignDay_(v) { var s = (typeof jobDay_ === 'function') ? jobDay_(v) : jobStr_(v); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : ''; }
+function consignAddDays_(day, n) {
+  var d = new Date(String(day || '') + 'T00:00:00Z'); if (isNaN(d.getTime())) return '';
+  d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10);
+}
+function consignSpan_(from, to) {
+  if (!from || !to) return null;
+  var a = Date.parse(from + 'T00:00:00Z'), b = Date.parse(to + 'T00:00:00Z');
+  if (isNaN(a) || isNaN(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+function consignIsOverdue_(dateOut, due, today, limit) {
+  if (due) return today > due;
+  var n = consignSpan_(dateOut, today);
+  return n != null && n > limit;
+}
+function consignOverdueDays_() {
+  var n = 30;
+  try {
+    if (ss_().getSheetByName('Settings')) jobRows_('Settings').forEach(function (r) {
+      if (String(r.key) !== 'consign_overdue_days') return;
+      var v = parseInt(r.value, 10);
+      if (v > 0 && v < 3650) n = v;
+    });
+  } catch (e) {}
+  return n;
+}
+function consignMoney_(v) {
+  if (v == null || String(v).trim() === '') return '';
+  var n = Number(String(v).replace(/[₱,\s]/g, '').replace(/php/ig, ''));
+  if (!isFinite(n) || n < 0) throw new Error('Agreed value must be a number');
+  return Math.round(n * 100) / 100;
+}
+function consignMoneySafe_(v) { try { return consignMoney_(v); } catch (e) { return ''; } }
+function consignCmp_(a, b) { a = String(a || ''); b = String(b || ''); return a < b ? -1 : a > b ? 1 : 0; }
