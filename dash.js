@@ -285,29 +285,91 @@ function wireSales(main, esc) {
   });
 }
 
-async function render(main, u, fresh) {
+// Last dashboard answer for this person, so a refresh or a direct link to a drill can draw before the server answers.
+const snapKey = u => 'oypDashSnap:' + (u && u.username || '');
+function readSnap(u) {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(snapKey(u)) || 'null');
+    return r && r.ok && Array.isArray(r.board) ? r : null;
+  } catch (e) { return null; }
+}
+function writeSnap(u, r) {
+  if (!u || !r || !r.ok) return;
+  try { sessionStorage.setItem(snapKey(u), JSON.stringify(r)); } catch (e) {}
+}
+function samePayload(a, b) {
+  if (a === b) return true;
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
+}
+function ccSig(cc) {
+  if (!cc || !cc.ok) return '';
+  return [cc.missing, cc.total].concat(cc.missing_jos || []).join('\n');
+}
+let dashGen = 0;
+function currentDrill() { return (location.hash.match(/^#\/dashboard\/(\w+)(?:\/([\w-]+))?/) || []).slice(1); }
+function paintNow(main, u) {
+  const drill = currentDrill();
+  if (drill[0]) drillPage(main, u, drill[0], drill[1] || '', true);
+  else draw(main, u);
+}
+
+async function render(main, u, fresh) { // fresh (Refresh) still paints what we have, then asks again
   const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
-  const drill = (location.hash.match(/^#\/dashboard\/(\w+)(?:\/([\w-]+))?/) || []).slice(1);
-  if (drill[0] && D.r && !fresh && Date.now() - D.at < 5 * 60e3) return drillPage(main, u, drill[0], drill[1] || '');
-  main.innerHTML = '<h2>Dashboard</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
+  const gen = ++dashGen;
+  const still = () => live() && gen === dashGen;
+  const drill = currentDrill();
+  if (D.user && u && D.user.username !== u.username) { D.r = null; D.cc = null; D.inbox = null; D.mail = null; D.x = null; D.at = 0; }
+  D.user = u; D.ordOn = !!(u && u.role === 'admin');
+  if (!D.r || !D.r.ok) { const saved = readSnap(u); if (saved) { D.r = saved; D.at = D.at || Date.now(); } }
+  const had = !!(D.r && D.r.ok);
   // portalSteps {inbox:1}: client approvals / questions (Portal.gs v3; admin + production manager). An older Portal.gs answers without
   // "inbox" -> no card. (portalSteps, not a new action name, so a server without v3 never sees an unknown action.)
   const pin = u && (u.role === 'admin' || u.role === 'production_manager');
-  const [r, cc, pi] = await Promise.all([call('dashboard'), call('contactList'), pin ? call('portalSteps', { inbox: 1 }) : null]); // contactList: JobContact.gs (absent before that paste -> no tile)
-  if (!live()) return; // the user went to another page while this loaded: leave it alone
-  if (r && r.ok) { D.r = r; D.cc = cc; D.x = null; D.at = Date.now(); }
-  if (drill[0] && r && r.ok) return drillPage(main, u, drill[0], drill[1] || '');
-  const noCC = new Set(cc && cc.ok ? cc.missing_jos : []);
-  if (!r || !r.ok) {
-    main.innerHTML = `<h2>Dashboard</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for the dashboard yet.' : (r && r.error) || 'Could not load')}</p>`; return;
+  D.updating = had; // a saved answer is on screen while this round trip replaces it
+  if (had) paintNow(main, u);
+  else main.innerHTML = (drill[0] ? '' : '<h2>Dashboard</h2>') + '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
+  const dashP = call('dashboard');
+  const ccP = call('contactList'); // JobContact.gs (absent before that paste -> no tile). A drill does not wait for this.
+  const piP = pin ? call('portalSteps', { inbox: 1 }) : Promise.resolve(null);
+  ccP.then(cc => {
+    if (!still() || ccSig(cc) === ccSig(D.cc)) return;
+    D.cc = cc;
+    if (still() && D.r && D.r.ok) paintNow(main, u);
+  });
+  piP.then(pi => {
+    if (!still()) return;
+    const inbox = (pi && pi.ok && pi.inbox && Array.isArray(pi.inbox.items)) ? pi.inbox : null;
+    if (samePayload(inbox, D.inbox || null)) return;
+    D.inbox = inbox;
+    if (still() && !currentDrill()[0] && D.r && D.r.ok) draw(main, u); // messages sit on the dashboard, not on a drill
+  });
+  let r = null;
+  try { r = await dashP; } catch (e) { r = null; }
+  if (!still()) return;
+  D.updating = false;
+  if (r && r.ok) {
+    const changed = !samePayload(r, D.r);
+    if (changed) D.x = null;
+    D.r = r; D.at = Date.now(); writeSnap(u, r);
+    if (!still()) return;
+    if (changed || !had) paintNow(main, u);
+    else { const hint = main.querySelector('#dUpd'); if (hint) hint.remove(); }
+    return;
   }
-  const c = r.counts, can = r.can, pb = c.pending_breakdown;
+  if (had) { const hint = main.querySelector('#dUpd'); if (hint) hint.remove(); return; }
+  main.innerHTML = `<h2>Dashboard</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for the dashboard yet.' : (r && r.error) || 'Could not load')}</p>`;
+}
+function draw(main, u) {
+  const { esc } = window.OYP, r = D.r, cc = D.cc, live = window.OYP.here();
+  if (!r || !r.ok) return;
+  const noCC = new Set(cc && cc.ok ? cc.missing_jos : []);
+  const c = r.counts || {}, can = r.can || {}, pb = c.pending_breakdown || {};
   D.user = u; D.ordOn = !!(u && u.role === 'admin');
   const when = new Date(r.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const pendNote = [pb.reviews && pb.reviews + ' to review', pb.past_due && pb.past_due + ' past due', pb.payments && plural(pb.payments, 'payment') + ' to confirm'].filter(Boolean).join(' · ') || 'All clear';
   const tile = (lab, val, note, cls = '', href = '') => href ? `<a class="kpi kpilink tap ${cls}" href="${href}"><span class="lab">${esc(lab)} ›</span><b>${esc(val)}</b><small>${esc(note || '')}</small></a>`
     : `<div class="kpi ${cls}"><span class="lab">${esc(lab)}</span><b>${esc(val)}</b><small>${esc(note || '')}</small></div>`;
-  let h = `<div class="dhead"><h2>Dashboard</h2><span class="dheadacts"><button class="lnk" id="dRef">Refresh</button></span></div><p class="muted">${esc(when)} PHT</p>
+  let h = `<div class="dhead"><h2>Dashboard</h2><span class="dheadacts"><button class="lnk" id="dRef">Refresh</button></span></div><p class="muted">${esc(when)} PHT${D.updating ? '<span id="dUpd"> · updating…</span>' : ''}</p>
   <div class="kpis">${tile('Active jobs', c.active_jobs, r.locations ? 'in production' : plural(r.board.reduce((s, b) => s + b.count, 0), 'open job'), '', '#/dashboard/active')}
   ${tile('Pending work', c.pending_work, pendNote, c.pending_work ? 'warn' : '', '#/dashboard/pending')}
   ${can.consign ? tile('Consigned out', c.consigned_out, plural(new Set((r.consignments || []).map(x => x.consignee)).size, 'consignee'), '', '#/dashboard/consigned') : ''}
@@ -316,7 +378,7 @@ async function render(main, u, fresh) {
   ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>`;
 
   const parts = {};
-  D.inbox = (pin && pi && pi.ok && pi.inbox && Array.isArray(pi.inbox.items)) ? pi.inbox : null; // portal: admin + production manager, same as the old Client messages card
+  // D.inbox is filled when portalSteps arrives. It is not cleared here, so a redraw keeps the messages already on screen.
   D.mail = (r && Object.prototype.hasOwnProperty.call(r, 'inquiries')) ? (Array.isArray(r.inquiries) ? r.inquiries : []) : null; // email: whoever the server already includes `inquiries` for
   parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'In production · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
     <div class="kcol"><a class="khead tap" href="#/dashboard/stage/${esc(col.key)}"><span class="lab">${esc(col.label)} ›</span><span class="kn">${col.count}</span></a>${col.cards.map(j => `
@@ -338,7 +400,7 @@ async function render(main, u, fresh) {
     parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="lab">Items out · oldest first</span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
       <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}${x.jo ? ' · JO ' + esc(x.jo) : ''}</span></td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
-      : `<p class="muted">${r.missing.includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
+      : `<p class="muted">${(r.missing || []).includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
   }
 
   if ((D.inbox && D.inbox.items.length) || D.mail) parts.msgs = messagesCard(esc);
@@ -351,7 +413,7 @@ async function render(main, u, fresh) {
   }
 
   h += `<div id="dsecs">${arrange(Object.keys(parts), D.ordOn ? readOrder(u) : null).map(id => parts[id]).join('')}</div>`;
-  const miss = r.missing.filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
+  const miss = (r.missing || []).filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
   main.querySelector('#dRef').onclick = () => render(main, u, true);
@@ -504,13 +566,14 @@ function needsPaste() {
   return `<p class="muted rvnone">${window.OYP.esc(!e || e === 'Unknown action' ? 'This list needs the DashboardDrill paste in Apps Script (see the instructions). The count on the dashboard is right; the per-JO list is not sent yet.' : e)}</p>`;
 }
 
-async function drillPage(main, u, kind, key) {
+async function drillPage(main, u, kind, key, keepScroll) {
   const { esc } = window.OYP, r = D.r, can = r.can, noCC = new Set(D.cc && D.cc.ok ? D.cc.missing_jos : []);
   const locLab = k => window.OYP.locLabel(k, ((r.locations || []).find(l => l.key === k) || {}).label);
   const allBoard = () => r.board.reduce((a, col) => a.concat(col.cards.map(j => boardRow(j, col))), []);
   const capped = cols => cols.filter(c => c.count > c.cards.length).map(c => c.label + ': first ' + c.cards.length + ' of ' + c.count).join(' · ');
   let title = '', sub = '', chips = [], groups = null, rows = [], note = '', body = '', show = { loc: true, stage: true };
   const live = window.OYP.here();
+  const y = keepScroll ? (window.scrollY || 0) : 0;
   main.innerHTML = '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
 
   if (kind === 'active' || kind === 'stage') {
@@ -608,7 +671,7 @@ async function drillPage(main, u, kind, key) {
   const n = new Set(rows.map(x => x.jo || x.item)).size;
   main.innerHTML = `<div class="drill"><a class="lnk dback tap" href="#/dashboard">‹ Dashboard</a>
     <div class="dhead"><h2>${esc(title)}</h2><span class="lab">${body && !rows.length ? '' : esc(plural(n, 'item'))}</span></div>
-    <p class="muted">${esc(sub)}</p>
+    <p class="muted">${esc(sub)}${D.updating ? '<span id="dUpd"> · updating…</span>' : ''}</p>
     ${chips.length ? `<div class="rvchips">${chips.map(([h, lab, cnt, on]) => `<a class="fchip tap ${on ? 'on' : ''}" href="${h}">${esc(lab)} <b>${esc(cnt)}</b></a>`).join('')}</div>` : ''}
     ${rows.length > 6 ? '<input id="drQ" class="rvq" placeholder="Search JO, client or description">' : ''}
     <div class="rvrows" id="drRows">${list()}</div>
@@ -616,7 +679,7 @@ async function drillPage(main, u, kind, key) {
     ${!open && rows.some(x => x.jo) ? '<p class="muted dnote">Opening a JO card is for admin and production manager.</p>' : ''}</div>`;
   const wire = () => main.querySelectorAll('.rvrow.go').forEach(el => el.onclick = () => openJO(el.dataset.jo, rows.find(x => x.jo === el.dataset.jo), title));
   const qi = main.querySelector('#drQ'); if (qi) qi.oninput = () => { main.querySelector('#drRows').innerHTML = list(); wire(); };
-  wire(); scrollTo(0, 0);
+  wire(); scrollTo(0, y);
   const on = main.querySelector('.rvchips .fchip.on'); if (on) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20; // phone: the picked chip in view
 }
 const SEC_LABEL = { msgs: 'Messages', loc: 'Location', sales: 'Sales', board: 'Job board', consign: 'Consignment', pay: 'Recent payments' };
