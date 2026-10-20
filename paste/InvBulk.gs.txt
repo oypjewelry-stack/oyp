@@ -1,0 +1,139 @@
+PASTE INTO: a new file named InvBulk.gs
+
+No new OAuth scopes. Do not add any scopes. No new columns. This does not replace InventoryPages.gs or JobSync.gs. Those live files are not in this repo, so this is a separate script that uses the helpers they already provide (ss_, jobRows_, jobSet_, jobHeader_, jobKey_, jobStr_, withLock_, audit_, now_).
+
+Archive and Unarchive change the location cell. They do not delete a row. Move to… does the same with another location. One invBulk call updates every JO in the request and writes updated_at and updated_by on each row it changes. Those two columns are the audit columns already on JobOrders. If a header is missing, that cell is left alone (jobSet_ only writes headers that exist). audit_ also records the change.
+
+Hook — one line. In Auth.gs, inside handleAction_, on its own line immediately after the JobSync hook:
+
+    if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user); // JobSync.gs
+
+add:
+
+    if (typeof isInvBulkAction_ === 'function' && isInvBulkAction_(a)) return handleInvBulk_(req, s.user); // InvBulk.gs
+
+Use the same names as that hook (a, req, s.user). Put the line before the unknown-action error.
+
+If you would rather fold this into JobSync.gs or InventoryPages.gs, send that live file. Do not paste this over either of them.
+
+Paste steps:
+1. In the Apps Script project that serves the staff site, add a script file named InvBulk. Paste everything below COPY FROM HERE.
+2. Add the one hook line in Auth.gs, directly under the JobSync hook, if it is not already there.
+3. Save and deploy the web app the way you usually do (same deployment, new version).
+4. Sign in as admin. On Inventory, select two pieces, Move to… Vault, and confirm both rows changed location and updated_at / updated_by. Archive is the location archived. Nothing is removed from the sheet.
+
+COPY FROM HERE
+
+/**
+ * Inventory bulk move / archive. One action: invBulk.
+ * Sets JobOrders.location for each JO in the request. Writes updated_at and updated_by.
+ * Archive is location "archived". Unarchive clears location. Never deletes a row.
+ *
+ * Auth.gs handleAction_, immediately after the JobSync line:
+ *   if (typeof isInvBulkAction_ === 'function' && isInvBulkAction_(a)) return handleInvBulk_(req, s.user); // InvBulk.gs
+ */
+var INV_BULK_ROLES = { admin: true, production_manager: true };
+
+function isInvBulkAction_(a) { return String(a || '') === 'invBulk'; }
+
+function handleInvBulk_(req, user) {
+  if (!user || !user.username) {
+    try {
+      var sess = (typeof sessionFrom_ === 'function') ? sessionFrom_(req || {}) : null;
+      if (sess && sess.user) user = sess.user;
+      else if (sess && sess.username) user = sess;
+    } catch (e) {}
+  }
+  if (!req || req.action !== 'invBulk') return { ok: false, error: 'Unknown action' };
+  if (!user || !INV_BULK_ROLES[user.role]) {
+    try { audit_((user && user.username) || '', 'denied', 'invBulk', req.device_id, 'role ' + ((user && user.role) || '')); } catch (e2) {}
+    return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  }
+  var res;
+  try { res = (typeof withLock_ === 'function') ? withLock_(function () { return invBulk_(req, user); }) : invBulk_(req, user); }
+  catch (err) { res = { ok: false, error: String(err && err.message || err).slice(0, 300) }; }
+  return res;
+}
+
+function invBulk_(req, user) {
+  if (!ss_().getSheetByName('JobOrders')) return { ok: false, error: 'JobOrders tab is missing' };
+  var loc = invBulkLoc_(req.location);
+  if (loc.error) return loc;
+  var jos = req.jos;
+  if (!Array.isArray(jos) || !jos.length) return { ok: false, error: 'Select at least one item' };
+  if (jos.length > 300) return { ok: false, error: 'Select at most 300 items at a time' };
+  var allowed = invBulkAllowed_();
+  if (loc.value && !allowed[loc.value]) return { ok: false, error: 'That location is not on the list' };
+  var want = {}, order = [], i, raw;
+  for (i = 0; i < jos.length; i++) {
+    raw = jobStr_(jos[i]);
+    if (!raw || want[raw]) continue;
+    want[raw] = true;
+    order.push(raw);
+  }
+  if (!order.length) return { ok: false, error: 'Select at least one item' };
+  var byJo = {};
+  jobRows_('JobOrders').forEach(function (j) {
+    var id = jobStr_(j.jo);
+    if (id && !byJo[id]) byJo[id] = j;
+  });
+  var t = (typeof now_ === 'function') ? now_() : new Date().toISOString();
+  var by = user.username, set = [], missing = [], same = [];
+  order.forEach(function (jo) {
+    var row = byJo[jo];
+    if (!row) { missing.push(jo); return; }
+    var prev = jobStr_(row.location).toLowerCase();
+    if (prev === loc.value) { same.push(jo); return; }
+    var patch = { location: loc.value, updated_at: t, updated_by: by };
+    invBulkStatus_(row, loc.value, patch);
+    jobSet_('JobOrders', row._row, patch);
+    try { audit_(by, loc.value === 'archived' ? 'invArchive' : (loc.value ? 'invMove' : 'invUnarchive'), jo, req.device_id, (prev || 'none') + ' -> ' + (loc.value || 'none')); } catch (e3) {}
+    set.push({ jo: jo, location: loc.value, from: prev });
+  });
+  return { ok: true, location: loc.value, set: set, same: same, missing: missing };
+}
+
+function invBulkLoc_(v) {
+  var s = jobStr_(v).toLowerCase();
+  if (!s) return { value: '' };
+  if (s === 'archived') return { value: 'archived' };
+  if (!/^[a-z][a-z0-9_]{0,31}$/.test(s)) return { ok: false, error: 'That location is not on the list' };
+  return { value: s };
+}
+
+function invBulkAllowed_() {
+  var keys = { archived: 1 }, list = (typeof JOB_LOCATIONS !== 'undefined') ? JOB_LOCATIONS : null, i, item, k;
+  if (typeof list === 'function') { try { list = list(); } catch (e) { list = null; } }
+  if (list && typeof list === 'object') {
+    if (typeof list.length === 'number') {
+      for (i = 0; i < list.length; i++) {
+        item = list[i];
+        if (item == null) continue;
+        if (typeof item === 'string') k = item;
+        else if (typeof item.length === 'number') k = item[0];
+        else k = item.key || item.id || item.location || '';
+        k = jobStr_(k).toLowerCase();
+        if (k) keys[k] = 1;
+      }
+    } else {
+      Object.keys(list).forEach(function (name) {
+        var child = list[name];
+        k = jobStr_(child && (child.key || child.id) || name).toLowerCase();
+        if (/^[a-z][a-z0-9_]{0,31}$/.test(k)) keys[k] = 1;
+      });
+    }
+  }
+  if (ss_().getSheetByName('JobOrders')) jobRows_('JobOrders').forEach(function (j) {
+    k = jobStr_(j.location).toLowerCase();
+    if (k) keys[k] = 1;
+  });
+  return keys;
+}
+
+function invBulkStatus_(row, loc, patch) {
+  if (!loc || typeof JOB_LOC_STATUS === 'undefined' || !JOB_LOC_STATUS || !JOB_LOC_STATUS[loc]) return;
+  var st = jobStr_(row.status);
+  if (st && st !== 'draft') return;
+  if (jobHeader_(ss_().getSheetByName('JobOrders')).indexOf('status') < 0) return;
+  patch.status = JOB_LOC_STATUS[loc];
+}
