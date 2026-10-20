@@ -1,6 +1,7 @@
 /* OYP back office: Inventory (#/jos, every JO / finished piece) and Materials (#/inventory, raw stock).
    Server: InventoryPages.gs (invList, invThumbs, matList, matHistory, matSave, matMove). The server strips what a role may not
-   see (price + margin: executives; costs: executives + production manager); this file only draws what it gets. */
+   see (price + margin: executives; costs: executives + production manager); this file only draws what it gets.
+   Move / Archive on this page is one call, invBulk (paste/InvBulk.gs.txt). It changes location. It does not delete a row. */
 (() => {
 'use strict';
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -18,9 +19,10 @@ const stageLabel = c => STAGE[c] || (c ? String(c).replace(/_/g, ' ') : '');
 const kar = k => { k = String(k || '').trim(); return /^\d{1,2}$/.test(k) ? k + 'k' : k; };
 const oldBackend = r => !r || r.error === 'Unknown action';
 const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see the instructions).';
+const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0 };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, suppress: false, busy: false };
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
@@ -50,6 +52,8 @@ function ivShown() {
   return IV.r.jobs.filter(j => IVIEWS[IV.view][1](j) && (!IV.stage || j.col === IV.stage) && (!IV.loc || (IV.loc === '-' ? !j.location : j.location === IV.loc))
     && (!IV.type || (IV.type === 'job:repair' ? j.type === 'repair' : j.item_type === IV.type)) && (!toks.length || (h => toks.every(t => h.includes(t)))(ivHay(j))));
 }
+function ivEdit() { const u = IV.u; return !!(u && (u.role === 'admin' || u.role === 'production_manager')); }
+function ivMoveLocs() { return ((IV.r && IV.r.locations) || []).filter(l => l[0] && l[0] !== 'archived'); }
 async function renderJos(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); IV.u = u; // live(): still on this route (app.js)
   { // app.js serves the last answer at once and refreshes it in the background
@@ -62,14 +66,26 @@ async function renderJos(main, u) {
 }
 function ivDraw(main) {
   const { esc } = window.OYP, r = IV.r, can = r.can || {}, L = ivShown(), title = IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
+  const liveIds = new Set(r.jobs.map(j => j.jo));
+  [...IV.sel].forEach(id => { if (!liveIds.has(id)) IV.sel.delete(id); });
+  if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('iv-coarse');
   const cnt = k => r.jobs.filter(IVIEWS[k][1]).length;
   const onHand = r.jobs.filter(j => j.on_hand && !MAKING[j.location]);
   const sumC = onHand.reduce((t, j) => t + (Number(j.cost) || 0), 0), sumP = onHand.reduce((t, j) => t + (Number(j.price) || 0), 0);
   const sum = [plural(onHand.length, 'finished piece') + ' on hand', plural(cnt('making'), 'job') + ' in production'];
   if (can.cost) sum.push('on-hand cost ' + peso(sumC)); if (can.price) sum.push('on-hand price ' + peso(sumP));
   const sel = (id, lab, cur, opts) => `<label class="ivsel"><span class="lab">${esc(lab)}</span><select id="${id}"><option value="">Any</option>${opts.map(([k, t]) => `<option value="${esc(k)}" ${cur === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
-  const filt = IV.stage || IV.loc || IV.type;
-  main.innerHTML = `<div class="iv">
+  const filt = IV.stage || IV.loc || IV.type, edit = ivEdit(), n = IV.sel.size, ids = L.map(j => j.jo);
+  const allOn = ids.length > 0 && ids.every(id => IV.sel.has(id));
+  const moves = ivMoveLocs().map(l => `<option value="${esc(l[0])}">${esc(locLab(l[0]))}</option>`).join('');
+  const bar = edit && n ? `<div class="ivbar" role="toolbar" aria-label="Selected items">
+      <b class="ivn">${n} selected</b>
+      <select id="ivMove" aria-label="Move to…"><option value="">Move to…</option>${moves}</select>
+      <button type="button" class="pill sm" id="ivArch">Archive</button>
+      ${IV.view === 'archived' ? '<button type="button" class="pill sm outline" id="ivUnarch">Unarchive</button>' : ''}
+      <button type="button" class="lnk" id="ivClear">Clear</button>
+    </div>` : '';
+  main.innerHTML = `<div class="iv${n || IV.picking ? ' picking' : ''}${n ? ' hasbar' : ''}">
     <div class="dhead"><h2>${esc(title)}</h2><span class="lab">${esc(plural(L.length, 'item'))}</span></div>
     <p class="muted">Every JO and finished piece. ${can.open ? 'Tap one to open its JO card.' : 'View only: tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
@@ -77,11 +93,15 @@ function ivDraw(main) {
     <input id="ivQ" class="rvq" placeholder="Search JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off">
     <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
-    <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
-  </div>${IV.open ? ivSheet(r.jobs.find(j => j.jo === IV.open)) : ''}`;
+    ${edit && L.length ? `<label class="ivall"><input type="checkbox" id="ivAll" ${allOn ? 'checked' : ''}><span>Select all</span></label>${n ? `<span class="ivcount">${n} selected</span>` : ''}` : ''}
+    <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can, edit)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
+    ${bar}
+  </div>${IV.open ? ivSheet(r.jobs.find(j => j.jo === IV.open), edit) : ''}`;
+  const all = main.querySelector('#ivAll');
+  if (all) all.indeterminate = n > 0 && !allOn && ids.some(id => IV.sel.has(id));
   ivWire(main); ivThumbs(main, L);
 }
-function ivCard(j, can) {
+function ivCard(j, can, edit) {
   const { esc } = window.OYP, c = [];
   c.push(j.location === 'archived' ? '<span class="chip arch">Archived</span>' : j.location ? `<span class="chip dark">${esc(locLab(j.location))}</span>` : '<span class="chip gold">No location</span>');
   if (MAKING[j.location] && j.stage) c.push(`<span class="chip">${esc(stageLabel(j.stage))}</span>`);
@@ -91,39 +111,131 @@ function ivCard(j, can) {
   const money = [];
   if (can.cost) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
   if (can.price) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
-  const sp = specs(j), ph = IV.thumbs[j.jo];
-  return `<div class="ivcard tap" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>
+  const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo), arch = j.location === 'archived';
+  const tools = edit ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>
+      <button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="${IV.menu === j.jo ? 'true' : 'false'}">⋯</button>` : '';
+  const menu = edit && IV.menu === j.jo ? `<div class="ivmenu" role="menu"><button type="button" data-arch="${esc(j.jo)}">${arch ? 'Unarchive' : 'Archive'}</button><button type="button" data-detail="${esc(j.jo)}">Details</button></div>` : '';
+  return `<div class="ivcard tap${on ? ' on' : ''}${IV.menu === j.jo ? ' menu' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${tools}${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>${menu}
     <div class="ivb"><div class="kjo">${esc(j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
     <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
     <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div></div>`;
 }
-function ivSheet(j) { // read-only details (roles that can't open the JO card)
-  if (!j) return ''; const { esc } = window.OYP;
+function ivSheet(j, edit) { // details. Roles that can't open the JO card land here from the tile. Editors open it from the tile menu.
+  if (!j) return ''; const { esc } = window.OYP, arch = j.location === 'archived';
   const f = (lab, v) => v ? `<div class="ivf"><span class="lab">${esc(lab)}</span><b>${esc(v)}</b></div>` : '';
+  const act = edit ? `<div class="ivacts"><button type="button" class="pill sm outline" id="ivArchOne">${arch ? 'Unarchive' : 'Archive'}</button>
+      <p class="muted">Archive keeps the JO on record. Nothing is deleted.</p></div>` : '';
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
-    <div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">View only</span></div>
+    <div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">${edit ? 'Details' : 'View only'}</span></div>
     <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
     <p class="kd">${esc(j.description || 'No details')}</p>
     <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}
       ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('Job', j.type === 'repair' ? 'Repair' : j.type === 'revision' ? 'Revision' : j.type ? 'New job' : '')}
       ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
-      ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div></div></div>`;
+      ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>
+    ${act}</div></div>`;
+}
+function ivRange(jo, shift) {
+  const ids = ivShown().map(j => j.jo);
+  if (shift && IV.anchor && ids.includes(IV.anchor) && ids.includes(jo)) {
+    const a = ids.indexOf(IV.anchor), b = ids.indexOf(jo), lo = Math.min(a, b), hi = Math.max(a, b);
+    for (let i = lo; i <= hi; i++) IV.sel.add(ids[i]);
+    return;
+  }
+  if (IV.sel.has(jo)) IV.sel.delete(jo); else IV.sel.add(jo);
+  IV.anchor = jo;
+}
+function ivJobs(jos) { return jos.map(jo => IV.r.jobs.find(j => j.jo === jo)).filter(Boolean); }
+async function ivBulk(main, jos, location, kind) {
+  const list = ivJobs(jos).filter(j => (location === '' ? j.location === 'archived' : j.location !== location));
+  if (!list.length) { window.OYP.toast(location === '' ? 'Nothing archived is selected' : 'Already there'); return; }
+  if (IV.busy) return;
+  IV.busy = true;
+  const r = await window.OYP.call('invBulk', { jos: list.map(j => j.jo), location: location });
+  IV.busy = false;
+  if (!window.OYP.here()()) return;
+  if (!r || !r.ok) return window.OYP.toast(!r || r.error === 'Unknown action' ? BULK_NOTE : (r && r.error) || 'Could not update');
+  const done = new Set((r.set || []).map(x => x.jo));
+  IV.r.jobs.forEach(j => { if (done.has(j.jo)) j.location = location; });
+  IV.sel.clear(); IV.menu = ''; IV.anchor = ''; IV.picking = false;
+  const n = done.size, word = kind === 'archive' ? 'Archived' : kind === 'unarchive' ? 'Unarchived' : 'Moved';
+  window.OYP.toast(word + ' ' + n + (r.missing && r.missing.length ? ' · ' + r.missing.length + ' not found' : ''));
+  await renderJos(main, IV.u);
+}
+function ivArchive(main, jos) {
+  const list = ivJobs(jos).filter(j => j.location !== 'archived');
+  if (!list.length) return window.OYP.toast('Already archived');
+  if (list.length > 1 && !confirm('Archive ' + list.length + ' items? They stay on record. Nothing is deleted.')) return;
+  return ivBulk(main, list.map(j => j.jo), 'archived', 'archive');
 }
 function ivWire(main) {
   const $ = s => main.querySelector(s);
-  main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; ivDraw(main); });
+  const stop = e => e.stopPropagation();
+  main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; IV.menu = ''; ivDraw(main); });
   $('#ivQ').oninput = e => { IV.q = e.target.value; const pos = e.target.selectionStart; ivDraw(main); const q = $('#ivQ'); q.focus(); q.setSelectionRange(pos, pos); };
   $('#ivStage').onchange = e => { IV.stage = e.target.value; if (IV.stage && IV.view !== 'all' && IV.view !== 'making') IV.view = 'all'; ivDraw(main); };
   $('#ivLoc').onchange = e => { IV.loc = e.target.value; if (IV.loc) IV.view = IV.loc === 'archived' ? 'archived' : 'all'; ivDraw(main); };
   $('#ivType').onchange = e => { IV.type = e.target.value; ivDraw(main); };
   if ($('#ivClr')) $('#ivClr').onclick = () => { IV.stage = IV.loc = IV.type = ''; ivDraw(main); };
-  main.querySelectorAll('.ivcard').forEach(el => el.onclick = () => {
-    const j = IV.r.jobs.find(x => x.jo === el.dataset.jo); if (!j) return;
-    if (!(IV.r.can || {}).open) { IV.open = j.jo; ivDraw(main); return; }
-    try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'BACK',
-      row: { description: j.description, client: j.client, location: j.location, stage_label: stageLabel(j.stage), due: j.due, late: j.late } })); } catch (_) {}
-    location.hash = '#/review';
+  if ($('#ivAll')) $('#ivAll').onclick = e => {
+    const ids = ivShown().map(j => j.jo);
+    ids.forEach(id => e.target.checked ? IV.sel.add(id) : IV.sel.delete(id));
+    if (ids.length) IV.anchor = ids[ids.length - 1];
+    IV.picking = IV.sel.size > 0;
+    ivDraw(main);
+  };
+  if ($('#ivClear')) $('#ivClear').onclick = () => { IV.sel.clear(); IV.anchor = ''; IV.picking = false; IV.menu = ''; ivDraw(main); };
+  if ($('#ivMove')) $('#ivMove').onchange = e => { const loc = e.target.value; if (!loc) return; ivBulk(main, [...IV.sel], loc, 'move'); };
+  if ($('#ivArch')) $('#ivArch').onclick = () => ivArchive(main, [...IV.sel]);
+  if ($('#ivUnarch')) $('#ivUnarch').onclick = () => ivBulk(main, [...IV.sel], '', 'unarchive');
+  main.querySelectorAll('[data-ck]').forEach(input => {
+    input.onclick = e => { stop(e); ivRange(input.dataset.ck, e.shiftKey); IV.picking = IV.sel.size > 0; ivDraw(main); };
   });
+  main.querySelectorAll('.ivck').forEach(el => el.onclick = stop);
+  main.querySelectorAll('[data-more]').forEach(b => b.onclick = e => {
+    stop(e); IV.menu = IV.menu === b.dataset.more ? '' : b.dataset.more; ivDraw(main);
+  });
+  main.querySelectorAll('.ivmenu').forEach(el => el.onclick = stop);
+  main.querySelectorAll('[data-arch]').forEach(b => b.onclick = e => {
+    stop(e); const jo = b.dataset.arch, j = IV.r.jobs.find(x => x.jo === jo); IV.menu = '';
+    if (j && j.location === 'archived') ivBulk(main, [jo], '', 'unarchive'); else ivArchive(main, [jo]);
+  });
+  main.querySelectorAll('[data-detail]').forEach(b => b.onclick = e => { stop(e); IV.menu = ''; IV.open = b.dataset.detail; ivDraw(main); });
+  main.querySelectorAll('.ivcard').forEach(el => {
+    el.onpointerdown = e => {
+      if (!ivEdit() || (e.button && e.button !== 0) || e.target.closest('.ivck, .ivmore, .ivmenu')) return;
+      const jo = el.dataset.jo, x0 = e.clientX, y0 = e.clientY;
+      const hold = setTimeout(() => {
+        IV.suppress = true; IV.picking = true; IV.sel.add(jo); IV.anchor = jo; IV.menu = '';
+        const drop = () => { setTimeout(() => { IV.suppress = false; }, 0); };
+        window.addEventListener('pointerup', drop, { once: true });
+        ivDraw(main);
+      }, 450);
+      const end = ev => {
+        if (ev && ev.type === 'pointermove' && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) clearTimeout(hold);
+        else if (ev && ev.type !== 'pointermove') clearTimeout(hold);
+        if (ev && ev.type !== 'pointermove') {
+          el.removeEventListener('pointerup', end); el.removeEventListener('pointercancel', end); el.removeEventListener('pointermove', end);
+        }
+      };
+      el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('pointermove', end);
+    };
+    el.onclick = e => {
+      if (e.target.closest('.ivck, .ivmore, .ivmenu')) return;
+      if (IV.suppress) { IV.suppress = false; return; }
+      const j = IV.r.jobs.find(x => x.jo === el.dataset.jo); if (!j) return;
+      if (ivEdit() && e.shiftKey) { ivRange(j.jo, true); IV.picking = IV.sel.size > 0; ivDraw(main); return; }
+      IV.menu = '';
+      if (!(IV.r.can || {}).open) { IV.open = j.jo; ivDraw(main); return; }
+      try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'BACK',
+        row: { description: j.description, client: j.client, location: j.location, stage_label: stageLabel(j.stage), due: j.due, late: j.late } })); } catch (_) {}
+      location.hash = '#/review';
+    };
+  });
+  if ($('#ivArchOne')) $('#ivArchOne').onclick = () => {
+    const j = IV.r.jobs.find(x => x.jo === IV.open); if (!j) return;
+    if (j.location === 'archived') ivBulk(main, [j.jo], '', 'unarchive'); else ivArchive(main, [j.jo]);
+  };
   if ($('#ivSX')) { $('#ivSX').onclick = () => { IV.open = null; ivDraw(main); }; $('#ivSheet').onclick = e => { if (e.target.id === 'ivSheet') { IV.open = null; ivDraw(main); } }; }
   const on = main.querySelector('.ivchips .fchip.on'); if (on && innerWidth < 760) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20;
 }
@@ -134,7 +246,12 @@ async function ivThumbs(main, L) { // piece photos only (server never sends JO c
     const r = await window.OYP.call('invThumbs', { jos: part });
     part.forEach(k => {
       const src = r && r.ok ? r.thumbs[k] || '' : ''; IV.thumbs[k] = src;
-      if (live()) document.querySelectorAll(`[data-th="${CSS.escape(k)}"]`).forEach(el => { if (src) { el.style.backgroundImage = `url('${src}')`; el.classList.add('has'); el.innerHTML = ''; } else el.innerHTML = '<span>No photo</span>'; });
+      if (!live()) return;
+      document.querySelectorAll(`[data-th="${CSS.escape(k)}"]`).forEach(el => {
+        const cap = el.querySelector('span');
+        if (src) { el.style.backgroundImage = `url('${src}')`; el.classList.add('has'); if (cap) cap.remove(); }
+        else if (!cap) el.insertAdjacentHTML('beforeend', '<span>No photo</span>');
+      });
     });
     if (!live()) return; // left the page: stop fetching
   }
@@ -270,5 +387,5 @@ function mWire(main) {
   const med = $('.medit'); if (med) med.ontoggle = () => { MS.editing = med.open; };
 }
 // a fresh visit (menu / link) on a phone starts on the list; on a desktop the last item stays open
-window.OYPInv = { renderJos: (m, u) => { IV.open = null; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
+window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.menu = ''; IV.anchor = ''; IV.picking = false; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
 })();
