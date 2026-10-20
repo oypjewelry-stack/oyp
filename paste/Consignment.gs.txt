@@ -1,11 +1,21 @@
 PASTE INTO: Consignment.gs
 
-No new OAuth scopes. Do not add any scopes. This file only uses the spreadsheet helpers the project already has (ss_, jobRows_, jobAppend_, jobSet_, jobHeader_, jobKey_, jobStr_, jobDay_, withLock_, audit_, now_, randHex_, isExec_, stripPricing_). sessionFrom_ already runs in Auth.gs before the hook below; handleConsign_ calls it only if that hook did not pass a user. The camera and the handheld scanner stay in the browser. Nothing here calls Drive, Gmail, or UrlFetch.
+New OAuth scope, one line. Add it only if the Apps Script project does not already have it:
 
-One tab, named Consignment, one row per piece. setupConsignment adds that tab with a header row only when the tab is missing. A tab that already exists is not rewritten, not resized, and not given new columns. This file does not read or delete Consignees, Consignments, or ConsignmentItems. The consignee list is the distinct names on the Consignment tab. Dashboard.gs must be updated separately (see paste/Dashboard-consignment.txt). Do not paste that file over Dashboard.gs.
+    https://www.googleapis.com/auth/drive
+
+That is the Drive scope DriveApp uses. The signed-copy upload creates a folder named Consignments in the Drive of the account the web app runs as, then a folder named with the CS number (Consignments/CS-261020-01), then the file inside it. It also reads a thumbnail of that file later. Finding a folder by name needs this scope. The narrower https://www.googleapis.com/auth/drive.file scope cannot do that. Do not add drive.readonly (it cannot create files), Gmail, UrlFetch, or any other scope.
+
+If appsscript.json has an oauthScopes list, add the URL above to that list. When that list is present, Apps Script does not add scopes on its own. If there is no list, saving this file and attaching a signed copy asks the account that runs the web app to allow Drive. Deploy a new version after the scope is on the project. The file stays private in that account's Drive. This script never trashes or deletes a Drive file.
+
+The rest of this file uses the spreadsheet helpers the project already has (ss_, jobRows_, jobAppend_, jobSet_, jobHeader_, jobKey_, jobStr_, jobDay_, withLock_, audit_, now_, randHex_, isExec_, stripPricing_). sessionFrom_ already runs in Auth.gs before the hook below; handleConsign_ calls it only if that hook did not pass a user. The camera and the handheld scanner stay in the browser.
+
+One tab, named Consignment, one row per piece. setupConsignment adds that tab with a header row only when the tab is missing. A tab that already exists is not rewritten and not resized. The one exception: if the header signed_copy_url is missing, setupConsignment writes that name in the next cell of row 1. It does not change any other header and it does not change data cells. This file does not read or delete Consignees, Consignments, or ConsignmentItems. The consignee list is the distinct names on the Consignment tab. Dashboard.gs must be updated separately (see paste/Dashboard-consignment.txt). Do not paste that file over Dashboard.gs.
 
 Headers created when the Consignment tab is missing:
-ci_id, consignment_id, consignee_name, consignee_phone, jo, item_id, description, agreed_value, date_out, due_back, status, prev_location, returned_at, sold_at, paid_amount, paid_at, payment_id, notes, created_at, created_by, updated_at, updated_by
+ci_id, consignment_id, consignee_name, consignee_phone, jo, item_id, description, agreed_value, date_out, due_back, status, prev_location, returned_at, sold_at, paid_amount, paid_at, payment_id, notes, created_at, created_by, updated_at, updated_by, signed_copy_url
+
+signed_copy_url is the Drive link of the signed sheet. The same link is stored on every row of that CS number. Attaching a new file updates the link and leaves the previous file in the folder.
 
 consignment_id is the sheet number, like CS-261020-01 (CS-, the date YYMMDD, a dash, then 01, 02, … for that day). status is consigned, returned, or sold. A sheet is every row that shares a consignment_id. It is closed when every one of those rows is returned, or sold and paid. Nothing here is a separate sheet row, and nothing is deleted.
 
@@ -29,45 +39,52 @@ Paste steps:
 1. Open the Apps Script project that serves the staff site (the one with Auth.gs and JobSync.gs).
 2. Add a script file named Consignment, or replace the one you already pasted. Paste everything below the line COPY FROM HERE. Do not paste these instructions into the script.
 3. In Auth.gs, add the one hook line shown above, directly under the JobSync hook, if it is not already there.
-4. Save. Select setupConsignment and Run it once. If the Consignment tab is missing, it is added with the header row only. If that tab already exists, the run changes nothing.
+4. Save. Select setupConsignment and Run it once. If the Consignment tab is missing, it is added with the header row only. If that tab already exists, the run adds signed_copy_url at the far right of row 1 when that header is missing, and changes nothing else.
 5. Update the consignment block in Dashboard.gs from paste/Dashboard-consignment.txt. That file is a replacement for the consignment block only. Do not paste it over the whole Dashboard.gs.
-6. Deploy the web app the way you usually do (same deployment, new version). Do not add OAuth scopes.
-7. Sign in as admin. Open Consignment. CONSIGN a piece (scan or type the JO), print the sheet, mark it sold, and record the payment. The sheet stays open until that balance is paid. A returned piece closes without a payment.
+6. Add the Drive scope listed at the top if it is not already there, then deploy the web app the way you usually do (same deployment, new version). Allow Drive when Google asks.
+7. Sign in as admin. Open Consignment. CONSIGN a piece (scan or type the JO), print the sheet, mark it sold, and record the payment. The sheet stays open until that balance is paid. A returned piece closes without a payment. On a sheet, use Attach signed copy, take a photo or choose a PDF, and confirm the Signed badge and the Signed copy link. Attach again and confirm the previous file is still in that CS folder.
 
 COPY FROM HERE
 
 /**
  * Consignment: one tab named Consignment, one row per piece lent out.
- * Web actions (admin + production manager): consignList, consignSearch, consignSave, consignItem, consigneeSave.
+ * Web actions (admin + production manager): consignList, consignSearch, consignSave, consignItem, consigneeSave, consignSigned.
  * consignPay is executive-only. It stores paid_amount, paid_at, and payment_id on the row. It does not write Payments.
+ * consignSigned stores a photo or PDF of the signed sheet in Drive and writes signed_copy_url on every row of that CS number.
+ * New OAuth scope, if the project does not already have it: https://www.googleapis.com/auth/drive
  * One-time: run setupConsignment. It adds the Consignment tab only when that tab is missing.
- * Never deletes a row. An existing tab is not rewritten.
+ * If the tab exists and signed_copy_url is missing, it adds that header at the far right of row 1 and nothing else.
+ * Never deletes a row. Never deletes or trashes a Drive file.
  *
  * Auth.gs handleAction_, immediately after the JobSync line:
  *   if (typeof isConsignAction_ === 'function' && isConsignAction_(a)) return handleConsign_(req, s.user); // Consignment.gs
  */
 var CONSIGN_TAB = 'Consignment';
-var CONSIGN_COLS = ['ci_id', 'consignment_id', 'consignee_name', 'consignee_phone', 'jo', 'item_id', 'description', 'agreed_value', 'date_out', 'due_back', 'status', 'prev_location', 'returned_at', 'sold_at', 'paid_amount', 'paid_at', 'payment_id', 'notes', 'created_at', 'created_by', 'updated_at', 'updated_by'];
+var CONSIGN_COLS = ['ci_id', 'consignment_id', 'consignee_name', 'consignee_phone', 'jo', 'item_id', 'description', 'agreed_value', 'date_out', 'due_back', 'status', 'prev_location', 'returned_at', 'sold_at', 'paid_amount', 'paid_at', 'payment_id', 'notes', 'created_at', 'created_by', 'updated_at', 'updated_by', 'signed_copy_url'];
+var CONSIGN_DRIVE = 'Consignments';
 var CONSIGN_ROLES = { admin: true, production_manager: true };
 
-/** ONE-TIME. Adds the Consignment tab with its header row when that tab is missing. An existing tab is left as it is. */
+/** ONE-TIME. Adds the Consignment tab with its header row when that tab is missing. On an existing tab, adds signed_copy_url at the far right of row 1 when that header is missing. */
 function setupConsignment() {
   var run = function () {
-    var ss = ss_(), sh = ss.getSheetByName(CONSIGN_TAB);
-    if (sh) return { added: [], kept: [CONSIGN_TAB], url: ss.getUrl() };
+    var ss = ss_(), sh = ss.getSheetByName(CONSIGN_TAB), col = '';
+    if (sh) {
+      if (consignEnsureCopyCol_(sh)) col = 'signed_copy_url';
+      return { added: [], kept: [CONSIGN_TAB], column: col, url: ss.getUrl() };
+    }
     sh = ss.insertSheet(CONSIGN_TAB);
     sh.getRange(1, 1, 1, CONSIGN_COLS.length).setValues([CONSIGN_COLS]);
     sh.setFrozenRows(1);
-    return { added: [CONSIGN_TAB], kept: [], url: ss.getUrl() };
+    return { added: [CONSIGN_TAB], kept: [], column: '', url: ss.getUrl() };
   };
   var res = (typeof withLock_ === 'function') ? withLock_(run) : run();
-  try { audit_('setup', 'setupConsignment', '', '', 'added ' + (res.added.join(', ') || 'none') + '; kept ' + (res.kept.join(', ') || 'none')); } catch (e) {}
-  Logger.log('Added: ' + (res.added.join(', ') || 'none') + '\nLeft as they were: ' + (res.kept.join(', ') || 'none') + '\n' + res.url);
+  try { audit_('setup', 'setupConsignment', '', '', 'added ' + (res.added.join(', ') || 'none') + '; kept ' + (res.kept.join(', ') || 'none') + (res.column ? '; column ' + res.column : '')); } catch (e) {}
+  Logger.log('Added: ' + (res.added.join(', ') || 'none') + '\nLeft as they were: ' + (res.kept.join(', ') || 'none') + (res.column ? '\nColumn added: ' + res.column : '') + '\n' + res.url);
   return res;
 }
 
 function isConsignAction_(a) {
-  return { consignList: 1, consignSearch: 1, consignSave: 1, consignItem: 1, consigneeSave: 1, consignPay: 1 }[String(a || '')] === 1;
+  return { consignList: 1, consignSearch: 1, consignSave: 1, consignItem: 1, consigneeSave: 1, consignPay: 1, consignSigned: 1 }[String(a || '')] === 1;
 }
 function handleConsign_(req, user) {
   if (!user || !user.username) {
@@ -77,7 +94,7 @@ function handleConsign_(req, user) {
       else if (sess && sess.username) user = sess;
     } catch (e) {}
   }
-  var acts = { consignList: consignList_, consignSearch: consignSearch_, consignSave: consignSave_, consignItem: consignItem_, consigneeSave: consigneeSave_, consignPay: consignPay_ };
+  var acts = { consignList: consignList_, consignSearch: consignSearch_, consignSave: consignSave_, consignItem: consignItem_, consigneeSave: consigneeSave_, consignPay: consignPay_, consignSigned: consignSigned_ };
   if (!req || !acts[req.action]) return { ok: false, error: 'Unknown action' };
   if (!user || !CONSIGN_ROLES[user.role]) {
     try { audit_((user && user.username) || '', 'denied', req.action, req.device_id, 'role ' + ((user && user.role) || '')); } catch (e2) {}
@@ -91,7 +108,7 @@ function handleConsign_(req, user) {
     try { audit_(user.username, 'denied', req.action, req.device_id, 'payment from role ' + user.role); } catch (e4) {}
     return { ok: false, error: 'Recording a payment is for executives only', code: 'FORBIDDEN' };
   }
-  var write = req.action === 'consignSave' || req.action === 'consignItem' || req.action === 'consigneeSave' || req.action === 'consignPay';
+  var write = req.action === 'consignSave' || req.action === 'consignItem' || req.action === 'consigneeSave' || req.action === 'consignPay' || req.action === 'consignSigned';
   var res;
   try { res = write ? withLock_(function () { return acts[req.action](req, user); }) : acts[req.action](req, user); }
   catch (err) { res = { ok: false, error: String(err && err.message || err).slice(0, 300) }; }
@@ -334,6 +351,31 @@ function consignPay_(req, user) {
   if (!before && consignSheetSettled_(cid)) audit_(by, 'consignClose', cid, '', 'every piece is returned or sold and paid');
   return { ok: true, status: 'confirmed', payer: payer, payment_id: payId, applied: applied, reference: reference };
 }
+function consignSigned_(req, user) {
+  var miss = consignMissing_(), bad = consignHeadersOk_();
+  if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
+  if (bad) return { ok: false, error: bad };
+  if (!consignHas_(['signed_copy_url'])) return { ok: false, error: 'The Consignment tab needs signed_copy_url. Run setupConsignment once. It adds only that header when it is missing.' };
+  var cid = jobStr_(req.consignment_id);
+  if (!/^CS-[A-Za-z0-9-]{1,40}$/.test(cid)) return { ok: false, error: 'That sheet number does not look right' };
+  var rows = [];
+  consignRows_().forEach(function (r) { if (jobStr_(consignCell_(r, ['consignment_id'])) === cid) rows.push(r); });
+  if (!rows.length) return { ok: false, error: 'No sheet ' + cid };
+  var parsed = consignSignedFile_(req);
+  if (parsed.error) return parsed;
+  var prev = '';
+  rows.forEach(function (r) { var u = jobStr_(consignCell_(r, ['signed_copy_url'])); if (u) prev = u; });
+  var file;
+  try { file = consignDriveFolder_(cid).createFile(Utilities.newBlob(parsed.bytes, parsed.mime, parsed.name)); }
+  catch (e) { return { ok: false, error: 'Could not save the file in Drive. Add the Drive scope and allow it, then try again.' }; }
+  var url = file.getUrl(), t = now_(), by = user.username;
+  rows.forEach(function (r) { consignUpdate_(r._row, { signed_copy_url: url, updated_at: t, updated_by: by }); });
+  audit_(by, 'consignSigned', cid, req.device_id, parsed.name + ' · ' + rows.length + ' row(s)' + (prev ? ' · replaced an earlier file' : ''));
+  var out = { ok: true, consignment_id: cid, signed_copy_url: url, replaced: !!prev };
+  var thumb = consignThumbOf_(file);
+  if (thumb) out.signed_thumb = thumb;
+  return out;
+}
 
 /* ---------- sheet building ---------- */
 function consignSheets_(today, limit, exec) {
@@ -348,7 +390,7 @@ function consignSheets_(today, limit, exec) {
   return out;
 }
 function consignSheetView_(rows, today, limit, exec) {
-  var name = '', phone = '', notes = '', dateOut = '', due = '', cid = '';
+  var name = '', phone = '', notes = '', dateOut = '', due = '', cid = '', copy = '';
   rows.forEach(function (r) {
     if (!cid) cid = jobStr_(consignCell_(r, ['consignment_id']));
     if (!name) name = jobStr_(consignCell_(r, ['consignee_name', 'consignee']));
@@ -356,6 +398,8 @@ function consignSheetView_(rows, today, limit, exec) {
     if (!notes) notes = jobStr_(consignCell_(r, ['notes']));
     if (!dateOut) dateOut = consignDay_(consignCell_(r, ['date_out', 'date']));
     if (!due) due = consignDay_(consignCell_(r, ['due_back', 'due_date', 'due']));
+    var u = jobStr_(consignCell_(r, ['signed_copy_url']));
+    if (u) copy = u;
   });
   var roll = { sold: 0, owed: 0, paid: 0, balance: 0 };
   var viewItems = rows.map(function (r) {
@@ -398,6 +442,11 @@ function consignSheetView_(rows, today, limit, exec) {
     days_out: consignSpan_(dateOut, today), overdue: anyOpen && viewItems.some(function (it) { return it.overdue; }), items: viewItems
   };
   if (exec) { view.sold = roll.sold; view.owed = roll.owed; view.paid = roll.paid; view.balance = roll.balance; }
+  if (copy) {
+    view.signed_copy_url = copy;
+    var thumb = consignThumb_(copy);
+    if (thumb) view.signed_thumb = thumb;
+  }
   return view;
 }
 function consignLoose_(sheets) {
@@ -440,9 +489,15 @@ function consignHas_(keys) {
 function consignHeadersOk_() {
   if (!ss_().getSheetByName(CONSIGN_TAB)) return 'Run setupConsignment first';
   if (!consignHas_(['ci_id', 'line_id', 'id']) || !consignHas_(['consignment_id']) || !consignHas_(['consignee_name']) || !consignHas_(['status'])) {
-    return 'The Consignment tab needs ci_id, consignment_id, consignee_name, and status. setupConsignment does not change a tab that already exists.';
+    return 'The Consignment tab needs ci_id, consignment_id, consignee_name, and status. setupConsignment does not rewrite headers that are already there.';
   }
   return '';
+}
+function consignEnsureCopyCol_(sh) {
+  var h = jobHeader_(sh);
+  if (h.indexOf('signed_copy_url') >= 0) return false;
+  sh.getRange(1, h.length + 1).setValue('signed_copy_url');
+  return true;
 }
 function consignMissing_() { return ss_().getSheetByName(CONSIGN_TAB) ? [] : [CONSIGN_TAB]; }
 function consignCell_(row, keys) {
@@ -617,6 +672,69 @@ function consignRemaining_(r) {
   return m.balance || 0;
 }
 function consignPayer_(r) { return jobStr_(consignCell_(r, ['consignee_name', 'consignee'])); }
+/* ---------- signed copy in Drive (never deletes a file) ---------- */
+function consignSignedFile_(req) {
+  var b64 = String(req.file_base64 || '').replace(/\s/g, '');
+  var comma = b64.indexOf(',');
+  if (comma >= 0 && b64.slice(0, comma).indexOf('base64') >= 0) b64 = b64.slice(comma + 1);
+  if (!b64) return { ok: false, error: 'Choose a photo or a PDF of the signed sheet' };
+  if (b64.length > 12000000) return { ok: false, error: 'That file is too large. Use a photo or a PDF under 8 MB.' };
+  var mime = String(req.mime || '').toLowerCase().split(';')[0].trim();
+  if (mime === 'image/jpg') mime = 'image/jpeg';
+  if (mime === 'image/svg+xml' || mime === 'image/svg') return { ok: false, error: 'Use a photo or a PDF' };
+  if (mime !== 'application/pdf' && mime.indexOf('image/') !== 0) return { ok: false, error: 'Use a photo or a PDF' };
+  var bytes;
+  try { bytes = Utilities.base64Decode(b64); }
+  catch (e) { return { ok: false, error: 'That file could not be read' }; }
+  if (!bytes || !bytes.length) return { ok: false, error: 'That file is empty' };
+  if (bytes.length > 8 * 1024 * 1024) return { ok: false, error: 'That file is too large. Use a photo or a PDF under 8 MB.' };
+  return { bytes: bytes, mime: mime, name: consignFileName_(mime, jobStr_(req.consignment_id)) };
+}
+function consignFileName_(mime, cid) {
+  var ext = 'img';
+  if (mime === 'application/pdf') ext = 'pdf';
+  else if (mime === 'image/jpeg') ext = 'jpg';
+  else if (mime === 'image/png') ext = 'png';
+  else if (mime === 'image/webp') ext = 'webp';
+  else if (mime === 'image/gif') ext = 'gif';
+  else if (mime === 'image/heic' || mime === 'image/heif') ext = 'heic';
+  else ext = mime.slice(6).replace(/[^a-z0-9]/g, '').slice(0, 8) || 'img';
+  var stamp = String(now_() || '').replace(/[^0-9]/g, '').slice(0, 14);
+  return cid + '-signed-' + (stamp || 'file') + '-' + randHex_(4) + '.' + ext;
+}
+function consignDriveFolder_(cid) {
+  var parent = consignEnsureFolder_(DriveApp.getRootFolder(), CONSIGN_DRIVE);
+  return consignEnsureFolder_(parent, cid);
+}
+function consignEnsureFolder_(parent, name) {
+  var it = parent.getFoldersByName(name);
+  if (it.hasNext()) return it.next();
+  return parent.createFolder(name);
+}
+function consignFileId_(url) {
+  var m = String(url || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  m = String(url || '').match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+function consignThumb_(url) {
+  if (typeof DriveApp === 'undefined' || !DriveApp.getFileById) return '';
+  try { return consignThumbOf_(DriveApp.getFileById(consignFileId_(url))); }
+  catch (e) { return ''; }
+}
+function consignThumbOf_(file) {
+  if (!file || typeof file.getThumbnail !== 'function') return '';
+  try {
+    var blob = file.getThumbnail();
+    if (!blob && typeof file.getBlob === 'function' && String(file.getMimeType() || '').indexOf('image/') === 0 && file.getSize() > 0 && file.getSize() <= 300000) blob = file.getBlob();
+    if (!blob || typeof blob.getBytes !== 'function') return '';
+    var bytes = blob.getBytes();
+    if (!bytes || !bytes.length || bytes.length > 200000) return '';
+    var ct = String((blob.getContentType && blob.getContentType()) || 'image/jpeg');
+    if (ct.indexOf('image/') !== 0) return '';
+    return 'data:' + ct + ';base64,' + Utilities.base64Encode(bytes);
+  } catch (e2) { return ''; }
+}
 function consignMoney_(v) {
   if (v == null || String(v).trim() === '') return '';
   var n = Number(String(v).replace(/[₱,\s]/g, '').replace(/php/ig, ''));
