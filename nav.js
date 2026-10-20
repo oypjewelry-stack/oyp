@@ -8,13 +8,13 @@ const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
 const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
 // Default order with nothing saved on this device, and the order Reset returns to. A role still only sees the items it already had.
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it
-  production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
+  admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it
+  production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
   staff: [['home', 'Home'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments opens in the back office. No Production (Susan + admins only)
 };
 // back-office only: kept out of the scanner menu (the scanner reads OYPNav.NAV); the back office reads OFFICE_NAV
-const OFFICE_ONLY = { production: true };
+const OFFICE_ONLY = { production: true, consignment: true };
 const OFFICE_NAV = NAV;
 const SCAN_NAV = {}; Object.keys(NAV).forEach(r => { SCAN_NAV[r] = NAV[r].filter(([k]) => !OFFICE_ONLY[k]); });
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
