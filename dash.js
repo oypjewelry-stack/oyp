@@ -17,7 +17,7 @@ const stageLabel = c => STAGE[c] || (c ? String(c).replace(/_/g, ' ') : 'Not sta
 const ago = d => { if (!d) return ''; const n = Math.round((Date.now() - Date.parse(d + 'T00:00:00+08:00')) / 864e5); return n <= 0 ? 'today' : plural(n, 'day'); };
 // Drill-downs: #/dashboard/<kind>/<key>. The dashboard response is kept so a list opens without reloading;
 // per-JO lists that the dashboard does not carry (locations, sales, pending, consigned JOs) come once from dashDrill (DashboardDrill.gs).
-const D = { r: null, cc: null, x: null, at: 0, user: null, ordOn: false };
+const D = { r: null, cc: null, x: null, at: 0, user: null, ordOn: false, editSec: false, editLoc: false };
 // Section order on this device, per signed-in name. Empty = today's order. Design settings are the shared look, not a per-person preference, so this stays in localStorage.
 const SEC_ORDER = ['msgs', 'loc', 'sales', 'board', 'consign', 'pay', 'inq'];
 const ordKey = u => 'oypDashOrder:' + (u && u.username || 'device');
@@ -98,15 +98,16 @@ function paintLoc(main, esc) {
   const row = main.querySelector('#locRow');
   if (!row || !D.loc) return;
   const show = D.loc.order.filter(k => !D.loc.hide.has(k) && D.loc.byKey[k]);
-  row.innerHTML = show.map(k => locTile(esc, D.loc.byKey[k], D.ordOn)).join('') || (D.ordOn ? '<p class="muted">Every location tile is hidden.</p>' : '');
+  const editing = D.ordOn && D.editLoc;
+  row.innerHTML = show.map(k => locTile(esc, D.loc.byKey[k], editing)).join('') || (editing ? '<p class="muted">Every location tile is hidden.</p>' : (D.ordOn && !show.length ? '<p class="muted">Hidden. Edit layout to show a tile.</p>' : ''));
   const hid = main.querySelector('#locHid');
   if (hid) {
     const keys = D.loc.order.filter(k => D.loc.hide.has(k) && D.loc.byKey[k]);
-    hid.hidden = !keys.length;
+    hid.hidden = !D.editLoc || !keys.length;
     hid.innerHTML = keys.map(k => `<button type="button" class="fchip" data-lshow="${esc(k)}">Show ${esc(locName(D.loc.byKey[k]))}</button>`).join('');
   }
   const rst = main.querySelector('#dLocReset');
-  if (rst) rst.hidden = !readLocPref(D.user);
+  if (rst) rst.hidden = !D.editLoc || !readLocPref(D.user);
   [...row.querySelectorAll('[data-lkey]')].forEach((t, i, all) => {
     const L = t.querySelector('[data-lup]'), R = t.querySelector('[data-ldn]');
     if (L) L.disabled = i === 0; if (R) R.disabled = i === all.length - 1;
@@ -123,7 +124,7 @@ function saveLoc(u) {
 function ordBar(esc, label) {
   if (!D.ordOn) return '';
   const n = esc(label);
-  return `<span class="dord"><button type="button" class="dmove" data-dup aria-label="Move ${n} up" title="Move up">↑</button><button type="button" class="dmove" data-ddn aria-label="Move ${n} down" title="Move down">↓</button><span class="dgrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span></span>`;
+  return `<span class="dord"${D.editSec ? '' : ' hidden'}><button type="button" class="dmove" data-dup aria-label="Move ${n} up" title="Move up">↑</button><button type="button" class="dmove" data-ddn aria-label="Move ${n} down" title="Move down">↓</button><span class="dgrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span></span>`;
 }
 /* Sales card ranges. Monthly is the chart the dashboard already had (last 6 months of confirmed payments).
    Daily, weekly, and annual use each JO's sale date and full sale amount from dashDrill, so a range's number is the sum of its bars. */
@@ -204,25 +205,25 @@ async function render(main, u, fresh) {
     main.innerHTML = `<h2>Dashboard</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for the dashboard yet.' : (r && r.error) || 'Could not load')}</p>`; return;
   }
   const c = r.counts, can = r.can, pb = c.pending_breakdown;
-  D.user = u; D.ordOn = !!(u && u.role === 'admin');
+  D.user = u; D.ordOn = !!(u && u.role === 'admin'); D.editSec = false; D.editLoc = false;
   const when = new Date(r.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const pendNote = [pb.reviews && pb.reviews + ' to review', pb.past_due && pb.past_due + ' past due', pb.payments && plural(pb.payments, 'payment') + ' to confirm'].filter(Boolean).join(' · ') || 'All clear';
   const tile = (lab, val, note, cls = '', href = '') => href ? `<a class="kpi kpilink tap ${cls}" href="${href}"><span class="lab">${esc(lab)} ›</span><b>${esc(val)}</b><small>${esc(note || '')}</small></a>`
     : `<div class="kpi ${cls}"><span class="lab">${esc(lab)}</span><b>${esc(val)}</b><small>${esc(note || '')}</small></div>`;
-  let h = `<div class="dhead"><h2>Dashboard</h2><span class="dheadacts">${D.ordOn ? '<button class="lnk" id="dOrdReset" hidden>Reset order</button>' : ''}<button class="lnk" id="dRef">Refresh</button></span></div><p class="muted">${esc(when)} PHT</p>
+  let h = `<div class="dhead"><h2>Dashboard</h2><span class="dheadacts">${D.ordOn ? '<button type="button" class="lnk" id="dLay" aria-pressed="false">Edit layout</button><button class="lnk" id="dOrdReset" hidden>Reset order</button>' : ''}<button class="lnk" id="dRef">Refresh</button></span></div><p class="muted">${esc(when)} PHT</p>
   <div class="kpis">${tile('Active jobs', c.active_jobs, r.locations ? 'being worked on' : plural(r.board.reduce((s, b) => s + b.count, 0), 'open job'), '', '#/dashboard/active')}
   ${tile('Pending work', c.pending_work, pendNote, c.pending_work ? 'warn' : '', '#/dashboard/pending')}
   ${can.consign ? tile('Consigned out', c.consigned_out, plural(new Set((r.consignments || []).map(x => x.consignee)).size, 'consignee'), '', '#/dashboard/consigned') : ''}
   ${can.consign ? tile('Overdue', c.overdue_consignments, 'out over ' + r.overdue_days + ' days', c.overdue_consignments ? 'gold' : '', '#/dashboard/overdue') : ''}
   ${can.sales ? tile(monthName(r.sales.month) + ' sales', peso(c.month_sales), 'confirmed payments', '', '#/dashboard/sales/' + r.sales.month) : ''}
-  ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>${D.ordOn ? '<p class="muted dordhint">Arrows move a section up or down. Drag the grip. The order is saved on this device.</p>' : ''}`;
+  ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>${D.ordOn ? '<p class="muted dordhint" hidden>Arrows move a section up or down. Drag the grip. The order is saved on this device.</p>' : ''}`;
 
   const parts = {};
   const ib = pi && pi.ok && pi.inbox; D.inbox = ib || null;
   if (ib && ib.items.length) parts.msgs = inboxCard(ib, esc);
   if (r.locations) {
     loadLoc(r.locations, u);
-    parts.loc = `<section class="dcard" data-dsec="loc"><div class="dtitle"><span class="dname">${ordBar(esc, 'Location')}<h3>Location</h3></span><span class="dlocacts"><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span>${D.ordOn ? '<button type="button" class="lnk" id="dLocReset" hidden>Reset</button>' : ''}</span></div><div class="locrow${D.ordOn ? ' edit' : ''}" id="locRow"></div>${D.ordOn ? '<div class="lchide" id="locHid" hidden></div><p class="muted lhint">Arrows set the flow. Drag the grip. ✕ hides a tile.</p>' : ''}</section>`;
+    parts.loc = `<section class="dcard" data-dsec="loc"><div class="dtitle"><span class="dname">${ordBar(esc, 'Location')}<h3>Location</h3></span><span class="dlocacts"><span class="lab">All JOs${c.on_hand != null ? ' · ' + plural(c.on_hand, 'piece') + ' on hand' : ''}</span>${D.ordOn ? '<button type="button" class="lnk" id="dLocLay" aria-pressed="false">Edit layout</button><button type="button" class="lnk" id="dLocReset" hidden>Reset</button>' : ''}</span></div><div class="locrow" id="locRow"></div>${D.ordOn ? '<div class="lchide" id="locHid" hidden></div><p class="muted lhint" hidden>Arrows set the flow. Drag the grip. ✕ hides a tile.</p>' : ''}</section>`;
   }
 
   if (can.sales) {
@@ -258,6 +259,24 @@ async function render(main, u, fresh) {
   const miss = r.missing.filter(t => t !== 'Settings'); // Settings is optional (defaults apply)
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
+  const lay = main.querySelector('#dLay');
+  if (lay) lay.onclick = () => {
+    D.editSec = !D.editSec;
+    lay.textContent = D.editSec ? 'Done' : 'Edit layout';
+    lay.setAttribute('aria-pressed', D.editSec ? 'true' : 'false');
+    main.querySelectorAll('#dsecs .dord').forEach(el => { el.hidden = !D.editSec; });
+    const hint = main.querySelector('.dordhint'); if (hint) hint.hidden = !D.editSec;
+    const rst = main.querySelector('#dOrdReset'); if (rst) rst.hidden = !D.editSec || !readOrder(u);
+  };
+  const locLay = main.querySelector('#dLocLay');
+  if (locLay) locLay.onclick = () => {
+    D.editLoc = !D.editLoc;
+    locLay.textContent = D.editLoc ? 'Done' : 'Edit layout';
+    locLay.setAttribute('aria-pressed', D.editLoc ? 'true' : 'false');
+    const row = main.querySelector('#locRow'); if (row) row.classList.toggle('edit', D.editLoc);
+    const hint = main.querySelector('.lhint'); if (hint) hint.hidden = !D.editLoc;
+    paintLoc(main, esc);
+  };
   main.querySelector('#dRef').onclick = () => render(main, u, true);
   if (r.locations) { paintLoc(main, esc); wireLoc(main, esc, u); }
   wireOrder(main, u);
@@ -298,7 +317,7 @@ function wireOrder(main, u) {
   const paint = () => {
     const all = secs();
     all.forEach((s, i) => { const up = s.querySelector('[data-dup]'), dn = s.querySelector('[data-ddn]'); if (up) up.disabled = i === 0; if (dn) dn.disabled = i === all.length - 1; });
-    const rst = main.querySelector('#dOrdReset'); if (rst) rst.hidden = !readOrder(u);
+    const rst = main.querySelector('#dOrdReset'); if (rst) rst.hidden = !D.editSec || !readOrder(u);
   };
   const persist = () => { writeOrder(u, secs().map(s => s.dataset.dsec)); paint(); };
   box.onclick = e => {

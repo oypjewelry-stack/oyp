@@ -137,7 +137,7 @@ function section(s) {
 /* ---------- Design (sliders -> CSS variables, design.js) ---------- */
 const DS = { // key -> [short name, label, what it changes]
   text: ['Text', 'Text size', 'Everyday text: descriptions, tables, labels, menus, form fields'],
-  head: ['Headings', 'Heading size', 'Page titles, JO numbers, names, big numbers and the black buttons'],
+  head: ['Headings', 'Heading size', 'JO numbers, names, big numbers and the black buttons. Page titles, the menu header and the pricing header have their own size below.'],
   space: ['Spacing', 'Spacing', 'Space inside and between boxes, cards, rows and buttons'],
   radius: ['Corners', 'Corner roundness', 'How round the corners of cards, boxes, fields and buttons are (0 = square)'],
   box: ['Card height', 'Card and box height', 'Minimum height of board columns and boxes. 120 px is today\'s height'],
@@ -151,7 +151,7 @@ function dsStart() { const D = window.OYPDesign, o = {}, loc = D.local();
   return D.sliderOf(o); } // box and width come back as pixels; the server still stores the same ratio as before
 /* ---------- Buttons & shapes (one row per type; design.js PARTS, app.css --d-<type>-<control>) ---------- */
 const PRV = { // preview markup = the real classes, styled by the real CSS
-  hmenu: '<span class="title">OYP Jewelry</span>',
+  hmenu: '<span class="title">Back office</span><div class="menu"><a>Dashboard</a><a>Material prices</a></div>',
   hbody: '<h2 style="margin:0">Appointments</h2>',
   hprice: '<div class="prices"><div class="dtitle" style="margin:0"><h3>Metals</h3></div><div class="pname"><b>18k yellow gold</b></div></div>',
   arrow: '<button class="apar" type="button" tabindex="-1" aria-hidden="true">‹</button><button class="apar" type="button" tabindex="-1" aria-hidden="true">›</button>',
@@ -172,7 +172,7 @@ const PRV = { // preview markup = the real classes, styled by the real CSS
   modal: '<div class="pmbox"><span class="lab">JO 1234</span><b class="dpmh">Move to Casting?</b><button class="pill wide" type="button" tabindex="-1">YES, MOVE</button></div>',
   toast: '<div class="toast">Saved for everyone</div>' };
 const DP = { // type -> [name, where it is used, height label, width label]
-  hmenu: ['Menu header', 'The name in the top bar', 'Size', ''],
+  hmenu: ['Menu header', 'The name in the top bar, and the titles in the side menu and the phone menu. They share one size once you set it (top bar 20 px, side menu 12 px, phone menu 13 px until then)', 'Size', ''],
   hbody: ['Body header', 'Page titles on staff pages and customer pages', 'Size', ''],
   hprice: ['Pricing header', 'Material prices title, section titles and material names. They share one size once you set it (26 px, 19 px and 17 px until then)', 'Size', ''],
   arrow: ['Left and right arrows', 'Previous / next on the calendar and on Production', 'Circle size', ''],
@@ -181,7 +181,7 @@ const DP = { // type -> [name, where it is used, height label, width label]
   btnbig: ['Big and full-width buttons', 'Home page tiles, Move to…, Yes / OK in pop-ups', 'Height', ''],
   btnsm: ['Small buttons', 'Add, Edit, Rotate inside lists and panels', 'Height', 'Width'],
   link: ['Text links', 'Reset, Back, Show more (underlined words)', '', ''],
-  menu: ['Menu items', 'Side menu, phone menu and the name menu', 'Height', ''],
+  menu: ['Menu items', 'Side menu, phone menu and the name menu. Text size applies until a menu header size is set', 'Height', ''],
   tabs: ['Tabs', 'Day / Week / Month, Board / Workers, Cash / GCash', 'Height', ''],
   sw: ['Switches', 'On / off toggles', '', ''],
   fchip: ['Filter chips', 'All / Late filters, day buttons in Settings', 'Height', 'Width'],
@@ -193,7 +193,7 @@ const DP = { // type -> [name, where it is used, height label, width label]
   modal: ['Pop-ups and side panels', 'Move JO pop-up, inventory panel, menus', 'Padding', 'Width'],
   toast: ['Notices', 'The black "Saved" message at the bottom', 'Height', ''] };
 const DP_GROUPS = [
-  ['Headers', ['hmenu', 'hbody', 'hprice'], 'Menu header, body header and pricing header are separate. Until you change one, it follows the Headings slider and the Headings font above, so today\'s saved header is the start for all three.'],
+  ['Headers', ['hmenu', 'hbody', 'hprice'], 'Menu header, body header and pricing header are separate. Each one changes only its own text, and none of them follows the Headings slider. The menu header is the name in the top bar and the titles in the side menu and the phone menu. The side menu has no extra section headings.'],
   ['Navigation arrows', ['arrow'], 'Size and color of the left and right arrows. The calendar arrows are 20 px and the Production arrows are 24 px until you set one size for both.'],
   ['Buttons, boxes and type', ['btn', 'btnout', 'btnbig', 'btnsm', 'link', 'menu', 'tabs', 'sw', 'fchip', 'chip', 'field', 'card', 'box', 'pcard', 'modal', 'toast'], 'Numbers are the real pixels, so a black button and a white button can be set to the same width. Each of these also has its own font, weight and color. Reset puts that one control back to the size the sliders above make.']];
 const dpPasted = () => !!item('design.parts');
