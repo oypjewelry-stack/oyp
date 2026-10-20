@@ -12,6 +12,15 @@ td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
 .cspay{margin-top:calc(8px*var(--sp))}
 .dcowed{max-width:280px;margin:0 0 calc(14px*var(--sp))}
 .csacts{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp));align-items:center;margin:calc(12px*var(--sp)) 0}
+.csnote{min-height:0;margin:0 0 calc(8px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.35}
+.csnote:empty{display:none}
+.csnote.ok{color:#245c2b}.csnote.dup{color:#7a5b00}.csnote.bad{color:#b00020}
+.csflash.ok{box-shadow:0 0 0 2px #245c2b;background:#e9f4ea}
+.csflash.dup{box-shadow:0 0 0 2px #9a7b2f;background:#fff8e8}
+.csflash.bad{box-shadow:0 0 0 2px #b00020;background:#fdecec}
+.csmode{display:inline-flex;align-items:center;gap:8px}
+.csmode button{background:none;border:0;padding:2px 0;font-family:var(--body);font-size:calc(13px*var(--fs));font-weight:400;letter-spacing:0;text-transform:none;color:#888;cursor:pointer}
+.csmode button.on{color:#111;text-decoration:underline}
 .csback{background:none;border:0;cursor:pointer;padding:0;margin-bottom:calc(10px*var(--sp));display:inline-block;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#111}
 .csnew{border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(16px*var(--sp)) calc(18px*var(--sp));margin-bottom:calc(16px*var(--sp))}
 .csnew .fsec{margin-bottom:calc(12px*var(--sp))}
