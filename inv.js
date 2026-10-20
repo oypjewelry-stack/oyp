@@ -460,7 +460,7 @@ function ivFindBase(base) {
 }
 function ivScanOn() { return !!(IV.r && ivEdit() && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
-function ivRefocus(main) { const s = main.querySelector('#ivScan'); if (s) s.focus(); }
+function ivRefocus(main) { const s = main.querySelector('#ivScan'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
 function ivFlash(jo) {
   const grid = document.getElementById('ivGrid');
   if (grid) {
@@ -478,7 +478,7 @@ function ivTake(main, job, base, fromBox) {
   IV.offer = ''; IV.sel.add(job.jo); IV.anchor = job.jo; IV.picking = true; IV.menu = '';
   IV.scanned = [job.jo].concat(IV.scanned.filter(id => id !== job.jo));
   window.OYP.toast(already ? 'already selected' : base + ' selected (' + IV.sel.size + ')');
-  ivDraw(main); ivFlash(job.jo); if (fromBox) ivRefocus(main);
+  ivDraw(main); if (fromBox) ivRefocus(main); ivFlash(job.jo);
 }
 function ivScanCommit(raw, fromBox) {
   const main = document.getElementById('main');
