@@ -51,9 +51,7 @@ body{font-size:calc(1rem*var(--fs));font-family:var(--body);background:#fff;colo
 .nord .dmove,.nord .dgrip{width:22px;height:22px;border:1px solid #ddd;background:#fff;border-radius:6px;padding:0;font-size:12px;letter-spacing:0;text-transform:none}
 .side .nitem a,.menu .nitem a{flex:1;min-width:0;border-left-color:transparent;background:transparent;line-height:1.25}
 .side .nitem a{padding-left:calc(8px*var(--sp))}.menu .nitem a{padding-left:calc(10px*var(--sp));padding-right:calc(12px*var(--sp))}
-.sidenav .nreset,.menu .nreset,.sidenav .nedit,.menu .nedit{display:block;width:100%;background:none;border:0;text-align:left;padding:calc(8px*var(--sp)) calc(22px*var(--sp));font-family:var(--label);font-weight:500;font-size:calc(11px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#777}
-.sidenav .nedit,.menu .nedit{color:#111;min-height:0}
-.menu .nedit{padding:calc(10px*var(--sp)) calc(20px*var(--sp))}
+.sidenav .nreset,.menu .nreset{display:block;width:100%;background:none;border:0;text-align:left;padding:calc(8px*var(--sp)) calc(22px*var(--sp));font-family:var(--label);font-weight:500;font-size:calc(11px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#777}
 .nreset[hidden],.nord[hidden]{display:none!important}
 .main{padding:calc(28px*var(--sp)) calc(34px*var(--sp));min-width:0}
 .main h2{font-family:var(--d-hbody-f,var(--Ghead,var(--head)));font-weight:var(--d-hbody-g,500);font-size:var(--d-hbody-fp,26px);color:var(--d-hbody-c,#111);text-transform:uppercase;margin-bottom:calc(6px*var(--sp))}
