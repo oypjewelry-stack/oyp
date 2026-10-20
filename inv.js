@@ -22,7 +22,7 @@ const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see
 const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, suppress: false, busy: false, offer: '' };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, suppress: false, busy: false, offer: '', scanned: [] };
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
@@ -49,8 +49,18 @@ function ivHay(j) {
 }
 function ivShown() {
   const toks = IV.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return IV.r.jobs.filter(j => IVIEWS[IV.view][1](j) && (!IV.stage || j.col === IV.stage) && (!IV.loc || (IV.loc === '-' ? !j.location : j.location === IV.loc))
+  const list = IV.r.jobs.filter(j => IVIEWS[IV.view][1](j) && (!IV.stage || j.col === IV.stage) && (!IV.loc || (IV.loc === '-' ? !j.location : j.location === IV.loc))
     && (!IV.type || (IV.type === 'job:repair' ? j.type === 'repair' : j.item_type === IV.type)) && (!toks.length || (h => toks.every(t => h.includes(t)))(ivHay(j))));
+  // Scanned tiles that are still selected sit at the top, newest scan first. The rest keep this order.
+  if (!IV.scanned.length) return list;
+  const at = new Map(list.map(j => [j.jo, j]));
+  const pinned = [], used = new Set();
+  IV.scanned.forEach(id => {
+    if (used.has(id) || !IV.sel.has(id)) return;
+    const j = at.get(id); if (!j) return;
+    used.add(id); pinned.push(j);
+  });
+  return pinned.length ? pinned.concat(list.filter(j => !used.has(j.jo))) : list;
 }
 function ivEdit() { const u = IV.u; return !!(u && (u.role === 'admin' || u.role === 'production_manager')); }
 function ivMoveLocs() { return ((IV.r && IV.r.locations) || []).filter(l => l[0] && l[0] !== 'archived'); }
@@ -69,6 +79,7 @@ function ivDraw(main) {
   if (IV.offer) { const hid = ivFindBase(IV.offer); if (!hid || L.some(j => j.jo === hid.jo)) IV.offer = ''; }
   const liveIds = new Set(r.jobs.map(j => j.jo));
   [...IV.sel].forEach(id => { if (!liveIds.has(id)) IV.sel.delete(id); });
+  IV.scanned = IV.scanned.filter(id => liveIds.has(id) && IV.sel.has(id));
   if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('iv-coarse');
   const cnt = k => r.jobs.filter(IVIEWS[k][1]).length;
   const onHand = r.jobs.filter(j => j.on_hand && !MAKING[j.location]);
@@ -139,7 +150,7 @@ function ivSheet(j, edit) { // details. Roles that can't open the JO card land h
     ${act}</div></div>`;
 }
 function ivRange(jo, shift) {
-  const ids = ivShown().map(j => j.jo);
+  const ids = ivShown().map(j => j.jo); // visible order, scanned tiles included where they sit now
   if (shift && IV.anchor && ids.includes(IV.anchor) && ids.includes(jo)) {
     const a = ids.indexOf(IV.anchor), b = ids.indexOf(jo), lo = Math.min(a, b), hi = Math.max(a, b);
     for (let i = lo; i <= hi; i++) IV.sel.add(ids[i]);
@@ -160,7 +171,7 @@ async function ivBulk(main, jos, location, kind) {
   if (!r || !r.ok) return window.OYP.toast(!r || r.error === 'Unknown action' ? BULK_NOTE : (r && r.error) || 'Could not update');
   const done = new Set((r.set || []).map(x => x.jo));
   IV.r.jobs.forEach(j => { if (done.has(j.jo)) j.location = location; });
-  IV.sel.clear(); IV.menu = ''; IV.anchor = ''; IV.picking = false;
+  IV.sel.clear(); IV.scanned = []; IV.menu = ''; IV.anchor = ''; IV.picking = false;
   const n = done.size, word = kind === 'archive' ? 'Archived' : kind === 'unarchive' ? 'Unarchived' : 'Moved';
   window.OYP.toast(word + ' ' + n + (r.missing && r.missing.length ? ' · ' + r.missing.length + ' not found' : ''));
   await renderJos(main, IV.u);
@@ -195,7 +206,7 @@ function ivWire(main) {
     IV.picking = IV.sel.size > 0;
     ivDraw(main);
   };
-  if ($('#ivClear')) $('#ivClear').onclick = () => { IV.sel.clear(); IV.anchor = ''; IV.picking = false; IV.menu = ''; ivDraw(main); };
+  if ($('#ivClear')) $('#ivClear').onclick = () => { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.menu = ''; ivDraw(main); };
   if ($('#ivMove')) $('#ivMove').onchange = e => { const loc = e.target.value; if (!loc) return; ivBulk(main, [...IV.sel], loc, 'move'); };
   if ($('#ivArch')) $('#ivArch').onclick = () => ivArchive(main, [...IV.sel]);
   if ($('#ivUnarch')) $('#ivUnarch').onclick = () => ivBulk(main, [...IV.sel], '', 'unarchive');
@@ -398,7 +409,7 @@ function mWire(main) {
   const med = $('.medit'); if (med) med.ontoggle = () => { MS.editing = med.open; };
 }
 // a fresh visit (menu / link) on a phone starts on the list; on a desktop the last item stays open
-window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.menu = ''; IV.anchor = ''; IV.picking = false; IV.offer = ''; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
+window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.scanned = []; IV.menu = ''; IV.anchor = ''; IV.picking = false; IV.offer = ''; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
    The Scan or type JO box takes the same scan when it is focused, including a slow typed number.
@@ -449,18 +460,25 @@ function ivFindBase(base) {
 }
 function ivScanOn() { return !!(IV.r && ivEdit() && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
-function ivRefocus(main) { const s = main.querySelector('#ivScan'); if (s) s.focus(); }
+function ivRefocus(main) { const s = main.querySelector('#ivScan'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
 function ivFlash(jo) {
+  const grid = document.getElementById('ivGrid');
+  if (grid) {
+    const bar = document.querySelector('header.top');
+    const pad = (bar ? bar.getBoundingClientRect().height : 0) + 8;
+    const y = grid.getBoundingClientRect().top + window.scrollY - pad;
+    window.scrollTo(0, Math.max(0, y));
+  }
   const el = document.querySelector('.ivcard[data-jo="' + (window.CSS && CSS.escape ? CSS.escape(jo) : jo) + '"]');
   if (!el) return;
-  el.scrollIntoView({ block: 'center' });
   el.classList.remove('ivflash'); void el.offsetWidth; el.classList.add('ivflash');
 }
 function ivTake(main, job, base, fromBox) {
   const already = IV.sel.has(job.jo);
   IV.offer = ''; IV.sel.add(job.jo); IV.anchor = job.jo; IV.picking = true; IV.menu = '';
+  IV.scanned = [job.jo].concat(IV.scanned.filter(id => id !== job.jo));
   window.OYP.toast(already ? 'already selected' : base + ' selected (' + IV.sel.size + ')');
-  ivDraw(main); ivFlash(job.jo); if (fromBox) ivRefocus(main);
+  ivDraw(main); if (fromBox) ivRefocus(main); ivFlash(job.jo);
 }
 function ivScanCommit(raw, fromBox) {
   const main = document.getElementById('main');
