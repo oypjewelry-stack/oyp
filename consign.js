@@ -13,22 +13,41 @@ const day = d => { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).
 const dayLong = d => { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).split('-').map(Number); return MON[m - 1] + ' ' + dd + ', ' + y; };
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 const addD = (day0, n) => { const d = new Date(String(day0).slice(0, 10) + 'T00:00:00Z'); if (isNaN(d.getTime())) return ''; d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-// JO on a tag or typed by hand: 26-001, JO 26-001, 26 001, 26-287B. The letter is the version and stays with the number.
-function joParse(s) {
-  const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s*([A-Z])(?![A-Z0-9]))?/);
-  if (!m) return null;
-  return { key: m[1] + '-' + m[2], version: m[3] || '', text: m[1] + '-' + m[2] + (m[3] || '') };
+// QR sticker, same read as inv.js: plain 26-287 / 26-287A, or a URL / prefixed text that contains a JO
+// (jo=26-287, or a path ending in /26-287). The letter is the version and stays with the number.
+function joPack_(yy, num, letter) {
+  letter = letter || '';
+  return { key: yy + '-' + num, version: letter, text: yy + '-' + num + letter };
 }
+function joFromScan(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return null;
+  try { s = decodeURIComponent(s.replace(/\+/g, ' ')); } catch (e) {}
+  const u = s.toUpperCase();
+  if (/^CS-[A-Z0-9-]+$/.test(u)) return null;
+  let m = u.match(/(?:^|[?&#\s])JO=(\d{2})-?(\d{3,4})([A-Z])?(?![A-Z0-9])/);
+  if (m) return joPack_(m[1], m[2], m[3]);
+  const paths = [];
+  const pre = /\/(\d{2})-(\d{3,4})([A-Z])?(?![A-Z0-9])/g;
+  while ((m = pre.exec(u))) paths.push(m);
+  if (paths.length) { m = paths[paths.length - 1]; return joPack_(m[1], m[2], m[3]); }
+  m = u.match(/(?:^|[^A-Z0-9])JO\s*[:#]?\s*(\d{2})\s*[- ]?\s*(\d{3,4})\s*([A-Z])?(?![A-Z0-9])/);
+  if (m) return joPack_(m[1], m[2], m[3]);
+  const re = /(?:^|[^A-Z0-9])(\d{2})\s*[- ]\s*(\d{3,4})(?:\s*([A-Z])(?![A-Z0-9]))?/g;
+  let last = null;
+  while ((m = re.exec(u))) last = m;
+  if (last) return joPack_(last[1], last[2], last[3]);
+  if (!/[:/]/.test(u) && (m = u.match(/(\d{2})(\d{3,4})([A-Z])?$/))) return joPack_(m[1], m[2], m[3]);
+  return null;
+}
+function joParse(s) { return joFromScan(s); }
 const joOf = s => { const p = joParse(s); return p ? p.text : ''; };
 function scanSpec(raw) {
   const s = String(raw || '').trim().replace(/\s+/g, ' ');
   if (!s) return { q: '', jo: null, exact: false };
   const p = joParse(s);
-  if (!p) return { q: s, jo: null, exact: !/\s/.test(s) };
-  const compact = s.toUpperCase().replace(/^JO/, '').replace(/[\s\-.,\/]/g, '');
-  const expect = p.key.replace('-', '') + p.version;
-  if (compact === expect) return { q: p.text, jo: p, exact: true };
-  return { q: s, jo: p, exact: false };
+  if (p) return { q: p.text, jo: p, exact: true };
+  return { q: s, jo: null, exact: !/\s/.test(s) };
 }
 function samePiece(a, b) {
   const ak = joParse(a && a.jo), bk = joParse(b && b.jo);
@@ -680,7 +699,7 @@ function findOutPiece(spec) {
 }
 function commitFind(main, raw) {
   const text = String(raw || '').trim();
-  if (!text) { setNote('bad', 'Type a CS number or scan a JO', 'find'); beep('bad'); focusScan(); return; }
+  if (!text) { setNote('bad', 'Type a CS number or scan a JO', 'find'); beep('bad'); draw(main); focusScan(); return; }
   const id = matchSheetId(text);
   if (id) {
     S.mode = 'sheet'; S.id = id; S.tab = 'sheets'; S.pay = null;
@@ -690,10 +709,10 @@ function commitFind(main, raw) {
     return;
   }
   const spec = scanSpec(text);
-  if (!spec.jo && !spec.exact) { setNote('bad', 'Type a CS number or scan a JO', 'find'); beep('bad'); focusScan(); return; }
+  if (!spec.jo && !spec.exact) { setNote('bad', 'Type a CS number or scan a JO', 'find'); beep('bad'); draw(main); focusScan(); return; }
   const found = findOutPiece(spec);
-  if (!found) { setNote('bad', 'No piece still out matches ' + (spec.jo ? spec.jo.text : spec.q), 'find'); beep('bad'); focusScan(); return; }
-  if (found.many) { setNote('dup', 'More than one sheet has that piece. Type the CS number.', 'find'); beep('dup'); focusScan(); return; }
+  if (!found) { setNote('bad', 'No piece still out matches ' + (spec.jo ? spec.jo.text : spec.q), 'find'); beep('bad'); draw(main); focusScan(); return; }
+  if (found.many) { setNote('dup', 'More than one sheet has that piece. Type the CS number.', 'find'); beep('dup'); draw(main); focusScan(); return; }
   S.mode = 'sheet'; S.id = found.sheet.consignment_id; S.tab = 'sheets'; S.pay = null;
   setNote('ok', (found.item.jo || found.item.item_id || 'Piece') + ' is still out', 'mark');
   beep('ok');
@@ -809,6 +828,33 @@ async function startCam() {
   };
   S.raf = requestAnimationFrame(tick);
 }
+
+/* Same wedge as Inventory: the sticker scanner types fast and presses Enter while no field is focused.
+   A focused scan box still takes the scan, including a URL. */
+const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_MAX = 400;
+let wedgeBuf = '', wedgeAt = 0;
+function wedgeField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
+document.addEventListener('keydown', e => {
+  if (!S.r || S.pay || !/^#\/consignment(?:$|[/?])/.test(location.hash) || wedgeField(document.activeElement) || e.isComposing) return;
+  if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+    const raw = wedgeBuf, fast = !!(raw && Date.now() - wedgeAt <= SCAN_ENTER);
+    wedgeBuf = '';
+    if (!fast) return;
+    e.preventDefault(); e.stopPropagation();
+    const main = document.getElementById('main');
+    if (!main) return;
+    if (S.scan) { finishScan(main, raw); return; }
+    if (S.mode === 'new') { pushScan(main, 'add', raw); return; }
+    if (S.mode === 'sheet') { pushScan(main, 'mark', raw); return; }
+    commitFind(main, raw);
+    return;
+  }
+  if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+  const now = Date.now();
+  if (wedgeBuf && now - wedgeAt > SCAN_GAP) wedgeBuf = '';
+  wedgeBuf += e.key; wedgeAt = now;
+  if (wedgeBuf.length > SCAN_MAX) wedgeBuf = wedgeBuf.slice(-SCAN_MAX);
+}, true);
 
 window.OYPConsign = { render };
 })();
