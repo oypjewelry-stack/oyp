@@ -70,3 +70,12 @@ a.tile{display:block;text-decoration:none;color:inherit}
 .shr.big{width:auto;height:auto;border-radius:calc(20px*var(--rad));padding:calc(8px*var(--sp)) calc(14px*var(--sp));gap:calc(6px*var(--sp));border:1.5px solid #111;background:#fff;font-family:var(--label);font-weight:500;font-size:calc(13px*var(--fs));flex-shrink:0}
 .ttl{display:flex;justify-content:space-between;align-items:flex-start;gap:calc(12px*var(--sp))}
 a.back{display:inline-block;text-decoration:none}
+/* My orders: request a visit. The list is this customer's own rows. */
+.myap{margin-top:calc(8px*var(--sp))}
+.myap .arow{background:#fff;border-radius:calc(16px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));margin:0 0 calc(10px*var(--sp))}
+.myap .alab{display:block;font-family:var(--head);font-weight:500;font-size:calc(18px*var(--hs));color:#111}
+.myap .ast{display:block;font-family:var(--label);font-weight:600;font-size:calc(14px*var(--fs));margin:calc(4px*var(--sp)) 0 calc(2px*var(--sp));color:#111}
+.myap .apform{margin-top:calc(12px*var(--sp))}
+.myap select,.myap textarea{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(13px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:calc(16px*var(--fs));background:#fff;outline:none}
+.myap textarea{min-height:72px;resize:vertical}
+.myap select:focus,.myap textarea:focus{border-color:#111}

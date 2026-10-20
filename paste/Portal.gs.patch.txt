@@ -1,0 +1,144 @@
+Portal.gs — three small edits against the attached Portal.gs (v3.4).
+A signed-in customer can ask for a visit. It is saved by apptRequest_ (Appointments.gs patch from the To do work) with source "portal" and status "requested". No calendar event, no email to the customer.
+portalAppts is a read. portalApptRequest is a write: it is not added to FAST.READS, FAST.CACHE, or DCACHE.READS.
+
+1. Action names.
+FIND
+var PORTAL_ACTIONS = { clientLookup: 1, clientPhoto: 1, portalSteps: 1, portalStepsSave: 1, portalInboxDone: 1, portalApprove: 1, portalAsk: 1, custJobs: 1, custPhoto: 1, portalMarkApproved: 1, portalBot: 1, portalUnlockCost: 1 };
+
+REPLACE WITH
+var PORTAL_ACTIONS = { clientLookup: 1, clientPhoto: 1, portalSteps: 1, portalStepsSave: 1, portalInboxDone: 1, portalApprove: 1, portalAsk: 1, custJobs: 1, custPhoto: 1, portalAppts: 1, portalApptRequest: 1, portalMarkApproved: 1, portalBot: 1, portalUnlockCost: 1 };
+
+2. Route.
+FIND
+    var r = a === 'portalMarkApproved' ? ptMark_(req) : a === 'portalUnlockCost' ? ptUnlock_(req) : a === 'portalBot' ? ptBot_(req) : staff ? ptStaff_(req) : a === 'clientPhoto' ? ptPhotoAction_(req)
+      : a === 'custJobs' ? ptCustJobs_(req) : a === 'custPhoto' ? ptCustPhoto_(req) : a === 'portalApprove' ? ptApprove_(req) : a === 'portalAsk' ? ptAsk_(req) : ptLookup_(req);
+
+REPLACE WITH
+    var r = a === 'portalMarkApproved' ? ptMark_(req) : a === 'portalUnlockCost' ? ptUnlock_(req) : a === 'portalBot' ? ptBot_(req) : staff ? ptStaff_(req) : a === 'clientPhoto' ? ptPhotoAction_(req)
+      : a === 'custJobs' ? ptCustJobs_(req) : a === 'custPhoto' ? ptCustPhoto_(req) : a === 'portalAppts' ? ptAppts_(req) : a === 'portalApptRequest' ? ptApptRequest_(req) : a === 'portalApprove' ? ptApprove_(req) : a === 'portalAsk' ? ptAsk_(req) : ptLookup_(req);
+
+3. Insert these functions immediately above the ptNotify_ comment ("Tell the shop: one post in the Telegram group").
+FIND
+  return { ok: true, sent: true, notified: told };
+}
+/** Tell the shop: one post in the Telegram group (TG_CHAT_ID) through Appointments.gs. No Appointments.gs / no Telegram set up -> false. */
+
+REPLACE WITH
+  return { ok: true, sent: true, notified: told };
+}
+/* ---------- customer appointment requests (signed-in account only; never a Track my order link) ---------- */
+var PT_APPT_OPEN = 3; // open (status requested) rows one customer may have at once
+function ptApptDigits_(p) {
+  var d = String(p || '').replace(/\D/g, '');
+  if (/^63\d{10}$/.test(d)) d = '0' + d.slice(2);
+  if (/^9\d{9}$/.test(d)) d = '0' + d;
+  return d.length >= 10 ? d.slice(-10) : '';
+}
+/** This account's visits only: linked client, same email, same mobile, or a request this account filed. Never another customer's row. */
+function ptApptOwn_(c, rows) {
+  var cid = String(c.client_id == null ? '' : c.client_id).trim();
+  var email = String(c.email || '').trim().toLowerCase();
+  var phone = ptApptDigits_(c.mobile);
+  var actor = 'cust:' + String(c.customer_id || '');
+  return (rows || []).filter(function (r) {
+    var st = String(r.status == null || String(r.status).trim() === '' ? 'booked' : r.status).trim();
+    if (st !== 'requested' && st !== 'booked') return false;
+    if (actor.length > 5 && String(r.created_by || '') === actor) return true;
+    if (cid && String(r.client_id || '').trim() === cid) return true;
+    if (email && String(r.client_email || '').trim().toLowerCase() === email) return true;
+    if (phone && ptApptDigits_(r.client_phone) === phone) return true;
+    return false;
+  });
+}
+function ptApptStart_(v) {
+  if (typeof apptStartMin_ === 'function') return apptStartMin_(v);
+  if (typeof v === 'number' && isFinite(v)) return v;
+  var m = String(v == null ? '' : v).trim().match(/^(\d{1,2}):(\d{2})$/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+}
+function ptApptMinutes_(type) {
+  var n = (typeof APPT !== 'undefined' && APPT.MIN_MIN && Number(APPT.MIN_MIN[type])) || 0;
+  return n > 0 ? n : 60;
+}
+function ptApptWhen_(r) {
+  if (typeof apptMs_ !== 'function' || typeof apptLocal_ !== 'function') return { day: '', min: NaN };
+  var L = apptLocal_(apptMs_(r.start_at));
+  return L && L.day ? L : { day: '', min: NaN };
+}
+/** What the customer may see. No staff name, no other client, no clash, no "already booked". */
+function ptApptPub_(r) {
+  var st = String(r.status == null || String(r.status).trim() === '' ? 'booked' : r.status).trim();
+  var type = String(r.type || 'fitting'), when = ptApptWhen_(r);
+  var clock = isFinite(when.min) && typeof apptClock_ === 'function' ? apptClock_(when.min) : '';
+  var o = { type: type, type_label: typeof apptTypeLab_ === 'function' ? apptTypeLab_(type) : type, day: when.day || '', status: st,
+    label: st === 'booked' ? 'Confirmed' : 'Requested, waiting for confirmation' };
+  if (st === 'booked' && clock) o.time = clock;
+  else if (clock) o.preferred = clock;
+  var note = String(r.notes == null ? '' : r.notes).trim();
+  if (note) o.note = note.slice(0, 500);
+  return o;
+}
+function ptApptHours_() {
+  try { if (typeof settingsApply_ === 'function') settingsApply_(); } catch (e) {}
+  var open = typeof APPT !== 'undefined' && APPT.OPEN_MIN ? APPT.OPEN_MIN : 9 * 60;
+  var close = typeof APPT !== 'undefined' && APPT.CLOSE_MIN ? APPT.CLOSE_MIN : 16 * 60;
+  var days = typeof APPT !== 'undefined' && APPT.DAYS && APPT.DAYS.length ? APPT.DAYS.slice() : [1, 2, 3, 4, 5];
+  return { label: typeof apptHoursTxt_ === 'function' ? apptHoursTxt_() : '', open: open, close: close, days: days, step: 15 };
+}
+function ptApptClash_(day, start, minutes, rows) {
+  if (typeof apptMs_ !== 'function' || typeof apptIso_ !== 'function') return false;
+  var s = apptMs_(apptIso_(day, start)), e = s + minutes * 60000;
+  if (!(s > 0)) return false;
+  return (rows || []).some(function (r) {
+    if (String(r.status == null || String(r.status).trim() === '' ? 'booked' : r.status).trim() !== 'booked') return false;
+    var rs = apptMs_(r.start_at), re = apptMs_(r.end_at);
+    return rs < e && s < re;
+  });
+}
+/** Read: this customer's own requests and confirmed visits, plus shop hours. Not other bookings. */
+function ptAppts_(req) {
+  var c = ptCust_(req); if (!c) return { ok: false, code: 'NO_SESSION', error: 'Please sign in again' };
+  if (typeof apptRows_ !== 'function') return { ok: true, setup: false, appts: [], open: 0, limit: PT_APPT_OPEN, hours: ptApptHours_() };
+  var rows = ptApptOwn_(c, apptRows_());
+  var appts = rows.map(ptApptPub_).sort(function (a, b) { return (a.day + (a.time || a.preferred || '')).localeCompare(b.day + (b.time || b.preferred || '')); });
+  return { ok: true, setup: true, appts: appts, open: rows.filter(function (r) { return String(r.status).trim() === 'requested'; }).length, limit: PT_APPT_OPEN, hours: ptApptHours_() };
+}
+/**
+ * Write. Same save as a staff request (apptRequest_, source portal, status requested). Store hours and a clash with a
+ * booked visit both come back as one sentence — the customer is not told which, and never sees another booking.
+ * Nothing here emails the customer or creates a calendar event.
+ */
+function ptApptRequest_(req) {
+  var c = ptCust_(req); if (!c) return { ok: false, code: 'NO_SESSION', error: 'Please sign in again' };
+  if (typeof apptRequest_ !== 'function') return { ok: false, code: 'NO_SETUP', error: 'Appointment requests are not switched on yet.' };
+  var type = String(req.type || '').trim(), day = String(req.day || '').trim();
+  var note = String(req.note == null ? (req.notes == null ? '' : req.notes) : req.note).replace(/\r/g, '').trim().slice(0, 500);
+  var start = ptApptStart_(req.start), minutes = ptApptMinutes_(type);
+  if (!type || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !isFinite(start)) return { ok: false, code: 'INPUT', error: 'Pick a visit type, a date, and a time.' };
+  ptApptHours_();
+  if (typeof APPT !== 'undefined' && APPT.TYPES_OFF && APPT.TYPES_OFF[type]) return { ok: false, code: 'INPUT', error: 'Pick a visit type, a date, and a time.' };
+  if (typeof apptRule_ === 'function') {
+    var rule = apptRule_(type, day, start, minutes, false);
+    if (rule && rule.code === 'PAST') return { ok: false, code: 'INPUT', error: 'That time has already passed. Please choose another.' };
+    if (rule) return { ok: false, code: 'INPUT', error: 'Pick a visit type, a date, and a time.' };
+  }
+  var closed = typeof apptOutside_ === 'function' && apptOutside_(day, start, minutes);
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  var saved;
+  try {
+    var rows = typeof apptRows_ === 'function' ? apptRows_() : [];
+    var open = ptApptOwn_(c, rows).filter(function (r) { return String(r.status).trim() === 'requested'; });
+    if (open.length >= PT_APPT_OPEN) return { ok: false, code: 'LIMIT', error: 'You already have 3 requests waiting. We\'ll confirm those first.' };
+    if (closed || ptApptClash_(day, start, minutes, rows)) return { ok: false, code: 'UNAVAILABLE', error: 'That time is not available. Please choose another.' };
+    saved = apptRequest_({ type: type, day: day, start: start, minutes: minutes, notes: note, source: 'portal', actor: 'cust:' + c.customer_id,
+      client: { client_id: String(c.client_id || '').trim(), name: ptS_(c.full_name, 80) || 'Client', email: ptS_(c.email, 120), phone: ptS_(c.mobile, 30) } }, null);
+  } finally { lock.releaseLock(); }
+  if (!saved || !saved.ok || saved.status !== 'requested') return { ok: false, code: 'INPUT', error: 'Pick a visit type, a date, and a time.' };
+  try { if (typeof fastBump_ === 'function') fastBump_(); } catch (e) {}
+  var when = (typeof apptDayLab_ === 'function' ? apptDayLab_(day) : day) + (typeof apptClock_ === 'function' ? ' ' + apptClock_(start) : '');
+  var lab = typeof apptTypeLab_ === 'function' ? apptTypeLab_(type) : type;
+  ptNotify_('\ud83d\udcc5 Appointment request\n' + (ptS_(c.full_name, 80) || 'Client') + '\n' + lab + ' \u00b7 ' + when + (note ? '\n' + note : '') + '\nFrom the customer portal');
+  return { ok: true, sent: true };
+}
+/** Tell the shop: one post in the Telegram group (TG_CHAT_ID) through Appointments.gs. No Appointments.gs / no Telegram set up -> false. */

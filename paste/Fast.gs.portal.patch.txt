@@ -1,0 +1,11 @@
+Fast.gs — one short edit. portalAppts is a read (this customer's own visits). Do not add portalApptRequest.
+That write stays out of FAST.READS and FAST.CACHE, so filing a request clears the remembered pages.
+
+The FIND line is the attached Fast.gs, and it is still there after the To do patch (that patch does not touch custPhoto).
+
+1. READS.
+FIND
+    custTrackPhoto: 1, custPhoto: 1 }
+
+REPLACE WITH
+    custTrackPhoto: 1, custPhoto: 1, portalAppts: 1 }
