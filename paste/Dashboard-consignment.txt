@@ -1,91 +1,92 @@
-Dashboard.gs — replace the consignment block only.
+Dashboard.gs — one block inside dashboard_, plus one new function.
+Do not paste this file over Dashboard.gs. Do not replace DashboardDrill.gs. Leave every other line of Dashboard.gs as it is, including the location tiles.
 
-Do not paste this file over Dashboard.gs. Do not guess the rest of the live file. Send the live Dashboard.gs and this block can be dropped into it.
+The live dashboard_ was described, not pasted as a function body, so match the block by the calls below. They sit in `if (can.consign) {`.
 
-What to replace
-- The code that reads the tabs Consignees, Consignments, and ConsignmentItems.
-- The code that adds Consignees, Consignments, ConsignmentItems, or Items to the dashboard "missing" list because of consignment.
-Items is the inventory tab. Leave whatever inventory check you already have. Do not add Items to missing for consignment.
+DELETE these reads and the lines that build the consignment answer from them:
+  T('Consignments')     // sheet heads. Same call if it is written dashRead_('Consignments', missing)
+  T('Consignees')       // people
+  T('Items')            // inventory tab. Do not add a new Items read. Leave any Items check that already lives outside this block.
+  T('ConsignmentItems') // rows with status 'consigned', built into outItems
+and the assignments that follow them:
+  outItems
+  consignedJos                         // live JOs with location 'consigned' that are not in outItems
+  counts.consigned_out = outItems.length + consignedJos
+  counts.consigned_jos = consignedJos
+  counts.overdue_consignments
+  out.consignments = outItems
 
-What the page already reads (keep these names)
-- missing: add the string Consignment only when that tab is absent. Do not add Consignees, Consignments, ConsignmentItems, or Items from this block.
-- overdue_days: number (Settings key consign_overdue_days, otherwise 30).
-- consignments: one object per piece that is still out, oldest first. Fields: description, item_id, jo, consignee, consignment_id, date_out, days_out, overdue, and value (the agreed value). value must stay under that name so stripPricing_ still hides it from anyone who is not an executive.
-- counts.consigned_out: how many of those pieces are still out.
-- counts.overdue_consignments: how many of those are overdue.
-- counts.consigned_jos: how many JobOrders have location consigned and are not already in consignments. The page only checks that this number is set.
+KEEP, still inside the same `if (can.consign)`, the `if (useLoc) { ... }` that fills location counts, counts.on_hand, and out.locations (including the "No location yet" row). Accounting still does not reach this block, so accounting still gets no location tiles.
 
-Wire it where the dashboard object is assembled (names below are the response fields, not a guess at your local variable names):
+PUT this in place of the deleted reads, before that useLoc block.
+`live` is the non-cancelled JobOrders array dashboard_ already built (the same array useLoc counts). `today`, `exec`, `missing`, and `out.overdue_days` are the locals already in dashboard_.
 
-    var cg = dashConsignment_();
-    // missing: push 'Consignment' when cg.missing has it. Do not push Items, Consignees, Consignments, or ConsignmentItems from here.
-    // overdue_days = cg.overdue_days
-    // consignments = cg.consignments
-    // counts.consigned_out = cg.counts.consigned_out
-    // counts.overdue_consignments = cg.counts.overdue_consignments
-    // counts.consigned_jos = cg.counts.consigned_jos
+    var cg = dashConsign_(today, out.overdue_days, exec, live, missing);
+    out.consignments = cg.consignments;
+    out.counts.consigned_out = cg.counts.consigned_out;
+    out.counts.overdue_consignments = cg.counts.overdue_consignments;
+    out.counts.consigned_jos = cg.counts.consigned_jos;
+    if (exec) out.counts.owed_by_consignees = cg.counts.owed_by_consignees;
 
-Paste the function below into Dashboard.gs. It uses helpers the project already has (ss_, jobRows_, jobKey_, jobStr_, jobDay_, isExec_). It does not take a new OAuth scope.
+consigned_out is now the pieces still out on the Consignment tab. Loose JobOrders stay in consigned_jos only. The dashboard already lists those loose JOs from consigned_jos, so they are not added into consigned_out a second time.
+owed_by_consignees is set only when exec is true. It is the sold rows' agreed value minus paid_amount. A blank agreed value is skipped. Returned rows are not included.
 
-COPY FROM HERE
+ADD this function at the end of Dashboard.gs. It does not replace dashRead_, dashDay_, or dashDaysBetween_.
 
-/** Pieces still out on the one Consignment tab. Does not read Consignees, Consignments, ConsignmentItems, or Items. */
-function dashConsignment_() {
-  var today = new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10);
-  var limit = 30, exec = false;
-  try { exec = isExec_(); } catch (e0) { exec = false; }
-  try {
-    if (ss_().getSheetByName('Settings')) jobRows_('Settings').forEach(function (r) {
-      if (String(r.key) !== 'consign_overdue_days') return;
-      var v = parseInt(r.value, 10);
-      if (v > 0 && v < 3650) limit = v;
-    });
-  } catch (e1) {}
-  if (!ss_().getSheetByName('Consignment')) {
-    return { missing: ['Consignment'], overdue_days: limit, consignments: [], counts: { consigned_out: 0, overdue_consignments: 0, consigned_jos: 0 } };
+function dashConsign_(today, limit, exec, liveJobs, missing) {
+  function joOf(v) {
+    if (typeof jobKey_ === 'function') { try { var k = jobKey_(v); if (k) return String(k); } catch (e0) {} }
+    return String(v || '').trim();
   }
-  function day(v) {
-    var s = (typeof jobDay_ === 'function') ? jobDay_(v) : String(v || '');
-    return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '';
-  }
-  function span(from, to) {
-    if (!from || !to) return null;
-    var a = Date.parse(from + 'T00:00:00Z'), b = Date.parse(to + 'T00:00:00Z');
-    if (isNaN(a) || isNaN(b)) return null;
-    return Math.round((b - a) / 86400000);
-  }
-  function open(st) { st = String(st || '').trim().toLowerCase(); return st === '' || st === 'consigned' || st === 'open' || st === 'out'; }
   function num(v) {
     if (v == null || String(v).trim() === '') return null;
     var n = Number(String(v).replace(/[₱,\s]/g, '').replace(/php/ig, ''));
     return isFinite(n) ? Math.round(n * 100) / 100 : null;
   }
-  var list = [], onSheet = {};
-  jobRows_('Consignment').forEach(function (r) {
-    if (!open(r.status)) return;
-    var dout = day(r.date_out), due = day(r.due_back || r.due_date), jo = (typeof jobKey_ === 'function' ? jobKey_(r.jo) : '') || String(r.jo || '').trim();
-    var days = span(dout, today);
-    var late = due ? today > due : (days != null && days > limit);
-    var row = {
+  function open(st) {
+    st = String(st || '').trim().toLowerCase();
+    return st === '' || st === 'consigned' || st === 'open' || st === 'out';
+  }
+  var rows = dashRead_('Consignment', missing);
+  var list = [], onSheet = {}, owed = 0, i, r, st, jo, agreed, paid, dout, due, days, late, row, value;
+  for (i = 0; i < rows.length; i++) {
+    r = rows[i];
+    st = String(r.status || '').trim().toLowerCase();
+    jo = joOf(r.jo);
+    if (st === 'sold' && exec) {
+      agreed = num(r.agreed_value != null && String(r.agreed_value).trim() !== '' ? r.agreed_value : r.value);
+      if (agreed != null) {
+        paid = num(r.paid_amount);
+        if (paid == null) paid = 0;
+        owed = Math.round((owed + Math.max(0, agreed - paid)) * 100) / 100;
+      }
+    }
+    if (!open(st)) continue;
+    dout = dashDay_(r.date_out);
+    due = dashDay_(r.due_back || r.due_date);
+    days = dashDaysBetween_(dout, today);
+    late = due ? today > due : (days != null && days > limit);
+    row = {
       description: String(r.description || ''), item_id: String(r.item_id || ''), jo: jo,
       consignee: String(r.consignee_name || r.consignee || ''), consignment_id: String(r.consignment_id || ''),
-      date_out: dout, days_out: days, overdue: late
+      date_out: dout, days_out: days, overdue: !!late
     };
-    var agreed = num(r.agreed_value != null && String(r.agreed_value).trim() !== '' ? r.agreed_value : r.value);
-    if (exec && agreed != null) row.value = agreed;
-    if (jo) onSheet[jo] = true;
+    value = num(r.agreed_value != null && String(r.agreed_value).trim() !== '' ? r.agreed_value : r.value);
+    if (exec && value != null) row.value = value;
+    if (jo) onSheet[jo] = 1;
     list.push(row);
-  });
+  }
   list.sort(function (a, b) { return String(a.date_out).localeCompare(String(b.date_out)) || String(a.consignment_id).localeCompare(String(b.consignment_id)); });
-  var overdue = 0;
-  list.forEach(function (r) { if (r.overdue) overdue++; });
+  var overdueN = 0;
+  list.forEach(function (item) { if (item.overdue) overdueN++; });
   var loose = 0;
-  if (ss_().getSheetByName('JobOrders')) jobRows_('JobOrders').forEach(function (j) {
-    var k = (typeof jobKey_ === 'function') ? jobKey_(j.jo) : String(j.jo || '');
+  (liveJobs || []).forEach(function (j) {
+    var k = joOf(j.jo);
     if (!k || onSheet[k]) return;
     if (String(j.location || '').trim().toLowerCase() !== 'consigned') return;
-    if (String(j.status || '').trim().toLowerCase() === 'cancelled') return;
     loose++;
   });
-  return { missing: [], overdue_days: limit, consignments: list, counts: { consigned_out: list.length, overdue_consignments: overdue, consigned_jos: loose } };
+  var counts = { consigned_out: list.length, overdue_consignments: overdueN, consigned_jos: loose };
+  if (exec) counts.owed_by_consignees = owed;
+  return { consignments: list, counts: counts };
 }
