@@ -181,86 +181,31 @@ function navLink(k, t, page) {
   if (k === 'scanner') return `<a href="${scanUrl()}">${esc(t)}</a>`;
   return `<a href="#/${k}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
 }
-function navRow(k, t, page, edit) {
-  const link = navLink(k, t, page);
-  if (!edit) return link;
-  const n = esc(t);
-  return `<div class="nitem${k === page ? ' on' : ''}" data-nkey="${esc(k)}"><span class="nord"><button type="button" class="dmove" data-nup aria-label="Move ${n} up" title="Move up">↑</button><button type="button" class="dmove" data-ndn aria-label="Move ${n} down" title="Move down">↓</button><span class="dgrip ngrip" role="button" tabindex="0" aria-label="Drag to move ${n}" title="Drag to reorder">⋮⋮</span></span>${link}</div>`;
-}
 function whoBlock(u) {
   return `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
     <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
 }
-let curPage = '', navEdit = false; // edit layout is off on every load; it is not saved
+let curPage = '';
 function renderNav(u, page) {
   curPage = page;
-  const can = u.role === 'admin', edit = can && navEdit;
-  const rows = orderedNav(u).map(([k, t]) => navRow(k, t, page, edit)).join('');
-  const toggle = can ? `<button type="button" class="nedit" aria-pressed="${edit ? 'true' : 'false'}">${edit ? 'Done' : 'Edit layout'}</button>` : '';
-  const reset = edit ? '<button type="button" class="nreset"' + (readNavOrder(u) ? '' : ' hidden') + '>Reset menu</button>' : '';
-  $('side').innerHTML = '<div class="sidenav" id="sideNav">' + toggle + rows + reset + '</div>' + whoBlock(u);
-  wireNav($('sideNav'), u);
+  const rows = orderedNav(u).map(([k, t]) => navLink(k, t, page)).join('');
+  $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + '</div>' + whoBlock(u);
   const m = $('menu');
-  if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); wireNav(m, u); }
+  if (m && !m.classList.contains('hidden')) m.innerHTML = phoneInner(u);
 }
 function phoneInner(u) {
   if (!u) return `<a href="${SCANNER}">Card scanner</a>`;
   if ((u.role === 'staff' || !NAV[u.role]) && !(u.role === 'staff' && NAV.staff)) return `<a href="${scanUrl()}">Scan JO card</a><button data-logout>Log out</button>`;
   if (u.role === 'staff') return NAV.staff.map(([k, t]) => navLink(k, t, '')).join('') + '<button data-logout>Log out</button>';
-  const can = u.role === 'admin', edit = can && navEdit;
-  const toggle = can ? `<button type="button" class="nedit" aria-pressed="${edit ? 'true' : 'false'}">${edit ? 'Done' : 'Edit layout'}</button>` : '';
-  return toggle + orderedNav(u).map(([k, t]) => navRow(k, t, curPage, edit)).join('') + (edit ? '<button type="button" class="nreset"' + (readNavOrder(u) ? '' : ' hidden') + '>Reset menu</button>' : '') + '<button data-logout>Log out</button>';
+  return orderedNav(u).map(([k, t]) => navLink(k, t, curPage)).join('') + '<button data-logout>Log out</button>';
 }
-function wireNav(box, u) {
-  if (!box || !u || u.role !== 'admin') return;
-  const items = () => [...box.querySelectorAll(':scope > [data-nkey]')];
-  const paintEnds = () => {
-    const all = items();
-    all.forEach((s, i) => { const up = s.querySelector('[data-nup]'), dn = s.querySelector('[data-ndn]'); if (up) up.disabled = i === 0; if (dn) dn.disabled = i === all.length - 1; });
-    const rst = box.querySelector('.nreset'); if (rst) rst.hidden = !readNavOrder(u);
-  };
-  const persist = () => { writeNavOrder(u, items().map(s => s.dataset.nkey), (NAV[u.role] || []).map(n => n[0])); renderNav(u, curPage); };
-  box.addEventListener('click', e => {
-    if (e.target.closest('.nedit')) {
-      e.preventDefault(); e.stopPropagation();
-      navEdit = !navEdit; renderNav(u, curPage); return;
-    }
-    if (e.target.closest('.nreset')) {
-      e.preventDefault(); e.stopPropagation();
-      try { localStorage.removeItem(navKey(u)); } catch (err) {}
-      renderNav(u, curPage); return;
-    }
-    const b = e.target.closest('[data-nup],[data-ndn]'); if (!b || !box.contains(b)) return;
-    e.preventDefault(); e.stopPropagation();
-    const s = b.closest('[data-nkey]'); if (!s) return;
-    if (b.hasAttribute('data-nup')) { const p = s.previousElementSibling; if (p && p.dataset.nkey) box.insertBefore(s, p); }
-    else { const n = s.nextElementSibling; if (n && n.dataset.nkey) box.insertBefore(n, s); }
-    persist();
-  });
-  box.addEventListener('pointerdown', e => {
-    const g = e.target.closest && e.target.closest('.ngrip'); if (!g || !box.contains(g)) return;
-    if (e.button != null && e.button !== 0) return;
-    e.preventDefault();
-    const s = g.closest('[data-nkey]'); if (!s) return;
-    s.classList.add('dragging'); s.style.pointerEvents = 'none';
-    try { g.setPointerCapture(e.pointerId); } catch (_) {}
-    const move = ev => {
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const over = el && el.closest && el.closest('[data-nkey]');
-      if (!over || over === s || !box.contains(over)) return;
-      const r = over.getBoundingClientRect();
-      const ref = ev.clientY > r.top + r.height / 2 ? over.nextSibling : over;
-      if (ref !== s) box.insertBefore(s, ref);
-    };
-    const up = () => {
-      s.classList.remove('dragging'); s.style.pointerEvents = '';
-      g.removeEventListener('pointermove', move); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up);
-      persist();
-    };
-    g.addEventListener('pointermove', move); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
-  });
-  paintEnds();
-}
+// Settings › Layout reorders this device's menu. The side menu and the phone menu never show the arrows.
+window.OYPLayoutMenu = {
+  list: u => orderedNav(u).map(([k, t]) => ({ key: k, label: t })),
+  save(u, keys) { writeNavOrder(u, keys, (NAV[u.role] || []).map(n => n[0])); const me = user(); if (me && me.username === u.username) renderNav(me, curPage); },
+  reset(u) { try { localStorage.removeItem(navKey(u)); } catch (e) {} const me = user(); if (me && me.username === u.username) renderNav(me, curPage); },
+  custom: u => !!readNavOrder(u)
+};
 
 // Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
 // reply for a page the user already left (e.g. the dashboard still loading) never draws over the page they are on now.
@@ -342,7 +287,6 @@ $('btnMenu').onclick = () => {
   const u = user(), m = $('menu');
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
   m.innerHTML = phoneInner(u);
-  if (u && u.role === 'admin') wireNav(m, u);
   m.classList.remove('hidden');
 };
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu')) $('menu').classList.add('hidden'); });
