@@ -58,11 +58,6 @@
 .dsside{display:flex;flex-direction:column;gap:calc(10px*var(--sp));align-items:flex-start}.dsh{font-family:var(--head);font-weight:500;font-size:calc(26px*var(--hs));text-transform:uppercase;line-height:1.1}
 .dsside .pill{cursor:default}
 .setbar .lnk{font-size:calc(12px*var(--fs))}.setbar .lnk:disabled{color:#bbb;text-decoration:none}
-.layv{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:nowrap}
-.layv .lnk{background:none;border:0;padding:0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#111}
-.layv .dmove:disabled,.layreset .lnk:disabled{opacity:.35;color:#bbb;text-decoration:none;cursor:default}
-.layreset{margin:0 0 calc(18px*var(--sp))}
-@media (max-width:560px){.setrow:has(.layv){flex-direction:row;align-items:center}.setrow:has(.layv) .setv{flex:0 0 auto}}
 @media (max-width:560px){.dsgrid{grid-template-columns:1fr 1fr}.dsside{grid-column:1/-1}.set input[type=range]{flex:1 1 140px;width:auto}.dsrow .setv{flex-wrap:nowrap}}
 /* Design › Buttons & shapes: one collapsible row per type, live preview = the real element (not scaled by the panel itself) */
 .dsph{max-width:760px;margin:0 0 12px}

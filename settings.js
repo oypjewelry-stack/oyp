@@ -18,7 +18,7 @@ const SECS = [
   ['scanner', 'Scanner', 'Page rotation, auto-snap, and where the JO number is read'],
   ['portal', 'Customer pages', 'Contact line, deposit and quote validity on Track my order / My orders'],
   ['design', 'Design', 'Text size in pixels, fonts, spacing, corners, and each button, header and shape'],
-  ['layout', 'Layout', 'Order of the side menu, the dashboard sections, and the location tiles on this device'],
+  ['layout', 'Layout', 'Drag the side menu, the dashboard sections, and the location tiles on this device'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
 // The values stay in the Settings tab and in the Change history; nothing is deleted. Remove a key here to show the section again.
@@ -139,7 +139,7 @@ function section(s) {
   if (s === 'portal') return head(t[1], 'Clients see this line under their order on <b>Track my order</b> (oypjewelry.com/track), and when an order isn\'t found. Phone numbers and emails in it become tap-to-call and tap-to-email links. Type <b>none</b> to hide the line.')
     + `<div class="setbox">${field('portal.contact', 'Contact line')}${item('portal.deposit_pct') ? field('portal.deposit_pct', 'Deposit asked on a quote (%)', 'Shown on the client\'s quote as "Deposit to start". 0 = no deposit line.') : ''}${item('portal.quote_days') ? field('portal.quote_days', 'Quote valid for (days)', 'Counted from the day the quote was marked sent. After that the client can\'t approve it and is asked to message you for an updated price.') : ''}</div>` + saveBar();
   if (s === 'design') return head(t[1], 'Drag a slider and this page changes right away, so you can see it before saving. <b>SAVE</b> makes it the look for everyone: every staff phone and computer, and the customer pages (order lookup, shop). Other devices pick it up within a few minutes.') + designBox();
-  if (s === 'layout') return head(t[1], 'These arrows stay on this page. The dashboard, the side menu, and the phone menu do not show them. The order is saved on this device only.') + layoutBox();
+  if (s === 'layout') return head(t[1], 'Turn editing on, then drag the side menu, the dashboard sections, and the location tiles into place. Done puts the controls away. The order is saved on this device only.') + layoutBox();
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
   return '';
 }
@@ -487,79 +487,25 @@ async function save(main) {
   if (Object.keys(values).length) { const r = await call('settingsSave', { values, seen }); if (!r.ok) return fail(r.error); }
   S.busy = false; S.types = null; S.typesDirty = false; toast('Saved'); reload(main);
 }
-function layMove(ids, key, dir) {
-  const i = ids.indexOf(key), j = i + dir;
-  if (i < 0 || j < 0 || j >= ids.length) return ids.slice();
-  const next = ids.slice(); next.splice(j, 0, next.splice(i, 1)[0]); return next;
-}
-function layRow(kind, row, i, n) {
-  const hide = kind === 'loc' ? `<button type="button" class="lnk" data-layhide="${esc(row.key)}">${row.hidden ? 'Show' : 'Hide'}</button>` : '';
-  return `<div class="setrow${row.hidden ? ' off' : ''}"><div class="setl"><span class="lab">${esc(row.label)}</span></div><div class="setv layv"><button type="button" class="dmove" data-lay="${kind}" data-key="${esc(row.key)}" data-dir="-1" aria-label="Move ${esc(row.label)} up"${i === 0 ? ' disabled' : ''}>↑</button><button type="button" class="dmove" data-lay="${kind}" data-key="${esc(row.key)}" data-dir="1" aria-label="Move ${esc(row.label)} down"${i === n - 1 ? ' disabled' : ''}>↓</button>${hide}</div></div>`;
-}
 function layoutBox() {
-  return `<h3 class="seth">Side menu</h3><p class="muted laynote">The left menu and the phone menu follow this order.</p><div class="setbox" id="layMenu"></div><p class="layreset"><button type="button" class="lnk" id="layMenuReset">Reset menu</button></p>
-    <h3 class="seth">Dashboard</h3><p class="muted laynote">A section with nothing to show stays off the dashboard. Its place is kept for when it appears.</p><div class="setbox" id="laySec"></div><p class="layreset"><button type="button" class="lnk" id="laySecReset">Reset dashboard</button></p>
-    <h3 class="seth">Location tiles</h3><p class="muted laynote">Hidden tiles stay off the dashboard until you show them here.</p><div class="setbox" id="layLoc"><p class="muted">Loading locations…</p></div><p class="layreset"><button type="button" class="lnk" id="layLocReset" disabled>Reset locations</button></p>`;
-}
-function paintLayout(main) {
-  const u = window.OYP.user(), M = window.OYPLayoutMenu, L = window.OYPDash && window.OYPDash.layout;
-  if (!u || !M || !L || !S.lay) return;
-  const menuEl = main.querySelector('#layMenu'), secEl = main.querySelector('#laySec'), locEl = main.querySelector('#layLoc');
-  if (menuEl) menuEl.innerHTML = S.lay.menu.map((row, i) => layRow('menu', row, i, S.lay.menu.length)).join('');
-  if (secEl) secEl.innerHTML = S.lay.sec.map((id, i) => layRow('sec', { key: id, label: L.sections.labels[id] || id }, i, S.lay.sec.length)).join('');
-  const loc = S.lay.loc;
-  if (locEl && loc && !loc.missing) {
-    const rows = loc.order.filter(k => loc.byKey[k]).map(k => ({ key: k, label: L.locations.name(loc.byKey[k]), hidden: loc.hide.indexOf(k) >= 0 }));
-    locEl.innerHTML = rows.length ? rows.map((row, i) => layRow('loc', row, i, rows.length)).join('') : '<p class="muted">No location tiles.</p>';
-  }
-  const mr = main.querySelector('#layMenuReset'), sr = main.querySelector('#laySecReset'), lr = main.querySelector('#layLocReset');
-  if (mr) mr.disabled = !M.custom(u);
-  if (sr) sr.disabled = !L.sections.custom(u);
-  if (lr) lr.disabled = !(loc && loc.custom);
-}
-function layoutAct(main, e) {
-  if (sec() !== 'layout' || !S.lay) return;
-  const u = window.OYP.user(), M = window.OYPLayoutMenu, L = window.OYPDash.layout;
-  const reset = e.target.closest('#layMenuReset,#laySecReset,#layLocReset');
-  const hide = e.target.closest('[data-layhide]');
-  const b = e.target.closest('[data-lay]');
-  if (reset) {
-    if (reset.disabled) return;
-    if (reset.id === 'layMenuReset') { M.reset(u); S.lay.menu = M.list(u); }
-    if (reset.id === 'laySecReset') { L.sections.reset(u); S.lay.sec = L.sections.list(u); }
-    if (reset.id === 'layLocReset' && S.lay.loc && !S.lay.loc.missing) { L.locations.reset(u); S.lay.loc = L.locations.fromList(Object.keys(S.lay.loc.byKey).map(k => S.lay.loc.byKey[k]), u); }
-    paintLayout(main); return;
-  }
-  if (hide && S.lay.loc && !S.lay.loc.missing) {
-    const k = hide.dataset.layhide, h = S.lay.loc.hide.slice(), i = h.indexOf(k);
-    if (i >= 0) h.splice(i, 1); else h.push(k);
-    S.lay.loc.hide = h;
-    L.locations.save(u, S.lay.loc.order, h, S.lay.loc.canon);
-    S.lay.loc.custom = L.locations.custom(u);
-    paintLayout(main); return;
-  }
-  if (!b || b.disabled) return;
-  const dir = Number(b.dataset.dir), key = b.dataset.key, kind = b.dataset.lay;
-  if (kind === 'menu') { const keys = layMove(S.lay.menu.map(x => x.key), key, dir); S.lay.menu = keys.map(k => S.lay.menu.find(x => x.key === k)); M.save(u, keys); }
-  else if (kind === 'sec') { S.lay.sec = layMove(S.lay.sec, key, dir); L.sections.save(u, S.lay.sec); }
-  else if (kind === 'loc' && S.lay.loc && !S.lay.loc.missing) { S.lay.loc.order = layMove(S.lay.loc.order, key, dir); L.locations.save(u, S.lay.loc.order, S.lay.loc.hide, S.lay.loc.canon); S.lay.loc.custom = L.locations.custom(u); }
-  paintLayout(main);
+  const on = window.OYPLayoutEdit && window.OYPLayoutEdit.editing();
+  return `<div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Edit layout</span><span class="muted">While this is on, drag a section, a location tile, or a menu item into place. Location tiles show a hide mark, and Show and Reset appear for tiles you have changed. The dashboard and both menus stay clear when this is off.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="layEdit"${on ? ' checked' : ''}><span>${on ? 'On' : 'Off'}</span></label></div></div></div>
+    <p class="muted">Open the dashboard to move its sections and the location tiles. The menu on this page, and the phone menu, move while editing is on.</p>`;
 }
 function layoutWire(main) {
-  const u = window.OYP.user(), M = window.OYPLayoutMenu, L = window.OYPDash && window.OYPDash.layout;
-  if (!u || !M || !L) return;
-  S.lay = { menu: M.list(u), sec: L.sections.list(u), loc: S.lay && S.lay.loc };
-  paintLayout(main);
-  if (!S.layBound) { S.layBound = true; main.addEventListener('click', e => layoutAct(main, e)); }
-  if (S.lay.loc) return;
-  const live = window.OYP.here();
-  window.OYP.call('dashboard').then(r => {
-    if (!live() || sec() !== 'layout' || !S.lay) return;
-    const locEl = main.querySelector('#layLoc');
-    if (!r || !r.ok || !r.locations) { S.lay.loc = { missing: true, custom: false }; if (locEl) locEl.innerHTML = '<p class="muted">Location tiles are not on this dashboard.</p>'; paintLayout(main); return; }
-    S.lay.loc = L.locations.fromList(r.locations, u);
-    paintLayout(main);
-  });
+  const box = main.querySelector('#layEdit');
+  if (!box || !window.OYPLayoutEdit) return;
+  const lab = box.nextElementSibling;
+  box.onchange = () => { window.OYPLayoutEdit.set(box.checked); if (lab) lab.textContent = box.checked ? 'On' : 'Off'; };
+  if (!S.layListen) {
+    S.layListen = true;
+    window.OYPLayoutEdit.listen(on => {
+      const b = document.getElementById('layEdit');
+      if (!b) return;
+      b.checked = !!on;
+      if (b.nextElementSibling) b.nextElementSibling.textContent = on ? 'On' : 'Off';
+    });
+  }
 }
 window.addEventListener('hashchange', () => { S.types = null; S.typesDirty = false; if ((S.ds || S.dp || S.df) && sec() !== 'design') { S.ds = null; S.dp = null; S.df = null; if (window.OYPDesign) window.OYPDesign.restore(); } }); // leaving Design unsaved: back to the saved look
 window.OYPSettings = { render };

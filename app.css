@@ -67,6 +67,17 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .codebox{border:1.5px solid var(--gold);border-radius:calc(14px*var(--rad));padding:calc(18px*var(--sp)) calc(22px*var(--sp));margin:0 0 calc(24px*var(--sp));max-width:calc(520px*var(--cw));background:#fffdf6}
 .codebox .c{font-family:var(--label);font-size:calc(40px*var(--fs));letter-spacing:.3em;margin:calc(6px*var(--sp)) 0}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;color:#fff;font-family:var(--label);font-size:calc(14px*var(--fs));padding:calc(12px*var(--sp)) calc(20px*var(--sp));border-radius:calc(20px*var(--rad));z-index:30}
+.laybar{position:fixed;z-index:40;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;max-width:calc(100% - 24px);background:#111;color:#fff;border-radius:999px;padding:8px 8px 8px 16px;box-shadow:0 8px 28px rgba(0,0,0,.2);font-family:var(--label);font-size:13px;letter-spacing:.02em}
+.laybar button{border:0;background:#fff;color:#111;border-radius:999px;padding:8px 14px;font-family:var(--label);font-weight:500;font-size:12px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+html.layedit .main{padding-bottom:84px}
+html.layedit .menu{padding-bottom:72px}
+html.layedit .dcard[data-dsec]{cursor:grab;box-shadow:inset 0 0 0 1.5px #ddd;touch-action:none;user-select:none}
+html.layedit .dcard[data-dsec].dragging,html.layedit .lctile.dragging,html.layedit a[data-nkey].dragging{opacity:.55}
+html.layedit .sidenav a[data-nkey],html.layedit .menu a[data-nkey]{cursor:grab;touch-action:none;user-select:none}
+html.layedit .lctile{position:relative;cursor:grab;touch-action:none;user-select:none}
+html.layedit .lctile .lx{position:absolute;top:6px;right:6px;width:26px;height:26px;border:1px solid #ddd;border-radius:50%;background:#fff;color:#111;padding:0;line-height:1;font-size:14px;cursor:pointer;touch-action:manipulation}
+.layloc{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp));align-items:center}
+.layloc .lnk[hidden]{display:none}
 @media (max-width:760px){.office{grid-template-columns:1fr}.side{display:none}.main{padding:calc(22px*var(--sp)) calc(18px*var(--sp))}}
 .cn{font-family:var(--head);font-weight:500;font-size:calc(17px*var(--hs))}.cx td{background:#faf8f1}.cpanel{padding:calc(8px*var(--sp)) calc(4px*var(--sp))}.cpanel .addrow{margin:calc(10px*var(--sp)) 0}.caud{font-family:var(--label);font-size:calc(13px*var(--fs));line-height:1.7;margin-top:calc(6px*var(--sp));max-height:220px;overflow:auto}
 /* dashboard */
