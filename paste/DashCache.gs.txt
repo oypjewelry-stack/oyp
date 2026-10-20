@@ -12,11 +12,13 @@ Send these live files. They are not in the repo, so the lines below use the name
 
 1. The file that contains the JobSync hook (`isJobAction_` / `handleJob_`). That is where `dashboard` and `dashDrill` are answered.
 2. The file that turns the POST into JSON and returns it to the browser (the `return` next to `handleAction_`). Often the same file.
-3. Dashboard.gs and DashboardDrill.gs. Nothing in them changes for this paste. The next paste (the 5-minute warmer) has to call the functions those files already have. Send them and that call will be filled in with their real names. Do not paste a guessed replacement over either file.
+3. DashboardDrill.gs, so the 5-minute warmer can call the drill by its real name. Do not paste a guessed replacement over it.
+
+If Dashboard.gs is the full file from PR #22 (`paste/Dashboard.gs.txt`), that file already stores the `dashboard` answer, and its key includes the executive flag. Do not wrap `dashboard` again. Wrapping it here would store one copy per role and could hand an executive answer to someone else in the same role. A write still drops both, because both use the key `oypDashGen`.
 
 What to change
 
-A. The dashboard line. Find the line that answers action `dashboard`. Keep the call on the right of `return`. Wrap it:
+A. The dashboard line. Skip this step when Dashboard.gs is the PR #22 file. Otherwise find the line that answers action `dashboard`. Keep the call on the right of `return`. Wrap it:
 
     if (a === 'dashboard') return dashCacheRead_(s.user, 'dashboard', req, function () { return THE_CALL_ALREADY_ON_THAT_LINE; });
 
@@ -46,6 +48,28 @@ Paste steps:
 3. Run `dashCacheSelfCheck` once from the editor. The log should show `ok true`, a cold time, a smaller warm time, and `builds 2`. That run only talks to CacheService. It does not read the Sheet.
 4. Deploy the web app the way you usually do (same deployment, new version).
 
+Session lookup
+
+`sessionFrom_` reads the Sessions tab and the Users tab on every request, including a dashboard hit that never touches those tabs for the board. The functions at the bottom of this file keep a successful lookup for 5 minutes, keyed by the SHA-256 of the token. The token itself is not stored. Fold the wrappers below into Auth.gs yourself. There is no Auth.gs paste.
+
+Replace `sessionFrom_` with this, and rename the current body to `sessionFromSheet_`:
+
+    function sessionFrom_(token) {
+      var hit = (typeof sessionCacheGet_ === 'function') ? sessionCacheGet_(token) : null;
+      if (hit) return hit;
+      var s = sessionFromSheet_(token);
+      if (s && s.user && typeof sessionCachePut_ === 'function') sessionCachePut_(token, s);
+      return s;
+    }
+
+After a successful logout, drop that one token:
+
+    if (typeof sessionCacheDrop_ === 'function') sessionCacheDrop_(token);
+
+After revoke, password reset, deactivate, and a role change (`settingsUserRole`), drop every device for that username. A role change has to drop too, or the old role would keep being served for 5 minutes:
+
+    if (typeof sessionCacheDropUser_ === 'function') sessionCacheDropUser_(username);
+
 COPY FROM HERE
 
 /**
@@ -54,14 +78,17 @@ COPY FROM HERE
  * No new OAuth scope. Does not replace Dashboard.gs or DashboardDrill.gs.
  *
  * Auth.gs (names from the JobSync hook; use yours if they differ):
- *   if (a === 'dashboard') return dashCacheRead_(s.user, 'dashboard', req, function () { return THE_CALL_ALREADY_ON_THAT_LINE; });
+ *   Skip the dashboard wrap when Dashboard.gs is the PR #22 file. That file caches itself.
  *   if (a === 'dashDrill') return dashCacheRead_(s.user, 'dashDrill', req, function () { return THE_CALL_ALREADY_ON_THAT_LINE; });
  *   res = dashCacheNoteWrite_(req.action, res); // the line before the JSON goes back to the browser
+ *
+ * DASH_CACHE_ROLES is only the list of roles this cache will store.
+ * Dashboard.gs owns DASH_ROLES (the permission map). Do not reuse that name here.
  */
 var DASH_CACHE_TTL = 900;
 var DASH_CACHE_PART = 80000;
 var DASH_CACHE_PARTS = 8;
-var DASH_ROLES = { admin: 1, production_manager: 1, accounting: 1, staff: 1 };
+var DASH_CACHE_ROLES = { admin: 1, production_manager: 1, accounting: 1, staff: 1 };
 var DASH_WRITES = {
   jobReviewSave: 1, jobBulkLocation: 1, contactSave: 1, portalStepsSave: 1,
   prodMove: 1, prodAssign: 1, prodSetTarget: 1, prodTimer: 1, prodSessionAdd: 1, prodSessionVoid: 1,
@@ -71,7 +98,7 @@ var DASH_WRITES = {
 };
 
 function dashCacheRead_(user, action, req, compute) {
-  if (!user || !DASH_ROLES[user.role]) return compute();
+  if (!user || !DASH_CACHE_ROLES[user.role]) return compute();
   var spec = dashCacheSpec_(action, req);
   if (!spec) return compute();
   var hit = dashCacheGet_(user.role, spec);
@@ -241,4 +268,73 @@ function dashCacheSelfCheck() {
   var ok = !!(cold && cold.ok && warm && warm.marker === 'selfcheck' && warm.n === 1 && again && again.n === 2 && builds === 2);
   Logger.log(JSON.stringify({ ok: ok, coldMs: coldMs, warmMs: warmMs, builds: builds }));
   return { ok: ok, coldMs: coldMs, warmMs: warmMs, builds: builds };
+}
+
+/**
+ * Session lookup, 5 minutes, keyed by the SHA-256 of the token. The token is not stored.
+ * Logout drops that one token. Revoke, reset, deactivate, and a role change bump the user key,
+ * so every device for that username misses.
+ */
+var SESSION_TTL = 300;
+
+function sessionHash_(token) {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token || ''), Utilities.Charset.UTF_8);
+  var hex = '', i, b;
+  for (i = 0; i < raw.length; i++) {
+    b = raw[i];
+    if (b < 0) b += 256;
+    hex += (b < 16 ? '0' : '') + b.toString(16);
+  }
+  return hex;
+}
+
+function sessionFresh_(s) {
+  var exp = s && (s.expires_at || (s.user && s.user.expires_at));
+  if (!exp) return true;
+  var t = Date.parse(exp);
+  return !t || t > Date.now();
+}
+
+function sessionCacheGet_(token) {
+  if (!token) return null;
+  var cache = CacheService.getScriptCache(), raw;
+  try { raw = cache.get('oypS1:' + sessionHash_(token)); } catch (e) { return null; }
+  if (!raw) return null;
+  var s;
+  try { s = JSON.parse(raw); } catch (e2) { return null; }
+  if (!sessionFresh_(s)) return null;
+  var user = (s.user && s.user.username) || s.username;
+  if (user) {
+    var gen = '';
+    try { gen = cache.get('oypSg:' + user) || ''; } catch (e3) { gen = ''; }
+    if (gen && String(s._gen || '') !== String(gen)) return null;
+  }
+  delete s._gen;
+  return s;
+}
+
+function sessionCachePut_(token, s) {
+  if (!token || !s || !s.user) return;
+  var user = s.user.username || s.username;
+  if (!user) return;
+  var cache = CacheService.getScriptCache(), gen = '';
+  try { gen = cache.get('oypSg:' + user) || ''; } catch (e) { gen = ''; }
+  if (!gen) {
+    gen = '1';
+    try { cache.put('oypSg:' + user, gen, 21600); } catch (e2) {}
+  }
+  var copy;
+  try { copy = JSON.parse(JSON.stringify(s)); } catch (e3) { return; }
+  copy._gen = gen;
+  try { cache.put('oypS1:' + sessionHash_(token), JSON.stringify(copy), SESSION_TTL); } catch (e4) {}
+}
+
+function sessionCacheDrop_(token) {
+  if (!token) return;
+  try { CacheService.getScriptCache().remove('oypS1:' + sessionHash_(token)); } catch (e) {}
+}
+
+function sessionCacheDropUser_(username) {
+  if (!username) return;
+  try { CacheService.getScriptCache().put('oypSg:' + username, String(Date.now()), 21600); } catch (e) {}
 }
