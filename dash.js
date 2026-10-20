@@ -335,7 +335,8 @@ async function render(main, u, fresh) {
 
   if (can.consign) {
     const L = r.consignments || [];
-    parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="csdash"><span class="lab">Items out · oldest first</span><a class="lnk" href="#/consignment">Open</a></span></div>${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
+    const owedSlot = (u && u.role === 'admin') ? '<div class="kpis dcowed" id="dConsignOwed" hidden></div>' : '';
+    parts.consign = `<section class="dcard" data-dsec="consign"><div class="dtitle"><span class="dname"><h3>Consignment</h3></span><span class="csdash"><span class="lab">Items out · oldest first</span><a class="lnk" href="#/consignment">Open</a></span></div>${owedSlot}${L.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Item</span></th><th><span class="lab">With</span></th><th class="hm"><span class="lab">Out since</span></th><th><span class="lab">Days</span></th>${can.prices ? '<th class="hm r"><span class="lab">Value</span></th>' : ''}</tr></thead><tbody>${L.slice(0, 12).map(x => `
       <tr class="${x.overdue ? 'od' : ''}"><td><b class="cn">${esc(x.description || x.item_id)}</b><br><span class="muted">${esc(x.item_id)}${x.jo ? ' · JO ' + esc(x.jo) : ''}</span></td><td>${esc(x.consignee || '—')}<br><span class="muted">${esc(x.consignment_id)}</span></td>
       <td class="hm">${esc(day(x.date_out))}</td><td>${x.overdue ? `<span class="chip gold">${x.days_out}<span class="hm"> · Overdue</span></span>` : esc(x.days_out == null ? '—' : x.days_out)}</td>${can.prices ? `<td class="hm r">${x.value ? esc(peso(x.value)) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
       : `<p class="muted">${r.missing.includes('ConsignmentItems') ? 'Consignment isn\'t set up yet.' : 'Nothing out on consignment.'}</p>`}</section>`;
@@ -361,6 +362,20 @@ async function render(main, u, fresh) {
     openJO(k.dataset.jo, boardRow(col.cards.find(x => x.jo === k.dataset.jo), col), 'Dashboard'); });
   wireMessages(main, esc);
   const nc = main.querySelector('#dNoCC'); if (nc) nc.onclick = () => { try { sessionStorage.setItem('oypReviewFilter', 'nocontact'); } catch (_) {} };
+  if (u && u.role === 'admin' && can.consign) fillOwed(main, esc, live);
+}
+async function fillOwed(main, esc, live) {
+  const box = main.querySelector('#dConsignOwed');
+  if (!box) return;
+  let r = null;
+  try { r = await window.OYP.call('consignList'); } catch (e) { r = null; }
+  const still = main.querySelector('#dConsignOwed');
+  if (!live() || !still) return;
+  if (!r || !r.ok || r.balance == null) { still.remove(); return; }
+  const n = Number(r.balance) || 0;
+  const note = 'owed ' + peso(r.owed) + ' · paid ' + peso(r.paid);
+  still.hidden = false;
+  still.innerHTML = `<a class="kpi kpilink tap${n > 0 ? ' gold' : ''}" href="#/consignment"><span class="lab">Owed by consignees ›</span><b>${esc(peso(n))}</b><small>${esc(note)}</small></a>`;
 }
 
 /* ---------- Messages: portal ClientMessages + email inquiries, one list ---------- */
