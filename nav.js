@@ -8,17 +8,17 @@ const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
 const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
 // Default order with nothing saved on this device, and the order Reset returns to. A role still only sees the items it already had.
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it
-  production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
-  accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
-  staff: [['home', 'Home'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments opens in the back office. No Production (Susan + admins only)
+  admin: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it
+  production_manager: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
+  accounting: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
+  staff: [['home', 'Home'], ['todo', 'To do'], ['appts', 'Appointments'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments opens in the back office. No Production (Susan + admins only)
 };
 // back-office only: kept out of the scanner menu (the scanner reads OYPNav.NAV); the back office reads OFFICE_NAV
-const OFFICE_ONLY = { production: true, consignment: true };
+const OFFICE_ONLY = { production: true, consignment: true, todo: true };
 const OFFICE_NAV = NAV;
 const SCAN_NAV = {}; Object.keys(NAV).forEach(r => { SCAN_NAV[r] = NAV[r].filter(([k]) => !OFFICE_ONLY[k]); });
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
-const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, payments: true, quotes: true, balances: true, clients: true, consignment: true };
+const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, payments: true, quotes: true, balances: true, clients: true, consignment: true };
 // link to the scanner that tells it whose menu to show (the role only picks menu items; every page still checks the sign-in)
 const scannerLink = role => SCANNER + (role ? '?role=' + encodeURIComponent(role) : '');
 function escNav(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }

@@ -18,22 +18,26 @@ var TODO_TAG = { appt: 'Appointments', prod: 'Production', pay: 'Payments', quot
 
 var TODO_MAX = 60; // lines sent to the card; the card shows 8 until Show all
 
-function isTodoAction_(a) { return a === 'todoDone' || a === 'todoSnooze'; }
+function isTodoAction_(a) { return a === 'todoDone' || a === 'todoSnooze' || a === 'todoAdd' || a === 'todoUpdate' || a === 'todoUndo' || a === 'todoDelete'; }
 
 function handleTodo_(req, user) {
-  if (!user) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
-  if (typeof DASH_ROLES !== 'undefined' && !DASH_ROLES[user.role]) return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
-  if (req.action === 'todoDone') return todoDismiss_(req, user, 'done');
+  if (!todoAllowed_(user)) return !user ? { ok: false, error: 'Not signed in', code: 'NO_SESSION' } : { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  if (req.action === 'todoAdd') return todoCreate_(req, user);
+  if (req.action === 'todoUpdate') return todoUpdate_(req, user);
+  if (req.action === 'todoUndo') return todoUndo_(req, user);
+  if (req.action === 'todoDelete') return todoDelete_(req, user);
+  if (req.action === 'todoDone') return todoDone_(req, user);
   if (req.action === 'todoSnooze') return todoDismiss_(req, user, 'snooze');
   return { ok: false, error: 'Unknown action' };
 }
 
-/** Own read. The dashboard paints first; dash.js asks for this afterwards. Cached like dashboard (Fast.gs + DashCache.gs). */
+/** Own read. The dashboard paints first; dash.js asks for this afterwards. Cached like dashboard (Fast.gs + DashCache.gs).
+ *  Manual rows are per person. The DashCache key for todoList has to include the username (see PASTE_STEPS). */
 function todoList_(req, user) {
-  if (!user) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
-  if (typeof DASH_ROLES !== 'undefined' && !DASH_ROLES[user.role]) return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  if (!todoAllowed_(user)) return !user ? { ok: false, error: 'Not signed in', code: 'NO_SESSION' } : { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
   var role = String(user.role || '');
-  var can0 = DASH_ROLES[role], exec = typeof isExec_ === 'function' ? !!isExec_(user) : role === 'admin', can = {};
+  var can0 = (typeof DASH_ROLES !== 'undefined' && DASH_ROLES[role]) ? DASH_ROLES[role] : {};
+  var exec = typeof isExec_ === 'function' ? !!isExec_(user) : role === 'admin', can = {};
   Object.keys(can0).forEach(function (k) { can[k] = can0[k]; });
   can.prices = exec;
   var pack = dashTodo_({
@@ -44,7 +48,14 @@ function todoList_(req, user) {
       return Array.isArray(rows) ? rows : [];
     }
   });
-  return { ok: true, items: pack.items, total: pack.total };
+  var today = todoDay_(new Date());
+  var manual = { open: [], done: [], people: [] };
+  try { manual = todoManualList_(user, today); } catch (e) { manual = { open: [], done: [], people: todoPeople_(user) }; }
+  var items = todoSort_((manual.open || []).concat(pack.items || []));
+  var total = (manual.open || []).length + (pack.total || 0);
+  if (items.length > TODO_MAX) items = todoCap_(items);
+  var done = todoSort_((manual.done || []).concat(pack.done || []));
+  return { ok: true, items: items, total: total, done: done, people: manual.people || [], viewer: user.username || '' };
 }
 
 function dashTodo_(ctx) {
@@ -64,9 +75,14 @@ function dashTodo_(ctx) {
     if (can.clients) take('Clients').forEach(function (c) { var id = String(c.client_id || ''); if (id) clients[id] = c; });
   }
   var jobs = Array.isArray(ctx.jobs) ? ctx.jobs : take('JobOrders');
-  var hidden = todoHiddenMap_(take('Reminders'), now.getTime());
+  var hid = todoHiddenMap_(take('Reminders'), now.getTime());
+  var hidden = hid.hide, doneIds = hid.done, done = [];
   var items = [];
-  var push = function (it) { if (it && it.id && !hidden[it.id] && areas[it.area]) items.push(it); };
+  var push = function (it) {
+    if (!it || !it.id || !areas[it.area]) return;
+    if (hidden[it.id]) { if (doneIds[it.id]) done.push(it); return; }
+    items.push(it);
+  };
   if (areas.appt) todoAppts_(push, take, today, role);
   if (areas.prod || areas.rev) todoJobs_(push, jobs, take, clients, role, today, areas);
   if (areas.pay && can.payments !== false) todoPay_(push, jobs, take, clients, role, today, money);
@@ -75,11 +91,11 @@ function dashTodo_(ctx) {
   if (areas.stock) todoStock_(push, take, today);
   if (areas.msg) todoMsgs_(push, take, now.getTime());
   if (areas.shop) todoShop_(push, take);
-  var rank = { today: 0, week: 1, idea: 2 };
-  items.sort(function (a, b) { return (rank[a.bucket] - rank[b.bucket]) || ((b.late || 0) - (a.late || 0)) || String(a.text).localeCompare(String(b.text)); });
+  todoSort_(items);
   var total = items.length;
   if (items.length > TODO_MAX) items = items.slice(0, TODO_MAX);
-  return { items: items, total: total };
+  todoSort_(done);
+  return { items: items, total: total, done: done };
 }
 
 function todoAppts_(push, take, today, role) {
@@ -310,15 +326,15 @@ function todoItem_(id, area, bucket, late, sug, flag, text, href, jo) {
   return { id: id, area: area, bucket: bucket, late: late ? 1 : 0, sug: sug ? 1 : 0, tag: TODO_TAG[area] || area, flag: flag || '', text: text, href: href || TODO_HREF[area] || '#/dashboard', jo: jo, open: jo ? 'Open ' + jo : '' };
 }
 function todoHiddenMap_(rows, nowMs) {
-  var map = {}, i, r, id, st, until;
+  var map = {}, done = {}, i, r, id, st, until;
   for (i = 0; i < rows.length; i++) {
     r = rows[i];
     if (String(r.reminder_id || '').indexOf('td-') !== 0) continue;
     id = String(r.text || ''); st = String(r.status || '');
-    if (st === 'done' && id) map[id] = 1;
+    if (st === 'done' && id) { map[id] = 1; done[id] = 1; }
     if (st === 'snoozed' && id) { until = Date.parse(r.snoozed_to || ''); if (until > nowMs) map[id] = 1; }
   }
-  return map;
+  return { hide: map, done: done };
 }
 function todoDismiss_(req, user, kind) {
   var id = String(req.id || '').trim();
@@ -491,3 +507,265 @@ function todoNum_(v) { if (v == null || String(v).trim() === '') return null; va
 function todoQty_(n) { var s = String(Math.round(n * 100) / 100); return s.replace(/\.0$/, ''); }
 function todoPeso_(n) { return '₱' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 function todoDayWord_(n) { n = Number(n) || 0; return n + ' day' + (n === 1 ? '' : 's'); }
+
+var TODO_COLS = ['todo_id', 'text', 'due', 'assignee', 'created_by', 'created_at', 'done_at', 'done_by', 'status'];
+var todoLockHeld_ = false;
+
+function todoAllowed_(user) {
+  if (!user) return false;
+  var role = String(user.role || '');
+  if (TODO_AREAS[role]) return true;
+  if (typeof DASH_ROLES !== 'undefined' && DASH_ROLES[role]) return true;
+  return false;
+}
+function todoSort_(items) {
+  var rank = { today: 0, week: 1, idea: 2 };
+  items.sort(function (a, b) {
+    var ra = rank[a.bucket] == null ? 9 : rank[a.bucket], rb = rank[b.bucket] == null ? 9 : rank[b.bucket];
+    return (ra - rb) || ((b.late || 0) - (a.late || 0)) || String(a.due || '9999-99-99').localeCompare(String(b.due || '9999-99-99')) || String(a.text).localeCompare(String(b.text));
+  });
+  return items;
+}
+function todoCap_(items) {
+  if (items.length <= TODO_MAX) return items;
+  var manual = [], auto = [], i;
+  for (i = 0; i < items.length; i++) (items[i].manual ? manual : auto).push(items[i]);
+  if (manual.length >= TODO_MAX) return manual.slice(0, TODO_MAX);
+  return todoSort_(manual.concat(auto.slice(0, TODO_MAX - manual.length)));
+}
+function todoManualBucket_(due, today) {
+  if (!due) return { bucket: 'week', late: 0 };
+  if (due < today) return { bucket: 'today', late: 1 };
+  if (due === today) return { bucket: 'today', late: 0 };
+  return { bucket: 'week', late: 0 };
+}
+function todoVisible_(row, user) {
+  if (!row || !user) return false;
+  if (String(user.role || '') === 'admin') return true;
+  var me = String(user.username || '').trim().toLowerCase();
+  if (me && String(row.created_by || '').trim().toLowerCase() === me) return true;
+  var asg = String(row.assignee || '').trim().toLowerCase();
+  if (!asg || asg === 'everyone' || asg === 'all') return true;
+  return asg === me;
+}
+function todoName_(username, people) {
+  var u = String(username || ''), i;
+  for (i = 0; i < (people || []).length; i++) if (people[i].username === u && people[i].name) return people[i].name;
+  return u;
+}
+function todoManualItem_(row, user, today, people) {
+  var due = todoCleanDue_(row.due);
+  if (due === null) due = '';
+  var b = todoManualBucket_(due, today);
+  var st = String(row.status || 'open');
+  return {
+    id: String(row.todo_id), area: 'manual', manual: 1, bucket: b.bucket, late: b.late, sug: 0, tag: '', flag: '',
+    text: String(row.text || ''), href: '#/todo', jo: '', open: '', due: due, assignee: String(row.assignee || ''),
+    created_by: String(row.created_by || ''), created_name: todoName_(row.created_by, people),
+    status: st === 'done' ? 'done' : 'open', done_at: String(row.done_at || ''), done_by: String(row.done_by || '')
+  };
+}
+function todoManualPack_(rows, user, today, people) {
+  var open = [], done = [], i, row, st;
+  people = people || [];
+  for (i = 0; i < (rows || []).length; i++) {
+    row = rows[i];
+    if (!row || !row.todo_id) continue;
+    st = String(row.status || 'open');
+    if (st === 'deleted' || !todoVisible_(row, user)) continue;
+    (st === 'done' ? done : open).push(todoManualItem_(row, user, today, people));
+  }
+  return { open: todoSort_(open), done: todoSort_(done), people: people };
+}
+function todoCleanText_(v) {
+  var s = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  return s ? s.slice(0, 240) : '';
+}
+function todoCleanDue_(v) {
+  if (v == null || String(v).trim() === '') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') { var fromDate = todoDay_(v); return fromDate || null; }
+  var s = String(v).trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
+  var day = s.slice(0, 10), mo = Number(day.slice(5, 7)), d = Number(day.slice(8, 10));
+  if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return day;
+  return null;
+}
+function todoCleanAssignee_(v, people) {
+  var s = String(v == null ? '' : v).trim(), i, hit = '';
+  if (!s || /^everyone$/i.test(s) || /^all$/i.test(s)) return '';
+  if (!/^[A-Za-z0-9._-]{1,40}$/.test(s)) return null;
+  for (i = 0; i < (people || []).length; i++) if (String(people[i].username).toLowerCase() === s.toLowerCase()) hit = people[i].username;
+  if (hit) return hit;
+  return people && people.length ? null : s;
+}
+function todoNewId_(now) {
+  var s = String(now || new Date().toISOString()).replace(/\W/g, '');
+  return ('tdm-' + s.slice(-14) + '-' + Math.floor(Math.random() * 1679616).toString(36)).slice(0, 48);
+}
+function todoApply_(rows, kind, req, user, now, people) {
+  var text, due, asg, row, id, i, st, t2, d2, a2;
+  if (kind === 'todoAdd') {
+    text = todoCleanText_(req.text);
+    if (!text) return { ok: false, error: 'Type a to-do' };
+    due = todoCleanDue_(req.due);
+    if (due === null) return { ok: false, error: 'Use a due date' };
+    asg = todoCleanAssignee_(req.assignee, people);
+    if (asg === null) return { ok: false, error: 'Unknown assignee' };
+    row = { todo_id: todoNewId_(now), text: text, due: due, assignee: asg, created_by: String(user.username || ''), created_at: String(now || ''), done_at: '', done_by: '', status: 'open' };
+    rows.push(row);
+    return { ok: true, row: row, note: text };
+  }
+  id = String(req.id || '').trim();
+  if (id.indexOf('tdm-') !== 0) return { ok: false, error: 'Unknown item' };
+  for (i = 0; i < rows.length; i++) if (String(rows[i].todo_id) === id) { row = rows[i]; break; }
+  if (!row) return { ok: false, error: 'That to-do is gone' };
+  if (!todoVisible_(row, user)) return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  st = String(row.status || 'open');
+  if (kind === 'todoUpdate') {
+    if (st === 'deleted') return { ok: false, error: 'That to-do is gone' };
+    if (req.text != null) { t2 = todoCleanText_(req.text); if (!t2) return { ok: false, error: 'Type a to-do' }; row.text = t2; }
+    if (req.due != null) { d2 = todoCleanDue_(req.due); if (d2 === null) return { ok: false, error: 'Use a due date' }; row.due = d2; }
+    if (req.assignee != null) { a2 = todoCleanAssignee_(req.assignee, people); if (a2 === null) return { ok: false, error: 'Unknown assignee' }; row.assignee = a2; }
+    return { ok: true, row: row, note: row.text };
+  }
+  if (kind === 'todoDone') {
+    if (st === 'deleted') return { ok: false, error: 'That to-do is gone' };
+    row.status = 'done'; row.done_at = String(now || ''); row.done_by = String(user.username || '');
+    return { ok: true, row: row, note: 'done' };
+  }
+  if (kind === 'todoUndo') {
+    if (st !== 'done' && st !== 'deleted') return { ok: true, row: row, note: 'open', skip: true };
+    row.status = 'open'; row.done_at = ''; row.done_by = '';
+    return { ok: true, row: row, note: 'open' };
+  }
+  if (kind === 'todoDelete') { row.status = 'deleted'; return { ok: true, row: row, note: 'deleted' }; }
+  return { ok: false, error: 'Unknown action' };
+}
+function todoSs_() { return typeof ss_ === 'function' ? ss_() : SpreadsheetApp.getActive(); }
+function todoLock_(fn) {
+  if (todoLockHeld_) return fn();
+  var run = function () { todoLockHeld_ = true; try { return fn(); } finally { todoLockHeld_ = false; } };
+  if (typeof withLock_ === 'function') return withLock_(run);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try { return run(); } finally { lock.releaseLock(); }
+}
+function todoWriteHeaders_(sh) {
+  sh.getRange(1, 1, 1, TODO_COLS.length).setValues([TODO_COLS.slice()]);
+  if (sh.setFrozenRows) sh.setFrozenRows(1);
+  try { sh.getRange(1, 1, Math.max(sh.getMaxRows ? sh.getMaxRows() : 1, 1), TODO_COLS.length).setNumberFormat('@'); } catch (e) {}
+}
+function todoHeadList_(head) {
+  var out = [], i;
+  for (i = 0; i < (head || []).length; i++) out.push(String(head[i] == null ? '' : head[i]).trim());
+  return out;
+}
+function todoNeedsHeader_(sh) {
+  if (!sh || !sh.getLastRow()) return true;
+  var width = Math.max(sh.getLastColumn ? sh.getLastColumn() : TODO_COLS.length, TODO_COLS.length);
+  return todoHeadList_(sh.getRange(1, 1, 1, width).getValues()[0]).indexOf('todo_id') < 0;
+}
+function todoEnsureSheet_(ss) {
+  var sh = ss.getSheetByName('Todos'), head, blank, i;
+  if (!sh) { sh = ss.insertSheet('Todos'); todoWriteHeaders_(sh); return sh; }
+  if (!sh.getLastRow()) { todoWriteHeaders_(sh); return sh; }
+  head = todoHeadList_(sh.getRange(1, 1, 1, Math.max(sh.getLastColumn ? sh.getLastColumn() : TODO_COLS.length, TODO_COLS.length)).getValues()[0]);
+  if (head.indexOf('todo_id') >= 0) return sh;
+  blank = true;
+  for (i = 0; i < head.length; i++) if (head[i] !== '') blank = false;
+  if (!blank) { if (sh.insertRowsBefore) sh.insertRowsBefore(1, 1); else if (sh.insertRowBefore) sh.insertRowBefore(1); }
+  todoWriteHeaders_(sh);
+  return sh;
+}
+function todoCell_(v) {
+  if (v == null) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') return isNaN(v.getTime()) ? '' : (typeof Utilities !== 'undefined' && Utilities.formatDate ? Utilities.formatDate(v, 'Asia/Manila', "yyyy-MM-dd'T'HH:mm:ss") : v.toISOString());
+  return String(v);
+}
+function todoReadRowsInner_(sh) {
+  var values = sh.getLastRow() ? sh.getDataRange().getValues() : [], head = values.length ? todoHeadList_(values[0]) : TODO_COLS.slice(), rows = [], r, c, o, idx;
+  for (r = 1; r < values.length; r++) {
+    o = {};
+    for (c = 0; c < TODO_COLS.length; c++) { idx = head.indexOf(TODO_COLS[c]); o[TODO_COLS[c]] = idx < 0 ? '' : todoCell_(values[r][idx]); }
+    if (!o.todo_id) continue;
+    Object.defineProperty(o, '_row', { value: r + 1, enumerable: false, writable: true });
+    rows.push(o);
+  }
+  return { sh: sh, rows: rows, head: head };
+}
+function todoReadRows_() {
+  var ss = todoSs_(), sh = ss.getSheetByName('Todos');
+  if (sh && !todoNeedsHeader_(sh)) return todoReadRowsInner_(sh);
+  if (todoLockHeld_) return todoReadRowsInner_(todoEnsureSheet_(ss));
+  return todoLock_(function () { return todoReadRowsInner_(todoEnsureSheet_(todoSs_())); });
+}
+function todoWriteRow_(pack, row) {
+  var head = pack.head && pack.head.length ? pack.head : TODO_COLS.slice();
+  var width = Math.max(head.length, 1), line = [], c, k, cells, cur;
+  for (c = 0; c < width; c++) { k = head[c]; line.push(TODO_COLS.indexOf(k) >= 0 ? String(row[k] == null ? '' : row[k]) : ''); }
+  if (!row._row) {
+    var r = pack.sh.getLastRow() + 1;
+    pack.sh.getRange(r, 1, 1, width).setNumberFormat('@').setValues([line]);
+    Object.defineProperty(row, '_row', { value: r, enumerable: false, writable: true });
+    return;
+  }
+  for (c = 0; c < width; c++) if (TODO_COLS.indexOf(head[c]) < 0) line[c] = null;
+  cells = pack.sh.getRange(row._row, 1, 1, width);
+  cur = cells.getValues()[0];
+  for (c = 0; c < width; c++) if (line[c] === null) line[c] = cur[c];
+  cells.setValues([line]);
+}
+function todoPeople_(user) {
+  var rows = [], out = [], seen = {}, i, r, un, name, active, st, me;
+  try {
+    if (typeof jobRows_ === 'function') {
+      var ss = typeof ss_ === 'function' ? ss_() : null;
+      if (!ss || !ss.getSheetByName || ss.getSheetByName('Users')) rows = jobRows_('Users') || [];
+    }
+  } catch (e) { rows = []; }
+  if ((!rows || !rows.length) && typeof dashRead_ === 'function') { try { rows = dashRead_('Users', []) || []; } catch (e2) { rows = []; } }
+  if (!Array.isArray(rows)) rows = [];
+  for (i = 0; i < rows.length; i++) {
+    r = rows[i] || {};
+    un = String(r.username || r.user || '').trim();
+    if (!un || seen[un]) continue;
+    active = String(r.active == null ? '' : r.active).toLowerCase();
+    if (active === 'false' || active === '0' || active === 'off' || active === 'no') continue;
+    st = String(r.status || '').toLowerCase();
+    if (st === 'off' || st === 'disabled') continue;
+    name = String(r.display_name || r.name || un).trim() || un;
+    seen[un] = 1;
+    out.push({ username: un, name: name });
+  }
+  me = user && String(user.username || '').trim();
+  if (me && !seen[me]) out.push({ username: me, name: String((user && (user.display_name || user.username)) || me) });
+  out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  return out;
+}
+function todoManualList_(user, today) {
+  var people = todoPeople_(user), built = todoManualPack_(todoReadRows_().rows, user, today, people);
+  built.people = people;
+  return built;
+}
+function todoMutate_(req, user, kind) {
+  var people = todoPeople_(user);
+  var now = typeof now_ === 'function' ? now_() : new Date().toISOString();
+  var today = todoDay_(new Date());
+  return todoLock_(function () {
+    var pack = todoReadRows_();
+    var res = todoApply_(pack.rows, kind, req || {}, user, now, people);
+    if (!res.ok) return res;
+    if (!res.skip) todoWriteRow_(pack, res.row);
+    if (typeof audit_ === 'function') audit_(user.username, kind, res.row.todo_id, (req && req.device_id) || '', res.note || '');
+    return { ok: true, id: res.row.todo_id, status: res.row.status, item: todoManualItem_(res.row, user, today, people) };
+  });
+}
+function todoCreate_(req, user) { return todoMutate_(req, user, 'todoAdd'); }
+function todoUpdate_(req, user) { return todoMutate_(req, user, 'todoUpdate'); }
+function todoUndo_(req, user) { return todoMutate_(req, user, 'todoUndo'); }
+function todoDelete_(req, user) { return todoMutate_(req, user, 'todoDelete'); }
+function todoDone_(req, user) {
+  var id = String((req && req.id) || '').trim();
+  if (id.indexOf('tdm-') === 0) return todoMutate_(req, user, 'todoDone');
+  return todoDismiss_(req, user, 'done');
+}

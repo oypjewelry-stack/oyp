@@ -466,30 +466,25 @@ function todoHold() {
 function todoHtml(esc) {
   if (!D.todo) return todoHold();
   if (D.todo.ok === false) return `<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3></span><span class="lab">Reminders · deadlines · suggestions</span></div><p class="muted">${esc(D.todo.error || 'Could not load')}</p></section>`;
-  const all = todoRows() || [];
+  const T = window.OYPTodo;
+  const all = (todoRows() || []).filter(it => !T || T.visible(it, D.user));
   const counts = {};
-  all.forEach(it => { counts[it.area] = (counts[it.area] || 0) + 1; });
+  all.forEach(it => { if (it.area && it.area !== 'manual') counts[it.area] = (counts[it.area] || 0) + 1; });
   let filt = D.todoFilt || 'all';
   if (filt !== 'all' && !counts[filt]) { filt = 'all'; D.todoFilt = 'all'; }
   const chips = TODO_CHIPS.filter(([k]) => k === 'all' || counts[k]);
   const shown = filt === 'all' ? all : all.filter(it => it.area === filt);
   const vis = !D.todoAll && shown.length > TODO_VIS ? shown.slice(0, TODO_VIS) : shown;
-  const groups = ['today', 'week', 'idea'].map(b => vis.filter(it => (it.bucket || 'week') === b)).filter(g => g.length);
-  const row = it => {
-    const open = D.todoOpen === it.id;
-    const tag = (it.flag ? it.flag + ' · ' : '') + (it.tag || '');
-    const go = it.open || (it.jo ? 'Open ' + it.jo : 'Open');
-    const acts = open ? `<div class="tdacts"><a class="pill sm" href="${esc(it.href || '#/dashboard')}" data-td="go" data-id="${esc(it.id)}">${esc(go)}</a><button type="button" class="pill sm outline" data-td="done" data-id="${esc(it.id)}">Done</button><span class="tdsnz"><span class="lab">Snooze</span><button type="button" class="fchip" data-td="snooze" data-until="tomorrow" data-id="${esc(it.id)}">Tomorrow</button><button type="button" class="fchip" data-td="snooze" data-until="3d" data-id="${esc(it.id)}">3 days</button><button type="button" class="fchip" data-td="snooze" data-until="7d" data-id="${esc(it.id)}">1 week</button></span></div>` : '';
-    return `<div class="tdrow${it.late ? ' late' : ''}${it.sug ? ' sug' : ''}${open ? ' open' : ''}" data-id="${esc(it.id)}"><span class="chip tdtag${it.late ? ' gold' : ''}">${esc(tag)}</span><span class="tdtxt">${todoMark(esc, it.text)}</span><button type="button" class="tdmore" data-td="more" data-id="${esc(it.id)}" aria-label="More">⋯</button><span class="tdgo">›</span>${acts}</div>`;
-  };
-  const body = vis.length ? groups.map(g => `<div class="tdgrp"><div class="tdgh"><span class="lab">${TODO_BUCKET[g[0].bucket] || 'This week'}</span><span class="kn">${g.length}</span></div>${g.map(row).join('')}</div>`).join('') : '<p class="muted">All clear.</p>';
+  const body = T ? T.listHtml(esc, vis, { user: D.user, today: T.today(), people: D.todo.people || [], openId: D.todoOpen, page: false }) : '<p class="muted">All clear.</p>';
   const more = shown.length > TODO_VIS ? `<button type="button" class="lnk tdall" data-td="all">${D.todoAll ? 'Show less' : 'Show all (' + shown.length + ')'}</button>` : '';
   const badge = D.todo.total > all.length ? D.todo.total : all.length;
+  const add = T ? T.addBar(esc, D.todo.people || []) : '';
   return `<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3><span class="tdcount">${badge}</span></span><span class="lab">Reminders · deadlines · suggestions</span></div>
+    ${add}
     <div class="rvchips tdchips" role="tablist" aria-label="To do areas">${chips.map(([k, lab]) => `<button type="button" class="fchip${filt === k ? ' on' : ''}" data-tdf="${k}">${lab}<b>${k === 'all' ? all.length : counts[k]}</b></button>`).join('')}</div>
     ${body}
     ${more}
-    <p class="muted tdfoot">Tap a line to open it. ⋯ gives Done or Snooze. Done and snoozed items come back only if the issue is still there after the snooze.</p></section>`;
+    <p class="muted tdfoot">Enter adds a to-do. Tick finishes one you typed. Tap any other line to open it. ⋯ gives Done or Snooze.</p></section>`;
 }
 function loadTodo(main, u) {
   const force = !!D.todoForce;
@@ -515,8 +510,54 @@ function loadTodo(main, u) {
 function paintTodo(main) {
   const sec = main.querySelector('[data-dsec="todo"]');
   if (!sec) return;
+  const inp = sec.querySelector('.tdaddin'), due = sec.querySelector('.tdadddue'), who = sec.querySelector('.tdaddwho');
+  const draft = inp ? { text: inp.value, due: due ? due.value : '', who: who ? who.value : '', focus: document.activeElement === inp } : null;
   sec.outerHTML = todoHtml(window.OYP.esc);
+  const next = main.querySelector('[data-dsec="todo"]');
+  if (draft && next) {
+    const a = next.querySelector('.tdaddin'), b = next.querySelector('.tdadddue'), c = next.querySelector('.tdaddwho');
+    if (a) a.value = draft.text;
+    if (b && draft.due) b.value = draft.due;
+    if (c && draft.who) c.value = draft.who;
+    if (draft.focus && a) a.focus();
+  }
   wireTodo(main);
+}
+async function todoSubmitAdd(main, u) {
+  const sec = main.querySelector('[data-dsec="todo"]');
+  if (!sec || !D.todo || !D.todo.ok || !window.OYPTodo) return;
+  const text = (sec.querySelector('.tdaddin') || {}).value.trim();
+  const due = (sec.querySelector('.tdadddue') || {}).value || '';
+  const assignee = (sec.querySelector('.tdaddwho') || {}).value || '';
+  if (!text) return;
+  const temp = 'tmp-' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36);
+  const item = window.OYPTodo.fresh(u || D.user, { id: temp, text, due, assignee });
+  D.todo.items = D.todo.items || [];
+  D.todo.items.push(item);
+  D.todo.items.sort(window.OYPTodo.compare);
+  if (D.todo.total != null) D.todo.total++;
+  const box = sec.querySelector('.tdaddin'), dueEl = sec.querySelector('.tdadddue'), whoEl = sec.querySelector('.tdaddwho');
+  if (box) box.value = ''; if (dueEl) dueEl.value = ''; if (whoEl) whoEl.value = '';
+  paintTodo(main);
+  const r = await window.OYP.call('todoAdd', { text, due, assignee });
+  const cur = (D.todo.items || []).find(x => x.id === temp);
+  if (!r || !r.ok) {
+    D.todo.items = (D.todo.items || []).filter(x => x.id !== temp);
+    if (D.todo.total > 0) D.todo.total--;
+    paintTodo(main);
+    const again = main.querySelector('.tdaddin');
+    if (again) { again.value = text; again.focus(); }
+    return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save');
+  }
+  if (cur && r.item) Object.assign(cur, r.item);
+  if (cur && cur._done && r.item) {
+    const d = await window.OYP.call('todoDone', { id: r.item.id });
+    if (d && d.ok) {
+      D.todo.items = D.todo.items.filter(x => x.id !== r.item.id);
+      if (D.todo.total > 0) D.todo.total--;
+    }
+  }
+  paintTodo(main);
 }
 function todoGo(it) {
   if (it.jo && canOpen(D.user)) { openJO(it.jo, { jo: it.jo, description: it.text || '', client: '' }, 'To do'); return; }
@@ -532,18 +573,36 @@ function wireTodo(main) {
   const sec = main.querySelector('[data-dsec="todo"]');
   if (!sec || sec.dataset.tdwire) return;
   sec.dataset.tdwire = '1';
+  sec.addEventListener('submit', e => { if (e.target.closest('.tdadd')) { e.preventDefault(); todoSubmitAdd(main, D.user); } });
   sec.addEventListener('click', async e => {
     const chip = e.target.closest('[data-tdf]');
     if (chip) { e.preventDefault(); D.todoFilt = chip.dataset.tdf; D.todoOpen = ''; paintTodo(main); return; }
     const btn = e.target.closest('[data-td]');
     const row = e.target.closest('.tdrow');
     if (!btn && !row) return;
+    if (e.target.closest('.tdadd')) return;
     const id = (btn && btn.dataset.id) || (row && row.dataset.id);
     const act = btn ? btn.dataset.td : 'go';
     if (act === 'all') { e.preventDefault(); D.todoAll = !D.todoAll; paintTodo(main); return; }
-    const items = todoRows() || [];
+    const items = (todoRows() || []).concat((D.todo && D.todo.done) || []);
     const it = items.find(x => x.id === id);
     if (act === 'more') { e.preventDefault(); e.stopPropagation(); D.todoOpen = D.todoOpen === id ? '' : id; paintTodo(main); return; }
+    if (act === 'tick') {
+      e.preventDefault(); e.stopPropagation();
+      if (!it || !it.manual) return;
+      if (String(it.id).indexOf('tmp-') === 0) { it._done = 1; return; }
+      D.todo.items = (D.todo.items || []).filter(x => x.id !== id);
+      if (D.todo.total > 0) D.todo.total--;
+      it.status = 'done';
+      D.todo.done = ((D.todo.done || []).filter(x => x.id !== id)).concat([it]);
+      D.todoOpen = '';
+      paintTodo(main);
+      const r = await window.OYP.call('todoDone', { id });
+      if (!r || !r.ok) { D.todoForce = true; loadTodo(main, D.user); return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save'); }
+      if (window.OYP.toast) window.OYP.toast('Done');
+      return;
+    }
+    if (act === 'go' && it && it.manual) { e.preventDefault(); location.hash = '#/todo'; return; }
     if (act === 'done' || act === 'snooze') {
       e.preventDefault(); e.stopPropagation();
       if (btn) btn.disabled = true;
