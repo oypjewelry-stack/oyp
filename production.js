@@ -34,8 +34,21 @@ const can = () => (S.r && S.r.can) || {};
 
 /* ---------- photos (thumbnails cached per file) ---------- */
 const PH = {};
-const photo = (jo, fid, size) => { const k = fid + '|' + (size || 't'); if (!PH[k]) PH[k] = call('prodPhoto', { jo, file_id: fid, size }).then(x => { const src = (x && x.ok && x.src) || ''; if (!src) delete PH[k]; return src; }); return PH[k]; }; // a failed photo is asked again next time
+const photo = (jo, fid, size) => {
+  const sz = size === 'original' ? 'original' : (size === 'full' ? 1600 : 300);
+  if (window.OYPPhotos) return window.OYPPhotos.load({ jo, id: fid, kind: 'scan', size: sz, legacy: 'prod' });
+  const k = fid + '|' + (size || 't'); if (!PH[k]) PH[k] = call('prodPhoto', { jo, file_id: fid, size }).then(x => { const src = (x && x.ok && x.src) || ''; if (!src) delete PH[k]; return src; }); return PH[k];
+};
 function loadThumbs(root) {
+  if (!root) return;
+  if (window.OYPPhotos) {
+    window.OYPPhotos.watch(root, {
+      sel: '[data-ph]',
+      item: el => ({ jo: el.dataset.jo, id: el.dataset.ph, kind: 'scan', size: 300, legacy: 'prod' }),
+      paint(el, src) { if (src) { el.style.backgroundImage = `url("${src}")`; el.classList.add('has'); } }
+    });
+    return;
+  }
   root.querySelectorAll('[data-ph]').forEach(el => { if (el.dataset.done) return; el.dataset.done = 1;
     photo(el.dataset.jo, el.dataset.ph).then(src => { if (src) { el.style.backgroundImage = `url("${src}")`; el.classList.add('has'); } }); });
 }
@@ -253,7 +266,11 @@ function drawJob() {
     ${nx && !(c.col === 'pickup') ? `<button class="pill wide pmv" id="pMv">MOVE TO ${esc(nx.label.toUpperCase())} ▸</button>` : ''}
   </div></div>`;
   wireSheetClose(); loadThumbs(box); tick();
-  const big = $('pBig'); const showBig = fid => { big.innerHTML = '<span class="lab">Loading photo…</span>'; photo(c.jo, fid, 'full').then(src => { big.innerHTML = src ? `<img src="${src}" alt="JO card">` : '<span class="lab">Photo not found</span>'; }); };
+  if (window.OYPPhotos && r.pages.length) window.OYPPhotos.prefetch(c.jo, r.pages.map(p => p.file_id), 'scan', 'prod');
+  const big = $('pBig'); const showBig = fid => {
+    if (window.OYPPhotos) { window.OYPPhotos.stage(big, { jo: c.jo, id: fid, kind: 'scan', legacy: 'prod', alt: 'JO card', empty: 'Photo not found' }); return; }
+    big.innerHTML = '<span class="lab">Loading photo…</span>'; photo(c.jo, fid, 'full').then(src => { big.innerHTML = src ? `<img src="${src}" alt="JO card">` : '<span class="lab">Photo not found</span>'; });
+  };
   if (big.dataset.full) showBig(big.dataset.full);
   box.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { box.querySelectorAll('[data-pg]').forEach(x => x.classList.toggle('on', x === b)); showBig(b.dataset.pg); });
   const after = async (res, msg) => { if (!res || !res.ok) { toast((res && res.error) || 'Could not save'); if (route().arg === c.jo) drawJob(); return false; } if (msg) toast(msg); S.at = 0; await reload(); const j = await call('prodJob', { jo: c.jo }); if (j && j.ok && route().arg === c.jo) { S.job = j; drawJob(); } return true; };

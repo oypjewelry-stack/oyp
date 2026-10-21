@@ -261,22 +261,22 @@ function ivWire(main) {
   if ($('#ivSX')) { $('#ivSX').onclick = () => { IV.open = null; ivDraw(main); }; $('#ivSheet').onclick = e => { if (e.target.id === 'ivSheet') { IV.open = null; ivDraw(main); } }; }
   const on = main.querySelector('.ivchips .fchip.on'); if (on && innerWidth < 760) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20;
 }
-async function ivThumbs(main, L) { // piece photos only (server never sends JO card scans), 12 per call, first 60 shown
-  const live = window.OYP.here(), want = L.slice(0, 60).filter(j => j.has_photo && IV.thumbs[j.jo] === undefined).map(j => j.jo);
-  for (let i = 0; i < want.length; i += 12) {
-    const part = want.slice(i, i + 12); part.forEach(k => { IV.thumbs[k] = IV.thumbs[k] || null; });
-    const r = await window.OYP.call('invThumbs', { jos: part });
-    part.forEach(k => {
-      const src = r && r.ok ? r.thumbs[k] || '' : ''; IV.thumbs[k] = src;
-      if (!live()) return;
-      document.querySelectorAll(`[data-th="${CSS.escape(k)}"]`).forEach(el => {
-        const cap = el.querySelector('span');
-        if (src) { el.style.backgroundImage = `url('${src}')`; el.classList.add('has'); if (cap) cap.remove(); }
-        else if (!cap) el.insertAdjacentHTML('beforeend', '<span>No photo</span>');
-      });
-    });
-    if (!live()) return; // left the page: stop fetching
-  }
+function ivThumbs(main, L) { // piece photos only. 300px thumbs, loaded as tiles scroll in (no 60-tile cap). L kept for the call site.
+  void L;
+  if (!window.OYPPhotos) return;
+  const grid = main.querySelector('#ivGrid');
+  if (grid) window.OYPPhotos.watch(grid, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint(el, src) {
+      const k = el.dataset.th; IV.thumbs[k] = src || '';
+      const cap = el.querySelector(':scope > span');
+      if (src) { el.style.backgroundImage = `url('${src}')`; el.classList.add('has'); if (cap) cap.remove(); }
+      else if (!cap) el.insertAdjacentHTML('beforeend', '<span>No photo</span>');
+    }
+  });
+  const jo = IV.open, j = jo && IV.r && IV.r.jobs.find(x => x.jo === jo), big = main.querySelector('#ivSheet .ivph.big');
+  if (big && j && j.has_photo) window.OYPPhotos.stage(big, { jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: 'No photo' });
 }
 
 /* =================== Materials (#/inventory) =================== */
