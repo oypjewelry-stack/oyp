@@ -542,8 +542,13 @@ const LE = {
     document.body.appendChild(el);
     el.querySelector('#layDone').onclick = () => this.set(false);
   },
+  // A section moves by its own header. The neighbor's header stays put until the pointer crosses that header.
+  place(itemFirst, pos, mid) {
+    if (itemFirst) return pos > mid ? 'after' : '';
+    return pos < mid ? 'before' : '';
+  },
   // Whole card, tile, or menu row. A short move starts the drag; a tap still clicks. Touch uses the same pointer events.
-  drag(container, itemSel, axis, onDrop, skipSel) {
+  drag(container, itemSel, axis, onDrop, skipSel, handleSel) {
     if (!container || container.dataset.oypdrag) return;
     container.dataset.oypdrag = '1';
     container.addEventListener('pointerdown', e => {
@@ -552,6 +557,7 @@ const LE = {
       if (skipSel && e.target.closest(skipSel)) return;
       const item = e.target.closest(itemSel);
       if (!item || !container.contains(item)) return;
+      if (handleSel && !e.target.closest(handleSel)) return;
       const pid = e.pointerId, sx = e.clientX, sy = e.clientY;
       let dragging = false;
       const move = ev => {
@@ -561,14 +567,20 @@ const LE = {
           dragging = true;
           item.classList.add('dragging');
           item.style.pointerEvents = 'none';
+          try { item.setPointerCapture(pid); } catch (err) {}
         }
         ev.preventDefault();
         const el = document.elementFromPoint(ev.clientX, ev.clientY);
         const over = el && el.closest(itemSel);
         if (!over || over === item || !container.contains(over)) return;
-        const r = over.getBoundingClientRect();
-        const after = axis === 'x' ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2;
-        const ref = after ? over.nextSibling : over;
+        const mark = over.querySelector(':scope > .dtitle') || over;
+        const r = mark.getBoundingClientRect();
+        const pos = axis === 'x' ? ev.clientX : ev.clientY;
+        const mid = axis === 'x' ? r.left + r.width / 2 : r.top + r.height / 2;
+        const itemFirst = !!(item.compareDocumentPosition(over) & Node.DOCUMENT_POSITION_FOLLOWING);
+        const where = this.place(itemFirst, pos, mid);
+        if (!where) return;
+        const ref = where === 'after' ? over.nextSibling : over;
         if (ref !== item) container.insertBefore(item, ref);
       };
       const up = ev => {
@@ -580,7 +592,13 @@ const LE = {
         item.classList.remove('dragging');
         item.style.pointerEvents = '';
         if (LE.kill) document.removeEventListener('click', LE.kill, true);
-        LE.kill = e2 => { e2.preventDefault(); e2.stopPropagation(); document.removeEventListener('click', LE.kill, true); LE.kill = null; };
+        LE.kill = e2 => {
+          document.removeEventListener('click', LE.kill, true);
+          LE.kill = null;
+          if (e2.target.closest && e2.target.closest('#layBar')) return;
+          e2.preventDefault();
+          e2.stopPropagation();
+        };
         document.addEventListener('click', LE.kill, true);
         onDrop();
       };

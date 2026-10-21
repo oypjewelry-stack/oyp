@@ -79,6 +79,25 @@ function readLocPref(u) {
     };
   } catch (e) { return null; }
 }
+function locHiddenKeys(u) {
+  const p = readLocPref(u);
+  return p && p.hide ? p.hide.slice() : [];
+}
+function setLocHidden(u, key, hidden) { // Settings toggles one tile. Order already saved on this device stays as it is.
+  const p = readLocPref(u) || { order: [], hide: [] };
+  const hide = p.hide.filter(k => k !== key);
+  if (hidden) hide.push(key);
+  const order = p.order.slice();
+  try {
+    if (!order.length && !hide.length) localStorage.removeItem(locStoreKey(u));
+    else localStorage.setItem(locStoreKey(u), JSON.stringify({ order: order, hide: hide }));
+  } catch (e) {}
+  if (D.loc && D.user && u && D.user.username === u.username && D.loc.canon.indexOf(key) >= 0) {
+    if (hidden) D.loc.hide.add(key); else D.loc.hide.delete(key);
+    const main = document.getElementById('main');
+    if (main && main.querySelector('#locRow')) paintLoc(main, window.OYP.esc);
+  }
+}
 function writeLocPref(u, order, hide, canon) {
   const ord = [], h = [];
   order.forEach(k => { if (ord.indexOf(k) < 0) ord.push(k); });
@@ -715,7 +734,7 @@ function wireLayout(main, u) {
   const box = main.querySelector('#dsecs');
   if (box) window.OYPLayoutEdit.drag(box, '[data-dsec]', 'y', () => {
     writeOrder(u, [...box.children].filter(s => s.dataset && s.dataset.dsec).map(s => s.dataset.dsec));
-  }, '.lctile, .lx, .layloc, .lcper, button, input, select, textarea, summary');
+  }, '.lctile, .lx, .layloc, .lcper, button, input, select, textarea, summary, a', '.dtitle');
   const row = main.querySelector('#locRow');
   if (row && D.loc) window.OYPLayoutEdit.drag(row, '[data-lkey]', 'x', () => {
     const visible = [...row.querySelectorAll('[data-lkey]')].map(el => el.dataset.lkey);
@@ -921,7 +940,9 @@ window.OYPDash = { render, relayout, layout: {
     save: (u, order, hide, canon) => writeLocPref(u, order, hide, canon),
     reset: u => { try { localStorage.removeItem(locStoreKey(u)); } catch (e) {} },
     custom: u => !!(u && readLocPref(u)),
-    name: locName
+    name: locName,
+    hidden: locHiddenKeys,
+    setHidden: setLocHidden
   }
 } };
 })();

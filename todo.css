@@ -24,7 +24,6 @@
  .tdtag{grid-column:1/-1;grid-row:1}
  .tdtxt{grid-column:1;grid-row:2}.tdmore{grid-row:2;grid-column:2}.tdgo{grid-row:2;grid-column:3}
  .tdacts{grid-column:1/-1;grid-row:3}.tdsnz{margin-left:0}
- .todo .dtitle{flex-wrap:wrap}.todo .dtitle>.lab{width:100%;text-align:left!important}
- .todo .dtitle h3{font-size:19px}
+ .todo .dtitle>.lab{flex-basis:100%;text-align:left!important}
 }
 @media (max-width:760px){.tdchips{flex-wrap:nowrap;overflow-x:auto}}

@@ -8,7 +8,7 @@
    Buttons & shapes: PARTS = one entry per type. Percent controls (t text, h height/padding, r corners, w width) still apply as
    --d-<type>-<control> (n/100) so an older save looks the same. A pixel the owner sets is kept in design.parts._px and wins for
    that one control (app.css reads --d-<type>-fp/hp/wp/rp). f = font, g = weight, c = color. New types (box, sw, arrow, hmenu,
-   hbody, hprice) ride inside the same design.parts JSON — no new setting key. Fonts: design.font_body / font_head / font_label
+   hbody, hprice, and the dashboard titles hkpi, htodo, hboard, hloc, hsales, hconsign, hmsgs, hpay) ride inside the same design.parts JSON — no new setting key. Fonts: design.font_body / font_head / font_label
    replace --body / --head / --label. A type's own font is f (--d-<type>-f). */
 (function () {
   'use strict';
@@ -21,7 +21,8 @@
   // type: [controls]; t/h/r/w may be a legacy percent or a pixel in parts._px. f font, g weight, c #rrggbb
   var PARTS = { btn: 'thrwfgc', btnout: 'thrwfgc', btnbig: 'thrfgc', btnsm: 'thrwfgc', link: 'tfgc', menu: 'thfgc', tabs: 'thrfgc', fchip: 'thrwfgc', chip: 'thrwfgc',
     field: 'thrfgc', card: 'thrwfgc', box: 'thrwfgc', pcard: 'thrfgc', modal: 'thrwfgc', toast: 'thrfgc', sw: 'tfgc', arrow: 'thc',
-    hmenu: 'tfgc', hbody: 'tfgc', hprice: 'tfgc' };
+    hmenu: 'tfgc', hbody: 'tfgc', hprice: 'tfgc',
+    hkpi: 'tfg', htodo: 'tfg', hboard: 'tfg', hloc: 'tfg', hsales: 'tfg', hconsign: 'tfg', hmsgs: 'tfg', hpay: 'tfg' };
   // [base px at the original look, min, max]. What the number means: t font-size, h outer height (or circle size), w outer width, r corner radius.
   var PX = {
     btn: { t: [18, 8, 48], h: [47, 24, 140], w: [101, 48, 420], r: [26, 0, 64] },
@@ -43,12 +44,16 @@
     arrow: { t: [20, 10, 48], h: [38, 20, 84] },
     hmenu: { t: [20, 12, 56] },
     hbody: { t: [26, 14, 72] },
-    hprice: { t: [26, 14, 72] }
+    hprice: { t: [26, 14, 72] },
+    hkpi: { t: [12, 8, 48] },
+    htodo: { t: [19, 10, 72] }, hboard: { t: [19, 10, 72] }, hloc: { t: [19, 10, 72] }, hsales: { t: [19, 10, 72] },
+    hconsign: { t: [19, 10, 72] }, hmsgs: { t: [19, 10, 72] }, hpay: { t: [19, 10, 72] }
   };
   // which global a legacy percent follows, so the pixel on the slider matches the screen. none = the sample's own px.
   var AXIS = {
     // Headers do not follow Headings or body text. A saved pixel is the size, and only that header's elements read it.
-    t: { btn: 'hs', btnout: 'hs', btnbig: 'hs', btnsm: 'hs', hmenu: 'none', hbody: 'none', hprice: 'none' },
+    t: { btn: 'hs', btnout: 'hs', btnbig: 'hs', btnsm: 'hs', hmenu: 'none', hbody: 'none', hprice: 'none',
+      hkpi: 'fs', htodo: 'hs', hboard: 'hs', hloc: 'hs', hsales: 'hs', hconsign: 'hs', hmsgs: 'hs', hpay: 'hs' },
     h: { arrow: 'none' },
     w: { card: 'none', box: 'cw', modal: 'cw' },
     r: {}
@@ -58,7 +63,7 @@
   // outer width = content * fontRatio + pad * spacing * widthPercent. Used only to label a legacy percent; a saved pixel sets the width itself.
   var WPART = { btn: [45, 56], btnout: [74, 56], btnsm: [30, 36], fchip: [47, 26], chip: [73, 20] };
   var ABS = { t: 'fp', h: 'hp', w: 'wp', r: 'rp' };
-  var HEADER = { hmenu: 1, hbody: 1, hprice: 1 }; // pixel only: do not also publish a --d-<type>-t ratio other scopes could multiply
+  var HEADER = { hmenu: 1, hbody: 1, hprice: 1, hkpi: 1, htodo: 1, hboard: 1, hloc: 1, hsales: 1, hconsign: 1, hmsgs: 1, hpay: 1 }; // pixel only: do not also publish a --d-<type>-t ratio other scopes could multiply
   var WEIGHTS = { 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold' };
   // the fonts already loaded on every staff and customer page (Google Fonts link in each page's <head>): code: [name, the stack app.css uses]
   var FONTS = { libre: ['Libre Bodoni', "'Libre Bodoni','Bodoni 72',Didot,serif"], moda: ['Bodoni Moda', "'Bodoni Moda','Bodoni 72',Didot,serif"],
