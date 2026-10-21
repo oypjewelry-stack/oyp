@@ -53,7 +53,7 @@ catch (e) { draw = false; console.log('skip label bitmaps: ' + (e && e.message |
 const card = { kind: 'jo_card', jo: '26-287', due: '2026-10-21' };
 const tag = { kind: 'jewelry_tag', jo: '26-287', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' };
 if (draw) {
-[['B31', 600, 168], ['B1', 384, 72]].forEach(([model, head, ox]) => {
+[['B31', 600, 164], ['B1', 384, 72]].forEach(([model, head, ox]) => {
   const a = L.render(Object.assign({ model, client: 'Elena Tan' }, card));
   const b = L.render(Object.assign({ model }, card));
   const c = L.render(Object.assign({ model, client: 'Maria Santos' }, card));
@@ -107,6 +107,10 @@ function landscape(img) {
 eq(clearMargin(long) && clearMargin(wide), 'spec ink stays about 1 mm inside the 30 mm edges');
 const cal = L.render({ kind: 'cal_tag', model: 'B31' });
 eq(cal.width === 600 && cal.height === 560 && cal.lines.length === 0 && cal.qr === '', 'calibration has no JO text and no name');
+function darkAt(img, x, y) { return img.data[(y * img.width + x) * 4] === 0; }
+eq(cal.offsetX === 164 && !darkAt(cal, cal.offsetX + 4, 4) && darkAt(cal, cal.offsetX + 4, 8), 'the B31 calibration border is 2 mm left of the head centre and 0.5 mm down');
+const calB1 = L.render({ kind: 'cal_jo', model: 'B1' });
+eq(calB1.offsetX === 72 && darkAt(calB1, calB1.offsetX + 4, 4), 'B1 calibration stays centred on its head');
 
 function crc(buf) {
   let c = ~0;
@@ -146,7 +150,7 @@ eq(fs.existsSync(path.join(outDir, 'b31-jo-card.png')), 'PNG renders were writte
 const base = L.render(Object.assign({ model: 'B31' }, card));
 const moved = L.render(Object.assign({ model: 'B31', shiftX: L.px(0.5), shiftY: L.px(-1) }, card));
 eq(moved.offsetX === base.offsetX + L.px(0.5) && moved.qrBox.y === base.qrBox.y - L.px(1), 'a saved offset moves the JO card on the head');
-eq(L.printPx('B31', 600) === L.px(72) && L.printPx('B1', 384) === 384, 'B31 centres on its 72 mm print width and B1 centres on its 384 px head');
+eq(base.offsetX === Math.round((600 - 240) / 2) + L.px(-2) && L.placeBias('B31').y === L.px(0.5) && L.placeBias('B1').x === 0, 'a B31 label sits 2 mm left of the 600 px head centre and 0.5 mm down');
 const cardView = L.preview(base, { scale: 4, smooth: true });
 const tagView = L.preview(L.render(Object.assign({ model: 'B1' }, tag)), { scale: 4, smooth: true });
 const pad = L.px(4) * 4, rad = L.px(2) * 4;
@@ -243,8 +247,8 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=6') && index.includes('print-label.js?v=5') && index.includes('nav.js?v=19') && index.includes('app.js?v=30') && index.includes('settings.js?v=19') && index.includes('print.css?v=5') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=5') && read('nav.js').includes('print.js?v=6') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(index.includes('print.js?v=7') && index.includes('print-label.js?v=6') && index.includes('nav.js?v=20') && index.includes('app.js?v=30') && index.includes('settings.js?v=19') && index.includes('print.css?v=5') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=6') && read('nav.js').includes('print.js?v=7') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');

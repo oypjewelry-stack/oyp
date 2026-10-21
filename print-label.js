@@ -4,9 +4,10 @@
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
    Jewelry tag: the same landscape reading on the 30×25 head (240×200), then a
    45 mm blank tail. B1 and B31 print direction is "top", so x is across the label.
-   The printer draws columns 0..width-1 and does not centre a narrow bitmap.
-   B31's manual print width is 72 mm, so a 30 mm label is centred on 575 px,
-   not on the 600 px head buffer. B1's verified head is 48 mm / 384 px. */
+   The printer draws columns 0..width-1 and does not centre a narrow bitmap,
+   so the image stays the full head. A 30 mm label centred on the B31's 600 px
+   head printed about 2 mm too far right and 0.5 mm too high on a T30*20 roll.
+   That measured correction is the B31 default. B1's head is 48 mm / 384 px. */
 (function (root) {
 'use strict';
 if (root.OYPLabel) return;
@@ -71,25 +72,25 @@ function presetOf(kind) {
   if (kind === 'jewelry_tag' || kind === 'cal_tag') return PRESETS[1];
   return PRESETS[0];
 }
-/* Usable print width. A narrower bitmap is not centred by the printer, so we pad
-   out to the head and place the label ourselves. B31 reports 600 px (75 mm) but
-   its manual print width is 72 mm, and that zone starts at column 0: centring a
-   T30 on 600 px printed about 1.5 mm too far right. B1's 384 px head is its print width. */
-function printPx(model, head) {
-  var known = { B31: 72, B3: 72, B1: 48 };
-  var mm = known[String(model || '').toUpperCase()];
-  if (!mm) return head;
-  var n = px(mm);
-  return n > 0 && n < head ? n : head;
+/* Where a label sits on the head. The printer does not centre, and a label-width
+   image would start at column 0, so the bitmap stays the full head.
+   A calibration print centred on the B31's 600 px head (offset 180) put the
+   border about 2 mm right of the T30*20 sticker and about 0.5 mm high.
+   px(-2) is -16 and px(0.5) is 4. A saved offset is added on top of this.
+   B1 was not in that print; its 384 px head stays centred. */
+function placeBias(model) {
+  if (String(model || '').toUpperCase() === 'B31') return { x: px(-2), y: px(0.5) };
+  return { x: 0, y: 0 };
 }
 function canvasFor(kind, head, model) {
   var p = presetOf(kind);
   var labelW = px(p.wMm), labelH = px(p.hMm), tail = px(p.tailMm);
-  var usable = printPx(model, head);
+  var bias = placeBias(model);
   return {
     head: head, labelW: labelW, labelH: labelH, tail: tail,
-    offsetX: Math.round((usable - labelW) / 2),
-    width: head, height: labelH + tail, preset: p.id, printPx: usable
+    offsetX: Math.round((head - labelW) / 2) + bias.x,
+    biasY: bias.y,
+    width: head, height: labelH + tail, preset: p.id
   };
 }
 /* Largest QR that fits maxPx. Quiet zone 4 when it fits, otherwise 3, module at least 3. */
@@ -273,7 +274,7 @@ function render(opts) {
   var head = headOf(opts);
   var box = canvasFor(kind, head, opts.model);
   var img = new Img(box.width, box.height);
-  var shiftX = opts.shiftX | 0, shiftY = opts.shiftY | 0;
+  var shiftX = opts.shiftX | 0, shiftY = (opts.shiftY | 0) + (box.biasY || 0);
   box.offsetX += shiftX;
   var rawSet = img.set.bind(img);
   img.set = function (x, y) { rawSet(x, y + shiftY); };
@@ -506,7 +507,7 @@ function preview(rendered, opts) {
 
 root.OYPLabel = {
   render: render, toCanvas: toCanvas, preview: preview, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
-  ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, printPx: printPx
+  ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPLabel;
 })(typeof window !== 'undefined' ? window : globalThis);
