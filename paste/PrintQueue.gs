@@ -28,7 +28,7 @@ function printRowReset_(row) {
   row.printed_by = '';
   return row;
 }
-function printRowsEnqueue_(rows, jo, kind, by, now, reprint) {
+function printRowsEnqueue_(rows, jo, kind, by, now, reprint, allowCreate) {
   jo = printNormJo_(jo);
   kind = printKind_(kind);
   if (!jo || !kind) return { ok: false, error: 'Need a JO and a sticker type' };
@@ -44,6 +44,7 @@ function printRowsEnqueue_(rows, jo, kind, by, now, reprint) {
   /* Reprint must not add a second row while a failed one is still on screen. Put that row back in the queue. */
   if (failed && reprint) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
   if (!reprint && any) return { ok: true, item: any, created: false, skipped: true };
+  if (allowCreate === false) return { ok: true, skipped: true, auto: false };
   var item = {
     print_id: 'pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + Math.floor(Math.random() * 1000000),
     jo: jo, kind: kind, status: 'queued', created_at: String(now || ''), created_by: String(by || ''),
@@ -104,7 +105,7 @@ function printRowsList_(rows) {
   return out;
 }
 
-function isPrintAction_(a) { return a === 'printMark' || a === 'printEnqueue' || a === 'printReprint'; }
+function isPrintAction_(a) { return a === 'printMark' || a === 'printEnqueue' || a === 'printReprint' || a === 'printAutoSet'; }
 
 function printLock_(fn) {
   if (typeof withLock_ === 'function') return withLock_(fn);
@@ -142,6 +143,29 @@ function printBrief_(req) {
   if (!req) return false;
   var b = req.brief;
   return b === 1 || b === true || b === '1' || b === 'true';
+}
+function printProps_() {
+  try {
+    if (typeof PropertiesService === 'undefined' || !PropertiesService.getScriptProperties) return null;
+    return PropertiesService.getScriptProperties();
+  } catch (e) { return null; }
+}
+function printAutoOn_() {
+  var p = printProps_();
+  if (!p) return true;
+  var v = p.getProperty('print_auto');
+  if (v == null || v === '') return true;
+  return v === '1' || v === 'true' || v === 'on';
+}
+function printAutoSet_(req, user) {
+  if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  var p = printProps_();
+  if (!p) return { ok: false, error: 'Auto-print is not available yet' };
+  var on = true;
+  if (req && (req.on === false || req.on === 0 || req.on === '0' || req.auto === false || req.auto === 0 || req.auto === '0')) on = false;
+  p.setProperty('print_auto', on ? '1' : '0');
+  printRevBump_();
+  return { ok: true, auto: on, rev: printRevRead_() };
 }
 function printSheet_() {
   var ss = typeof ss_ === 'function' ? ss_() : SpreadsheetApp.getActive();
@@ -248,21 +272,23 @@ function printDecorate_(item, look) {
   Object.keys(spec).forEach(function (k) { if (spec[k]) copy[k] = spec[k]; });
   return copy;
 }
-function printEnqueueRun_(jo, kind, by, reprint) {
+function printEnqueueRun_(jo, kind, by, reprint, manual) {
   var pack = printReadRows_(), now = new Date().toISOString();
-  var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint);
+  var allow = !!manual || !!reprint || printAutoOn_();
+  var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint, allow);
   if (res.created || res.requeued) {
     printWriteRow_(pack, res.item);
     printRevBump_();
   }
   if (res.item) res.item = printDecorate_(res.item);
+  res.auto = printAutoOn_();
   return res;
 }
 function printEnqueue_(jo, kind, actor, opts) {
   opts = opts || {};
   var by = typeof actor === 'string' ? actor : (actor && actor.username) || '';
-  if (opts.locked) return printEnqueueRun_(jo, kind, by, !!opts.reprint); // the caller already holds the script lock (prodMove_)
-  return printLock_(function () { return printEnqueueRun_(jo, kind, by, !!opts.reprint); });
+  if (opts.locked) return printEnqueueRun_(jo, kind, by, !!opts.reprint, !!opts.manual); // the caller already holds the script lock (prodMove_)
+  return printLock_(function () { return printEnqueueRun_(jo, kind, by, !!opts.reprint, !!opts.manual); });
 }
 function printMark_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
@@ -279,16 +305,17 @@ function printMark_(req, user) {
 }
 function printQueue_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
-  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_() };
+  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_(), auto: printAutoOn_() };
   var pack = printReadRows_(), look = printLookup_();
-  var out = { ok: true, rev: printRevEnsure_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
+  var out = { ok: true, rev: printRevEnsure_(), auto: printAutoOn_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
   if (req && req.jo && printNormJo_(req.jo)) out.spec = printDecorate_({ jo: printNormJo_(req.jo) }, look); // read only: specs for a PNG of one JO
   return out;
 }
 function handlePrint_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
   if (req.action === 'printMark') return printMark_(req, user);
-  return printEnqueue_(req.jo, req.kind, user.username, { reprint: req.action === 'printReprint' || !!req.reprint });
+  if (req.action === 'printAutoSet') return printAutoSet_(req, user);
+  return printEnqueue_(req.jo, req.kind, user.username, { reprint: req.action === 'printReprint' || !!req.reprint, manual: !!req.manual });
 }
 function printAfterMove_(req, res, user) {
   if (!res || res.ok === false) return;

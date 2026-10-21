@@ -318,7 +318,7 @@ const acctMenu = navMod.menuHtml({ role: 'accounting', username: 'bea', display_
 eq(pmMenu.includes('data-oyp-printer') && staffMenu.includes('data-oyp-printer') && acctMenu.includes('data-oyp-printer'), 'every role menu that can print includes Printer');
 eq(read('app.js').includes('printerItemHtml') && read('app.js').includes("k === 'settings'"), 'the desktop staff menu adds Printer under Settings');
 eq(read('print.js').includes('>CANCEL</button>') && read('print.js').includes('class="pill sm outline" data-q="cancel"') && !read('print.js').includes('class="lnk" data-q="cancel"'), 'Cancel is the same outline pill as Reprint');
-eq(read('print.js').includes("Auto-print keeps working in the background. Don't close this tab or put the computer to sleep.") && read('print.js').includes('id="prHeadAuto"') && read('print.js').includes('class="settog"'), 'auto-print stays on in the background and in the printer panel');
+eq(read('print.js').includes('On: new JO cards and finished tags are queued and printed. Off: nothing is queued or printed.') && read('print.js').includes('id="prHeadAuto"') && read('print.js').includes('class="settog"') && read('print.js').includes('data-q="drain"') && read('print.js').includes('>Print queued</button>'), 'auto-print is a shared on/off switch, and a station can print the waiting rows');
 eq(read('print.js').includes('postMessage(1)') && read('print.js').includes('new WorkerFn') && read('print.js').includes('setInterval(pollTick, POLL)') && read('print.js').includes('MODEL_TASKS') && !/visibilityState === 'hidden'/.test(read('print.js')), 'hidden tabs keep polling from a worker, with setInterval only as a fallback');
 eq(read('print.js').includes('data-q="again"') && read('print.js').includes('class="muted oyp-qerr"') && !read('print.js').includes('chip gold') && read('print.js').includes('Printer did not respond'), 'a failed row prints again, shows why, and uses the shared chip');
 eq(read('print.js').includes('startHeartbeat') && read('print.js').includes('getDevices') && read('print.js').includes('authorizedDevice') && read('print.js').includes('Printer disconnected. Tap Printer to reconnect'), 'a dropped Bluetooth link heartbeats and reconnects without the picker');
@@ -341,6 +341,20 @@ eq(ctx.printRevRead_() !== revBefore, 'creating a row bumps the rev');
 const revHeld = ctx.printRevRead_();
 ctx.printEnqueue_('26-291', 'jo_card', 'ada', {});
 eq(ctx.printRevRead_() === revHeld, 'a duplicate enqueue does not bump the rev');
+const propBag = {};
+ctx.PropertiesService = { getScriptProperties() { return { getProperty(k) { return Object.prototype.hasOwnProperty.call(propBag, k) ? propBag[k] : null; }, setProperty(k, v) { propBag[k] = String(v); } }; } };
+propBag.print_auto = '0';
+const rowsBeforeOff = sheetRows.length;
+const scanOff = ctx.printEnqueue_('26-400', 'jo_card', 'scanner', {});
+ctx.printAfterMove_({ jo: '26-401', to: 'pickup' }, { ok: true, to: 'notify' }, { username: 'susan' });
+eq(scanOff.ok && scanOff.skipped && scanOff.auto === false && sheetRows.length === rowsBeforeOff, 'auto off queues nothing from a scan or a pickup move');
+const manualOff = ctx.printEnqueue_('26-400', 'jo_card', 'ada', { reprint: true });
+eq(manualOff.created && sheetRows.length === rowsBeforeOff + 1, 'a manual reprint still queues when auto is off');
+const setOn = ctx.printAutoSet_({ on: 0 }, { username: 'ada' });
+const setBack = ctx.printAutoSet_({ on: 1 }, { username: 'ada' });
+eq(setOn.auto === false && setBack.ok && setBack.auto === true && ctx.printAutoOn_(), 'print_auto is a shared script property');
+const scanOn = ctx.printEnqueue_('26-402', 'jo_card', 'scanner', {});
+eq(scanOn.created, 'auto on queues a scan again');
 eq(testPage.includes("textContent = 'Download'") && testPage.includes("textContent = 'PRINT'") && !testPage.includes('DOWNLOAD PNG') && testPage.includes("png.className = 'pill sm outline'") && testPage.includes("go.className = 'pill sm'") && testCss.includes('.oyp-pr-acts .pill.sm.outline,.oyp-qbtns .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-family:var(--head,\'Libre Bodoni\',Georgia,serif);font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);letter-spacing:0;border-width:1px;padding-top:calc(9px*var(--sp) - 1px)'), 'Download matches Print in size and stays an outline');
 
 function bootPrint(opts) {
@@ -767,6 +781,21 @@ drain().then(function () {
         eq(n2 === n + 2, 'without a brief rev, the station reads the queue every 15 seconds');
       });
     });
+  });
+}).then(function () {
+  const held = bootPrint({
+    models: ['B31'],
+    drive: true,
+    queue: { ok: true, auto: false, items: [{ print_id: 'pq-1', jo: '26-336', kind: 'jo_card', status: 'queued' }] },
+    store: { oypPrint: JSON.stringify({ auto: true, model: 'B31', task: 'B1' }) }
+  });
+  held.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    eq(!held.calls.some(b => b.mark === 'claim'), 'auto off does not start a queued sticker');
+    held.sandbox.OYPPrint.printQueued();
+    return drain();
+  }).then(function () {
+    eq(held.calls.some(b => b.mark === 'claim') && held.tasks[0] === 'B1', 'Print queued prints the waiting rows when auto is off');
   });
 }).then(function () {
   if (failed) { console.error(failed + ' failed'); process.exit(1); }

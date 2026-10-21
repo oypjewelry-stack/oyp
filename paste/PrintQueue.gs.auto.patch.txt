@@ -1,0 +1,114 @@
+PrintQueue.gs — shared Auto-print. Apply paste/PrintQueue.gs.rev.patch.txt first.
+Script property print_auto. Missing or empty means on. Off: printEnqueue_ does not add a row from a JO scan or a Pickup tag.
+A reprint (manual) still adds a row. printQueue and a brief check both return auto.
+
+FIND
+function printRowsEnqueue_(rows, jo, kind, by, now, reprint) {
+
+REPLACE WITH
+function printRowsEnqueue_(rows, jo, kind, by, now, reprint, allowCreate) {
+
+FIND
+  if (!reprint && any) return { ok: true, item: any, created: false, skipped: true };
+  var item = {
+
+REPLACE WITH
+  if (!reprint && any) return { ok: true, item: any, created: false, skipped: true };
+  if (allowCreate === false) return { ok: true, skipped: true, auto: false };
+  var item = {
+
+FIND
+function isPrintAction_(a) { return a === 'printMark' || a === 'printEnqueue' || a === 'printReprint'; }
+
+REPLACE WITH
+function isPrintAction_(a) { return a === 'printMark' || a === 'printEnqueue' || a === 'printReprint' || a === 'printAutoSet'; }
+
+FIND
+  return b === 1 || b === true || b === '1' || b === 'true';
+}
+function printSheet_() {
+
+REPLACE WITH
+  return b === 1 || b === true || b === '1' || b === 'true';
+}
+function printProps_() {
+  try {
+    if (typeof PropertiesService === 'undefined' || !PropertiesService.getScriptProperties) return null;
+    return PropertiesService.getScriptProperties();
+  } catch (e) { return null; }
+}
+function printAutoOn_() {
+  var p = printProps_();
+  if (!p) return true;
+  var v = p.getProperty('print_auto');
+  if (v == null || v === '') return true;
+  return v === '1' || v === 'true' || v === 'on';
+}
+function printAutoSet_(req, user) {
+  if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  var p = printProps_();
+  if (!p) return { ok: false, error: 'Auto-print is not available yet' };
+  var on = true;
+  if (req && (req.on === false || req.on === 0 || req.on === '0' || req.auto === false || req.auto === 0 || req.auto === '0')) on = false;
+  p.setProperty('print_auto', on ? '1' : '0');
+  printRevBump_();
+  return { ok: true, auto: on, rev: printRevRead_() };
+}
+function printSheet_() {
+
+FIND
+function printEnqueueRun_(jo, kind, by, reprint) {
+  var pack = printReadRows_(), now = new Date().toISOString();
+  var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint);
+  if (res.created || res.requeued) {
+    printWriteRow_(pack, res.item);
+    printRevBump_();
+  }
+  if (res.item) res.item = printDecorate_(res.item);
+  return res;
+}
+function printEnqueue_(jo, kind, actor, opts) {
+  opts = opts || {};
+  var by = typeof actor === 'string' ? actor : (actor && actor.username) || '';
+  if (opts.locked) return printEnqueueRun_(jo, kind, by, !!opts.reprint); // the caller already holds the script lock (prodMove_)
+  return printLock_(function () { return printEnqueueRun_(jo, kind, by, !!opts.reprint); });
+}
+
+REPLACE WITH
+function printEnqueueRun_(jo, kind, by, reprint, manual) {
+  var pack = printReadRows_(), now = new Date().toISOString();
+  var allow = !!manual || !!reprint || printAutoOn_();
+  var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint, allow);
+  if (res.created || res.requeued) {
+    printWriteRow_(pack, res.item);
+    printRevBump_();
+  }
+  if (res.item) res.item = printDecorate_(res.item);
+  res.auto = printAutoOn_();
+  return res;
+}
+function printEnqueue_(jo, kind, actor, opts) {
+  opts = opts || {};
+  var by = typeof actor === 'string' ? actor : (actor && actor.username) || '';
+  if (opts.locked) return printEnqueueRun_(jo, kind, by, !!opts.reprint, !!opts.manual); // the caller already holds the script lock (prodMove_)
+  return printLock_(function () { return printEnqueueRun_(jo, kind, by, !!opts.reprint, !!opts.manual); });
+}
+
+FIND
+  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_() };
+  var pack = printReadRows_(), look = printLookup_();
+  var out = { ok: true, rev: printRevEnsure_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
+
+REPLACE WITH
+  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_(), auto: printAutoOn_() };
+  var pack = printReadRows_(), look = printLookup_();
+  var out = { ok: true, rev: printRevEnsure_(), auto: printAutoOn_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
+
+FIND
+  if (req.action === 'printMark') return printMark_(req, user);
+  return printEnqueue_(req.jo, req.kind, user.username, { reprint: req.action === 'printReprint' || !!req.reprint });
+
+REPLACE WITH
+  if (req.action === 'printMark') return printMark_(req, user);
+  if (req.action === 'printAutoSet') return printAutoSet_(req, user);
+  return printEnqueue_(req.jo, req.kind, user.username, { reprint: req.action === 'printReprint' || !!req.reprint, manual: !!req.manual });

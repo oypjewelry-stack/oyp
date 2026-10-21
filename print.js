@@ -10,7 +10,7 @@ var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
 var POLL = 5000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, printQueued: false, inflight: {}, cool: {}, done: {}, prepared: {}, preparing: {} };
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, prepared: {}, preparing: {} };
 var PAGE_MS = 20000;
 var ATTEMPT_MS = 45000;
 var END_MS = 4000;
@@ -138,7 +138,7 @@ function printsKind(kind) { return !!kinds()[kind]; }
 function summary() {
   var cfg = load(), k = kinds();
   var who = state.connected ? (state.model || 'Printer') : (cfg.model ? cfg.model + ' not connected' : 'Not connected');
-  var bits = [who, cfg.auto ? 'auto on' : 'auto off', 'darkness ' + cfg.darkness];
+  var bits = [who, serverAuto() ? 'auto on' : 'auto off', 'darkness ' + cfg.darkness];
   ['B31', 'B1'].forEach(function (m) {
     var o = offsetMm(m);
     if (o.x || o.y) bits.push(m + ' offset ' + o.x.toFixed(1) + ', ' + o.y.toFixed(1) + ' mm');
@@ -410,7 +410,20 @@ function markPrinting(on) {
   document.querySelectorAll('[data-q]').forEach(function (b) { b.disabled = !!on; });
   paintDots();
 }
-function wantsQueue() { return !!load().auto || !!state.printQueued; }
+function serverAuto() {
+  if (typeof state.auto === 'boolean') return state.auto;
+  return load().auto !== false;
+}
+function noteAuto(r) {
+  if (!r || typeof r.auto !== 'boolean' || state.auto === r.auto) return;
+  state.auto = r.auto;
+  paintAuto();
+}
+function wantsQueue() { return serverAuto() || !!state.printQueued; }
+function printQueued() {
+  state.printQueued = true;
+  kick();
+}
 function markLocal(id, status, error) {
   if (!id) return;
   if (status === 'printed') state.done[id] = 1;
@@ -611,7 +624,10 @@ function queueHtml(r) {
   var items = r.items || [];
   if (!items.length) return '<p class="muted oyp-qempty">No stickers waiting</p>';
   var dis = state.printing ? ' disabled' : '';
-  return items.map(function (it, i) {
+  var waiting = 0;
+  items.forEach(function (it) { if (it.status === 'queued') waiting += 1; });
+  var drain = (!serverAuto() && waiting) ? '<div class="fbtns oyp-qbtns"><button type="button" class="pill sm" data-q="drain"' + dis + '>Print queued</button></div>' : '';
+  return drain + items.map(function (it, i) {
     var kind = it.kind === 'jewelry_tag' ? 'Jewelry tag' : 'JO card';
     var failed = it.status === 'failed';
     var st = failed ? 'Failed' : 'Queued';
@@ -648,6 +664,7 @@ function refresh(opts) {
   var data = opts.brief ? { brief: 1 } : {};
   return callPrint('printQueue', data).then(function (r) {
     if (!r) return null;
+    noteAuto(r);
     if (r.brief === true) {
       state.briefOk = true;
       if (r.rev == null) state.briefOk = false;
@@ -665,6 +682,7 @@ function itemById(id) {
 }
 function onQueueClick(e) {
   var b = e.target.closest('[data-q]'); if (!b || b.disabled || state.printing) return;
+  if (b.getAttribute('data-q') === 'drain') { printQueued(); return; }
   var it = itemById(b.getAttribute('data-id')); if (!it) return;
   var q = b.getAttribute('data-q');
   if (q === 'cancel') cancel(it.print_id);
@@ -684,7 +702,7 @@ function afterOk(req, res) {
   if (req.imageBase64 && !req.op && !req.action && (parseInt(req.page, 10) || 1) === 1) kind = 'jo_card'; // same page rule as Code.gs
   else if (req.action === 'prodMove' && isFinal(req, res)) kind = 'jewelry_tag';
   if (!kind || !jo) return;
-  var will = state.connected && load().auto && printsKind(kind);
+  var will = state.connected && serverAuto() && printsKind(kind);
   callPrint('printEnqueue', { jo: jo, kind: kind, reprint: false }).then(function (r) {
     if (!will) return;
     if (r && r.ok && r.item && r.item.status === 'queued') return claimAndPrint(r.item);
@@ -953,12 +971,12 @@ function paintDots() {
   });
 }
 function paintAuto() {
-  var on = load().auto;
+  var on = serverAuto();
   var head = document.getElementById('prHeadAuto');
   if (head) {
     head.checked = on;
     var span = head.parentNode && head.parentNode.querySelector('span');
-    if (span) span.textContent = on ? 'Auto on' : 'Auto off';
+    if (span) span.textContent = on ? 'On' : 'Off';
   }
   var box = document.getElementById('prAuto');
   if (box) box.checked = on;
@@ -966,11 +984,21 @@ function paintAuto() {
   if (lab) lab.textContent = on ? 'On' : 'Off';
 }
 function setAuto(on) {
-  var cfg = load();
-  cfg.auto = !!on;
-  cfg.kinds = null;
-  save(cfg);
+  var prev = state.auto;
+  state.auto = !!on;
   paintAuto();
+  callPrint('printAutoSet', { on: on ? 1 : 0 }).then(function (r) {
+    if (!r || r.ok === false) {
+      state.auto = prev;
+      paintAuto();
+      toast((r && r.error) || 'Could not save auto-print');
+      return;
+    }
+    state.auto = !!r.auto;
+    if (r.rev != null) state.rev = String(r.rev);
+    paintAuto();
+    if (state.auto) kick();
+  });
 }
 function ensurePrinterMenu() {
   var menu = document.getElementById('oypPrMenu');
@@ -1000,8 +1028,8 @@ function fillPrinterMenu() {
   var menu = ensurePrinterMenu();
   var on = state.connected;
   var bits = [];
-  var auto = load().auto;
-  bits.push('<label class="settog"><input type="checkbox" id="prHeadAuto"' + (auto ? ' checked' : '') + '><span>' + (auto ? 'Auto on' : 'Auto off') + '</span></label>');
+  var auto = serverAuto();
+  bits.push('<label class="settog"><input type="checkbox" id="prHeadAuto"' + (auto ? ' checked' : '') + '><span>' + (auto ? 'On' : 'Off') + '</span></label>');
   if (on) bits.push('<p class="muted oyp-pr-note">' + esc(state.model || 'Printer') + '</p>');
   if (!canBt() && !canSerial()) bits.push('<p class="muted oyp-pr-note" role="note">' + esc(connectNote()) + '</p>');
   else if (!on) {
@@ -1099,12 +1127,11 @@ function kindChip(id, on, label) {
 function mmPair(xid, x, xLabel, yid, y, yLabel) {
   return '<div class="setv two"><label><span class="setu">Horizontal</span>' + mmSelect(xid, x, xLabel) + '</label><label><span class="setu">Vertical</span>' + mmSelect(yid, y, yLabel) + '</label></div>';
 }
-var autoNote = "Auto-print keeps working in the background. Don't close this tab or put the computer to sleep.";
 function mountSettings(el) {
   if (!el) return;
-  var cfg = load(), k = kinds(), b31 = offsetMm('B31'), b1 = offsetMm('B1');
+  var cfg = load(), k = kinds(), b31 = offsetMm('B31'), b1 = offsetMm('B1'), on = serverAuto();
   el.innerHTML = '<div class="set"><div class="setbox">'
-    + '<div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">Print a new JO card or a finished tag when this printer is connected. Off still keeps the queue.</span><span class="muted">' + autoNote + '</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (cfg.auto ? ' checked' : '') + '><span>' + (cfg.auto ? 'On' : 'Off') + '</span></label></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">On: new JO cards and finished tags are queued and printed. Off: nothing is queued or printed.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (on ? ' checked' : '') + '><span>' + (on ? 'On' : 'Off') + '</span></label></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv">' + darkSeg(cfg.darkness) + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Auto starts a B31 on the B1 page size, and remembers the task this printer answers. D110M_V4 and B1 stay as manual choices.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards. A B1 starts on jewelry tags. Either one can print both.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
@@ -1114,7 +1141,9 @@ function mountSettings(el) {
   function persist() {
     var next = load();
     var auto = document.getElementById('prAuto');
-    next.auto = !!(auto && auto.checked);
+    var want = !!(auto && auto.checked);
+    if (want !== serverAuto()) setAuto(want);
+    next.auto = want;
     var darkBtn = el.querySelector('#prDark button.on');
     next.darkness = Math.max(1, Math.min(5, darkBtn ? (darkBtn.getAttribute('data-dark') | 0) : 3));
     var tk = document.getElementById('prTask'); next.task = tk ? tk.value : 'auto';
@@ -1248,5 +1277,5 @@ function start() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();
 
-root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, download: download, connect: connect, disconnect: disconnect, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx };
+root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, printQueued: printQueued, download: download, connect: connect, disconnect: disconnect, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx };
 })(typeof window !== 'undefined' ? window : globalThis);
