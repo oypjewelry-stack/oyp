@@ -10,7 +10,7 @@ var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
 var POLL = 15000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, timer: 0, pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve() };
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve() };
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -26,10 +26,16 @@ function deviceId() {
   return id;
 }
 function load() {
-  var o = { darkness: 3, auto: true, transport: '', kinds: null, model: '', offsets: {} };
+  var o = { darkness: 3, auto: true, transport: '', kinds: null, kindsByModel: {}, model: '', offsets: {} };
   try { var raw = JSON.parse(localStorage.getItem(KEY) || '{}'); if (raw && typeof raw === 'object') o = Object.assign(o, raw); } catch (e) {}
   o.darkness = Math.max(1, Math.min(5, o.darkness | 0 || 3));
   if (!o.offsets || typeof o.offsets !== 'object') o.offsets = {};
+  if (!o.kindsByModel || typeof o.kindsByModel !== 'object') o.kindsByModel = {};
+  /* An old browser saved one kinds object for every printer. Keep it only on the model it was saved for. */
+  if (o.kinds && typeof o.kinds === 'object') {
+    if (o.model && !o.kindsByModel[o.model]) o.kindsByModel[o.model] = { jo_card: !!o.kinds.jo_card, jewelry_tag: !!o.kinds.jewelry_tag };
+    o.kinds = null;
+  }
   o.auto = o.auto !== false;
   return o;
 }
@@ -64,6 +70,13 @@ function ios() {
   var ua = (navigator.userAgent || '');
   return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
+function isScannerPage() {
+  var flag = document.documentElement && document.documentElement.getAttribute('data-oyp-scanner');
+  if (flag === '1') return true;
+  if (flag === '0') return false;
+  if (document.getElementById('vOffice') || document.getElementById('side')) return false;
+  return !!(document.getElementById('btnMenu') && document.getElementById('menu'));
+}
 function canBt() { var L = lib(); return !ios() && !!(L && L.Utils && L.Utils.isBluetoothSupported ? L.Utils.isBluetoothSupported() : (navigator.bluetooth && navigator.bluetooth.requestDevice)); }
 function canSerial() { var L = lib(); return !ios() && !!(L && L.Utils && L.Utils.isSerialSupported ? L.Utils.isSerialSupported() : (navigator.serial && navigator.serial.requestPort)); }
 function toast(t) {
@@ -83,10 +96,15 @@ function defaultKinds(model) {
   if (model === 'B1') return { jo_card: false, jewelry_tag: true };
   return { jo_card: true, jewelry_tag: true };
 }
+function activeModel(cfg) {
+  return state.model || (cfg || load()).model || '';
+}
 function kinds() {
   var cfg = load();
-  if (cfg.kinds && typeof cfg.kinds === 'object') return { jo_card: !!cfg.kinds.jo_card, jewelry_tag: !!cfg.kinds.jewelry_tag };
-  return defaultKinds(state.model || cfg.model);
+  var model = activeModel(cfg);
+  var saved = model && cfg.kindsByModel[model];
+  if (saved && typeof saved === 'object') return { jo_card: !!saved.jo_card, jewelry_tag: !!saved.jewelry_tag };
+  return defaultKinds(model);
 }
 function printsKind(kind) { return !!kinds()[kind]; }
 function summary() {
@@ -104,17 +122,43 @@ function summary() {
   return bits.join(' · ');
 }
 
-function callPrint(action, data) {
+/* Staff pages send action + session, the same body as app.js net(). data.op must not replace that action. */
+function markPayload(data) {
   data = data || {};
+  var payload = {}, k;
+  for (k in data) if (Object.prototype.hasOwnProperty.call(data, k) && k !== 'op') payload[k] = data[k];
+  if (data.mark || data.op) payload.mark = data.mark || data.op;
+  return payload;
+}
+function staffCall(action, data) {
   var session = '';
   try { session = localStorage.getItem('oypSession') || ''; } catch (e) {}
-  if (root.OYP && root.OYP.call && session) return root.OYP.call(action, data);
-  var token = '';
-  try { token = localStorage.getItem('oypScanToken') || ''; } catch (e2) {}
-  var body = Object.assign({ op: action, token: token, device_id: deviceId() }, data);
+  var body = Object.assign({ action: action, session: session, device_id: deviceId() }, data || {});
   return fetch(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
     .then(function (res) { return res.json(); })
     .catch(function () { return { ok: false, error: 'No connection' }; });
+}
+function ensureCall() {
+  if (!root.OYP) root.OYP = {};
+  if (!root.OYP.call) root.OYP.call = staffCall;
+}
+function callPrint(action, data) {
+  var payload = markPayload(data);
+  ensureCall();
+  var session = '';
+  try { session = localStorage.getItem('oypSession') || ''; } catch (e) {}
+  if (session && root.OYP && root.OYP.call) return root.OYP.call(action, payload);
+  var token = '';
+  try { token = localStorage.getItem('oypScanToken') || ''; } catch (e2) {}
+  var body = Object.assign({ op: action, token: token, device_id: deviceId() }, payload);
+  return fetch(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
+    .then(function (res) { return res.json(); })
+    .catch(function () { return { ok: false, error: 'No connection' }; });
+}
+function markFailed(r, fallback) {
+  if (r && r.ok) return false;
+  toast((r && r.error) || fallback || 'Could not update the sticker');
+  return true;
 }
 
 /* Paper fields only. client is display text and is not copied onto the sticker. */
@@ -203,14 +247,18 @@ function claimAndPrint(item) {
     if (!id) {
       return go().catch(function () { toast('Sticker did not print'); });
     }
-    return callPrint('printMark', { print_id: id, op: 'claim', device_id: deviceId() }).then(function (r) {
-      if (!r || !r.ok) return;
+    return callPrint('printMark', { print_id: id, mark: 'claim', device_id: deviceId() }).then(function (r) {
+      if (markFailed(r, 'Could not print that sticker')) return;
       var printed = r.item ? Object.assign({}, item, r.item) : item;
       return go().then(function () {
-        return callPrint('printMark', { print_id: id, op: 'printed', device_id: deviceId() });
+        return callPrint('printMark', { print_id: id, mark: 'printed', device_id: deviceId() }).then(function (done) {
+          markFailed(done, 'Printed, but the queue did not update');
+        });
       }).catch(function (err) {
         toast('Sticker did not print');
-        return callPrint('printMark', { print_id: id, op: 'failed', device_id: deviceId(), error: String((err && err.message) || err || 'print failed').slice(0, 180) });
+        return callPrint('printMark', { print_id: id, mark: 'failed', device_id: deviceId(), error: String((err && err.message) || err || 'print failed').slice(0, 180) }).then(function (done) {
+          markFailed(done, 'The sticker failed, and the queue did not update');
+        });
       }).then(function () { paintFrom(printed); });
     });
   });
@@ -263,7 +311,10 @@ function download(kind, item) {
   });
 }
 function cancel(id) {
-  return callPrint('printMark', { print_id: id, op: 'cancelled', device_id: deviceId() }).then(function () { refresh(); });
+  return callPrint('printMark', { print_id: id, mark: 'cancelled', device_id: deviceId() }).then(function (r) {
+    markFailed(r, 'Could not cancel that sticker');
+    refresh();
+  });
 }
 function reprint(item) {
   return printJo(item.kind, item.jo, { reprint: true });
@@ -303,7 +354,7 @@ function queueHtml(r) {
     return '<div class="setp oyp-qrow"><canvas class="oyp-qprev" data-qi="' + i + '" aria-label="' + esc(kind) + ' preview"></canvas><div class="setl oyp-qmain"><b class="cn">' + screenLabel(it) + '</b><span class="kf"><span class="chip">' + esc(kind) + '</span><span class="chip' + (st === 'Failed' ? ' gold' : '') + '">' + esc(st) + '</span></span></div><div class="fbtns oyp-qbtns">'
       + (it.status === 'queued' ? '<button type="button" class="pill sm" data-q="now" data-id="' + id + '">PRINT</button>' : '')
       + '<button type="button" class="pill sm outline" data-q="reprint" data-id="' + id + '">REPRINT</button>'
-      + (it.status === 'queued' ? '<button type="button" class="lnk" data-q="cancel" data-id="' + id + '">Cancel</button>' : '')
+      + (it.status === 'queued' ? '<button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '">CANCEL</button>' : '')
       + '</div></div>';
   }).join('');
 }
@@ -386,7 +437,7 @@ function installFetch() {
 }
 
 function pump() {
-  if (!state.connected || document.visibilityState === 'hidden') return;
+  if (!state.connected) return;
   if (state.pumping) return;
   state.pumping = true;
   refresh().then(function (r) {
@@ -403,10 +454,31 @@ function pump() {
   }).finally(function () { state.pumping = false; });
 }
 function startPoll() {
-  if (state.timer) return;
-  state.timer = setInterval(pump, POLL);
+  if (state.timer || state.worker) return;
+  var WorkerFn = root.Worker, BlobFn = root.Blob, URLFn = root.URL, started = false;
+  try {
+    if (typeof WorkerFn === 'function' && typeof BlobFn === 'function' && URLFn && typeof URLFn.createObjectURL === 'function') {
+      var blob = new BlobFn(['setInterval(function(){postMessage(1)},' + POLL + ')'], { type: 'text/javascript' });
+      state.workerUrl = URLFn.createObjectURL(blob);
+      state.worker = new WorkerFn(state.workerUrl);
+      state.worker.onmessage = function () { pump(); };
+      started = true;
+    }
+  } catch (e) { started = false; }
+  if (!started) {
+    if (state.worker) { try { state.worker.terminate(); } catch (e2) {} }
+    state.worker = null;
+    if (state.workerUrl && URLFn && typeof URLFn.revokeObjectURL === 'function') { try { URLFn.revokeObjectURL(state.workerUrl); } catch (e3) {} }
+    state.workerUrl = '';
+    if (!state.timer) state.timer = setInterval(pump, POLL);
+  }
 }
-function stopPoll() { if (state.timer) { clearInterval(state.timer); state.timer = 0; } }
+function stopPoll() {
+  if (state.timer) { clearInterval(state.timer); state.timer = 0; }
+  if (state.worker) { try { state.worker.terminate(); } catch (e) {} state.worker = null; }
+  if (state.workerUrl && root.URL && typeof root.URL.revokeObjectURL === 'function') { try { root.URL.revokeObjectURL(state.workerUrl); } catch (e2) {} }
+  state.workerUrl = '';
+}
 
 function onConnected(transport) {
   var meta = (state.client.getModelMetadata && state.client.getModelMetadata()) || {};
@@ -418,7 +490,9 @@ function onConnected(transport) {
   var cfg = load();
   cfg.transport = transport;
   cfg.model = state.model || cfg.model;
-  if (!cfg.kinds) cfg.kinds = defaultKinds(state.model);
+  if (!cfg.kindsByModel || typeof cfg.kindsByModel !== 'object') cfg.kindsByModel = {};
+  if (state.model && !cfg.kindsByModel[state.model]) cfg.kindsByModel[state.model] = defaultKinds(state.model);
+  cfg.kinds = null;
   save(cfg);
   drawChip();
   startPoll();
@@ -456,37 +530,114 @@ function connectNote() {
   if (ios()) return "iPad can't connect a printer. Stickers wait in the print queue.";
   return 'Open in Chrome or Edge to connect a printer';
 }
-function drawChip() {
-  var slot = document.getElementById('printChip');
-  if (!slot) return;
-  var on = state.connected;
-  slot.innerHTML = '<span class="oyp-pr"><button type="button" class="pill sm' + (on ? '' : ' outline') + '" id="oypPrBtn" aria-haspopup="menu" aria-expanded="false">' + esc(chipText().toUpperCase()) + '</button><div class="whomenu oyp-pr-menu hidden" id="oypPrMenu"></div></span>';
+function paintDots() {
+  var on = !!state.connected;
+  document.querySelectorAll('[data-oyp-printer]').forEach(function (el) {
+    var dot = el.querySelector('.oyp-pr-dot');
+    if (dot) dot.classList.toggle('on', on);
+  });
+}
+function paintAuto() {
+  var on = load().auto;
+  var head = document.getElementById('prHeadAuto');
+  if (head) {
+    head.checked = on;
+    var span = head.parentNode && head.parentNode.querySelector('span');
+    if (span) span.textContent = on ? 'Auto on' : 'Auto off';
+  }
+  var box = document.getElementById('prAuto');
+  if (box) box.checked = on;
+  var lab = document.querySelector('#prAuto + span');
+  if (lab) lab.textContent = on ? 'On' : 'Off';
+}
+function setAuto(on) {
+  var cfg = load();
+  cfg.auto = !!on;
+  cfg.kinds = null;
+  save(cfg);
+  paintAuto();
+}
+function ensurePrinterMenu() {
   var menu = document.getElementById('oypPrMenu');
+  if (menu) return menu;
+  menu = document.createElement('div');
+  menu.id = 'oypPrMenu';
+  menu.className = 'whomenu oyp-pr-menu hidden';
+  menu.setAttribute('role', 'menu');
+  document.body.appendChild(menu);
+  return menu;
+}
+function placePrinterMenu(menu, anchor) {
+  if (!anchor || !anchor.getBoundingClientRect) return;
+  var r = anchor.getBoundingClientRect();
+  var wide = Math.min(280, (root.innerWidth || 360) - 16);
+  var inSide = !!(anchor.closest && anchor.closest('.side'));
+  var top = inSide ? r.top : r.bottom + 4;
+  var left = inSide ? r.right + 8 : r.left;
+  var limit = root.innerWidth || 360;
+  if (left + wide > limit - 8) left = Math.max(8, limit - wide - 8);
+  var height = root.innerHeight || 700;
+  if (top + 280 > height - 8) top = Math.max(8, height - 288);
+  menu.style.top = Math.max(8, top) + 'px';
+  menu.style.left = Math.max(8, left) + 'px';
+}
+function fillPrinterMenu() {
+  var menu = ensurePrinterMenu();
+  var on = state.connected;
   var bits = [];
+  var auto = load().auto;
+  bits.push('<label class="settog"><input type="checkbox" id="prHeadAuto"' + (auto ? ' checked' : '') + '><span>' + (auto ? 'Auto on' : 'Auto off') + '</span></label>');
+  if (on) bits.push('<p class="muted oyp-pr-note">' + esc(state.model || 'Printer') + '</p>');
   if (!canBt() && !canSerial()) bits.push('<p class="muted oyp-pr-note" role="note">' + esc(connectNote()) + '</p>');
-  else if (!state.connected) {
+  else if (!on) {
     if (canBt()) bits.push('<button type="button" data-pr="bluetooth">Connect by Bluetooth</button>');
     if (canSerial()) bits.push('<button type="button" data-pr="serial">Connect by USB</button>');
   } else {
     if (canBt()) bits.push('<button type="button" data-pr="bluetooth">Bluetooth</button>');
     if (canSerial()) bits.push('<button type="button" data-pr="serial">USB serial</button>');
+    bits.push('<button type="button" data-pr="disconnect">Disconnect</button>');
   }
-  if (state.connected) bits.push('<button type="button" data-pr="disconnect">Disconnect</button>');
   bits.push('<button type="button" data-pr="queue">Print queue</button>');
   menu.innerHTML = bits.join('');
+  var head = document.getElementById('prHeadAuto');
+  if (head) head.addEventListener('change', function () { setAuto(head.checked); });
 }
-function toggleMenu(force) {
-  var menu = document.getElementById('oypPrMenu'); if (!menu) return;
+function drawChip() {
+  paintDots();
+  if (!isScannerPage()) return;
+  var slot = document.getElementById('printChip');
+  if (!slot) {
+    var top = document.querySelector('header.top');
+    if (!top) return;
+    slot = document.createElement('span');
+    slot.id = 'printChip';
+    slot.className = 'oyp-pr-slot';
+    var logo = top.querySelector('img.logo');
+    var end = top.querySelector('.topend');
+    if (logo && logo.parentNode) logo.parentNode.insertBefore(slot, logo);
+    else if (end) end.appendChild(slot);
+    else top.appendChild(slot);
+  }
+  var on = state.connected;
+  slot.innerHTML = '<span class="oyp-pr"><button type="button" class="pill sm' + (on ? '' : ' outline') + '" id="oypPrBtn" aria-haspopup="menu" aria-expanded="false">' + esc(chipText().toUpperCase()) + '</button></span>';
+}
+function toggleMenu(force, anchor) {
+  var menu = ensurePrinterMenu();
   var show = force != null ? force : menu.classList.contains('hidden');
+  if (show) {
+    fillPrinterMenu();
+    placePrinterMenu(menu, anchor || document.getElementById('oypPrBtn'));
+  }
   menu.classList.toggle('hidden', !show);
   var btn = document.getElementById('oypPrBtn');
   if (btn) btn.setAttribute('aria-expanded', show ? 'true' : 'false');
-  if (show && btn) {
+  if (show && btn && (!anchor || anchor === btn)) {
     state.armUntil = Date.now() + 400;
     state.armBox = btn.getBoundingClientRect();
   } else if (!show) {
     state.armUntil = 0;
     state.armBox = null;
+    state.printerEl = null;
   }
 }
 function armedAt(e) {
@@ -533,11 +684,12 @@ function kindChip(id, on, label) {
 function mmPair(xid, x, xLabel, yid, y, yLabel) {
   return '<div class="setv two"><label><span class="setu">Horizontal</span>' + mmSelect(xid, x, xLabel) + '</label><label><span class="setu">Vertical</span>' + mmSelect(yid, y, yLabel) + '</label></div>';
 }
+var autoNote = "Auto-print keeps working in the background. Don't close this tab or put the computer to sleep.";
 function mountSettings(el) {
   if (!el) return;
   var cfg = load(), k = kinds(), b31 = offsetMm('B31'), b1 = offsetMm('B1');
   el.innerHTML = '<div class="set"><div class="setbox">'
-    + '<div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">Print a new JO card or a finished tag when this printer is connected. Off still keeps the queue.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (cfg.auto ? ' checked' : '') + '><span>' + (cfg.auto ? 'On' : 'Off') + '</span></label></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">Print a new JO card or a finished tag when this printer is connected. Off still keeps the queue.</span><span class="muted">' + autoNote + '</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (cfg.auto ? ' checked' : '') + '><span>' + (cfg.auto ? 'On' : 'Off') + '</span></label></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv">' + darkSeg(cfg.darkness) + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Leave on Auto. If a B31 feeds but prints nothing, try D110M_V4, then B1.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards. A B1 starts on jewelry tags. Either one can print both.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
@@ -552,13 +704,18 @@ function mountSettings(el) {
     next.darkness = Math.max(1, Math.min(5, darkBtn ? (darkBtn.getAttribute('data-dark') | 0) : 3));
     var tk = document.getElementById('prTask'); next.task = tk ? tk.value : 'auto';
     var jo = document.getElementById('prJo'), tag = document.getElementById('prTag');
-    next.kinds = { jo_card: !!(jo && jo.classList.contains('on')), jewelry_tag: !!(tag && tag.classList.contains('on')) };
+    var model = activeModel(next);
+    next.kinds = null;
+    if (model) {
+      if (!next.kindsByModel || typeof next.kindsByModel !== 'object') next.kindsByModel = {};
+      next.kindsByModel[model] = { jo_card: !!(jo && jo.classList.contains('on')), jewelry_tag: !!(tag && tag.classList.contains('on')) };
+    }
     next.offsets = {
       B31: { x: stepMm(document.getElementById('prX31').value), y: stepMm(document.getElementById('prY31').value) },
       B1: { x: stepMm(document.getElementById('prX1').value), y: stepMm(document.getElementById('prY1').value) }
     };
     save(next);
-    var lab = document.querySelector('#prAuto + span'); if (lab) lab.textContent = next.auto ? 'On' : 'Off';
+    paintAuto();
   }
   ['prAuto', 'prTask', 'prX31', 'prY31', 'prX1', 'prY1'].forEach(function (id) { var n = document.getElementById(id); if (n) n.onchange = persist; });
   ['prJo', 'prTag'].forEach(function (id) {
@@ -583,22 +740,7 @@ function mountQueue(el) {
   el.innerHTML = queueHtml(state.last);
   refresh();
 }
-function mountChip() {
-  var slot = document.getElementById('printChip');
-  if (!slot) {
-    var top = document.querySelector('header.top');
-    if (!top) return;
-    slot = document.createElement('span');
-    slot.id = 'printChip';
-    slot.className = 'oyp-pr-slot';
-    var logo = top.querySelector('img.logo');
-    var end = top.querySelector('.topend');
-    if (logo && logo.parentNode) logo.parentNode.insertBefore(slot, logo);
-    else if (end) end.appendChild(slot);
-    else top.appendChild(slot);
-  }
-  drawChip();
-}
+function mountChip() { drawChip(); }
 function joFrom(text) {
   if (root.OYPLabel) return root.OYPLabel.joCode(text);
   var m = String(text || '').toUpperCase().match(/(\d{2})-(\d{3,4})([A-Z])?/);
@@ -631,7 +773,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=8';
+  link.href = (base || '') + 'print.css?v=9';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -641,10 +783,19 @@ function start() {
   mountChip();
   addButtons();
   if (!state.obs && root.MutationObserver) {
-    state.obs = new MutationObserver(function () { addButtons(); if (!document.getElementById('oypPrBtn')) mountChip(); });
+    state.obs = new MutationObserver(function () { addButtons(); paintDots(); if (isScannerPage() && !document.getElementById('oypPrBtn')) drawChip(); });
     state.obs.observe(document.documentElement, { childList: true, subtree: true });
   }
   document.addEventListener('click', function (e) {
+    var printer = e.target.closest('[data-oyp-printer]');
+    if (printer) {
+      e.preventDefault();
+      var menu = document.getElementById('oypPrMenu');
+      var open = menu && !menu.classList.contains('hidden') && state.printerEl === printer;
+      state.printerEl = printer;
+      toggleMenu(open ? false : true, printer);
+      return;
+    }
     var pr = e.target.closest('[data-pr]');
     if (pr) {
       if (pr.closest('#oypPrMenu') && armedAt(e)) return;
@@ -676,7 +827,8 @@ function start() {
     toggleMenu(false);
     closePanel();
   });
-  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && state.connected) pump(); });
+  document.addEventListener('visibilitychange', function () { if (state.connected) pump(); });
+  if (root.addEventListener) root.addEventListener('focus', function () { if (state.connected) pump(); });
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();

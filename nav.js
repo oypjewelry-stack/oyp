@@ -51,19 +51,46 @@ function ordered(user) {
   try { saved = JSON.parse(localStorage.getItem('oypNavOrder:' + (user.username || 'device')) || 'null'); } catch (e) {}
   return arrange(canon, Array.isArray(saved) ? saved.filter(function (x) { return typeof x === 'string'; }) : null);
 }
+/* Printer is a menu row, not a header pill. It stays directly under Settings for every role that can print. */
+function printerItemHtml() {
+  return '<a data-oyp-printer="1" role="button" tabindex="0">Printer<span class="oyp-pr-dot" aria-hidden="true"></span></a>';
+}
+function withPrinter(parts) {
+  var out = [], placed = false, i;
+  for (i = 0; i < parts.length; i++) {
+    out.push(parts[i][1]);
+    if (parts[i][0] === 'settings') { out.push(printerItemHtml()); placed = true; }
+  }
+  if (!placed) out.push(printerItemHtml());
+  return out.join('');
+}
 /* Same phone menu as the back office. home is '' on the staff app and 'index.html' on a side page such as print-test. */
-function menuHtml(user, page, home) {
+function navParts(user, page, home) {
   home = home || '';
   function link(k, t) {
     if (k === 'scanner') return '<a href="' + scannerLink(user && user.role) + '" data-nkey="scanner">' + escNav(t) + '</a>';
     return '<a href="' + home + '#/' + k + '"' + (k === page ? ' class="on"' : '') + ' data-nkey="' + escNav(k) + '">' + escNav(t) + (DONE[k] ? '' : '<small>soon</small>') + '</a>';
   }
   if (!user) return '<a href="' + SCANNER + '">Card scanner</a>';
-  if ((user.role === 'staff' || !OFFICE_NAV[user.role]) && !(user.role === 'staff' && OFFICE_NAV.staff)) return '<a href="' + scannerLink(user.role) + '">Scan JO card</a><button type="button" data-logout>Log out</button>';
-  var rows = user.role === 'staff' ? OFFICE_NAV.staff : ordered(user);
-  return rows.map(function (n) { return link(n[0], n[1]); }).join('') + '<button type="button" data-logout>Log out</button>';
+  if ((user.role === 'staff' || !OFFICE_NAV[user.role]) && !(user.role === 'staff' && OFFICE_NAV.staff)) return '<a href="' + scannerLink(user.role) + '">Scan JO card</a>' + printerItemHtml();
+  var list = user.role === 'staff' ? OFFICE_NAV.staff : ordered(user);
+  return withPrinter(list.map(function (n) { return [n[0], link(n[0], n[1])]; }));
 }
-root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, scannerLink, readUser: readUser, ordered: ordered, menuHtml: menuHtml };
+function menuHtml(user, page, home) {
+  var rows = navParts(user, page, home);
+  if (!user) return rows;
+  return rows + '<button type="button" data-logout>Log out</button>';
+}
+function sideHtml(user, page, home) {
+  var who = '';
+  if (user) {
+    var role = ROLE_LABEL[user.role] || '';
+    var name = user.display_name || user.username || '';
+    who = '<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div><button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">' + escNav(role) + '</span><b>' + escNav(name) + '</b><span class="chev" aria-hidden="true">▾</span></button></div>';
+  }
+  return '<div class="sidenav" id="sideNav">' + navParts(user, page, home) + '</div>' + who;
+}
+root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, scannerLink, readUser: readUser, ordered: ordered, menuHtml: menuHtml, sideHtml: sideHtml, printerItemHtml: printerItemHtml };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPNav;
 // The scanner cannot take a repo change from this site, but it already loads this file.
 // JO card zones (scan-zones.js) ride along so a phone can label every section of the card without a scanner release.
@@ -80,7 +107,7 @@ if (typeof document !== 'undefined' && document.createElement) {
   src = cs && (cs.src || '');
   var base = src ? src.replace(/[^/]*$/, '') : '';
   if (base && !document.querySelector('script[src*="print.js"]')) {
-    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=8', 'print.js?v=10'].forEach(function (rel) {
+    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=8', 'print.js?v=11'].forEach(function (rel) {
       var ps = document.createElement('script');
       ps.src = base + rel;
       ps.async = false;

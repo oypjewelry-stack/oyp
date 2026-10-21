@@ -8,15 +8,17 @@
 <script src="../design.js?v=6"></script>
 <link rel="stylesheet" href="../app.css?v=38">
 <link rel="stylesheet" href="../settings.css?v=10">
-<link rel="stylesheet" href="../print.css?v=8">
+<link rel="stylesheet" href="../print.css?v=9">
 <link rel="icon" type="image/png" href="../favicon.png"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
 </head><body>
 <header class="top">
   <button id="btnMenu" class="icon" aria-label="Menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
   <span id="title" class="title">Print test</span>
-  <span class="topend"><span id="printChip" class="oyp-pr-slot"></span><img class="logo" src="../logo.png" alt="OYP Jewelry"></span>
+  <span class="topend"><img class="logo" src="../logo.png" alt="OYP Jewelry"></span>
 </header>
 <div id="menu" class="menu hidden"></div>
+<section class="office" id="vOffice">
+<nav id="side" class="side"></nav>
 <main class="main set pr-page">
   <section class="pr-sec">
     <h2>Printer</h2>
@@ -36,15 +38,18 @@
     <div class="pr-previews" id="prViews"></div>
   </section>
 </main>
+</section>
 <div id="toast" class="toast hidden"></div>
 <script src="../vendor/qrcode.js?v=1"></script>
 <script src="../vendor/niimbluelib-0.47.1.js?v=1"></script>
 <script src="../print-label.js?v=8"></script>
-<script src="../print.js?v=10"></script>
-<script src="../nav.js?v=23"></script>
+<script src="../print.js?v=11"></script>
+<script src="../nav.js?v=24"></script>
 <script>
 (function () {
   var menu = document.getElementById('menu');
+  var side = document.getElementById('side');
+  if (side) side.innerHTML = OYPNav.sideHtml(OYPNav.readUser(), '', 'index.html');
   document.getElementById('btnMenu').addEventListener('click', function (e) {
     e.stopPropagation();
     if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
@@ -56,6 +61,17 @@
       try { localStorage.removeItem('oypSession'); localStorage.removeItem('oypUser'); localStorage.removeItem('oypSessionExp'); } catch (err) {}
       location.href = 'index.html';
       return;
+    }
+    var who = document.getElementById('whoMenu'), whoBtn = document.getElementById('whoBtn');
+    if (who && whoBtn && e.target.closest('#whoBtn')) {
+      var open = who.classList.contains('hidden');
+      who.classList.toggle('hidden', !open);
+      whoBtn.classList.toggle('open', open);
+      whoBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    } else if (who && whoBtn && !e.target.closest('#whoMenu')) {
+      who.classList.add('hidden');
+      whoBtn.classList.remove('open');
+      whoBtn.setAttribute('aria-expanded', 'false');
     }
     if (!e.target.closest('#menu,#btnMenu')) menu.classList.add('hidden');
   });

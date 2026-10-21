@@ -266,22 +266,176 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=10') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=23') && index.includes('app.js?v=30') && index.includes('settings.js?v=19') && index.includes('print.css?v=8') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=8') && read('nav.js').includes('print.js?v=10') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(index.includes('print.js?v=11') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=24') && index.includes('app.js?v=31') && index.includes('settings.js?v=19') && index.includes('print.css?v=9') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=8') && read('nav.js').includes('print.js?v=11') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
 const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
 eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
 eq(testCss.includes('grid-template-columns:1fr 1fr') && testCss.includes('.pr-stage') && testCss.includes('justify-content:center') && /max-width:800px/.test(testCss), 'print test is two equal columns and stacks below an iPad portrait');
-eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && testPage.indexOf('id="printChip"') < testPage.indexOf('class="logo"') && testPage.includes('app.css?v=38') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header, with the printer pill left of the logo');
+eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && !testPage.includes('printChip') && !index.includes('printChip') && testPage.includes('class="office"') && testPage.includes('id="side"') && testPage.includes('class="side"') && testPage.includes('OYPNav.sideHtml') && testPage.includes('app.css?v=38') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header and the same left menu, with no printer pill');
 eq(read('print.js').includes('Print queue not set up yet') && read('print.js').includes('No stickers waiting') && read('print.js').includes('class="pill sm"') && read('print.js').includes('class="dchip') && read('print.js').includes('class="setp') && read('print.js').includes('class="cn"') && read('print.js').includes('whomenu') && read('print.css').includes(':where(') && !read('print.css').includes('.oyp-pr-btn') && testPage.includes("'dcard'") && testPage.includes("'dtitle'") && testPage.includes('class="setbox" id="printQueue"'), 'print controls use the staff cards, pills, rows, and menu');
 eq(read('print.js').includes('Open in Chrome or Edge to connect a printer') && read('print.js').includes("iPad can't connect a printer. Stickers wait in the print queue.") && read('print.js').includes('Connect by Bluetooth') && read('print.js').includes('Connect by USB') && read('print.js').includes('aria-label="Close"') && read('print.js').includes("e.key !== 'Escape'"), 'Safari sees how to connect, and the queue panel can close');
 eq(testPage.indexOf('<h2>Printer</h2>') < testPage.indexOf('<h2>Print queue</h2>') && testPage.indexOf('<h2>Print queue</h2>') < testPage.indexOf('<h2>Label alignment</h2>'), 'print test leads with printer settings, then the queue, then label alignment');
 eq(read('print.js').includes('id="prDark"') && read('print.css').includes('#prDark .pill.sm{min-width:32px;text-align:center;font-family:var(--head,\'Libre Bodoni\',Georgia,serif);font-size:var(--d-btnout-fp,calc(18px*var(--hs)));font-weight:var(--d-btnout-g,500)}') && read('print.css').includes('#prDark .pill.sm:not(.outline){border:1px solid #111}'), 'each darkness number is the same font and size, at least 32 px wide');
 eq(testPage.includes('class="pr-sec"') && testCss.includes('.pr-sec + .pr-sec{margin-top:calc(22px * var(--sp,1))}') && testCss.includes('.pr-page h2{margin:0 0 calc(8px * var(--sp,1))}') && testCss.includes('.pr-copy{display:flex;flex-direction:column;gap:calc(22px * var(--sp,1))}') && testCss.includes('.pr-page .pr-copy p.muted{margin:0;max-width:none}') && testCss.includes('.pr-page #printSet .setbox + p.muted{margin:calc(8px * var(--sp,1)) 0 0;max-width:none}') && testCss.includes('.pr-page .setbox{max-width:none;width:100%}'), 'print test sections share one width and the staff spacing steps');
 eq(read('print.js').includes('labelOpts') && !/client:\s*item\.client/.test(read('print.js')), 'the printer payload builder does not copy the client name');
-eq(testPage.includes("textContent = 'Download'") && testPage.includes("textContent = 'PRINT'") && !testPage.includes('DOWNLOAD PNG') && testPage.includes("png.className = 'pill sm outline'") && testPage.includes("go.className = 'pill sm'") && testCss.includes('.oyp-pr-acts .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);border-width:1px;padding-top:calc(9px*var(--sp) - 1px)'), 'Download matches Print in size and stays an outline');
+const navMod = require(path.join(root, 'nav.js'));
+const adminUser = { role: 'admin', username: 'ada', display_name: 'Ada' };
+const adminMenu = navMod.menuHtml(adminUser, '', 'index.html');
+const adminSide = navMod.sideHtml(adminUser, '', 'index.html');
+eq(adminMenu.includes('>Settings</a><a data-oyp-printer="1" role="button" tabindex="0">Printer<span class="oyp-pr-dot"'), 'Printer sits directly under Settings in the phone menu');
+eq(adminSide.includes('>Settings</a><a data-oyp-printer="1"') && adminSide.includes('class="sidenav"') && adminSide.includes('id="whoBtn"'), 'the desktop side menu matches, with the account block');
+eq(adminMenu.includes('>Printer<span class="oyp-pr-dot"') && !adminMenu.includes('pill') && adminMenu.includes('Dashboard') && adminMenu.indexOf('Card scanner') < 0, 'Printer is a plain menu row for a signed-in admin');
+eq(navMod.menuHtml(null, '', 'index.html').indexOf('Card scanner') >= 0, 'a signed-out menu is the card scanner link');
+const pmMenu = navMod.menuHtml({ role: 'production_manager', username: 'sue', display_name: 'Sue' }, '', '');
+const staffMenu = navMod.menuHtml({ role: 'staff', username: 'ann', display_name: 'Ann' }, '', '');
+const acctMenu = navMod.menuHtml({ role: 'accounting', username: 'bea', display_name: 'Bea' }, '', '');
+eq(pmMenu.includes('data-oyp-printer') && staffMenu.includes('data-oyp-printer') && acctMenu.includes('data-oyp-printer'), 'every role menu that can print includes Printer');
+eq(read('app.js').includes('printerItemHtml') && read('app.js').includes("k === 'settings'"), 'the desktop staff menu adds Printer under Settings');
+eq(read('print.js').includes('>CANCEL</button>') && read('print.js').includes('class="pill sm outline" data-q="cancel"') && !read('print.js').includes('class="lnk" data-q="cancel"'), 'Cancel is the same outline pill as Reprint');
+eq(read('print.js').includes("Auto-print keeps working in the background. Don't close this tab or put the computer to sleep.") && read('print.js').includes('id="prHeadAuto"') && read('print.js').includes('class="settog"'), 'auto-print stays on in the background and in the printer panel');
+eq(read('print.js').includes('postMessage(1)') && read('print.js').includes('new WorkerFn') && read('print.js').includes('setInterval(pump, POLL)') && !/visibilityState === 'hidden'/.test(read('print.js')), 'hidden tabs keep polling from a worker, with setInterval only as a fallback');
+eq(read('print.js').includes('kindsByModel') && read('print.css').includes('.oyp-pr-dot{') && read('print.css').includes('.oyp-pr-dot.on{'), 'kinds are stored per model, and the menu dot has a connected color');
+eq(pq.includes('String(req.mark || req.op || \'\')') && !pq.includes('String(req.op || req.mark || \'\')'), 'printMark prefers mark over op');
+ctx.printDecorate_ = function (item) { return item; };
+const marked = ctx.printMark_({ op: 'printMark', mark: 'cancelled', print_id: sheetRows[0].print_id, device_id: 'd-x' }, { username: 'scanner' });
+eq(marked.ok && marked.item && marked.item.status === 'cancelled', 'a scanner printMark with op printMark still cancels when mark is cancelled');
+eq(codePatch.includes("printEnqueue_(jo, 'jo_card'"), 'a page-1 scan still queues kind jo_card');
+eq(testPage.includes("textContent = 'Download'") && testPage.includes("textContent = 'PRINT'") && !testPage.includes('DOWNLOAD PNG') && testPage.includes("png.className = 'pill sm outline'") && testPage.includes("go.className = 'pill sm'") && testCss.includes('.oyp-pr-acts .pill.sm.outline,.oyp-qbtns .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-family:var(--head,\'Libre Bodoni\',Georgia,serif);font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);letter-spacing:0;border-width:1px;padding-top:calc(9px*var(--sp) - 1px)'), 'Download matches Print in size and stays an outline');
 
-if (failed) { console.error(failed + ' failed'); process.exit(1); }
-console.log('print-sim passed');
+function bootPrint(opts) {
+  opts = opts || {};
+  const store = Object.assign({}, opts.store || {});
+  const calls = [];
+  const intervals = [];
+  const workers = [];
+  let vis = opts.visibility || 'visible';
+  const doc = {
+    readyState: 'complete',
+    get visibilityState() { return vis; },
+    documentElement: { getAttribute(name) { return name === 'data-oyp-scanner' ? '0' : null; } },
+    head: { appendChild() {} },
+    body: { appendChild() {}, removeChild() {} },
+    getElementById() { return null; },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    getElementsByTagName() { return []; },
+    createElement() { return { className: '', rel: '', href: '', setAttribute() {}, appendChild() {}, click() {}, remove() {} }; },
+    addEventListener() {}
+  };
+  function WorkerCtor() {
+    if (opts.workerFails) throw new Error('no worker');
+    this.onmessage = null;
+    workers.push(this);
+  }
+  WorkerCtor.prototype.terminate = function () {};
+  const nextModel = (opts.models || ['B1']).slice();
+  function Client() {}
+  Client.prototype.connect = function () { return Promise.resolve(); };
+  Client.prototype.disconnect = function () { return Promise.resolve(); };
+  Client.prototype.on = function () {};
+  Client.prototype.getModelMetadata = function () {
+    const model = nextModel.length ? nextModel.shift() : 'B31';
+    return { model: model, printheadPixels: model === 'B31' ? 600 : 384, printDirection: 'top' };
+  };
+  const sandbox = {
+    console, Math, Date, String, Object, Array, Number, JSON, Promise, Uint8Array, parseInt, isFinite, setTimeout, clearTimeout,
+    setInterval(fn, ms) { intervals.push({ fn: fn, ms: ms }); return intervals.length; },
+    clearInterval() {},
+    document: doc,
+    navigator: { userAgent: 'Mozilla/5.0 Chrome/120.0', platform: 'Win32', maxTouchPoints: 0, bluetooth: {}, serial: {} },
+    localStorage: {
+      getItem(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
+      setItem(k, v) { store[k] = String(v); },
+      removeItem(k) { delete store[k]; }
+    },
+    fetch(url, init) {
+      const body = JSON.parse(init.body);
+      calls.push(body);
+      let data = { ok: true, items: [] };
+      if (body.action === 'printQueue' || body.op === 'printQueue') data = opts.queue || { ok: true, items: [] };
+      if (body.mark === 'claim') data = { ok: true, claimed: true, item: { print_id: body.print_id, status: 'queued', kind: 'jo_card', jo: '26-336' } };
+      if (body.mark === 'printed' || body.mark === 'failed' || body.mark === 'cancelled') data = { ok: true };
+      return Promise.resolve({ json() { return Promise.resolve(data); }, clone() { return { json() { return Promise.resolve(data); } }; } });
+    },
+    Worker: WorkerCtor,
+    Blob: function BlobCtor(parts) { this.parts = parts; },
+    URL: { createObjectURL() { return 'blob:tick'; }, revokeObjectURL() {} },
+    MutationObserver: function () { this.observe = function () {}; },
+    crypto: { getRandomValues(a) { for (let i = 0; i < a.length; i++) a[i] = i + 1; return a; } }
+  };
+  sandbox.niimbluelib = {
+    Utils: { isBluetoothSupported() { return true; }, isSerialSupported() { return true; } },
+    NiimbotBluetoothClient: Client,
+    NiimbotSerialClient: Client
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(read('print.js'), sandbox, { filename: 'print.js' });
+  return { sandbox, store, calls, workers, intervals, setVis(v) { vis = v; } };
+}
+function drain() {
+  let p = Promise.resolve();
+  for (let i = 0; i < 40; i++) p = p.then(function () {});
+  return p;
+}
+const queued = { ok: true, items: [{ print_id: 'pq-1', jo: '26-336', kind: 'jo_card', status: 'queued' }] };
+drain().then(function () {
+  const hidden = bootPrint({
+    visibility: 'hidden',
+    models: ['B1', 'B31'],
+    queue: queued,
+    store: { oypPrint: JSON.stringify({ model: 'B1', kinds: { jo_card: false, jewelry_tag: true }, auto: true }) }
+  });
+  hidden.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    const savedB1 = JSON.parse(hidden.store.oypPrint);
+    eq(savedB1.kinds == null && savedB1.kindsByModel.B1 && savedB1.kindsByModel.B1.jo_card === false && savedB1.kindsByModel.B1.jewelry_tag === true, 'an old kinds choice stays on the B1 it was saved for');
+    eq(!hidden.calls.some(b => b.mark === 'claim'), 'a B1 that does not print JO cards does not claim one');
+    hidden.sandbox.OYPPrint.connect('bluetooth');
+    return drain();
+  }).then(function () {
+    const saved = JSON.parse(hidden.store.oypPrint);
+    const claim = hidden.calls.filter(b => b.mark === 'claim').pop();
+    eq(saved.kindsByModel.B31 && saved.kindsByModel.B31.jo_card === true && saved.kindsByModel.B1.jo_card === false, 'a later B31 keeps its own JO-card default');
+    eq(claim && claim.op === 'printMark' && claim.mark === 'claim' && !('op' in claim && claim.op !== 'printMark') && !claim.session, 'a hidden tab still claims, and the scanner body keeps op printMark');
+    eq(hidden.workers.length === 1 && !hidden.intervals.some(i => i.ms === 15000), 'the worker timer runs and the fallback interval does not');
+    if (hidden.workers[0]) hidden.workers[0].onmessage();
+    return drain().then(function () {
+      eq(hidden.calls.filter(b => b.op === 'printQueue' || b.action === 'printQueue').length >= 2, 'a worker tick polls again while the tab is hidden');
+    });
+  });
+}).then(function () {
+  const staff = bootPrint({
+    visibility: 'hidden',
+    models: ['B31'],
+    queue: queued,
+    store: { oypSession: 'sess-1', oypPrint: JSON.stringify({ auto: true, model: 'B31' }) }
+  });
+  staff.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    const claim = staff.calls.find(b => b.mark === 'claim');
+    eq(claim && claim.action === 'printMark' && claim.session === 'sess-1' && claim.mark === 'claim' && !('op' in claim), 'a signed-in page sends action printMark and mark claim');
+  });
+}).then(function () {
+  const fallback = bootPrint({
+    visibility: 'visible',
+    workerFails: true,
+    models: ['B31'],
+    queue: queued,
+    store: { oypPrint: JSON.stringify({ auto: true, model: 'B31' }) }
+  });
+  fallback.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    eq(fallback.workers.length === 0 && fallback.intervals.some(i => i.ms === 15000), 'setInterval polls only when the worker cannot start');
+  });
+}).then(function () {
+  if (failed) { console.error(failed + ' failed'); process.exit(1); }
+  console.log('print-sim passed');
+}).catch(function (err) {
+  console.error(err);
+  process.exit(1);
+});

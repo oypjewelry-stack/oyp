@@ -169,9 +169,19 @@ function whoBlock(u) {
     <button id="whoBtn" class="whobtn tap" aria-haspopup="menu" aria-expanded="false"><span class="lab">${esc(ROLE_LABEL[u.role])}</span><b>${esc(u.display_name)}</b><span class="chev" aria-hidden="true">▾</span></button></div>`;
 }
 let curPage = '';
+function navRows(u, page) {
+  const items = orderedNav(u), html = [];
+  let placed = false;
+  items.forEach(([k, t]) => {
+    html.push(navLink(k, t, page));
+    if (k === 'settings' && window.OYPNav.printerItemHtml) { html.push(window.OYPNav.printerItemHtml()); placed = true; }
+  });
+  if (!placed && window.OYPNav.printerItemHtml) html.push(window.OYPNav.printerItemHtml());
+  return html.join('');
+}
 function renderNav(u, page) {
   curPage = page;
-  const rows = orderedNav(u).map(([k, t]) => navLink(k, t, page)).join('');
+  const rows = navRows(u, page);
   $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + '</div>' + whoBlock(u);
   wireMenuDrag($('sideNav'), u);
   const m = $('menu');

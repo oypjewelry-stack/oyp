@@ -1,0 +1,9 @@
+PrintQueue.gs — one line in printMark_, the printRowsMark_ call.
+A scanner request sends op "printMark" and the row mark ("claim", "cancelled", "printed", or "failed") in mark.
+The old line reads req.op first, so the row mark becomes "printMark" and the update returns Unknown mark.
+
+FIND
+    var res = printRowsMark_(pack.rows, String(req.print_id || ''), String(req.op || req.mark || ''), String(req.device_id || ''), user.username, now, req.error);
+
+REPLACE WITH
+    var res = printRowsMark_(pack.rows, String(req.print_id || ''), String(req.mark || req.op || ''), String(req.device_id || ''), user.username, now, req.error);

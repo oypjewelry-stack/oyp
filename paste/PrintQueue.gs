@@ -213,7 +213,7 @@ function printMark_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
   return printLock_(function () {
     var pack = printReadRows_(), now = new Date().toISOString();
-    var res = printRowsMark_(pack.rows, String(req.print_id || ''), String(req.op || req.mark || ''), String(req.device_id || ''), user.username, now, req.error);
+    var res = printRowsMark_(pack.rows, String(req.print_id || ''), String(req.mark || req.op || ''), String(req.device_id || ''), user.username, now, req.error);
     if (res.ok && res.item) printWriteRow_(pack, res.item);
     if (res.item) res.item = printDecorate_(res.item);
     return res;
