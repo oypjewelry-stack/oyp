@@ -1,0 +1,13 @@
+Auth.gs — two lines in handleAction_, immediately before the JobSync hook.
+printQueue is a live read. It is not passed through dcacheRead_, so the answer is not stored.
+printMark, printEnqueue, and printReprint are writes. Do not add them to any READS list.
+
+The FIND line is the one already in paste/Auth.gs.patch.txt and paste/InvBulk.gs.txt. It is still there after the To do patch.
+
+FIND
+  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);
+
+REPLACE WITH
+  if (a === 'printQueue' && typeof printQueue_ === 'function') return printQueue_(req, s.user); // PrintQueue.gs, not cached
+  if (typeof isPrintAction_ === 'function' && isPrintAction_(a)) return handlePrint_(req, s.user); // printMark, printEnqueue, printReprint
+  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);

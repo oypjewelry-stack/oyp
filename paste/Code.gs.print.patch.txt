@@ -1,0 +1,18 @@
+Code.gs — two short edits. Page 1 of a scan queues a JO card sticker. The save still succeeds if the queue paste is missing.
+Both FIND lines are in every Code.gs version we have (before and after the zones paste). Ctrl+H; each FIND matches once.
+
+1. Scanner print ops, right after the token check and BEFORE the fastBump_ line, so a printer polling every 15 seconds
+   does not clear the remembered pages for everyone. FIND
+    if (token && req.token !== token) return json_({ ok: false, error: 'Bad token' });
+
+REPLACE WITH
+    if (token && req.token !== token) return json_({ ok: false, error: 'Bad token' });
+    if (req.op === 'printQueue' || req.op === 'printMark' || req.op === 'printEnqueue' || req.op === 'printReprint') return json_(typeof printScanOp_ === 'function' ? printScanOp_(req) : { ok: false, error: 'Print queue is not pasted yet' });
+
+2. After the scan is recorded. Page 1 only (a missing page number counts as page 1, same as the file name).
+   FIND the whole line, including its comment at the end:
+    var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null; // JobSync.gs
+
+REPLACE WITH
+    var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null; // JobSync.gs
+    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') printEnqueue_(jo, 'jo_card', 'scanner', {}); } catch (e) {}

@@ -1,0 +1,13 @@
+Production.gs — one find/replace on the success return of prodMove_. Checked against the Production.gs we have on file (Oct 20, with the client-steps change) and the Oct 19 copy: the line is identical in both and appears once.
+Moving a piece into the Pickup column (stage notify or pickup) queues its jewelry tag. Any other move does nothing.
+prodMove_ already runs inside withLock_, so PrintQueue.gs adds the row without taking the lock a second time.
+
+FIND
+  return { ok: true, jo: key, from: card.stage, from_label: card.stage_label, to: code, to_label: prodLabel_(code), by: user.username, at: t, stopped: stopped, stage_id: sid, location: set.location || loc, step_target: tgt };
+
+REPLACE WITH
+  var moved = { ok: true, jo: key, from: card.stage, from_label: card.stage_label, to: code, to_label: prodLabel_(code), by: user.username, at: t, stopped: stopped, stage_id: sid, location: set.location || loc, step_target: tgt };
+  try { if (typeof printAfterMove_ === 'function') printAfterMove_(req, moved, user); } catch (e) {}
+  return moved;
+
+If Ctrl+H finds 0 matches, stop and send me a copy of Production.gs. Do not edit it by hand.

@@ -1,0 +1,47 @@
+Label printing — what to paste, and what not to add.
+
+New file (code only)
+  Apps Script: + Script, name it PrintQueue, paste paste/PrintQueue.gs (the whole file, no extra header).
+  Save.
+
+Setup function
+  Run setupPrintQueue once. It creates the PrintQueue tab if it is missing, with the header
+  print_id, jo, kind, status, created_at, created_by, printed_at, printed_by, device_id, error.
+  kind is jo_card or jewelry_tag. status is queued, printed, failed, or cancelled.
+  A claim does not add a status. While the row is still queued, device_id and printed_at mean "claimed at".
+  Another device skips a claim newer than 3 minutes. The same device can claim again. A claim older than 3 minutes can be taken.
+
+Patches, against the live files
+  Code.gs        paste/Code.gs.print.patch.txt         page-1 scan queues a JO card; scanner ops printQueue, printMark, printEnqueue, printReprint (placed before fastBump_)
+  Production.gs  paste/Production.gs.print.patch.txt   a move into Pickup (notify or pickup) queues a jewelry tag. Exact FIND on the prodMove_ return line.
+  Auth.gs        paste/Auth.gs.print.patch.txt         printQueue returns directly (not dcacheRead_). Writes go through handlePrint_.
+  Fast.gs        paste/Fast.gs.print.patch.txt         printQueue in FAST.READS only
+  DashCache.gs   paste/DashCache.gs.print.patch.txt    printQueue in DCACHE.READS only
+
+Do not add printQueue to FAST.CACHE. A poll has to see a row that was just claimed.
+Do not add printQueue to dcacheSpec_, and do not add it to the dashboard payload.
+Do not add printMark, printEnqueue, or printReprint to FAST.READS, FAST.CACHE, DCACHE.READS, or the client READS list in app.js.
+printQueue is already on the client READS list and not on the client CACHED list, so the 15 second poll does not wipe the other pages.
+
+Assumed live functions (this repo does not contain the current Production.gs or the live Code.gs / Auth.gs / Fast.gs / DashCache.gs):
+  recordScan_(req, jo, file, folder, ocrText, found, ocrError) and the token check line, as in paste/Code.gs.txt
+  prodMove_(req, user) inside withLock_, success object with to (stage code). Final is notify or pickup (the Pickup column).
+  handleAction_ uses a, req, s.user, and the line `if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);`
+  Fast.gs READS still contains `priceHistory: 1, priceJobCost: 1,`
+  DashCache.gs READS still contains `settingsDesign: 1, listUsers: 1,`
+  jobRows_('JobOrders') returns objects with jo, client_id, metal, karat, weight_g, stone_type, stone_size, size, due_date, current_stage.
+  The client name comes from the Clients tab (client_id) for the on-screen queue list only. It is not a column on PrintQueue and is never sent to the label renderer.
+  PrintQueue writes one row at a time (append or update in place). It never clears or rewrites the tab.
+  ss_() and withLock_ are used when they exist. Otherwise the script uses the active spreadsheet and LockService.getScriptLock.
+
+oauthScopes
+  None. No appsscript.json change. The printer talks to the browser, not to Apps Script.
+
+Then
+  Deploy > Manage deployments > pencil > New version > Deploy.
+  Do not use New deployment.
+
+Site
+  The staff pages and nav.js ship on GitHub Pages. The scanner loads nav.js, which loads the print scripts. No scanner-repo change.
+  A connected printer polls printQueue about every 15 seconds, and only while the tab is visible.
+  The device that saved the page, or moved the piece to the last step, prints at once when its printer is connected and allowed to print that kind, then marks the row printed.

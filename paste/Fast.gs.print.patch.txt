@@ -1,0 +1,10 @@
+Fast.gs — one short edit. printQueue is a read, and it must stay fresh, so it is NOT added to FAST.CACHE.
+Do not add printMark, printEnqueue, or printReprint. Those stay writes.
+
+The FIND text is in the middle of the READS line (copy it without leading spaces). It is still there after the To do patch (priceJobCost) and the portal patch (that patch does not touch priceJobCost). It is not the CACHE line.
+
+FIND
+priceHistory: 1, priceJobCost: 1,
+
+REPLACE WITH
+priceHistory: 1, priceJobCost: 1, printQueue: 1,
