@@ -22,10 +22,11 @@
 </main>
 <script src="../vendor/qrcode.js?v=1"></script>
 <script src="../vendor/niimbluelib-0.47.1.js?v=1"></script>
-<script src="../print-label.js?v=1"></script>
-<script src="../print.js?v=1"></script>
+<script src="../print-label.js?v=2"></script>
+<script src="../print.js?v=2"></script>
 <script>
 (function () {
+  function draw() {
   var samples = [
     { title: 'JO card · 26-287', kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
     { title: 'JO card on a B1 head', kind: 'jo_card', model: 'B1', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
@@ -70,6 +71,9 @@
   document.getElementById('prSum').textContent = OYPPrint.summary();
   OYPPrint.mountSettings(document.getElementById('printSet'));
   OYPPrint.mountQueue(document.getElementById('printQueue'));
+}
+if (window.OYPLabel && OYPLabel.ready && OYPLabel.ready.then) OYPLabel.ready.then(draw);
+else draw();
 })();
 </script>
 </body></html>

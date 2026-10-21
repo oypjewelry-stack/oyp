@@ -123,10 +123,18 @@ function taskName(client) {
   if (head >= 500) return 'D110M_V4';
   return 'B1';
 }
+function labelReady() {
+  var p = root.OYPLabel && root.OYPLabel.ready;
+  return p && typeof p.then === 'function' ? p.catch(function () {}) : Promise.resolve();
+}
 function sendToPrinter(item) {
   var L = lib();
   if (!state.client || !state.connected) return Promise.reject(new Error('Not connected'));
   if (!root.OYPLabel) return Promise.reject(new Error('Label renderer is not loaded'));
+  return labelReady().then(function () { return sendPrepared(item); });
+}
+function sendPrepared(item) {
+  var L = lib();
   var rendered = root.OYPLabel.render(labelOpts(item));
   var canvas = root.OYPLabel.toCanvas(rendered);
   if (!canvas) return Promise.reject(new Error('No canvas'));
@@ -207,6 +215,8 @@ function download(kind, item) {
     return Object.assign({}, spec, item);
   }, function () { return item; }) : Promise.resolve(item);
   return ready.then(function (it) {
+    return labelReady().then(function () { return it; });
+  }).then(function (it) {
     var rendered = root.OYPLabel.render(labelOpts(it, kind));
     var full = root.OYPLabel.toCanvas(rendered);
     if (!full) return;
