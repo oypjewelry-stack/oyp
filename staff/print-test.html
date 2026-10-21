@@ -1,77 +1,126 @@
 <!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>OYP · Print test</title>
-<link rel="stylesheet" href="../print.css?v=1">
+<html lang="en" data-oyp-scanner="0"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#ffffff">
+<meta name="robots" content="noindex,nofollow"><title>OYP Jewelry · Print test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="../design.js?v=6"></script>
+<link rel="stylesheet" href="../app.css?v=38">
+<link rel="stylesheet" href="../settings.css?v=10">
+<link rel="stylesheet" href="../print.css?v=5">
+<link rel="icon" type="image/png" href="../favicon.png"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
 </head><body>
-<header class="top" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #eee;background:#fff">
-  <button id="btnMenu" class="icon" aria-label="Menu" style="border:0;background:none">Menu</button>
-  <span id="title" class="title" style="font:600 16px Inter,system-ui,sans-serif">Print test</span>
-  <span class="topend"><span id="printChip" class="oyp-pr-slot"></span></span>
+<header class="top">
+  <button id="btnMenu" class="icon" aria-label="Menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
+  <span id="title" class="title">Print test</span>
+  <span class="topend"><span id="printChip" class="oyp-pr-slot"></span><img class="logo" src="../logo.png" alt="OYP Jewelry"></span>
 </header>
-<main class="pr-page">
-  <h1>Label alignment</h1>
-  <p>Chrome or Edge on Windows, Mac, and Android. USB serial is the fallback on a computer. iPhone and iPad Safari cannot connect. Download PNG instead. The sticker is the JO number. The name stays on the queue list only.</p>
-  <p id="prSum"></p>
+<div id="menu" class="menu hidden"></div>
+<main class="main set pr-page">
+  <h2>Label alignment</h2>
+  <p class="muted">Chrome or Edge on Windows, Mac, and Android. USB serial is the fallback on a computer. iPhone and iPad Safari cannot connect. The sticker is the JO number. The name stays on the queue list only.</p>
+  <p id="prSum" class="muted"></p>
+  <p id="prOff" class="muted"></p>
   <div class="pr-previews" id="prViews"></div>
-  <h2>On the queue list</h2>
-  <p>Elena Tan · 26-287</p>
+  <h2>Printer</h2>
   <div id="printSet"></div>
   <h2>Print queue</h2>
-  <div id="printQueue"></div>
+  <div class="setbox" id="printQueue"></div>
 </main>
+<div id="toast" class="toast hidden"></div>
 <script src="../vendor/qrcode.js?v=1"></script>
 <script src="../vendor/niimbluelib-0.47.1.js?v=1"></script>
-<script src="../print-label.js?v=3"></script>
-<script src="../print.js?v=2"></script>
+<script src="../print-label.js?v=7"></script>
+<script src="../print.js?v=7"></script>
+<script src="../nav.js?v=21"></script>
 <script>
 (function () {
+  var menu = document.getElementById('menu');
+  document.getElementById('btnMenu').addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+    menu.innerHTML = OYPNav.menuHtml(OYPNav.readUser(), '', 'index.html');
+    menu.classList.remove('hidden');
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-logout]')) {
+      try { localStorage.removeItem('oypSession'); localStorage.removeItem('oypUser'); localStorage.removeItem('oypSessionExp'); } catch (err) {}
+      location.href = 'index.html';
+      return;
+    }
+    if (!e.target.closest('#menu,#btnMenu')) menu.classList.add('hidden');
+  });
   function draw() {
-  var samples = [
-    { title: 'JO card · 26-287', kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
-    { title: 'JO card on a B1 head', kind: 'jo_card', model: 'B1', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
-    { title: 'Jewelry tag', kind: 'jewelry_tag', model: 'B1', jo: '26-287', client: 'Elena Tan', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' },
-    { title: 'Jewelry tag on a B31 head', kind: 'jewelry_tag', model: 'B31', jo: '26-287', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' },
-    { title: 'Calibration · 30×20', kind: 'cal_jo', model: 'B31' },
-    { title: 'Calibration · tag', kind: 'cal_tag', model: 'B1' }
+  var columns = [
+    [
+      { title: 'B31 Printer for 30x20 - Test', kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
+      { title: 'B31 calibration', kind: 'cal_jo', model: 'B31' }
+    ],
+    [
+      { title: 'B1 Printer for 30x20 - Test', kind: 'jo_card', model: 'B1', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
+      { title: 'B1 Printer for Jewelry Tag - Test', kind: 'jewelry_tag', model: 'B1', jo: '26-287', client: 'Elena Tan', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' },
+      { title: 'B1 calibration', kind: 'cal_tag', model: 'B1' }
+    ]
   ];
   var host = document.getElementById('prViews');
-  samples.forEach(function (s) {
+  columns.forEach(function (samples) {
+    var col = document.createElement('div');
+    col.className = 'pr-col';
+    samples.forEach(function (s) {
     var card = document.createElement('div');
-    card.className = 'pr-card';
-    var rendered = OYPLabel.render(s);
-    var canvas = OYPLabel.toCanvas(rendered);
-    var scale = rendered.width > 420 ? 420 / rendered.width : 1;
-    canvas.style.width = Math.round(rendered.width * scale) + 'px';
-    canvas.style.height = Math.round(rendered.height * scale) + 'px';
+    card.className = 'dcard';
+    var sh = OYPPrint.shiftPx(s.model || 'B31');
+    var rendered = OYPLabel.render(Object.assign({}, s, { shiftX: sh.x, shiftY: sh.y }));
+    var view = OYPLabel.preview(rendered, { scale: 4, smooth: true });
+    var canvas = view.canvas;
+    canvas.className = 'pr-sticker';
+    canvas.setAttribute('aria-label', s.title);
+    var title = document.createElement('div');
+    title.className = 'dtitle';
     var h = document.createElement('b');
     h.textContent = s.title;
-    card.appendChild(h);
-    card.appendChild(canvas);
+    title.appendChild(h);
+    card.appendChild(title);
+    var stage = document.createElement('div');
+    stage.className = 'pr-stage';
+    stage.appendChild(canvas);
+    card.appendChild(stage);
     var p = document.createElement('p');
-    p.textContent = rendered.lines.length ? rendered.lines.join(' · ') : 'Border and centre mark';
+    p.className = 'muted';
+    var off = OYPPrint.offsetMm(s.model || 'B31');
+    p.textContent = (rendered.lines.length ? rendered.lines.join(' · ') : 'Border and centre mark') + ' · ' + (s.model || 'B31') + ' offset ' + off.x.toFixed(1) + ' mm horizontal, ' + off.y.toFixed(1) + ' mm vertical';
     card.appendChild(p);
-    var row = document.createElement('p');
+    var row = document.createElement('div');
+    row.className = 'fbtns oyp-pr-acts';
     var png = document.createElement('button');
     png.type = 'button';
-    png.textContent = 'Download PNG';
+    png.className = 'pill sm outline';
+    png.textContent = 'DOWNLOAD PNG';
     png.onclick = function () { OYPPrint.download(s.kind, s); };
     row.appendChild(png);
-    if (s.kind === 'cal_jo' || s.kind === 'jo_card' || s.kind === 'jewelry_tag' || s.kind === 'cal_tag') {
-      var go = document.createElement('button');
-      go.type = 'button';
-      go.textContent = 'Print';
-      go.style.marginLeft = '8px';
-      go.onclick = function () { OYPPrint.printLocal(s); };
-      row.appendChild(go);
-    }
+    var go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'pill sm';
+    go.textContent = 'PRINT';
+    go.onclick = function () { OYPPrint.printLocal(s); };
+    row.appendChild(go);
     card.appendChild(row);
-    host.appendChild(card);
+    col.appendChild(card);
+    });
+    host.appendChild(col);
   });
   document.getElementById('prSum').textContent = OYPPrint.summary();
+  var b31 = OYPPrint.offsetMm('B31'), b1 = OYPPrint.offsetMm('B1');
+  document.getElementById('prOff').textContent = 'Saved offset. B31 ' + b31.x.toFixed(1) + ' mm horizontal, ' + b31.y.toFixed(1) + ' mm vertical. B1 ' + b1.x.toFixed(1) + ' mm horizontal, ' + b1.y.toFixed(1) + ' mm vertical. The border and centre mark move with that offset.';
   OYPPrint.mountSettings(document.getElementById('printSet'));
   OYPPrint.mountQueue(document.getElementById('printQueue'));
 }
+window.onOypPrintSave = function () {
+  var host = document.getElementById('prViews');
+  if (host) host.innerHTML = '';
+  draw();
+};
 if (window.OYPLabel && OYPLabel.ready && OYPLabel.ready.then) OYPLabel.ready.then(draw);
 else draw();
 })();

@@ -46,15 +46,22 @@ function noName(img) {
   return !/ELENA|TAN|SANTOS/i.test(text);
 }
 
+let draw = true;
+try { L.render({ kind: 'jo_card', model: 'B1', jo: '26-287', due: '2026-10-21' }); }
+catch (e) { draw = false; console.log('skip label bitmaps: ' + (e && e.message || e) + '. Install @napi-rs/canvas to draw them.'); }
+
 const card = { kind: 'jo_card', jo: '26-287', due: '2026-10-21' };
 const tag = { kind: 'jewelry_tag', jo: '26-287', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' };
-[['B31', 600, 180], ['B1', 384, 72]].forEach(([model, head, ox]) => {
+if (draw) {
+[['B31', 600, 164], ['B1', 384, 72]].forEach(([model, head, ox]) => {
   const a = L.render(Object.assign({ model, client: 'Elena Tan' }, card));
   const b = L.render(Object.assign({ model }, card));
   const c = L.render(Object.assign({ model, client: 'Maria Santos' }, card));
   eq(a.width === head && a.height === 160 && a.offsetX === ox && a.labelW === 240 && a.labelH === 160 && a.tail === 0, model + ' JO card is ' + head + '×160, label 240×160, offset ' + ox);
   eq(same(a.data, b.data) && same(a.data, c.data), model + ' JO card pixels ignore the client name');
   eq(noName(a) && a.lines[0] === '26-287' && a.lines.indexOf('DUE 21 OCT') >= 0, model + ' JO card text is the JO and the due date');
+  eq(a.qrBox && a.qrBox.size >= L.px(16) && a.qrBox.size <= a.labelH - L.px(1) * 2, model + ' JO card QR fills the 20 mm height down to the margins');
+  eq(clearMargin(a), model + ' JO card ink stays about 1 mm inside the edges');
   eq(decode(a) === '26-287', model + ' JO card QR is 26-287');
   const t = L.render(Object.assign({ model, client: 'Elena Tan' }, tag));
   const t2 = L.render(Object.assign({ model }, tag));
@@ -100,6 +107,10 @@ function landscape(img) {
 eq(clearMargin(long) && clearMargin(wide), 'spec ink stays about 1 mm inside the 30 mm edges');
 const cal = L.render({ kind: 'cal_tag', model: 'B31' });
 eq(cal.width === 600 && cal.height === 560 && cal.lines.length === 0 && cal.qr === '', 'calibration has no JO text and no name');
+function darkAt(img, x, y) { return img.data[(y * img.width + x) * 4] === 0; }
+eq(cal.offsetX === 164 && darkAt(cal, cal.offsetX + 20, 0) && !darkAt(cal, cal.offsetX + 20, 4), 'the B31 calibration border is 2 mm left of the head centre and 0.5 mm up');
+const calB1 = L.render({ kind: 'cal_jo', model: 'B1' });
+eq(calB1.offsetX === 72 && darkAt(calB1, calB1.offsetX + 4, 4), 'B1 calibration stays centred on its head');
 
 function crc(buf) {
   let c = ~0;
@@ -136,6 +147,35 @@ fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, name + '.png'), png(img));
 });
 eq(fs.existsSync(path.join(outDir, 'b31-jo-card.png')), 'PNG renders were written');
+const base = L.render(Object.assign({ model: 'B31' }, card));
+const moved = L.render(Object.assign({ model: 'B31', shiftX: L.px(0.5), shiftY: L.px(-1) }, card));
+eq(moved.offsetX === base.offsetX + L.px(0.5) && moved.qrBox.y === base.qrBox.y - L.px(1), 'a saved offset moves the JO card on the head');
+eq(base.offsetX === Math.round((600 - 240) / 2) + L.px(-2) && L.placeBias('B31').y === L.px(-0.5) && L.placeBias('B1').x === 0, 'a B31 label sits 2 mm left of the 600 px head centre and 0.5 mm up');
+const cardView = L.preview(base, { scale: 4, smooth: true });
+const tagView = L.preview(L.render(Object.assign({ model: 'B1' }, tag)), { scale: 4, smooth: true });
+const pad = L.px(4) * 4, rad = L.px(2) * 4;
+function pxAt(img, x, y) {
+  const i = (y * img.width + x) * 4;
+  return [img.data[i], img.data[i + 1], img.data[i + 2]];
+}
+const corner = pxAt(cardView, 0, 0);
+const paper = pxAt(cardView, pad + rad + 8, pad + 6);
+const outside = pxAt(cardView, pad + 1, pad + 1);
+const foldY = pad + tagView.labelH * 4;
+const fold = pxAt(tagView, pad + Math.round(tagView.labelW * 4 / 2), foldY);
+const above = pxAt(tagView, pad + Math.round(tagView.labelW * 4 / 2), foldY - 8);
+eq(cardView.width === (240 + L.px(4) * 2) * 4 && cardView.height === (160 + L.px(4) * 2) * 4 && tagView.height === (560 + L.px(4) * 2) * 4, 'a preview is the label, with gray around it');
+eq(corner[0] < 180 && corner[0] > 100 && paper[0] > 250 && outside[0] < 180, 'the sticker is a white rounded rectangle on mid-gray');
+eq(tagView.tail === 360 && fold[0] < above[0] - 8, 'the jewelry preview draws a faint fold between the head and the tail');
+const shifted = L.preview(moved, { scale: 1, smooth: false });
+const still = L.preview(base, { scale: 1, smooth: false });
+function inkX(img) {
+  let min = img.width;
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) if (img.data[(y * img.width + x) * 4] < 40 && x < min) min = x;
+  return min;
+}
+eq(inkX(shifted) > inkX(still), 'a horizontal offset moves the ink inside the sticker preview');
+}
 
 const ctx = { console, Math, Date, String, Object, Array, Number, JSON, LockService: {}, SpreadsheetApp: {} };
 ctx.global = ctx;
@@ -178,11 +218,13 @@ const d1 = ctx.printDecorate_({ print_id: 'pq-1', jo: '26-287', kind: 'jewelry_t
 const d2 = ctx.printDecorate_({ print_id: 'pq-2', jo: '26-287', kind: 'jo_card', status: 'queued' }, look);
 eq(jobReads === 2 && d1.client === 'Elena Tan' && d2.client === 'Elena Tan', 'the queue reads JobOrders and Clients once and shows the name on screen');
 eq(d1.due_date === '2026-10-27' && d1.metal === 'yellow gold' && d1.stone_size === '0.5ct', 'a Date due is a day, specs are joined');
-const r1 = L.render(Object.assign({ model: 'B1', kind: 'jewelry_tag' }, { jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size }));
-const r2 = L.render({ model: 'B1', kind: 'jewelry_tag', jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size, client: d1.client });
-eq(same(r1.data, r2.data) && noName(r2), 'a decorated row prints the same pixels with or without the name');
-const card2 = L.render({ model: 'B31', kind: 'jo_card', jo: '26-287', due: d1.due_date });
-eq(card2.lines.indexOf('DUE 27 OCT') >= 0, 'a JO card due line reads DUE 27 OCT');
+if (draw) {
+  const r1 = L.render(Object.assign({ model: 'B1', kind: 'jewelry_tag' }, { jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size }));
+  const r2 = L.render({ model: 'B1', kind: 'jewelry_tag', jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size, client: d1.client });
+  eq(same(r1.data, r2.data) && noName(r2), 'a decorated row prints the same pixels with or without the name');
+  const card2 = L.render({ model: 'B31', kind: 'jo_card', jo: '26-287', due: d1.due_date });
+  eq(card2.lines.indexOf('DUE 27 OCT') >= 0, 'a JO card due line reads DUE 27 OCT');
+}
 let locks = 0;
 ctx.withLock_ = function (fn) { locks++; return fn(); };
 const sheetRows = [];
@@ -205,8 +247,16 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=2') && index.includes('print-label.js?v=3') && index.includes('nav.js?v=15') && index.includes('app.js?v=29') && index.includes('settings.js?v=18') && index.includes('print.css?v=1'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=3'), 'the scanner injects the current label renderer');
+eq(index.includes('print.js?v=7') && index.includes('print-label.js?v=7') && index.includes('nav.js?v=21') && index.includes('app.js?v=30') && index.includes('settings.js?v=19') && index.includes('print.css?v=5') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=7') && read('nav.js').includes('print.js?v=7') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
+eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
+const testPage = read('staff/print-test.html'), testCss = read('print.css');
+const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
+eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
+eq(testCss.includes('grid-template-columns:1fr 1fr') && testCss.includes('.pr-stage') && testCss.includes('justify-content:center') && /max-width:800px/.test(testCss), 'print test is two equal columns and stacks below an iPad portrait');
+eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && testPage.indexOf('id="printChip"') < testPage.indexOf('class="logo"') && testPage.includes('app.css?v=38') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header, with the printer pill left of the logo');
+eq(read('print.js').includes('Print queue not set up yet') && read('print.js').includes('No stickers waiting') && read('print.js').includes('class="pill sm"') && read('print.js').includes('class="dchip') && read('print.js').includes('class="setp') && read('print.js').includes('class="cn"') && read('print.js').includes('whomenu') && read('print.css').includes(':where(') && !read('print.css').includes('.oyp-pr-btn') && testPage.includes("'dcard'") && testPage.includes("'dtitle'") && testPage.includes('class="setbox" id="printQueue"'), 'print controls use the staff cards, pills, rows, and menu');
 eq(read('print.js').includes('labelOpts') && !/client:\s*item\.client/.test(read('print.js')), 'the printer payload builder does not copy the client name');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }

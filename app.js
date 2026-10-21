@@ -159,24 +159,7 @@ function writeNavOrder(u, keys, canon) {
   const def = canon.filter(k => present.indexOf(k) >= 0);
   try { if (!present.length || present.join() === def.join()) localStorage.removeItem(navKey(u)); else localStorage.setItem(navKey(u), JSON.stringify(present)); } catch (e) {}
 }
-function arrangeMenu(canon, saved) { // saved null = today's order. A new item slots in where it sits in that order.
-  if (!saved || !saved.length) return canon.slice();
-  const ids = canon.map(n => n[0]), by = {};
-  canon.forEach(n => { by[n[0]] = n; });
-  const present = new Set(ids), out = [];
-  saved.forEach(id => { if (present.has(id) && out.indexOf(id) < 0) out.push(id); });
-  ids.forEach((id, i) => {
-    if (out.indexOf(id) >= 0) return;
-    let at = out.length;
-    for (let j = i + 1; j < ids.length; j++) { const k = out.indexOf(ids[j]); if (k >= 0) { at = k; break; } }
-    out.splice(at, 0, id);
-  });
-  return out.map(id => by[id]);
-}
-function orderedNav(u) {
-  const canon = NAV[u.role] || [];
-  return u.role === 'admin' ? arrangeMenu(canon, readNavOrder(u)) : canon;
-}
+function orderedNav(u) { return window.OYPNav.ordered(u); }
 function navLink(k, t, page) {
   if (k === 'scanner') return `<a href="${scanUrl()}" data-nkey="scanner">${esc(t)}</a>`;
   return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
@@ -201,12 +184,7 @@ function wireMenuDrag(box, u) {
     writeNavOrder(u, [...box.querySelectorAll('a[data-nkey]')].map(a => a.dataset.nkey), (NAV[u.role] || []).map(n => n[0]));
   });
 }
-function phoneInner(u) {
-  if (!u) return `<a href="${SCANNER}">Card scanner</a>`;
-  if ((u.role === 'staff' || !NAV[u.role]) && !(u.role === 'staff' && NAV.staff)) return `<a href="${scanUrl()}">Scan JO card</a><button data-logout>Log out</button>`;
-  if (u.role === 'staff') return NAV.staff.map(([k, t]) => navLink(k, t, '')).join('') + '<button data-logout>Log out</button>';
-  return orderedNav(u).map(([k, t]) => navLink(k, t, curPage)).join('') + '<button data-logout>Log out</button>';
-}
+function phoneInner(u) { return window.OYPNav.menuHtml(u, curPage, ''); }
 // Settings › Layout turns editing on. While it is on, these rows drag. Nothing extra shows when it is off.
 window.OYPLayoutMenu = {
   list: u => orderedNav(u).map(([k, t]) => ({ key: k, label: t })),

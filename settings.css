@@ -6,7 +6,7 @@
 .setgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(14px*var(--sp))}
 .setcard{position:relative;display:flex;flex-direction:column;gap:calc(6px*var(--sp));border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(16px*var(--sp)) calc(36px*var(--sp)) calc(16px*var(--sp)) calc(18px*var(--sp));color:#111;text-decoration:none;min-height:calc(118px*var(--bh))}
 .setcard:hover{border-color:var(--gold);background:#faf8f1}
-.setcard b{font-family:var(--head);font-weight:500;font-size:calc(19px*var(--hs));line-height:1.25}
+.setcard b,.dcard>.dtitle b{font-family:var(--head);font-weight:500;font-size:calc(19px*var(--hs));line-height:1.25}
 .setcard .muted{font-size:calc(14px*var(--fs));color:#777}
 .setcard .chev{position:absolute;right:16px;top:50%;transform:translateY(-50%);color:var(--icon);font-size:calc(22px*var(--fs))}
 .seth{margin:calc(22px*var(--sp)) 0 calc(8px*var(--sp))}

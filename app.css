@@ -4,7 +4,8 @@
 :root{--fs:1;--hs:1;--sp:1;--rad:1;--bh:1;--cw:1;--pw:1;--head:'Libre Bodoni','Bodoni 72',Didot,serif;--body:'Bodoni Moda','Bodoni 72',Didot,serif;--label:Inter,Helvetica,sans-serif;--icon:#9a9a9a;--gold:#d4af37}
 body{font-size:calc(1rem*var(--fs));font-family:var(--body);background:#fff;color:#111;-webkit-tap-highlight-color:transparent;min-height:100vh}
 .hidden{display:none!important}
-.top{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:10}
+.top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:10px 14px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:10}
+.top .icon{justify-self:start}.top .title{justify-self:center;text-align:center;white-space:nowrap}.top .topend{justify-self:end}
 .title{font-family:var(--d-hmenu-f,var(--Ghead,var(--head)));font-weight:var(--d-hmenu-g,500);font-size:var(--d-hmenu-fp,20px);color:var(--d-hmenu-c,#111);text-transform:uppercase;transform:translateY(2px)}
 .logo{height:30px;width:auto;flex-shrink:0;margin-right:2px;display:block}
 .icon{background:none;border:0;color:var(--icon);width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
