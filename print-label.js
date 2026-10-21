@@ -6,7 +6,7 @@
    45 mm blank tail. B1 and B31 print direction is "top", so x is across the label.
    The printer draws columns 0..width-1 and does not centre a narrow bitmap,
    so the image stays the full head. A 30 mm label centred on the B31's 600 px
-   head printed about 2 mm too far right and 0.5 mm too high on a T30*20 roll.
+   head printed about 2 mm too far right, with extra blank above the picture, on a T30*20 roll.
    That measured correction is the B31 default. B1's head is 48 mm / 384 px. */
 (function (root) {
 'use strict';
@@ -75,11 +75,12 @@ function presetOf(kind) {
 /* Where a label sits on the head. The printer does not centre, and a label-width
    image would start at column 0, so the bitmap stays the full head.
    A calibration print centred on the B31's 600 px head (offset 180) put the
-   border about 2 mm right of the T30*20 sticker and about 0.5 mm high.
-   px(-2) is -16 and px(0.5) is 4. A saved offset is added on top of this.
+   border about 2 mm right of the T30*20 sticker, with more blank paper above
+   the picture than below it. px(-2) is -16 and px(-0.5) is -4, so the default
+   moves the print left and up. A saved offset is added on top of this.
    B1 was not in that print; its 384 px head stays centred. */
 function placeBias(model) {
-  if (String(model || '').toUpperCase() === 'B31') return { x: px(-2), y: px(0.5) };
+  if (String(model || '').toUpperCase() === 'B31') return { x: px(-2), y: px(-0.5) };
   return { x: 0, y: 0 };
 }
 function canvasFor(kind, head, model) {
