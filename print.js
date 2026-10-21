@@ -10,7 +10,11 @@ var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
 var POLL = 15000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve() };
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve() };
+var PAGE_MS = 20000;
+var ATTEMPT_MS = 45000;
+var END_MS = 4000;
+var JOB_MS = 120000;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -26,11 +30,12 @@ function deviceId() {
   return id;
 }
 function load() {
-  var o = { darkness: 3, auto: true, transport: '', kinds: null, kindsByModel: {}, model: '', offsets: {} };
+  var o = { darkness: 3, auto: true, transport: '', kinds: null, kindsByModel: {}, taskByModel: {}, model: '', offsets: {} };
   try { var raw = JSON.parse(localStorage.getItem(KEY) || '{}'); if (raw && typeof raw === 'object') o = Object.assign(o, raw); } catch (e) {}
   o.darkness = Math.max(1, Math.min(5, o.darkness | 0 || 3));
   if (!o.offsets || typeof o.offsets !== 'object') o.offsets = {};
   if (!o.kindsByModel || typeof o.kindsByModel !== 'object') o.kindsByModel = {};
+  if (!o.taskByModel || typeof o.taskByModel !== 'object') o.taskByModel = {};
   /* An old browser saved one kinds object for every printer. Keep it only on the model it was saved for. */
   if (o.kinds && typeof o.kinds === 'object') {
     if (o.model && !o.kindsByModel[o.model]) o.kindsByModel[o.model] = { jo_card: !!o.kinds.jo_card, jewelry_tag: !!o.kinds.jewelry_tag };
@@ -86,10 +91,33 @@ function toast(t) {
   var el = document.getElementById('toast');
   if (el && !el.querySelector('img')) { el.textContent = t; el.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(function () { el.classList.add('hidden'); }, 2600); }
 }
+function withTimeout(p, ms, message) {
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    }, ms);
+    Promise.resolve(p).then(function (v) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    }, function (err) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+/* A print that never answers must not sit on this chain. The next Print tap would look like it did nothing. */
 function work(fn) {
   var run = state.chain.then(function () { return fn(); }, function () { return fn(); });
-  state.chain = run.then(function () {}, function () {});
-  return run;
+  var capped = withTimeout(run, JOB_MS, 'Print timed out');
+  state.chain = capped.then(function () {}, function () {});
+  return capped;
 }
 function defaultKinds(model) {
   if (model === 'B31') return { jo_card: true, jewelry_tag: false };
@@ -184,19 +212,78 @@ function labelOpts(item, kind) {
     size: item.size || ''
   };
 }
+function tasks() { return (lib() && lib().printTasks) || {}; }
+function taskKnown(name) { return !!(name && tasks()[name]); }
+/* Settings > Labels > Print mode. Auto uses the task that last finished for this model, else the one niimbluelib names. */
 function taskName(client) {
   var forced = load().task;
-  if (forced && forced !== 'auto' && lib().printTasks && lib().printTasks[forced]) return forced; // Settings > Labels > Print mode
-  var named = client.getPrintTaskType && client.getPrintTaskType();
-  if (named) return named;
-  var info = client.getPrinterInfo ? client.getPrinterInfo() : {};
-  var meta = client.getModelMetadata ? client.getModelMetadata() : null;
-  var model = meta && meta.model;
-  var found = model && lib().findPrintTask(model, info && info.protocolVersion);
-  if (found) return found;
-  var head = meta && meta.printheadPixels;
-  if (head >= 500) return 'D110M_V4';
-  return 'B1';
+  if (forced && forced !== 'auto' && taskKnown(forced)) return forced;
+  var meta = client && client.getModelMetadata && client.getModelMetadata();
+  var model = state.model || (meta && meta.model) || '';
+  var saved = (load().taskByModel || {})[model];
+  if (taskKnown(saved)) return saved;
+  var named = client && client.getPrintTaskType && client.getPrintTaskType();
+  if (taskKnown(named)) return named;
+  var info = client && client.getPrinterInfo ? client.getPrinterInfo() : {};
+  var found = model && lib().findPrintTask && lib().findPrintTask(model, info && info.protocolVersion);
+  if (taskKnown(found)) return found;
+  var head = (meta && meta.printheadPixels) || state.head || 0;
+  if (head >= 500 && taskKnown('D110M_V4')) return 'D110M_V4';
+  return taskKnown('B1') ? 'B1' : 'D110M_V4';
+}
+/* One retry, and only on Auto: the detected task, then B1, then D110M_V4. A manual choice is not replaced. */
+function taskChoices(client) {
+  var forced = load().task;
+  if (forced && forced !== 'auto' && taskKnown(forced)) return [forced];
+  var out = [], first = taskName(client);
+  function add(name) { if (taskKnown(name) && out.indexOf(name) < 0) out.push(name); }
+  add(first);
+  add('B1');
+  add('D110M_V4');
+  if (!out.length) out.push(first || 'B1');
+  return out.slice(0, 2);
+}
+function rememberTask(name) {
+  if ((load().task || 'auto') !== 'auto' || !state.model || !taskKnown(name)) return;
+  var cfg = load();
+  if (cfg.taskByModel[state.model] === name) return;
+  cfg.taskByModel[state.model] = name;
+  save(cfg);
+}
+function isPageEndTimeout(err) {
+  return /waited for e4/i.test(String((err && err.message) || err || ''));
+}
+function isTimeout(err) {
+  var m = String((err && err.message) || err || '');
+  return /waited for e4|print timed out|timed out|timeout waiting/i.test(m);
+}
+function failToast(err) {
+  if (isTimeout(err)) return 'Printer did not respond. Turn the printer off and on, then reconnect.';
+  return String((err && err.message) || err || 'Sticker did not print');
+}
+function failRow(err) {
+  if (isTimeout(err)) return 'Printer did not respond';
+  return String((err && err.message) || err || 'print failed').slice(0, 180);
+}
+function headPixels() {
+  var meta = state.client && state.client.getModelMetadata && state.client.getModelMetadata();
+  var head = (meta && meta.printheadPixels) || state.head || 0;
+  if (!head && root.OYPLabel && root.OYPLabel.HEADS) head = root.OYPLabel.HEADS[state.model] || 0;
+  return head | 0;
+}
+/* The encoder's column count is the canvas width rounded up to a byte. The B31 head is 600, so the bitmap must be exactly that wide. */
+function fitHead(canvas) {
+  var head = headPixels();
+  if (!canvas || !head || canvas.width === head) return canvas;
+  var c = document.createElement('canvas');
+  c.width = head;
+  c.height = canvas.height;
+  var ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, head, canvas.height);
+  var w = Math.min(canvas.width, head);
+  ctx.drawImage(canvas, 0, 0, w, canvas.height, 0, 0, w, canvas.height);
+  return c;
 }
 function labelReady() {
   var p = root.OYPLabel && root.OYPLabel.ready;
@@ -208,28 +295,45 @@ function sendToPrinter(item) {
   if (!root.OYPLabel) return Promise.reject(new Error('Label renderer is not loaded'));
   return labelReady().then(function () { return sendPrepared(item); });
 }
-function sendPrepared(item) {
+function runTask(name, encoded) {
   var L = lib();
-  var rendered = root.OYPLabel.render(labelOpts(item));
-  var canvas = root.OYPLabel.toCanvas(rendered);
-  if (!canvas) return Promise.reject(new Error('No canvas'));
-  var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, state.dir || 'top');
-  var name = taskName(state.client);
   var task = state.client.protocol.newPrintTask(name, {
     totalPages: 1,
     density: load().darkness,
     labelType: L.LabelType.WithGaps,
-    pageColor: L.PageColorType.SingleColor
+    pageColor: L.PageColorType.SingleColor,
+    pageTimeoutMs: PAGE_MS,
+    statusTimeoutMs: 8000
   });
-  /* Same order as the niimbluelib example: printEnd always runs, also after an error, so the printer is not left mid-job. */
-  var end = function () { return task.printEnd ? Promise.resolve(task.printEnd()).catch(function () {}) : null; };
-  return Promise.resolve(task.printInit()).then(function () {
+  /* printEnd always runs, also after an error, and it cannot hold the queue if the printer never answers. */
+  var end = function () {
+    return task.printEnd ? withTimeout(Promise.resolve(task.printEnd()), END_MS, 'print end').catch(function () {}) : null;
+  };
+  var attempt = Promise.resolve(task.printInit()).then(function () {
     return task.printPage(encoded, 1);
   }).then(function () {
     return task.waitForFinished();
-  }).then(end, function (err) {
+  });
+  return withTimeout(attempt, ATTEMPT_MS, 'Print timed out').then(function () {
+    return Promise.resolve(end()).then(function () { rememberTask(name); });
+  }, function (err) {
     return Promise.resolve(end()).then(function () { throw err; });
   });
+}
+function sendPrepared(item) {
+  var L = lib();
+  var rendered = root.OYPLabel.render(labelOpts(item));
+  var canvas = fitHead(root.OYPLabel.toCanvas(rendered));
+  if (!canvas) return Promise.reject(new Error('No canvas'));
+  var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, state.dir || 'top');
+  var names = taskChoices(state.client), i = 0;
+  function once() {
+    return runTask(names[i], encoded).catch(function (err) {
+      if (i + 1 < names.length && isPageEndTimeout(err)) { i += 1; return once(); }
+      throw err;
+    });
+  }
+  return once();
 }
 function claimFresh(item, now) {
   if (!item || item.status !== 'queued') return false;
@@ -238,47 +342,88 @@ function claimFresh(item, now) {
   if (!t || (now - t) >= STALE) return true;
   return false;
 }
+function markPrinting(on) {
+  state.printing = !!on;
+  document.querySelectorAll('[data-q]').forEach(function (b) { b.disabled = !!on; });
+  paintDots();
+}
 function claimAndPrint(item) {
-  return work(function () {
+  var job = work(function () {
     if (!item) return;
     if (!state.connected) { toast('Connect a printer first'); return; }
     var id = item.print_id;
-    var go = function () { return sendToPrinter(item); };
-    if (!id) {
-      return go().catch(function () { toast('Sticker did not print'); });
+    markPrinting(true);
+    function stop() { markPrinting(false); }
+    function finish(p) {
+      return Promise.resolve(p).then(function (v) { stop(); return v; }, function (err) { stop(); throw err; });
     }
-    return callPrint('printMark', { print_id: id, mark: 'claim', device_id: deviceId() }).then(function (r) {
+    function go(row) {
+      toast('Printing…');
+      return sendToPrinter(row).then(function () {
+        toast('Printed');
+      }, function (err) {
+        toast(failToast(err));
+        throw err;
+      });
+    }
+    if (!id) return finish(go(item).catch(function () {}));
+    return finish(callPrint('printMark', { print_id: id, mark: 'claim', device_id: deviceId() }).then(function (r) {
       if (markFailed(r, 'Could not print that sticker')) return;
       var printed = r.item ? Object.assign({}, item, r.item) : item;
-      return go().then(function () {
+      return go(printed).then(function () {
         return callPrint('printMark', { print_id: id, mark: 'printed', device_id: deviceId() }).then(function (done) {
           markFailed(done, 'Printed, but the queue did not update');
         });
       }).catch(function (err) {
-        toast('Sticker did not print');
-        return callPrint('printMark', { print_id: id, mark: 'failed', device_id: deviceId(), error: String((err && err.message) || err || 'print failed').slice(0, 180) }).then(function (done) {
+        return callPrint('printMark', { print_id: id, mark: 'failed', device_id: deviceId(), error: failRow(err) }).then(function (done) {
           markFailed(done, 'The sticker failed, and the queue did not update');
         });
       }).then(function () { paintFrom(printed); });
-    });
+    }));
+  });
+  return Promise.resolve(job).then(function (v) { return v; }, function (err) {
+    markPrinting(false);
+    toast(failToast(err));
   });
 }
 function printJo(kind, jo, opts) {
   opts = opts || {};
   var reprint = opts.reprint !== false;
   return callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint }).then(function (r) {
-    var item = (r && r.item) || { jo: jo, kind: kind };
+    if (!r || r.ok === false) { toast((r && r.error) || 'Sticker did not print'); return r; }
+    var item = r.item || { jo: jo, kind: kind };
     if (!state.connected) { toast('Connect a printer to print. The sticker stays in the queue.'); refresh(); return r; }
-    if (r && r.ok && item.status && item.status !== 'queued') { toast('That sticker is already ' + item.status); return r; }
+    if (item.status && item.status !== 'queued') { toast('That sticker is already ' + item.status); refresh(); return r; }
     return claimAndPrint(item).then(function () { refresh(); return r; });
   }).catch(function () { toast('Sticker did not print'); });
+}
+function printAgain(item) {
+  if (!item) return;
+  return callPrint('printMark', { print_id: item.print_id, mark: 'requeue', device_id: deviceId() }).then(function (r) {
+    if (markFailed(r, 'Could not print that sticker')) return;
+    var row = Object.assign({}, item, (r && r.item) || {});
+    row.status = 'queued';
+    row.error = '';
+    if (!state.connected) { toast('Connect a printer to print. The sticker stays in the queue.'); refresh(); return; }
+    return claimAndPrint(row).then(function () { refresh(); });
+  });
 }
 function printLocal(opts) {
   var item = Object.assign({}, opts || {});
   delete item.model; delete item.head; delete item.client;
-  return work(function () {
+  var job = work(function () {
     if (!state.connected) { toast('Connect a printer first'); return; }
-    return sendToPrinter(item).catch(function () { toast('Sticker did not print'); });
+    markPrinting(true);
+    toast('Printing…');
+    return sendToPrinter(item).then(function () {
+      toast('Printed');
+    }, function (err) {
+      toast(failToast(err));
+    }).then(function () { markPrinting(false); }, function () { markPrinting(false); });
+  });
+  return Promise.resolve(job).then(function (v) { return v; }, function (err) {
+    markPrinting(false);
+    toast(failToast(err));
   });
 }
 /* The PNG is the label only (240 px wide), not the whole printhead, so the Niimbot app does not shrink it.
@@ -343,19 +488,29 @@ function queueNote(r) {
   if (/no connection|internet/i.test(e)) return 'No connection. Check the internet and try again.';
   return 'The print queue could not be loaded. Try again in a moment.';
 }
+function rowError(raw) {
+  var m = String(raw || '');
+  if (!m) return '';
+  if (/timeout waiting|timed out|waited for e4|did not respond/i.test(m)) return 'Printer did not respond';
+  return m;
+}
 function queueHtml(r) {
   if (!r || !r.ok) return '<p class="muted oyp-qempty">' + esc(queueNote(r)) + '</p>';
   var items = r.items || [];
   if (!items.length) return '<p class="muted oyp-qempty">No stickers waiting</p>';
+  var dis = state.printing ? ' disabled' : '';
   return items.map(function (it, i) {
     var kind = it.kind === 'jewelry_tag' ? 'Jewelry tag' : 'JO card';
-    var st = it.status === 'failed' ? 'Failed' : 'Queued';
+    var failed = it.status === 'failed';
+    var st = failed ? 'Failed' : 'Queued';
     var id = esc(it.print_id);
-    return '<div class="setp oyp-qrow"><canvas class="oyp-qprev" data-qi="' + i + '" aria-label="' + esc(kind) + ' preview"></canvas><div class="setl oyp-qmain"><b class="cn">' + screenLabel(it) + '</b><span class="kf"><span class="chip">' + esc(kind) + '</span><span class="chip' + (st === 'Failed' ? ' gold' : '') + '">' + esc(st) + '</span></span></div><div class="fbtns oyp-qbtns">'
-      + (it.status === 'queued' ? '<button type="button" class="pill sm" data-q="now" data-id="' + id + '">PRINT</button>' : '')
-      + '<button type="button" class="pill sm outline" data-q="reprint" data-id="' + id + '">REPRINT</button>'
-      + (it.status === 'queued' ? '<button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '">CANCEL</button>' : '')
-      + '</div></div>';
+    var err = failed ? rowError(it.error) : '';
+    var buttons = failed
+      ? '<button type="button" class="pill sm" data-q="again" data-id="' + id + '"' + dis + '>PRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '"' + dis + '>CANCEL</button>'
+      : '<button type="button" class="pill sm" data-q="now" data-id="' + id + '"' + dis + '>PRINT</button><button type="button" class="pill sm outline" data-q="reprint" data-id="' + id + '"' + dis + '>REPRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '"' + dis + '>CANCEL</button>';
+    return '<div class="setp oyp-qrow"><canvas class="oyp-qprev" data-qi="' + i + '" aria-label="' + esc(kind) + ' preview"></canvas><div class="setl oyp-qmain"><b class="cn">' + screenLabel(it) + '</b><span class="kf"><span class="chip">' + esc(kind) + '</span><span class="chip">' + esc(st) + '</span></span>'
+      + (err ? '<span class="muted oyp-qerr">' + esc(err) + '</span>' : '')
+      + '</div><div class="fbtns oyp-qbtns">' + buttons + '</div></div>';
   }).join('');
 }
 function drawQueuePreviews(el, r) {
@@ -385,12 +540,13 @@ function itemById(id) {
   return null;
 }
 function onQueueClick(e) {
-  var b = e.target.closest('[data-q]'); if (!b) return;
+  var b = e.target.closest('[data-q]'); if (!b || b.disabled || state.printing) return;
   var it = itemById(b.getAttribute('data-id')); if (!it) return;
   var q = b.getAttribute('data-q');
   if (q === 'cancel') cancel(it.print_id);
+  else if (q === 'again') printAgain(it);
   else if (q === 'reprint') reprint(it);
-  else printJo(it.kind, it.jo, { reprint: it.status !== 'queued' });
+  else printJo(it.kind, it.jo, { reprint: false });
 }
 
 function isFinal(req, res) {
@@ -480,6 +636,34 @@ function stopPoll() {
   state.workerUrl = '';
 }
 
+function beat() {
+  var c = state.client;
+  if (!c) return;
+  /* niimbluelib also starts this on its own connect event. Calling it here covers a client that did not. */
+  if (c.startHeartbeat) c.startHeartbeat();
+  else if (c.setHeartbeatAutoStart) c.setHeartbeatAutoStart(true);
+}
+function rememberBle() {
+  var bt = root.navigator && navigator.bluetooth;
+  if (!bt || typeof bt.getDevices !== 'function') return Promise.resolve();
+  return Promise.resolve(bt.getDevices()).then(function (list) {
+    list = list || [];
+    var i, d;
+    for (i = 0; i < list.length; i++) {
+      d = list[i];
+      if (d && d.gatt && d.gatt.connected && d.id) { state.btId = d.id; return; }
+    }
+    if (list.length === 1 && list[0] && list[0].id) state.btId = list[0].id;
+  }).catch(function () {});
+}
+function watchLink(client) {
+  if (!client || !client.on || client.__oypWatch) return;
+  client.__oypWatch = true;
+  client.on('disconnect', function () {
+    if (state.client !== client) return;
+    onLinkDown();
+  });
+}
 function onConnected(transport) {
   var meta = (state.client.getModelMetadata && state.client.getModelMetadata()) || {};
   state.model = meta.model || state.model || '';
@@ -487,6 +671,8 @@ function onConnected(transport) {
   state.dir = meta.printDirection || 'top';
   state.transport = transport;
   state.connected = true;
+  state.reconnecting = false;
+  state.userDisconnect = false;
   var cfg = load();
   cfg.transport = transport;
   cfg.model = state.model || cfg.model;
@@ -494,21 +680,32 @@ function onConnected(transport) {
   if (state.model && !cfg.kindsByModel[state.model]) cfg.kindsByModel[state.model] = defaultKinds(state.model);
   cfg.kinds = null;
   save(cfg);
+  beat();
+  rememberBle();
   drawChip();
   startPoll();
   pump();
+}
+function begin(transport, device) {
+  var L = lib();
+  var client = transport === 'serial' ? new L.NiimbotSerialClient() : new L.NiimbotBluetoothClient();
+  state.client = client;
+  state.transport = transport;
+  watchLink(client);
+  return Promise.resolve(client.connect(device ? { authorizedDevice: device } : undefined)).then(function () {
+    onConnected(transport);
+  });
 }
 function connect(transport) {
   var L = lib();
   if (!L) { toast('Printer library is not loaded'); return; }
   if (transport === 'bluetooth' && !canBt()) { toast('Bluetooth printing needs Chrome or Edge'); return; }
   if (transport === 'serial' && !canSerial()) { toast('USB printing needs Chrome or Edge on a computer'); return; }
-  var client = transport === 'serial' ? new L.NiimbotSerialClient() : new L.NiimbotBluetoothClient();
-  Promise.resolve(client.connect()).then(function () {
-    state.client = client;
-    if (client.on) client.on('disconnect', function () { state.connected = false; state.client = null; stopPoll(); drawChip(); });
-    onConnected(transport);
-  }).catch(function (err) {
+  state.userDisconnect = false;
+  begin(transport).catch(function (err) {
+    if (!state.connected) state.client = null;
+    state.reconnecting = false;
+    drawChip();
     var name = err && err.name;
     if (name === 'NotFoundError' || name === 'AbortError') return;
     toast('Could not connect');
@@ -516,10 +713,68 @@ function connect(transport) {
 }
 function disconnect() {
   var c = state.client;
-  state.client = null; state.connected = false;
+  state.userDisconnect = true;
+  state.reconnecting = false;
+  state.connected = false;
   stopPoll();
   drawChip();
-  if (c && c.disconnect) Promise.resolve(c.disconnect()).catch(function () {});
+  if (!c || !c.disconnect) { state.client = null; state.userDisconnect = false; return; }
+  Promise.resolve(c.disconnect()).catch(function () {}).then(function () {
+    if (state.client === c) state.client = null;
+    state.userDisconnect = false;
+    drawChip();
+  });
+}
+/* A failed page does not close the link. The library does, after five missed heartbeats, and the printer can also drop GATT while idle. */
+function onLinkDown() {
+  state.connected = false;
+  state.printing = false;
+  stopPoll();
+  if (state.userDisconnect) {
+    state.userDisconnect = false;
+    state.client = null;
+    state.reconnecting = false;
+    drawChip();
+    return;
+  }
+  var now = Date.now();
+  state.linkBurst = state.linkDownAt && (now - state.linkDownAt) < 8000 ? state.linkBurst + 1 : 1;
+  state.linkDownAt = now;
+  if (state.linkBurst > 3 || state.transport !== 'bluetooth') {
+    state.client = null;
+    state.reconnecting = false;
+    toast('Printer disconnected. Tap Printer to reconnect');
+    drawChip();
+    return;
+  }
+  quietReconnect();
+}
+function quietReconnect() {
+  var bt = root.navigator && navigator.bluetooth;
+  if (state.reconnecting) return;
+  if (!bt || typeof bt.getDevices !== 'function' || !state.btId) {
+    state.client = null;
+    toast('Printer disconnected. Tap Printer to reconnect');
+    drawChip();
+    return;
+  }
+  state.reconnecting = true;
+  drawChip();
+  Promise.resolve(bt.getDevices()).then(function (list) {
+    var device = null, i;
+    list = list || [];
+    for (i = 0; i < list.length; i++) if (list[i] && list[i].id === state.btId) device = list[i];
+    if (!device || !device.gatt || typeof device.gatt.connect !== 'function') throw new Error('no device');
+    return device.gatt.connect().then(function () { return device; });
+  }).then(function (device) {
+    return begin('bluetooth', device);
+  }).catch(function () {
+    state.client = null;
+    state.connected = false;
+    state.reconnecting = false;
+    toast('Printer disconnected. Tap Printer to reconnect');
+    drawChip();
+  });
 }
 
 function chipText() {
@@ -531,10 +786,15 @@ function connectNote() {
   return 'Open in Chrome or Edge to connect a printer';
 }
 function paintDots() {
-  var on = !!state.connected;
+  var mode = (state.reconnecting || state.printing) ? 'busy' : (state.connected ? 'on' : 'off');
+  var title = mode === 'busy' ? (state.reconnecting ? 'Reconnecting' : 'Printing') : (mode === 'on' ? 'Printer connected' : 'Printer not connected');
   document.querySelectorAll('[data-oyp-printer]').forEach(function (el) {
     var dot = el.querySelector('.oyp-pr-dot');
-    if (dot) dot.classList.toggle('on', on);
+    if (dot) {
+      dot.classList.toggle('on', mode === 'on');
+      dot.classList.toggle('busy', mode === 'busy');
+    }
+    el.title = title;
   });
 }
 function paintAuto() {
@@ -691,7 +951,7 @@ function mountSettings(el) {
   el.innerHTML = '<div class="set"><div class="setbox">'
     + '<div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">Print a new JO card or a finished tag when this printer is connected. Off still keeps the queue.</span><span class="muted">' + autoNote + '</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (cfg.auto ? ' checked' : '') + '><span>' + (cfg.auto ? 'On' : 'Off') + '</span></label></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv">' + darkSeg(cfg.darkness) + '</div></div>'
-    + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Leave on Auto. If a B31 feeds but prints nothing, try D110M_V4, then B1.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Auto uses the task this printer answers, and remembers it. D110M_V4 and B1 stay as manual choices.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards. A B1 starts on jewelry tags. Either one can print both.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B31 offset</span><span class="muted">Zero is the centre measured on a T30×20 roll. Positive moves the print right, or down the feed.</span></div>' + mmPair('prX31', b31.x, 'B31 horizontal offset', 'prY31', b31.y, 'B31 vertical offset') + '</div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B1 offset</span><span class="muted">Same steps, saved separately for the B1.</span></div>' + mmPair('prX1', b1.x, 'B1 horizontal offset', 'prY1', b1.y, 'B1 vertical offset') + '</div>'
@@ -773,7 +1033,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=9';
+  link.href = (base || '') + 'print.css?v=10';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
