@@ -43,5 +43,5 @@ Then
 
 Site
   The staff pages and nav.js ship on GitHub Pages. The scanner loads nav.js, which loads the print scripts. No scanner-repo change.
-  A connected printer polls printQueue about every 15 seconds, and only while the tab is visible.
+  A connected printer checks printQueue about every 5 seconds. With PrintQueue.gs.rev.patch.txt pasted, that check is only the oypPrintRev cache value. Without it, the page stays on a full read every 15 seconds.
   The device that saved the page, or moved the piece to the last step, prints at once when its printer is connected and allowed to print that kind, then marks the row printed.

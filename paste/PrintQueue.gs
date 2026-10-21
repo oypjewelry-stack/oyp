@@ -112,6 +112,37 @@ function printLock_(fn) {
   lock.waitLock(15000);
   try { return fn(); } finally { lock.releaseLock(); }
 }
+var PRINT_REV_KEY = 'oypPrintRev';
+function printCache_() {
+  try {
+    if (typeof CacheService === 'undefined' || !CacheService.getScriptCache) return null;
+    return CacheService.getScriptCache();
+  } catch (e) { return null; }
+}
+function printRevRead_() {
+  var c = printCache_();
+  if (!c) return null;
+  var v = c.get(PRINT_REV_KEY);
+  return v == null || v === '' ? null : String(v);
+}
+function printRevBump_() {
+  var c = printCache_();
+  if (!c) return;
+  c.put(PRINT_REV_KEY, String(new Date().getTime()), 21600);
+}
+function printRevEnsure_() {
+  var v = printRevRead_();
+  if (v != null) return v;
+  var c = printCache_();
+  if (!c) return null;
+  c.put(PRINT_REV_KEY, '1', 21600);
+  return '1';
+}
+function printBrief_(req) {
+  if (!req) return false;
+  var b = req.brief;
+  return b === 1 || b === true || b === '1' || b === 'true';
+}
 function printSheet_() {
   var ss = typeof ss_ === 'function' ? ss_() : SpreadsheetApp.getActive();
   var sh = ss.getSheetByName('PrintQueue');
@@ -220,7 +251,10 @@ function printDecorate_(item, look) {
 function printEnqueueRun_(jo, kind, by, reprint) {
   var pack = printReadRows_(), now = new Date().toISOString();
   var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint);
-  if (res.created || res.requeued) printWriteRow_(pack, res.item);
+  if (res.created || res.requeued) {
+    printWriteRow_(pack, res.item);
+    printRevBump_();
+  }
   if (res.item) res.item = printDecorate_(res.item);
   return res;
 }
@@ -235,15 +269,19 @@ function printMark_(req, user) {
   return printLock_(function () {
     var pack = printReadRows_(), now = new Date().toISOString();
     var res = printRowsMark_(pack.rows, String(req.print_id || ''), String(req.mark || req.op || ''), String(req.device_id || ''), user.username, now, req.error);
-    if (res.ok && res.item) printWriteRow_(pack, res.item);
+    if (res.ok && res.item) {
+      printWriteRow_(pack, res.item);
+      printRevBump_();
+    }
     if (res.item) res.item = printDecorate_(res.item);
     return res;
   });
 }
 function printQueue_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_() };
   var pack = printReadRows_(), look = printLookup_();
-  var out = { ok: true, items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
+  var out = { ok: true, rev: printRevEnsure_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
   if (req && req.jo && printNormJo_(req.jo)) out.spec = printDecorate_({ jo: printNormJo_(req.jo) }, look); // read only: specs for a PNG of one JO
   return out;
 }

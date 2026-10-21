@@ -9,8 +9,8 @@ var DEFAULT_API = 'https://script.google.com/macros/s/AKfycbzUmacbdvb0V2nw9ekhar
 var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
-var POLL = 15000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve() };
+var POLL = 5000;
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, printQueued: false, inflight: {}, cool: {}, done: {}, prepared: {}, preparing: {} };
 var PAGE_MS = 20000;
 var ATTEMPT_MS = 45000;
 var END_MS = 4000;
@@ -214,18 +214,27 @@ function labelOpts(item, kind) {
 }
 function tasks() { return (lib() && lib().printTasks) || {}; }
 function taskKnown(name) { return !!(name && tasks()[name]); }
-/* Settings > Labels > Print mode. Auto uses the task that last finished for this model, else the one niimbluelib names. */
+/* Our map, not niimbluelib's. A B31 answers the B1 page size; D110M_V4 times out on e4. */
+var MODEL_TASKS = { B31: 'B1', B1: 'B1' };
+function clock() {
+  return root.performance && typeof root.performance.now === 'function' ? root.performance.now() : Date.now();
+}
+function logMs(phase, ms, extra) {
+  try { console.log('[oyp-print] ' + phase + ' ' + Math.round(ms) + 'ms' + (extra ? ' ' + extra : '')); } catch (e) {}
+}
+/* Settings > Labels > Print mode. Manual wins, then the task this model last finished, then our map. */
 function taskName(client) {
   var forced = load().task;
   if (forced && forced !== 'auto' && taskKnown(forced)) return forced;
-  var meta = client && client.getModelMetadata && client.getModelMetadata();
+  var meta = state.model ? null : (client && client.getModelMetadata && client.getModelMetadata());
   var model = state.model || (meta && meta.model) || '';
   var saved = (load().taskByModel || {})[model];
   if (taskKnown(saved)) return saved;
+  if (taskKnown(MODEL_TASKS[model])) return MODEL_TASKS[model];
   var named = client && client.getPrintTaskType && client.getPrintTaskType();
   if (taskKnown(named)) return named;
   var info = client && client.getPrinterInfo ? client.getPrinterInfo() : {};
-  var found = model && lib().findPrintTask && lib().findPrintTask(model, info && info.protocolVersion);
+  var found = model && lib() && lib().findPrintTask && lib().findPrintTask(model, info && info.protocolVersion);
   if (taskKnown(found)) return found;
   var head = (meta && meta.printheadPixels) || state.head || 0;
   if (head >= 500 && taskKnown('D110M_V4')) return 'D110M_V4';
@@ -289,11 +298,58 @@ function labelReady() {
   var p = root.OYPLabel && root.OYPLabel.ready;
   return p && typeof p.then === 'function' ? p.catch(function () {}) : Promise.resolve();
 }
-function sendToPrinter(item) {
-  var L = lib();
+function labelSig(item) {
+  var o = labelOpts(item);
+  return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, state.dir || '', o.jo || '', o.due || '', o.date || '', o.stage || '', o.metal || '', o.karat || '', o.weight || '', o.stone || '', o.stone_size || '', o.size || ''].join('\u001f');
+}
+function trimPrepared() {
+  var keys = Object.keys(state.prepared);
+  if (keys.length <= 40) return;
+  delete state.prepared[keys[0]];
+}
+/* Fonts and the QR are ready before the claim returns, and again when the queue is fetched. */
+function prepareItem(item) {
+  var sig = labelSig(item);
+  if (state.prepared[sig]) return Promise.resolve({ encoded: state.prepared[sig].encoded, ms: state.prepared[sig].ms, sig: sig, cached: true });
+  if (state.preparing[sig]) return state.preparing[sig];
+  var t0 = clock();
+  var p = labelReady().then(function () {
+    if (!root.OYPLabel) throw new Error('Label renderer is not loaded');
+    var L = lib();
+    var rendered = root.OYPLabel.render(labelOpts(item));
+    var canvas = fitHead(root.OYPLabel.toCanvas(rendered));
+    if (!canvas) throw new Error('No canvas');
+    var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, state.dir || 'top');
+    var rec = { encoded: encoded, ms: clock() - t0, sig: sig };
+    state.prepared[sig] = rec;
+    delete state.preparing[sig];
+    trimPrepared();
+    return { encoded: encoded, ms: rec.ms, sig: sig, cached: false };
+  }).catch(function (err) {
+    delete state.preparing[sig];
+    throw err;
+  });
+  p.catch(function () {});
+  state.preparing[sig] = p;
+  return p;
+}
+function primeQueue(r) {
+  var items = (r && r.items) || [];
+  items.forEach(function (it) {
+    if (it && it.status === 'queued') prepareItem(it).catch(function () {});
+  });
+}
+function sendToPrinter(item, prep) {
   if (!state.client || !state.connected) return Promise.reject(new Error('Not connected'));
   if (!root.OYPLabel) return Promise.reject(new Error('Label renderer is not loaded'));
-  return labelReady().then(function () { return sendPrepared(item); });
+  var sig = labelSig(item);
+  var already = !!state.prepared[sig];
+  var started = clock();
+  return Promise.resolve(prep || prepareItem(item)).then(function (rec) {
+    var waited = clock() - started;
+    logMs('render', rec.cached || already ? 0 : rec.ms, rec.cached ? 'cached' : (already || waited < 8 ? 'overlapped' : ''));
+    return sendEncoded(rec.encoded);
+  });
 }
 function runTask(name, encoded) {
   var L = lib();
@@ -309,10 +365,22 @@ function runTask(name, encoded) {
   var end = function () {
     return task.printEnd ? withTimeout(Promise.resolve(task.printEnd()), END_MS, 'print end').catch(function () {}) : null;
   };
+  var tSend = clock();
   var attempt = Promise.resolve(task.printInit()).then(function () {
     return task.printPage(encoded, 1);
   }).then(function () {
-    return task.waitForFinished();
+    logMs('send', clock() - tSend, name);
+    var tWait = clock();
+    return Promise.resolve(task.waitForFinished()).then(function (v) {
+      logMs('waitForFinished', clock() - tWait);
+      return v;
+    }, function (err) {
+      logMs('waitForFinished', clock() - tWait);
+      throw err;
+    });
+  }, function (err) {
+    logMs('send', clock() - tSend, name);
+    throw err;
   });
   return withTimeout(attempt, ATTEMPT_MS, 'Print timed out').then(function () {
     return Promise.resolve(end()).then(function () { rememberTask(name); });
@@ -320,12 +388,7 @@ function runTask(name, encoded) {
     return Promise.resolve(end()).then(function () { throw err; });
   });
 }
-function sendPrepared(item) {
-  var L = lib();
-  var rendered = root.OYPLabel.render(labelOpts(item));
-  var canvas = fitHead(root.OYPLabel.toCanvas(rendered));
-  if (!canvas) return Promise.reject(new Error('No canvas'));
-  var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, state.dir || 'top');
+function sendEncoded(encoded) {
   var names = taskChoices(state.client), i = 0;
   function once() {
     return runTask(names[i], encoded).catch(function (err) {
@@ -347,7 +410,28 @@ function markPrinting(on) {
   document.querySelectorAll('[data-q]').forEach(function (b) { b.disabled = !!on; });
   paintDots();
 }
+function wantsQueue() { return !!load().auto || !!state.printQueued; }
+function markLocal(id, status, error) {
+  if (!id) return;
+  if (status === 'printed') state.done[id] = 1;
+  var items = state.last && state.last.items;
+  if (!items) return;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].print_id !== id) continue;
+    if (status === 'printed' || status === 'cancelled') items.splice(i, 1);
+    else { items[i].status = status; if (error) items[i].error = error; }
+    break;
+  }
+  paint(state.last);
+}
+function markLater(id, mark, error) {
+  callPrint('printMark', { print_id: id, mark: mark, device_id: deviceId(), error: error || '' }).then(function (done) {
+    if (mark === 'printed') markFailed(done, 'Printed, but the queue did not update');
+    refresh();
+  });
+}
 function claimAndPrint(item) {
+  var prep = item ? prepareItem(item) : null;
   var job = work(function () {
     if (!item) return;
     if (!state.connected) { toast('Connect a printer first'); return; }
@@ -359,32 +443,49 @@ function claimAndPrint(item) {
     }
     function go(row) {
       toast('Printing…');
-      return sendToPrinter(row).then(function () {
+      return sendToPrinter(row, prep).then(function () {
         toast('Printed');
       }, function (err) {
         toast(failToast(err));
         throw err;
       });
     }
-    if (!id) return finish(go(item).catch(function () {}));
+    if (!id) {
+      logMs('claim', 0);
+      return finish(go(item).catch(function () {}));
+    }
+    var tClaim = clock();
     return finish(callPrint('printMark', { print_id: id, mark: 'claim', device_id: deviceId() }).then(function (r) {
-      if (markFailed(r, 'Could not print that sticker')) return;
+      logMs('claim', clock() - tClaim);
+      if (markFailed(r, 'Could not print that sticker')) {
+        state.cool[id] = Date.now() + 5000;
+        setTimeout(function () { if (wantsQueue()) kick(); }, 5000);
+        return;
+      }
       var printed = r.item ? Object.assign({}, item, r.item) : item;
+      if (labelSig(printed) !== labelSig(item)) prep = prepareItem(printed);
       return go(printed).then(function () {
-        return callPrint('printMark', { print_id: id, mark: 'printed', device_id: deviceId() }).then(function (done) {
-          markFailed(done, 'Printed, but the queue did not update');
-        });
+        markLocal(id, 'printed');
+        markLater(id, 'printed');
       }).catch(function (err) {
-        return callPrint('printMark', { print_id: id, mark: 'failed', device_id: deviceId(), error: failRow(err) }).then(function (done) {
+        var why = failRow(err);
+        markLocal(id, 'failed', why);
+        return callPrint('printMark', { print_id: id, mark: 'failed', device_id: deviceId(), error: why }).then(function (done) {
           markFailed(done, 'The sticker failed, and the queue did not update');
+          refresh();
         });
-      }).then(function () { paintFrom(printed); });
+      });
     }));
   });
-  return Promise.resolve(job).then(function (v) { return v; }, function (err) {
+  var done = Promise.resolve(job).then(function (v) { return v; }, function (err) {
     markPrinting(false);
     toast(failToast(err));
   });
+  done.finally(function () {
+    if (item && item.print_id) delete state.inflight[item.print_id];
+    if (wantsQueue()) kick();
+  });
+  return done;
 }
 function printJo(kind, jo, opts) {
   opts = opts || {};
@@ -394,7 +495,7 @@ function printJo(kind, jo, opts) {
     var item = r.item || { jo: jo, kind: kind };
     if (!state.connected) { toast('Connect a printer to print. The sticker stays in the queue.'); refresh(); return r; }
     if (item.status && item.status !== 'queued') { toast('That sticker is already ' + item.status); refresh(); return r; }
-    return claimAndPrint(item).then(function () { refresh(); return r; });
+    return claimAndPrint(item).then(function () { return r; });
   }).catch(function () { toast('Sticker did not print'); });
 }
 function printAgain(item) {
@@ -405,7 +506,7 @@ function printAgain(item) {
     row.status = 'queued';
     row.error = '';
     if (!state.connected) { toast('Connect a printer to print. The sticker stays in the queue.'); refresh(); return; }
-    return claimAndPrint(row).then(function () { refresh(); });
+    return claimAndPrint(row);
   });
 }
 function printLocal(opts) {
@@ -415,6 +516,7 @@ function printLocal(opts) {
     if (!state.connected) { toast('Connect a printer first'); return; }
     markPrinting(true);
     toast('Printing…');
+    logMs('claim', 0);
     return sendToPrinter(item).then(function () {
       toast('Printed');
     }, function (err) {
@@ -472,12 +574,22 @@ function screenLabel(item) {
   if (n && id) return esc(n) + ' · ' + esc(id);
   return esc(n || id);
 }
-function paint(r) {
+function paint(r, fromServer) {
+  if (fromServer && r && r.items) {
+    var live = {};
+    r.items.forEach(function (it) { live[it.print_id] = it.status; });
+    Object.keys(state.done).forEach(function (id) {
+      if (!live[id] || live[id] !== 'queued') delete state.done[id];
+    });
+    r.items = r.items.filter(function (it) { return !(state.done[it.print_id] && it.status === 'queued'); });
+  }
   state.last = r;
+  if (r && r.rev != null) state.rev = String(r.rev);
   document.querySelectorAll('[data-oyp-q]').forEach(function (el) {
     el.innerHTML = queueHtml(r);
     drawQueuePreviews(el, r);
   });
+  primeQueue(r);
 }
 function paintFrom() { refresh(); }
 function queueNote(r) {
@@ -531,8 +643,20 @@ function drawQueuePreviews(el, r) {
   if (root.OYPLabel.ready && root.OYPLabel.ready.then) root.OYPLabel.ready.then(go);
   else go();
 }
-function refresh() {
-  return callPrint('printQueue', {}).then(function (r) { paint(r); return r; }).catch(function () { return null; });
+function refresh(opts) {
+  opts = opts || {};
+  var data = opts.brief ? { brief: 1 } : {};
+  return callPrint('printQueue', data).then(function (r) {
+    if (!r) return null;
+    if (r.brief === true) {
+      state.briefOk = true;
+      if (r.rev == null) state.briefOk = false;
+      return r;
+    }
+    if (opts.brief && r.items) state.briefOk = false;
+    paint(r, true);
+    return r;
+  }).catch(function () { return null; });
 }
 function itemById(id) {
   var items = (state.last && state.last.items) || [];
@@ -592,22 +716,53 @@ function installFetch() {
   root.fetch = wrapped;
 }
 
+function nextLocal() {
+  var items = (state.last && state.last.items) || [], now = Date.now(), i, it;
+  for (i = 0; i < items.length; i++) {
+    it = items[i];
+    if (!it || it.status !== 'queued' || !printsKind(it.kind)) continue;
+    if (state.inflight[it.print_id] || state.done[it.print_id] || state.busy[it.print_id]) continue;
+    if (state.cool[it.print_id] && state.cool[it.print_id] > now) continue;
+    if (!claimFresh(it, now)) continue;
+    return it;
+  }
+  return null;
+}
+function kick() {
+  if (!state.connected || state.printing || !wantsQueue()) return;
+  var next = nextLocal();
+  if (!next) { state.printQueued = false; return; }
+  state.inflight[next.print_id] = 1;
+  state.busy[next.print_id] = 1;
+  claimAndPrint(next).finally(function () { delete state.busy[next.print_id]; });
+}
 function pump() {
-  if (!state.connected) return;
-  if (state.pumping) return;
+  if (!state.connected || state.pumping) return;
   state.pumping = true;
   refresh().then(function (r) {
-    if (!r || !load().auto) return;
-    var items = r.items || [], next = null, now = Date.now();
-    for (var i = 0; i < items.length; i++) {
-      var it = items[i];
-      if (it.status !== 'queued' || !printsKind(it.kind) || state.busy[it.print_id] || !claimFresh(it, now)) continue;
-      next = it; break;
-    }
-    if (!next) return;
-    state.busy[next.print_id] = 1;
-    return claimAndPrint(next).finally(function () { delete state.busy[next.print_id]; refresh(); });
+    if (!r || !wantsQueue()) return;
+    kick();
   }).finally(function () { state.pumping = false; });
+}
+/* Every 5s asks only for the rev. A server without that cheap answer falls back to a full read every 15s. */
+function pollTick() {
+  if (!state.connected || state.pumping) return;
+  state.ticks = (state.ticks || 0) + 1;
+  if (state.briefOk === false) {
+    if (state.ticks % 3 !== 0) return;
+    pump();
+    return;
+  }
+  state.pumping = true;
+  refresh({ brief: true }).then(function (r) {
+    state.pumping = false;
+    if (!r) return;
+    if (r.brief !== true) {
+      if (wantsQueue()) kick();
+      return;
+    }
+    if (r.rev == null || String(r.rev) !== String(state.rev == null ? '' : state.rev)) pump();
+  }, function () { state.pumping = false; });
 }
 function startPoll() {
   if (state.timer || state.worker) return;
@@ -617,7 +772,7 @@ function startPoll() {
       var blob = new BlobFn(['setInterval(function(){postMessage(1)},' + POLL + ')'], { type: 'text/javascript' });
       state.workerUrl = URLFn.createObjectURL(blob);
       state.worker = new WorkerFn(state.workerUrl);
-      state.worker.onmessage = function () { pump(); };
+      state.worker.onmessage = function () { pollTick(); };
       started = true;
     }
   } catch (e) { started = false; }
@@ -626,7 +781,7 @@ function startPoll() {
     state.worker = null;
     if (state.workerUrl && URLFn && typeof URLFn.revokeObjectURL === 'function') { try { URLFn.revokeObjectURL(state.workerUrl); } catch (e3) {} }
     state.workerUrl = '';
-    if (!state.timer) state.timer = setInterval(pump, POLL);
+    if (!state.timer) state.timer = setInterval(pollTick, POLL);
   }
 }
 function stopPoll() {
@@ -951,7 +1106,7 @@ function mountSettings(el) {
   el.innerHTML = '<div class="set"><div class="setbox">'
     + '<div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">Print a new JO card or a finished tag when this printer is connected. Off still keeps the queue.</span><span class="muted">' + autoNote + '</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (cfg.auto ? ' checked' : '') + '><span>' + (cfg.auto ? 'On' : 'Off') + '</span></label></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv">' + darkSeg(cfg.darkness) + '</div></div>'
-    + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Auto uses the task this printer answers, and remembers it. D110M_V4 and B1 stay as manual choices.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Auto starts a B31 on the B1 page size, and remembers the task this printer answers. D110M_V4 and B1 stay as manual choices.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards. A B1 starts on jewelry tags. Either one can print both.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B31 offset</span><span class="muted">Zero is the centre measured on a T30×20 roll. Positive moves the print right, or down the feed.</span></div>' + mmPair('prX31', b31.x, 'B31 horizontal offset', 'prY31', b31.y, 'B31 vertical offset') + '</div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B1 offset</span><span class="muted">Same steps, saved separately for the B1.</span></div>' + mmPair('prX1', b1.x, 'B1 horizontal offset', 'prY1', b1.y, 'B1 vertical offset') + '</div>'
