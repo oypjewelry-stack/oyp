@@ -12,7 +12,7 @@ Setup function
   Another device skips a claim newer than 3 minutes. The same device can claim again. A claim older than 3 minutes can be taken.
 
 Patches, against the live files
-  Code.gs        paste/Code.gs.print.patch.txt         page-1 scan queues a JO card; scanner ops printQueue, printMark, printEnqueue, printReprint (placed before fastBump_)
+  Code.gs        paste/Code.gs.print.patch.txt         page-1 scan queues a JO card and a jewelry tag (printJo / printTag, missing means yes); scanner ops printQueue, printMark, printEnqueue, printReprint (placed before fastBump_)
   Production.gs  paste/Production.gs.print.patch.txt   a move into Pickup (notify or pickup) queues a jewelry tag. Exact FIND on the prodMove_ return line.
   Auth.gs        paste/Auth.gs.print.patch.txt         printQueue returns directly (not dcacheRead_). Writes go through handlePrint_.
   Fast.gs        paste/Fast.gs.print.patch.txt         printQueue in FAST.READS only
@@ -43,5 +43,13 @@ Then
 
 Site
   The staff pages and nav.js ship on GitHub Pages. The scanner loads nav.js, which loads the print scripts. No scanner-repo change.
-  A connected printer polls printQueue about every 15 seconds, and only while the tab is visible.
+  One combined server paste, if PrintQueue.gs is not in the project yet or you want to replace the whole script:
+    paste/PrintQueue.gs                 the whole file (rev, both auto switches, batch, dedupe, jewelry-tag description)
+    paste/Code.gs.print.patch.txt       the only Code.gs edit
+  Page 1 of a scan (a missing page counts as page 1) queues both stickers. false skips that one. The exact line is:
+    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') { if (req.printJo !== false) printEnqueue_(jo, 'jo_card', 'scanner', {}); if (req.printTag !== false) printEnqueue_(jo, 'jewelry_tag', 'scanner', {}); } } catch (e) {}
+  printEnqueue_ then reads print_auto_jo_card and print_auto_jewelry_tag. A missing key still follows the old print_auto, and a missing print_auto stays on. A sticker already queued or already printed for that JO is not added again. A manual batch still queues when the switch is off.
+  The jo-scanner page no longer has to unwrap fetch. print.js does not watch scan uploads, so that workaround is harmless.
+  A connected printer checks printQueue about every 5 seconds. That check is only the oypPrintRev cache value. Until this PrintQueue.gs is pasted, the page stays on a full read every 15 seconds.
+  The delta files are the same changes split, for a PrintQueue that was pasted from an older copy and should not be replaced whole. Apply them in this order, then the Code.gs patch: PrintQueue.gs.rev.patch.txt, PrintQueue.gs.auto.patch.txt, PrintQueue.gs.batch.patch.txt, PrintQueue.gs.kinds.patch.txt. Do not also paste the whole PrintQueue.gs on top of those.
   The device that saved the page, or moved the piece to the last step, prints at once when its printer is connected and allowed to print that kind, then marks the row printed.
