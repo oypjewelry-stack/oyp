@@ -138,7 +138,7 @@ has('consign.js', 'function pieceBits');
 has('staff/index.html', 'app.css?v=34');
 has('staff/index.html', 'app.js?v=27');
 has('staff/index.html', 'dash.js?v=29');
-has('staff/index.html', 'inv.js?v=10');
+has('staff/index.html', 'inv.js?v=11');
 has('staff/index.html', 'production.js?v=9');
 has('staff/index.html', 'production.css?v=8');
 has('staff/index.html', 'consign.js?v=10');

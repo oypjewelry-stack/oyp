@@ -271,7 +271,6 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivall{display:inline-flex;align-items:center;gap:8px;margin:0 12px 12px 0;font-family:var(--label);font-size:calc(12px*var(--fs));letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
 .ivall input{width:16px;height:16px;margin:0;accent-color:#111}
 .ivcount{font-family:var(--label);font-size:calc(12px*var(--fs));color:#333}
-.ivscan{margin-top:calc(8px*var(--sp))}
 .ivoffer{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 calc(12px*var(--sp));font-size:calc(15px*var(--fs))}
 .ivoffer .pill{margin:0}
 .ivcard.ivflash{outline:2px solid #b8973e;outline-offset:2px}

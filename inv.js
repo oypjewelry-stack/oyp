@@ -103,8 +103,7 @@ function ivDraw(main) {
     <p class="muted">Every JO and finished piece. ${can.open ? 'Tap one to open its JO card.' : 'View only: tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     <div class="rvchips ivchips">${Object.keys(IVIEWS).map(k => `<button class="fchip tap ${IV.view === k ? 'on' : ''}" data-iv="${k}">${esc(IVIEWS[k][0])} <b>${cnt(k)}</b></button>`).join('')}</div>
-    <input id="ivQ" class="rvq" placeholder="Search JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off">
-    ${edit ? `<input id="ivScan" class="rvq ivscan" placeholder="Scan or type JO" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Scan or type JO">` : ''}
+    <input id="ivQ" class="rvq" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire">
     ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
     <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
@@ -188,17 +187,22 @@ function ivWire(main) {
   const stop = e => e.stopPropagation();
   main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; IV.menu = ''; ivDraw(main); });
   $('#ivQ').oninput = e => { IV.q = e.target.value; const pos = e.target.selectionStart; ivDraw(main); const q = $('#ivQ'); q.focus(); q.setSelectionRange(pos, pos); };
+  $('#ivQ').onkeydown = e => {
+    if (e.isComposing) return;
+    if (e.key === 'Backspace' || e.key === 'Delete') { ivQReset(); return; }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) ivQNote();
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const raw = e.target.value;
+    if (!ivEdit() || !(ivQFast(raw) || ivFullJo(raw))) return;
+    IV.q = '';
+    ivQReset();
+    ivScanCommit(raw, true);
+  };
   $('#ivStage').onchange = e => { IV.stage = e.target.value; if (IV.stage && IV.view !== 'all' && IV.view !== 'making') IV.view = 'all'; ivDraw(main); };
   $('#ivLoc').onchange = e => { IV.loc = e.target.value; if (IV.loc) IV.view = IV.loc === 'archived' ? 'archived' : 'all'; ivDraw(main); };
   $('#ivType').onchange = e => { IV.type = e.target.value; ivDraw(main); };
   if ($('#ivClr')) $('#ivClr').onclick = () => { IV.stage = IV.loc = IV.type = ''; IV.offer = ''; ivDraw(main); };
-  if ($('#ivScan')) $('#ivScan').onkeydown = e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const raw = e.target.value;
-    e.target.value = '';
-    ivScanCommit(raw, true);
-  };
   if ($('#ivUnfilter')) $('#ivUnfilter').onclick = () => ivReveal(main);
   if ($('#ivAll')) $('#ivAll').onclick = e => {
     const ids = ivShown().map(j => j.jo);
@@ -423,13 +427,33 @@ function mWire(main) {
 window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.scanned = []; IV.menu = ''; IV.anchor = ''; IV.picking = false; IV.offer = ''; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
-   The Scan or type JO box takes the same scan when it is focused, including a slow typed number.
+   The search box takes the same scan when it is focused: a fast wedge, or a full JO and Enter.
+   Any other Enter leaves the text as a filter.
    A sticker's QR is the JO itself (26-287 or 26-287A) or a link / prefixed text that contains one
    (jo=26-287, or a path ending in /26-287). The same read is in consign.js.
    A trailing letter is the version and folds to the base JO, the same way jobMergeVersions_ does:
    26-287A and 26-287B are both 26-287. If more than one version is still its own tile, the newest letter is the one selected. */
 const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_MAX = 400;
-let scanBuf = '', scanAt = 0;
+let scanBuf = '', scanAt = 0, qLastAt = 0, qBurstLen = 0;
+function ivQNote() {
+  const now = Date.now();
+  qBurstLen = !qLastAt || now - qLastAt > SCAN_GAP ? 1 : qBurstLen + 1;
+  qLastAt = now;
+}
+function ivQReset() { qLastAt = 0; qBurstLen = 0; }
+function ivQFast(raw) {
+  raw = String(raw || '');
+  return raw.length >= 5 && qBurstLen === raw.length && !!qLastAt && Date.now() - qLastAt <= SCAN_ENTER;
+}
+function ivFullJo(raw) {
+  const s = String(raw || '').trim();
+  if (!s || /[:/]/.test(s)) return false;
+  const p = joFromScan(s);
+  if (!p) return false;
+  const u = s.toUpperCase().replace(/\s+/g, '');
+  const jo = (p.base + (p.letter || '')).toUpperCase();
+  return u === jo || u === jo.replace('-', '');
+}
 function joPack_(yy, num, letter) {
   letter = letter || '';
   return { base: yy + '-' + num, letter: letter, text: yy + '-' + num + letter };
@@ -471,7 +495,7 @@ function ivFindBase(base) {
 }
 function ivScanOn() { return !!(IV.r && ivEdit() && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
-function ivRefocus(main) { const s = main.querySelector('#ivScan'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
+function ivRefocus(main) { const s = main.querySelector('#ivQ'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
 function ivFlash(jo) {
   const grid = document.getElementById('ivGrid');
   if (grid) {
