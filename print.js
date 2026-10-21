@@ -26,13 +26,36 @@ function deviceId() {
   return id;
 }
 function load() {
-  var o = { darkness: 3, auto: true, transport: '', kinds: null, model: '' };
+  var o = { darkness: 3, auto: true, transport: '', kinds: null, model: '', offsets: {} };
   try { var raw = JSON.parse(localStorage.getItem(KEY) || '{}'); if (raw && typeof raw === 'object') o = Object.assign(o, raw); } catch (e) {}
   o.darkness = Math.max(1, Math.min(5, o.darkness | 0 || 3));
+  if (!o.offsets || typeof o.offsets !== 'object') o.offsets = {};
   o.auto = o.auto !== false;
   return o;
 }
-function save(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+function save(o) {
+  try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {}
+  if (typeof root.onOypPrintSave === 'function') root.onOypPrintSave();
+}
+/* Half-millimetre steps from -5 to +5. Positive x moves the print right. Positive y moves it down the feed. */
+function stepMm(v) {
+  var n = Math.round(Number(v) * 2) / 2;
+  if (!isFinite(n)) n = 0;
+  if (n > 5) n = 5;
+  if (n < -5) n = -5;
+  return n;
+}
+function offsetMm(model) {
+  var all = load().offsets || {};
+  var o = all[model] || {};
+  return { x: stepMm(o.x), y: stepMm(o.y) };
+}
+function shiftPx(model) {
+  var o = offsetMm(model);
+  var L = root.OYPLabel;
+  if (!L) return { x: 0, y: 0 };
+  return { x: L.px(o.x), y: L.px(o.y) };
+}
 function api() {
   try { return localStorage.getItem('oypScanApi') || localStorage.getItem('oypApi') || DEFAULT_API; } catch (e) { return DEFAULT_API; }
 }
@@ -70,6 +93,10 @@ function summary() {
   var cfg = load(), k = kinds();
   var who = state.connected ? (state.model || 'Printer') : (cfg.model ? cfg.model + ' not connected' : 'Not connected');
   var bits = [who, cfg.auto ? 'auto on' : 'auto off', 'darkness ' + cfg.darkness];
+  ['B31', 'B1'].forEach(function (m) {
+    var o = offsetMm(m);
+    if (o.x || o.y) bits.push(m + ' offset ' + o.x.toFixed(1) + ', ' + o.y.toFixed(1) + ' mm');
+  });
   var which = [];
   if (k.jo_card) which.push('JO card');
   if (k.jewelry_tag) which.push('jewelry tag');
@@ -93,9 +120,13 @@ function callPrint(action, data) {
 /* Paper fields only. client is display text and is not copied onto the sticker. */
 function labelOpts(item, kind) {
   item = item || {};
+  var model = item.model || state.model || load().model || 'B1';
+  var sh = shiftPx(model);
   return {
     kind: kind || item.kind || 'jo_card',
-    model: item.model || state.model || load().model || 'B1',
+    model: model,
+    shiftX: sh.x,
+    shiftY: sh.y,
     head: item.head || state.head || undefined,
     jo: item.jo,
     due: item.due_date || item.due || '',
@@ -429,24 +460,38 @@ function togglePanel() {
   if (show) refresh();
 }
 
+function mmSelect(id, value, label) {
+  var html = '<select id="' + id + '" aria-label="' + label + '">', i, v;
+  for (i = -10; i <= 10; i++) {
+    v = i / 2;
+    html += '<option value="' + v.toFixed(1) + '"' + (Math.abs(v - value) < 0.01 ? ' selected' : '') + '>' + (v > 0 ? '+' : '') + v.toFixed(1) + '</option>';
+  }
+  return html + '</select>';
+}
 function mountSettings(el) {
   if (!el) return;
-  var cfg = load(), k = kinds();
+  var cfg = load(), k = kinds(), b31 = offsetMm('B31'), b1 = offsetMm('B1');
   el.innerHTML = '<div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">When this printer is connected, print a new JO card or a finished jewelry tag on its own. Off still keeps the queue, and Print now still prints.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (cfg.auto ? ' checked' : '') + '><span>' + (cfg.auto ? 'On' : 'Off') + '</span></label></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv"><select id="prDark">' + [1, 2, 3, 4, 5].map(function (n) { return '<option value="' + n + '"' + (cfg.darkness === n ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">B31 offset</span><span class="muted">Horizontal, then vertical, in 0.5 mm steps. Positive moves the print right, or down the feed. Saved on this browser.</span></div><div class="setv">' + mmSelect('prX31', b31.x, 'B31 horizontal offset') + mmSelect('prY31', b31.y, 'B31 vertical offset') + '</div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">B1 offset</span><span class="muted">Same steps, saved separately for the B1.</span></div><div class="setv">' + mmSelect('prX1', b1.x, 'B1 horizontal offset') + mmSelect('prY1', b1.y, 'B1 vertical offset') + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Leave on Auto. If a B31 feeds but prints nothing, try D110M_V4, then B1.</span></div><div class="setv"><select id="prTask">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards (30×20). A B1 starts on jewelry tags (30×25, blank 45 mm tail). Either one can print both.</span></div><div class="setv oyp-kinds"><label><input type="checkbox" id="prJo"' + (k.jo_card ? ' checked' : '') + '> JO card</label><label><input type="checkbox" id="prTag"' + (k.jewelry_tag ? ' checked' : '') + '> Jewelry tag</label></div></div></div>'
-    + '<p class="muted">Stickers print the JO number, not the client name. The list below still shows the name first, for example Elena Tan · 26-287.</p>';
+    + '<p class="muted">Stickers print the JO number, not the client name. The list below still shows the name first, for example Elena Tan · 26-287. The print test page shows these offsets on the border and centre-mark sticker.</p>';
   function persist() {
     var next = load();
     next.auto = document.getElementById('prAuto').checked;
     next.darkness = Math.max(1, Math.min(5, document.getElementById('prDark').value | 0 || 3));
     var tk = document.getElementById('prTask'); next.task = tk ? tk.value : 'auto';
     next.kinds = { jo_card: document.getElementById('prJo').checked, jewelry_tag: document.getElementById('prTag').checked };
+    next.offsets = {
+      B31: { x: stepMm(document.getElementById('prX31').value), y: stepMm(document.getElementById('prY31').value) },
+      B1: { x: stepMm(document.getElementById('prX1').value), y: stepMm(document.getElementById('prY1').value) }
+    };
     save(next);
     var lab = document.querySelector('#prAuto + span'); if (lab) lab.textContent = next.auto ? 'On' : 'Off';
   }
-  ['prAuto', 'prDark', 'prTask', 'prJo', 'prTag'].forEach(function (id) { var n = document.getElementById(id); if (n) n.onchange = persist; });
+  ['prAuto', 'prDark', 'prTask', 'prJo', 'prTag', 'prX31', 'prY31', 'prX1', 'prY1'].forEach(function (id) { var n = document.getElementById(id); if (n) n.onchange = persist; });
 }
 function mountQueue(el) {
   if (!el) return;
@@ -500,7 +545,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=1';
+  link.href = (base || '') + 'print.css?v=2';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -537,5 +582,5 @@ function start() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();
 
-root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, download: download, connect: connect, disconnect: disconnect, refresh: refresh, labelOpts: labelOpts, load: load, save: save };
+root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, download: download, connect: connect, disconnect: disconnect, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx };
 })(typeof window !== 'undefined' ? window : globalThis);

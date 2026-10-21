@@ -2,7 +2,7 @@
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><title>OYP · Print test</title>
-<link rel="stylesheet" href="../print.css?v=1">
+<link rel="stylesheet" href="../print.css?v=2">
 </head><body>
 <header class="top" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #eee;background:#fff">
   <button id="btnMenu" class="icon" aria-label="Menu" style="border:0;background:none">Menu</button>
@@ -13,6 +13,7 @@
   <h1>Label alignment</h1>
   <p>Chrome or Edge on Windows, Mac, and Android. USB serial is the fallback on a computer. iPhone and iPad Safari cannot connect. Download PNG instead. The sticker is the JO number. The name stays on the queue list only.</p>
   <p id="prSum"></p>
+  <p id="prOff"></p>
   <div class="pr-previews" id="prViews"></div>
   <h2>On the queue list</h2>
   <p>Elena Tan · 26-287</p>
@@ -22,8 +23,8 @@
 </main>
 <script src="../vendor/qrcode.js?v=1"></script>
 <script src="../vendor/niimbluelib-0.47.1.js?v=1"></script>
-<script src="../print-label.js?v=3"></script>
-<script src="../print.js?v=2"></script>
+<script src="../print-label.js?v=4"></script>
+<script src="../print.js?v=3"></script>
 <script>
 (function () {
   function draw() {
@@ -39,7 +40,8 @@
   samples.forEach(function (s) {
     var card = document.createElement('div');
     card.className = 'pr-card';
-    var rendered = OYPLabel.render(s);
+    var sh = OYPPrint.shiftPx(s.model || 'B31');
+    var rendered = OYPLabel.render(Object.assign({}, s, { shiftX: sh.x, shiftY: sh.y }));
     var canvas = OYPLabel.toCanvas(rendered);
     var scale = rendered.width > 420 ? 420 / rendered.width : 1;
     canvas.style.width = Math.round(rendered.width * scale) + 'px';
@@ -49,7 +51,8 @@
     card.appendChild(h);
     card.appendChild(canvas);
     var p = document.createElement('p');
-    p.textContent = rendered.lines.length ? rendered.lines.join(' · ') : 'Border and centre mark';
+    var off = OYPPrint.offsetMm(s.model || 'B31');
+    p.textContent = (rendered.lines.length ? rendered.lines.join(' · ') : 'Border and centre mark') + ' · ' + (s.model || 'B31') + ' offset ' + off.x.toFixed(1) + ' mm horizontal, ' + off.y.toFixed(1) + ' mm vertical';
     card.appendChild(p);
     var row = document.createElement('p');
     var png = document.createElement('button');
@@ -69,9 +72,16 @@
     host.appendChild(card);
   });
   document.getElementById('prSum').textContent = OYPPrint.summary();
+  var b31 = OYPPrint.offsetMm('B31'), b1 = OYPPrint.offsetMm('B1');
+  document.getElementById('prOff').textContent = 'Saved offset. B31 ' + b31.x.toFixed(1) + ' mm horizontal, ' + b31.y.toFixed(1) + ' mm vertical. B1 ' + b1.x.toFixed(1) + ' mm horizontal, ' + b1.y.toFixed(1) + ' mm vertical. The border and centre mark move with that offset.';
   OYPPrint.mountSettings(document.getElementById('printSet'));
   OYPPrint.mountQueue(document.getElementById('printQueue'));
 }
+window.onOypPrintSave = function () {
+  var host = document.getElementById('prViews');
+  if (host) host.innerHTML = '';
+  draw();
+};
 if (window.OYPLabel && OYPLabel.ready && OYPLabel.ready.then) OYPLabel.ready.then(draw);
 else draw();
 })();
