@@ -209,7 +209,8 @@ function labelOpts(item, kind) {
     weight: item.weight_g != null && item.weight_g !== '' ? item.weight_g : item.weight,
     stone: item.stone_type || item.stone || '',
     stone_size: item.stone_size || '',
-    size: item.size || ''
+    size: item.size || '',
+    description: item.description || ''
   };
 }
 function tasks() { return (lib() && lib().printTasks) || {}; }
@@ -300,7 +301,7 @@ function labelReady() {
 }
 function labelSig(item) {
   var o = labelOpts(item);
-  return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, state.dir || '', o.jo || '', o.due || '', o.date || '', o.stage || '', o.metal || '', o.karat || '', o.weight || '', o.stone || '', o.stone_size || '', o.size || ''].join('\u001f');
+  return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, state.dir || '', o.jo || '', o.due || '', o.date || '', o.stage || '', o.metal || '', o.karat || '', o.weight || '', o.stone || '', o.stone_size || '', o.size || '', o.description || ''].join('\u001f');
 }
 function trimPrepared() {
   var keys = Object.keys(state.prepared);

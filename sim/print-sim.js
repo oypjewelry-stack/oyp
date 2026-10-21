@@ -67,16 +67,18 @@ if (draw) {
   const t2 = L.render(Object.assign({ model }, tag));
   eq(t.width === head && t.height === 560 && t.offsetX === ox && t.labelW === 240 && t.labelH === 200 && t.tail === 360, model + ' jewelry tag is ' + head + '×560, head 240×200, tail 360');
   eq(same(t.data, t2.data), model + ' jewelry tag pixels ignore the client name');
-  eq(noName(t) && t.lines[0] === '26-287' && t.joPx > t.specPx && t.specPx >= 16 && t.specPx <= L.SPEC_PX && t.lines.indexOf('18K GOLD') >= 0 && t.lines.indexOf('DIAMOND') >= 0 && t.lines.indexOf('SIZE 6 4.2 G') >= 0, model + ' jewelry tag is the JO plus specs, and the JO is larger');
+  eq(noName(t) && t.lines.length === 1 && t.lines[0] === '26-287' && t.specPx === 0 && t.lines.indexOf('18K GOLD') < 0 && t.lines.indexOf('ELENA') < 0, model + ' jewelry tag is the QR and the JO');
   eq(tailWhite(t), model + ' jewelry tag tail is blank');
   eq(landscape(t), model + ' jewelry tag reads landscape, QR on the left and text on the right');
   eq(decode(t) === '26-287', model + ' jewelry tag QR is 26-287');
 });
 
-const long = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', metal: 'yellow gold', karat: '18k', client: 'Elena Tan' });
-eq(long.specPx >= 16 && long.specPx < L.SPEC_PX && long.joPx > long.specPx && noName(long) && long.lines.indexOf('18K YELLOW GOLD') >= 0, 'a long spec shrinks but stays at least 16 px, still smaller than the JO, still with no name');
-const wide = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', metal: 'yellow gold extra wide band', karat: '18k', client: 'Elena Tan' });
-eq(wide.specPx >= 14 && wide.joPx > wide.specPx && noName(wide) && wide.lines.some(s => s.indexOf('...') >= 0), 'a spec that still does not fit is ellipsized and stays off the edge');
+const noted = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', description: 'thin band', metal: 'yellow gold', client: 'Elena Tan' });
+eq(noted.specPx >= 16 && noted.joPx > noted.specPx && noName(noted) && noted.lines.indexOf('THIN BAND') >= 0 && noted.lines.indexOf('YELLOW') < 0 && noted.lines.indexOf('ELENA') < 0, 'a description prints under the JO, and the metal and the client name do not');
+const long = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', description: 'thin gold band', client: 'Elena Tan' });
+eq(long.specPx >= 16 && long.specPx < L.SPEC_PX && long.joPx > long.specPx && noName(long) && long.lines.indexOf('THIN GOLD BAND') >= 0, 'a description shrinks but stays at least 16 px, still smaller than the JO, still with no name');
+const wide = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', description: 'a very long description of this finished piece that cannot fit', client: 'Elena Tan' });
+eq(wide.specPx >= 14 && wide.joPx > wide.specPx && noName(wide) && wide.lines.some(s => s.indexOf('...') >= 0), 'a description that still does not fit is ellipsized and stays off the edge');
 function clearMargin(img) {
   const m = L.px(1), x0 = img.offsetX;
   for (let y = 0; y < img.labelH; y++) for (let x = 0; x < img.labelW; x++) {
@@ -288,9 +290,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=15') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=28') && index.includes('app.js?v=31') && index.includes('settings.js?v=20') && index.includes('print.css?v=12') && index.includes('app.css?v=39') && index.includes('settings.css?v=10') && index.includes('inv.js?v=10') && index.includes('production.js?v=9') && index.includes('production.css?v=8'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=8') && read('nav.js').includes('print.js?v=15') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=15') && read('staff/print-test.html').includes('print.css?v=12') && read('staff/print-test.html').includes('nav.js?v=28') && read('staff/print-test.html').includes('app.css?v=39'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=16') && index.includes('print-label.js?v=9') && index.includes('nav.js?v=29') && index.includes('app.js?v=31') && index.includes('settings.js?v=20') && index.includes('print.css?v=12') && index.includes('app.css?v=39') && index.includes('settings.css?v=10') && index.includes('inv.js?v=10') && index.includes('production.js?v=9') && index.includes('production.css?v=8'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=9') && read('nav.js').includes('print.js?v=16') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=16') && read('staff/print-test.html').includes('print.css?v=12') && read('staff/print-test.html').includes('nav.js?v=29') && read('staff/print-test.html').includes('app.css?v=39'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');

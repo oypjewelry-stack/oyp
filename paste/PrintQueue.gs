@@ -288,6 +288,7 @@ function printSpecsFor_(jo, look) {
   out.stone_type = pick(['stone_type', 'stone']);
   out.stone_size = pick(['stone_size']);
   out.size = pick(['size']);
+  out.description = pick(['description']); // printed later, under the JO. Never the client name.
   out.due_date = pick(['due_date', 'due']);
   out.current_stage = pick(['current_stage']);
   return out;

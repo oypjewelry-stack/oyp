@@ -1,6 +1,16 @@
 PrintQueue.gs — two auto-print switches, and no second sticker for a JO that already has one queued or printed. Apply paste/PrintQueue.gs.batch.patch.txt first.
 Script properties print_auto_jo_card and print_auto_jewelry_tag. A missing key follows print_auto. A missing print_auto stays on.
 Off for a kind adds no row of that kind. A manual batch or reprint still queues. A queued row is kept. A printed row is not queued again. A failed row is put back in the queue.
+The jewelry tag reads a description field when JobOrders has one. It is not printed until that field is filled, and it is never the client name.
+
+FIND
+  out.size = pick(['size']);
+  out.due_date = pick(['due_date', 'due']);
+
+REPLACE WITH
+  out.size = pick(['size']);
+  out.description = pick(['description']); // printed later, under the JO. Never the client name.
+  out.due_date = pick(['due_date', 'due']);
 
 FIND
   var i, row, queued = null, failed = null, any = null;
