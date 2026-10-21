@@ -1,0 +1,41 @@
+Manual to-dos — what to paste, and what not to run.
+
+New file (code only, no header lines)
+  Apps Script: open the existing Todo script and replace the whole file with paste/Todo.gs.
+  Save. Do not leave a title or a comment above the first line of code.
+
+No other script needs a new paste if the last To do paste is already in place.
+  Auth.gs already sends todoList through the cache and every other todo action through handleTodo_.
+  isTodoAction_ now also accepts todoAdd, todoUpdate, todoUndo, and todoDelete, so those writes follow the same path.
+  Do not add todoAdd, todoUpdate, todoDone, todoUndo, todoDelete, or todoSnooze to FAST.READS, FAST.CACHE, or DCACHE.READS.
+  A write is not a cached read, so it bumps the list.
+
+oauthScopes
+  None. No appsscript.json change. The Todos tab uses the spreadsheet the script already opens. No new Calendar, Gmail, or Drive scope.
+
+Todos tab
+  Created on the first list or the first add if it is missing. Headers, in this order:
+  todo_id, text, due, assignee, created_by, created_at, done_at, done_by, status
+  status is open, done, or deleted. Delete keeps the row. Undo puts it back to open.
+  If the tab exists with a blank first row, the headers are written. If the first row is data and has no todo_id, a header row is inserted above it.
+
+Cache key (required)
+  DashCache saves todoList per role, the same way as the dashboard. Manual rows are per person, so that key has to include the username or one person's list is served to the next person with the same role.
+  In the function that builds the cache key, when the action is todoList, append the username:
+    var who = (action === 'todoList' && user && user.username) ? '|' + String(user.username) : '';
+  Add `who` onto the end of the key that is already returned.
+  DashWarm may warm one person per role. The next person misses that entry and builds their own. That miss is the right one.
+  Do not add the manual writes to the warm list.
+
+Then
+  Deploy > Manage deployments > pencil > New version > Deploy.
+  Do not use New deployment.
+
+Site
+  staff/index.html, todo.js, dash.js, nav.js, app.js, and todo.css ship on GitHub Pages.
+  The dashboard card keeps its place. The top of the card is one line: Add a to-do, an optional due date, and an assignee. Enter adds it.
+  A manual row has a round tick. An automatic row keeps the ⋯ menu, with Done and Snooze.
+  The left chip reads Mine when the viewer wrote the row, or From the other person's name when someone else assigned it. A due date is added on that chip: a short weekday this week (Mine · Fri), otherwise the month and day (Oct 28). Overdue uses the gold chip.
+  The Mine filter is manual rows the viewer created or that were assigned to them.
+  The left menu, on desktop and on the phone, has To do directly after Dashboard. It opens #/todo.
+  The header on that page is the usual one: menu on the left, TO DO in the centre, logo on the right.

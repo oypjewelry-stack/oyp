@@ -288,9 +288,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=12') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=25') && index.includes('app.js?v=31') && index.includes('settings.js?v=19') && index.includes('print.css?v=10') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
+eq(index.includes('print.js?v=12') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=26') && index.includes('app.js?v=32') && index.includes('settings.js?v=19') && index.includes('print.css?v=10') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
 eq(read('nav.js').includes('print-label.js?v=8') && read('nav.js').includes('print.js?v=12') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=12') && read('staff/print-test.html').includes('print.css?v=10') && read('staff/print-test.html').includes('nav.js?v=25'), 'print test loads the same print assets');
+eq(read('staff/print-test.html').includes('print.js?v=12') && read('staff/print-test.html').includes('print.css?v=10') && read('staff/print-test.html').includes('nav.js?v=26'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');

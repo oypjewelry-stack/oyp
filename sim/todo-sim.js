@@ -307,6 +307,7 @@ const live = {
 };
 Object.entries(live).forEach(([rel, abs]) => {
   const src = fs.readFileSync(path.join(root, rel), 'utf8');
+  if (!fs.existsSync(abs)) return; // live Apps Script copies are on the owner's machine
   const host = fs.readFileSync(abs, 'utf8');
   findBlocks(src).forEach(block => check(host.indexOf(block) >= 0, path.basename(rel) + ' FIND is in the live file', block.slice(0, 140)));
   ['todoDone', 'todoSnooze', 'apptRequest'].forEach(action => check(src.indexOf(action + ': 1') < 0, action + ' is not added to ' + path.basename(rel)));
@@ -343,6 +344,180 @@ fs.mkdirSync(path.join(__dirname, 'out'), { recursive: true });
 fs.writeFileSync(path.join(__dirname, 'out/admin.json'), JSON.stringify(preview));
 fs.writeFileSync(path.join(__dirname, 'out/todo.json'), JSON.stringify({ ok: true, items: admin.items, total: admin.total }));
 fs.writeFileSync(path.join(__dirname, 'out/todo-timing.json'), JSON.stringify(timing, null, 2));
+
+/* Manual rows: one lock, one row write, visibility, buckets, and the same chip on the card and the page. */
+const PEOPLE = [
+  { username: 'ada', display_name: 'Ada', active: 'true' },
+  { username: 'ann', display_name: 'Ann', active: 'true' },
+  { username: 'mia', display_name: 'Mia Cruz', active: 'true' },
+  { username: 'ken', display_name: 'Ken', active: 'false' }
+];
+const manualBag = { rows: [], head: TODO_COLS.slice(), sh: { getLastRow() { return manualBag.rows.length + 1; } } };
+let manualLocks = 0, manualWrites = 0;
+const lockBefore = global.withLock_;
+global.withLock_ = fn => { manualLocks++; return lockBefore(fn); };
+global.ss_ = () => ({ getSheetByName: name => (name === 'Users' ? {} : null) });
+global.jobRows_ = name => name === 'Users' ? PEOPLE : [];
+global.todoReadRows_ = () => manualBag;
+global.todoWriteRow_ = (pack, row) => { manualWrites++; if (!row._row) row._row = manualBag.rows.length + 1; };
+global.DASH_ROLES = {
+  admin: { payments: true, consign: true, sales: true, clients: true },
+  staff: { payments: false, consign: false, sales: false, clients: false }
+};
+const ada = { role: 'admin', username: 'ada', display_name: 'Ada' };
+const ann = { role: 'staff', username: 'ann', display_name: 'Ann' };
+manualLocks = 0; manualWrites = 0;
+const added = todoCreate_({ text: '  Call the caster  ', due: '2026-10-23', assignee: '' }, ada);
+check(added.ok === true && added.status === 'open' && String(added.id).indexOf('tdm-') === 0, 'todoAdd writes a manual row', JSON.stringify(added));
+check(manualLocks === 1 && manualWrites === 1, 'todoAdd takes one lock and writes one row', manualLocks + ' locks, ' + manualWrites + ' writes');
+check(added.item.bucket === 'week' && added.item.late === 0 && added.item.manual === 1 && added.item.due === '2026-10-23', 'a Friday due date sits in This week', JSON.stringify(added.item));
+check(added.item.created_by === 'ada' && added.item.created_name === 'Ada' && added.item.assignee === '', 'the creator and an everyone assignee are stored', JSON.stringify(added.item));
+const lateAdd = todoCreate_({ text: 'Wax the band', due: '2026-10-19', assignee: 'ann' }, { role: 'admin', username: 'mia', display_name: 'Mia Cruz' });
+check(lateAdd.ok && lateAdd.item.bucket === 'today' && lateAdd.item.late === 1, 'an overdue manual row is Today and late', JSON.stringify(lateAdd.item));
+check(todoCreate_({ text: 'For Ken', due: '', assignee: 'ken' }, ada).ok === false, 'an inactive person is not an assignee');
+const secret = todoCreate_({ text: 'Secret bench note', due: '', assignee: 'mia' }, ada);
+check(secret.ok === true, 'an admin can assign a row to someone else', JSON.stringify(secret));
+const mine = todoCreate_({ text: 'Stone count', due: '2026-10-28', assignee: 'ann' }, ada);
+const own = todoCreate_({ text: 'My tray', due: '', assignee: 'ken' }, ann);
+check(own.ok === false, 'staff cannot assign to someone who is not active');
+const ownOpen = todoCreate_({ text: 'My tray', due: '', assignee: '' }, ann);
+check(ownOpen.ok === true, 'staff can add a to-do for everyone');
+manualLocks = 0; manualWrites = 0;
+const edited = todoUpdate_({ id: added.id, text: 'Call the caster today', due: '2026-10-21', assignee: 'ann' }, ada);
+check(edited.ok === true && edited.item.text === 'Call the caster today' && edited.item.due === '2026-10-21' && edited.item.assignee === 'ann' && edited.item.bucket === 'today' && edited.item.late === 0, 'todoUpdate changes text, due, and assignee', JSON.stringify(edited.item));
+check(manualLocks === 1 && manualWrites === 1, 'todoUpdate takes one lock and writes one row', manualLocks + '/' + manualWrites);
+manualLocks = 0; manualWrites = 0;
+const finished = todoDone_({ id: mine.id }, ann);
+check(finished.ok === true && finished.status === 'done' && finished.item.status === 'done', 'todoDone on a manual id marks the sheet row', JSON.stringify(finished));
+check(manualLocks === 1 && manualWrites === 1, 'manual todoDone takes one lock', manualLocks + '/' + manualWrites);
+const undone = todoUndo_({ id: mine.id }, ann);
+check(undone.ok === true && undone.status === 'open' && undone.item.status === 'open' && undone.item.done_at === '', 'todoUndo puts a done row back', JSON.stringify(undone.item));
+manualLocks = 0; manualWrites = 0;
+const removed = todoDelete_({ id: ownOpen.id }, ann);
+check(removed.ok === true && removed.status === 'deleted', 'todoDelete is a soft delete', JSON.stringify(removed));
+check(manualBag.rows.some(r => r.todo_id === ownOpen.id && r.status === 'deleted'), 'the deleted row stays on the tab');
+check(manualLocks === 1 && manualWrites === 1, 'todoDelete takes one lock and writes one row');
+const brought = todoUndo_({ id: ownOpen.id }, ann);
+check(brought.ok === true && brought.status === 'open', 'undo restores a deleted row', JSON.stringify(brought));
+check(todoCreate_({ text: '   ', due: 'nope' }, ada).ok === false, 'an empty to-do is rejected');
+check(todoUpdate_({ id: 'prod-stuck-26-287-setting-2026-10-14', text: 'no' }, ada).ok === false, 'an auto id is not a manual update');
+
+const annView = todoManualPack_(manualBag.rows, ann, TODAY, todoPeople_(ann));
+const annText = annView.open.map(it => it.text).join(' | ');
+check(annView.open.some(it => it.text === 'Call the caster today'), 'staff see a row assigned to them', annText);
+check(annView.open.some(it => it.text === 'Wax the band' && it.late === 1 && it.bucket === 'today'), 'staff see an overdue row assigned to them', annText);
+check(annView.open.some(it => it.text === 'My tray'), 'staff see a row they created for everyone', annText);
+check(annView.open.some(it => it.text === 'Stone count'), 'a row assigned to Ann is visible', annText);
+check(!annView.open.some(it => /Secret/.test(it.text)), 'staff do not see a row assigned to someone else', annText);
+check(!annView.open.some(it => it.status === 'deleted'), 'deleted rows stay off the list');
+const adaView = todoManualPack_(manualBag.rows, ada, TODAY, todoPeople_(ada));
+check(adaView.open.some(it => /Secret/.test(it.text)), 'admin sees every open row', adaView.open.map(it => it.text).join(' | '));
+check(adaView.open.some(it => it.created_name === 'Mia Cruz' || it.text === 'Wax the band'), 'the creator display name is resolved', JSON.stringify(adaView.open));
+
+sheets.JobOrders = jobs;
+global.dashRead_ = name => sheets[name] || [];
+const merged = todoList_({}, ada);
+check(merged.ok === true && merged.items.some(it => it.manual && it.text === 'Wax the band') && merged.items.some(it => /stuck in Setting/.test(it.text)), 'todoList merges manual rows with the auto list', texts(merged).slice(0, 8).join(' | '));
+check(merged.items.find(it => it.text === 'Wax the band').bucket === 'today' && merged.items.find(it => it.text === 'Wax the band').late === 1, 'the merged overdue row stays Today and late');
+check((merged.people || []).some(p => p.username === 'ann' && p.name === 'Ann') && !(merged.people || []).some(p => p.username === 'ken'), 'the assignee list is active people only');
+check(merged.viewer === 'ada', 'the list names who it was built for');
+const annList = todoList_({}, ann);
+check(!annList.items.some(it => /Secret/.test(it.text)) && annList.items.some(it => it.text === 'Call the caster today'), 'staff todoList is assigned-to-them or everyone, plus their own', texts(annList).filter(t => !/26-/.test(t)).join(' | '));
+
+function FakeRange(sh, r, c, h, w) {
+  this.sh = sh; this.r = r; this.c = c; this.h = h; this.w = w;
+}
+FakeRange.prototype.setValues = function (rows) {
+  const sh = this.sh;
+  while (sh.values.length < this.r + this.h - 1) sh.values.push([]);
+  for (let i = 0; i < rows.length; i++) {
+    const line = sh.values[this.r - 1 + i] || [];
+    for (let j = 0; j < rows[i].length; j++) line[this.c - 1 + j] = rows[i][j];
+    sh.values[this.r - 1 + i] = line;
+  }
+  return this;
+};
+FakeRange.prototype.getValues = function () {
+  const out = [];
+  for (let i = 0; i < this.h; i++) {
+    const line = this.sh.values[this.r - 1 + i] || [];
+    const row = [];
+    for (let j = 0; j < this.w; j++) row.push(line[this.c - 1 + j] == null ? '' : line[this.c - 1 + j]);
+    out.push(row);
+  }
+  return out;
+};
+FakeRange.prototype.setNumberFormat = function () { return this; };
+function FakeSh() { this.values = []; this.frozen = 0; }
+FakeSh.prototype.getLastRow = function () { return this.values.length; };
+FakeSh.prototype.getLastColumn = function () { return this.values.reduce((n, row) => Math.max(n, row.length), 0); };
+FakeSh.prototype.getMaxRows = function () { return 100; };
+FakeSh.prototype.setFrozenRows = function (n) { this.frozen = n; };
+FakeSh.prototype.insertRowsBefore = function (at, n) { for (let i = 0; i < n; i++) this.values.splice(at - 1, 0, []); };
+FakeSh.prototype.getRange = function (r, c, h, w) { return new FakeRange(this, r, c, h, w); };
+FakeSh.prototype.getDataRange = function () { return this.getRange(1, 1, Math.max(this.values.length, 1), Math.max(this.getLastColumn(), 1)); };
+function FakeSS() { this.sheets = {}; }
+FakeSS.prototype.getSheetByName = function (n) { return this.sheets[n] || null; };
+FakeSS.prototype.insertSheet = function (n) { const sh = new FakeSh(); this.sheets[n] = sh; return sh; };
+const made = new FakeSS();
+const sheet = todoEnsureSheet_(made);
+check(made.sheets.Todos && sheet.frozen === 1 && sheet.values[0].slice(0, TODO_COLS.length).join() === TODO_COLS.join(), 'a missing Todos tab is created with its headers', JSON.stringify(sheet.values[0]));
+const blank = new FakeSS();
+blank.sheets.Todos = new FakeSh();
+todoEnsureSheet_(blank);
+check(blank.sheets.Todos.values[0].join() === TODO_COLS.join(), 'a tab with no headers gets them');
+const shifted = new FakeSS();
+const old = new FakeSh();
+old.values = [['Call the caster', '2026-10-23']];
+shifted.sheets.Todos = old;
+todoEnsureSheet_(shifted);
+check(old.values[0].slice(0, TODO_COLS.length).join() === TODO_COLS.join() && old.values[1][0] === 'Call the caster', 'a headerless tab keeps the first data row', JSON.stringify(old.values));
+
+const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+global.window = global;
+global.document = { getElementById() { return null; }, createElement() { return { style: {} }; } };
+vm.runInThisContext(fs.readFileSync(path.join(root, 'todo.js'), 'utf8'), { filename: 'todo.js' });
+const T = global.OYPTodo;
+const day = '2026-10-21';
+const fri = { manual: 1, created_by: 'ada', created_name: 'Ada', assignee: '', due: '2026-10-23', text: 'Call the caster', status: 'open', id: 'tdm-1' };
+const fromMia = { manual: 1, created_by: 'mia', created_name: 'Mia Cruz', assignee: 'ada', due: '2026-10-28', text: 'Wax the band', status: 'open', late: 1, id: 'tdm-2' };
+const overdue = { manual: 1, created_by: 'ada', created_name: 'Ada', assignee: 'ada', due: '2026-10-19', text: 'Late one', status: 'open', late: 1, bucket: 'today', id: 'tdm-3' };
+const oldDue = { manual: 1, created_by: 'ada', created_name: 'Ada', due: '2026-10-14', text: 'Older', late: 1, id: 'tdm-4' };
+check(T.chipLabel(fri, ada, day) === 'Mine · Fri', 'a due date this week uses the short weekday', T.chipLabel(fri, ada, day));
+check(T.chipLabel(fromMia, ada, day) === 'From Mia Cruz · Oct 28', 'someone else\'s row names them, and a later date uses the month', T.chipLabel(fromMia, ada, day));
+check(T.chipLabel(overdue, ada, day) === 'Mine · Mon', 'an overdue day still this week keeps the weekday', T.chipLabel(overdue, ada, day));
+check(T.chipLabel(oldDue, ada, day) === 'Mine · Oct 14', 'an older overdue date uses the month and day', T.chipLabel(oldDue, ada, day));
+check(T.isMine(fri, ada) && T.isMine(fromMia, ada) && !T.isMine({ manual: 1, created_by: 'mia', assignee: '', text: 'shop' }, ada) && !T.isMine({ manual: 0, created_by: 'ada' }, ada), 'Mine is manual rows created by or assigned to the viewer');
+const manualRow = T.rowHtml(escHtml, Object.assign({ bucket: 'week', late: 0 }, fri), { user: ada, today: day, page: true, people: [{ username: 'ada', name: 'Ada' }] });
+const autoRow = T.rowHtml(escHtml, { id: 'prod-1', manual: 0, tag: 'Production', flag: '', text: '26-287: stuck', late: 0, href: '#/production' }, { user: ada, today: day, page: true });
+check(manualRow.indexOf('tdtick') >= 0 && manualRow.indexOf('tdmore') < 0 && manualRow.indexOf('Mine · Fri') >= 0, 'a manual row has the round tick and the Mine chip', manualRow);
+check(autoRow.indexOf('tdmore') >= 0 && autoRow.indexOf('tdtick') < 0 && autoRow.indexOf('Production') >= 0, 'an auto row keeps the more menu');
+check(T.rowHtml(escHtml, Object.assign({}, overdue, { late: 1 }), { user: ada, today: day }).indexOf('chip tdtag gold') >= 0, 'overdue uses the gold chip');
+check(T.addBar(escHtml, [{ username: 'ann', name: 'Ann' }]).indexOf('Add a to-do') >= 0 && T.addBar(escHtml, []).indexOf('type="date"') >= 0, 'the add line is one field, a due date, and an assignee');
+const card = fs.readFileSync(path.join(root, 'dash.js'), 'utf8');
+const page = fs.readFileSync(path.join(root, 'todo.js'), 'utf8');
+const navSrc = fs.readFileSync(path.join(root, 'nav.js'), 'utf8');
+const appSrc = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+check(card.indexOf('Add a to-do') < 0 && card.indexOf('addBar') >= 0 && card.indexOf("data-td=\"tick\"") < 0 && card.indexOf("act === 'tick'") >= 0, 'the card adds and ticks through the shared row');
+check(page.indexOf('placeholder="Add a to-do"') >= 0 && page.indexOf("['mine', 'Mine']") >= 0 && page.indexOf("['done', 'Done']") >= 0 && page.indexOf('data-tdscope="${k}"') >= 0, 'the page has the add line and the Mine / Done chips');
+check(!/confirm\(/.test(page), 'delete does not ask for confirmation');
+check(page.indexOf('toastUndo') >= 0 && page.indexOf('>Undo<') >= 0, 'delete offers undo on the toast');
+check(appSrc.indexOf("page === 'todo' ? 'TO DO'") >= 0 && appSrc.indexOf("page === 'todo' && window.OYPTodo") >= 0, 'the To do page sets the header and renders');
+check(/cur0 === 'appts' \|\| cur0 === 'todo'/.test(appSrc), 'staff can open To do from their menu');
+const adminNav = navSrc.slice(navSrc.indexOf('admin:'), navSrc.indexOf('production_manager:'));
+check(adminNav.indexOf("['dashboard', 'Dashboard']") >= 0 && adminNav.indexOf("['dashboard', 'Dashboard']") < adminNav.indexOf("['todo', 'To do']") && adminNav.indexOf("['todo', 'To do']") < adminNav.indexOf("['appts', 'Appointments']"), 'To do sits directly after Dashboard');
+['todoAdd', 'todoUpdate', 'todoUndo', 'todoDelete'].forEach(action => {
+  check(!new RegExp(action + '\\s*:').test(appSrc), action + ' is not a client read');
+});
+check(fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.js?v=1') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.css?v=5') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('dash.js?v=31'), 'the new page assets are cache-busted');
+delete global.document;
+const navMod = require(path.join(root, 'nav.js'));
+const phone = navMod.menuHtml(ada, 'todo', '');
+const side = navMod.sideHtml(ada, 'todo', '');
+check(phone.indexOf('>Dashboard<') < phone.indexOf('>To do<') && phone.indexOf('>To do<') < phone.indexOf('>Appointments<') && phone.indexOf('href="#/todo"') >= 0, 'the phone menu lists To do after Dashboard');
+check(side.indexOf('>Dashboard<') < side.indexOf('>To do<') && side.indexOf('class="on"') >= 0, 'the desktop menu lists To do after Dashboard');
+check(navMod.NAV.admin.every(n => n[0] !== 'todo') && navMod.OFFICE_NAV.admin.some(n => n[0] === 'todo'), 'the scanner menu stays without the back-office page');
+check(/None\. No appsscript\.json change/.test(fs.readFileSync(path.join(root, 'paste/PASTE_STEPS.txt'), 'utf8')), 'paste steps name the scopes');
 
 if (fails.length) {
   console.error(fails.length + ' failed\n' + fails.join('\n'));
