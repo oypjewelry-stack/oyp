@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>OYP · Print test</title>
+<link rel="stylesheet" href="../print.css?v=1">
+</head><body>
+<header class="top" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #eee;background:#fff">
+  <button id="btnMenu" class="icon" aria-label="Menu" style="border:0;background:none">Menu</button>
+  <span id="title" class="title" style="font:600 16px Inter,system-ui,sans-serif">Print test</span>
+  <span class="topend"><span id="printChip" class="oyp-pr-slot"></span></span>
+</header>
+<main class="pr-page">
+  <h1>Label alignment</h1>
+  <p>Chrome or Edge on Windows, Mac, and Android. USB serial is the fallback on a computer. iPhone and iPad Safari cannot connect. Download PNG instead. The sticker is the JO number. The name stays on the queue list only.</p>
+  <p id="prSum"></p>
+  <div class="pr-previews" id="prViews"></div>
+  <h2>On the queue list</h2>
+  <p>Elena Tan · 26-287</p>
+  <div id="printSet"></div>
+  <h2>Print queue</h2>
+  <div id="printQueue"></div>
+</main>
+<script src="../vendor/qrcode.js?v=1"></script>
+<script src="../vendor/niimbluelib-0.47.1.js?v=1"></script>
+<script src="../print-label.js?v=1"></script>
+<script src="../print.js?v=1"></script>
+<script>
+(function () {
+  var samples = [
+    { title: 'JO card · 26-287', kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
+    { title: 'JO card on a B1 head', kind: 'jo_card', model: 'B1', jo: '26-287', due: '2026-10-21', client: 'Elena Tan' },
+    { title: 'Jewelry tag', kind: 'jewelry_tag', model: 'B1', jo: '26-287', client: 'Elena Tan', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' },
+    { title: 'Jewelry tag on a B31 head', kind: 'jewelry_tag', model: 'B31', jo: '26-287', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' },
+    { title: 'Calibration · 30×20', kind: 'cal_jo', model: 'B31' },
+    { title: 'Calibration · tag', kind: 'cal_tag', model: 'B1' }
+  ];
+  var host = document.getElementById('prViews');
+  samples.forEach(function (s) {
+    var card = document.createElement('div');
+    card.className = 'pr-card';
+    var rendered = OYPLabel.render(s);
+    var canvas = OYPLabel.toCanvas(rendered);
+    var scale = rendered.width > 420 ? 420 / rendered.width : 1;
+    canvas.style.width = Math.round(rendered.width * scale) + 'px';
+    canvas.style.height = Math.round(rendered.height * scale) + 'px';
+    var h = document.createElement('b');
+    h.textContent = s.title;
+    card.appendChild(h);
+    card.appendChild(canvas);
+    var p = document.createElement('p');
+    p.textContent = rendered.lines.length ? rendered.lines.join(' · ') : 'Border and centre mark';
+    card.appendChild(p);
+    var row = document.createElement('p');
+    var png = document.createElement('button');
+    png.type = 'button';
+    png.textContent = 'Download PNG';
+    png.onclick = function () { OYPPrint.download(s.kind, s); };
+    row.appendChild(png);
+    if (s.kind === 'cal_jo' || s.kind === 'jo_card' || s.kind === 'jewelry_tag' || s.kind === 'cal_tag') {
+      var go = document.createElement('button');
+      go.type = 'button';
+      go.textContent = 'Print';
+      go.style.marginLeft = '8px';
+      go.onclick = function () { OYPPrint.printLocal(s); };
+      row.appendChild(go);
+    }
+    card.appendChild(row);
+    host.appendChild(card);
+  });
+  document.getElementById('prSum').textContent = OYPPrint.summary();
+  OYPPrint.mountSettings(document.getElementById('printSet'));
+  OYPPrint.mountQueue(document.getElementById('printQueue'));
+})();
+</script>
+</body></html>

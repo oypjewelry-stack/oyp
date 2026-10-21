@@ -1,0 +1,11 @@
+DashCache.gs — one short edit. printQueue is listed as a read so a poll does not start a new dashboard generation.
+Do not add it to dcacheSpec_. The printQueue route in Auth.gs does not call dcacheRead_, and the dashboard payload is unchanged.
+Do not add printMark, printEnqueue, or printReprint.
+
+The FIND line is the READS line from paste/DashCache.gs.patch.txt. The To do patch keeps settingsDesign and listUsers. The portal patch does not change this line.
+
+FIND
+    settingsDesign: 1, listUsers: 1,
+
+REPLACE WITH
+    settingsDesign: 1, listUsers: 1, printQueue: 1,

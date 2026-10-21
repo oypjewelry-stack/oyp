@@ -19,6 +19,7 @@ const SECS = [
   ['portal', 'Customer pages', 'Contact line, deposit and quote validity on Track my order / My orders'],
   ['design', 'Design', 'Text size in pixels, fonts, spacing, corners, and each button, header and shape'],
   ['layout', 'Layout', 'Drag the side menu, the dashboard sections, and the location tiles on this device'],
+  ['labels', 'Labels', 'Printer, darkness, and which stickers this device prints'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
 // The values stay in the Settings tab and in the Change history; nothing is deleted. Remove a key here to show the section again.
@@ -87,6 +88,7 @@ function summary(k) {
     if (u && window.OYPDash && window.OYPDash.layout && window.OYPDash.layout.locations.custom(u)) bits.push('locations');
     return bits.length ? 'Custom on this device: ' + bits.join(', ') : 'Today\'s order on this device';
   }
+  if (k === 'labels') return window.OYPPrint ? window.OYPPrint.summary() : 'Printer';
   if (k === 'log') { const l = S.r.log[0]; return l ? 'Last: ' + when(l.at) + ' by ' + l.by : 'No changes yet'; }
   return '';
 }
@@ -141,6 +143,8 @@ function section(s) {
   if (s === 'design') return head(t[1], 'Drag a slider and this page changes right away, so you can see it before saving. <b>SAVE</b> makes it the look for everyone: every staff phone and computer, and the customer pages (order lookup, shop). Other devices pick it up within a few minutes.') + designBox();
   if (s === 'layout') return head(t[1], 'Turn editing on, then drag the side menu, the dashboard sections, and the location tiles into place. Done puts the controls away. The order is saved on this device only.') + layoutBox();
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
+  if (s === 'labels') return head(t[1], 'Saved on this device only. A JO card is the 30×20 sticker. A jewelry tag is 30×25 with a blank 45 mm tail. The client name stays on the queue list and is not printed.')
+    + '<div id="printSet"></div><h3 class="seth">Print queue</h3><div id="printQueue"></div>';
   return '';
 }
 /* ---------- Design (sliders -> CSS variables, design.js) ---------- */
@@ -492,6 +496,7 @@ function wire(main) {
     const go = () => { const h = $('zoneHost'); if (h && window.OYPZones) window.OYPZones.mount(h); };
     if (window.OYPZones) go(); else window.addEventListener('oyp-zones-ready', go, { once: true });
   }
+  if (sec() === 'labels' && window.OYPPrint) { window.OYPPrint.mountSettings($('printSet')); window.OYPPrint.mountQueue($('printQueue')); }
   mark();
 }
 async function save(main) {

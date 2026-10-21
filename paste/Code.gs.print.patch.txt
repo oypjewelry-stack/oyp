@@ -1,0 +1,16 @@
+Code.gs — two short edits. Page 1 of a scan queues a JO card sticker. The save still succeeds if the queue paste is missing.
+The FIND lines are the ones in paste/Code.gs.txt (the zones paste). They are the same recordScan_ line before and after that paste.
+
+1. Scanner ops, just before deletePage. FIND
+    if (req.op === 'deletePage') return json_(deletePage_(req));
+
+REPLACE WITH
+    if (req.op === 'printQueue' || req.op === 'printMark' || req.op === 'printEnqueue' || req.op === 'printReprint') return json_(typeof printScanOp_ === 'function' ? printScanOp_(req) : { ok: false, error: 'Print queue is not pasted yet' });
+    if (req.op === 'deletePage') return json_(deletePage_(req));
+
+2. After the scan is recorded. Page 1 only. FIND
+    var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null;
+
+REPLACE WITH
+    var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null;
+    try { if ((req.page === 1 || req.page === '1') && typeof printEnqueue_ === 'function') printEnqueue_(jo, 'jo_card', 'scanner', {}); } catch (e) {}
