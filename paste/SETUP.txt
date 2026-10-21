@@ -1,0 +1,58 @@
+To do card — what to paste, and what not to run.
+
+New file (code only)
+  Apps Script: + Script, name it Todo, paste paste/Todo.gs (the whole file, no extra header).
+  Save.
+
+Patches, against the live files (exact FIND / REPLACE)
+  Auth.gs          paste/Auth.gs.patch.txt          todoList goes through dcacheRead_; todoDone and todoSnooze stay writes
+  Appointments.gs  paste/Appointments.gs.patch.txt  requested status, strip the word "request" before the name, outside-hours warning on confirm
+  Fast.gs          paste/Fast.gs.patch.txt          add todoList to FAST.CACHE and FAST.READS
+  DashCache.gs     paste/DashCache.gs.patch.txt     add todoList to DCACHE.READS, and let dcacheSpec_ keep it
+  DashWarm.gs      paste/DashWarm.gs.patch.txt      warm todoList with the dashboard
+
+Do not edit Dashboard.gs. The list is no longer built inside the dashboard answer.
+Do not add todoDone, todoSnooze, or apptRequest to FAST.READS, FAST.CACHE, or DCACHE.READS. Those are writes, so a Done, a Snooze, or a new request bumps both caches.
+The attached Fast.gs READS line starts `READS: { ping: 1, me: 1,`. If the live line starts `READS: { consignList: 1, consignSearch: 1, ping: 1,`, the Fast.gs patch still matches on `dashDrill: 1, invThumbs: 1`.
+
+oauthScopes
+  None. No appsscript.json change. No Calendar scope is added. A request does not create a calendar event. Confirming it uses the booking path that already exists.
+
+Setup function
+  None new. Done and Snooze write the existing Reminders tab from setupAppointments.
+  If that tab is missing, the card still loads and Done says to run setupAppointments once.
+  installDashWarm is the timer that is already running. The DashWarm patch only adds todoList to the list it already rebuilds. Run installDashWarm again only if that timer was never installed.
+
+Then
+  Deploy > Manage deployments > pencil > New version > Deploy.
+  Do not use New deployment.
+
+Site
+  staff/index.html, dash.js, app.js, and todo.css ship on GitHub Pages. The card is the first dashboard section after the KPI bubbles. The dashboard paints first. The card shows a light placeholder, then dash.js calls todoList. An admin can drag the card with the other sections.
+  The card shows 8 lines (most urgent first) and a Show all (N) control. The server sends at most 60 lines.
+
+Appointment status
+  requested is new. booked and cancelled are unchanged.
+  Tessa, in the staff group: @OypJewelry_bot request Ana Ruiz Tue 2pm
+  The word "request" is stripped before the name is read, so the client is "Ana Ruiz".
+  The row stays Requested (no calendar event) until someone opens it on Appointments and confirms.
+  Confirming runs the same outside-hours warning as a new booking (store hours from the Settings tab, otherwise Monday to Friday, 9:00 AM to 4:00 PM).
+  A request with no staff is flagged when any booked visit overlaps that time.
+  Customer-portal appointment requests are not wired yet. That is a later change. apptRequest stays a back-office / Tessa write.
+
+Done and Snooze
+  Both write a Reminders row whose id starts with td- and whose status is done or snoozed, never open, so the bot does not ping it.
+  Snooze (tomorrow, 3 days, 1 week) hides the line until that time, then shows it again only if the rule still matches.
+  Done hides that exact line until the episode changes (the JO leaves the stage, the quote is accepted, the request is confirmed, the count of jobs in the line changes).
+
+Role
+  Admin sees every area, including peso amounts. No line shows a margin or an SRP.
+  Production manager sees the same work with no money lines and no peso amounts.
+  Accounting sees appointments, payments, and quotes, with no peso amounts.
+  Staff see job and stage lines only, and no client names (same rule as the rest of the dashboard).
+
+Rules the lines follow
+  Stuck means 5 or more days in the current production stage. There is no standard number of days for a stage. A step target (JobStages.target_date) or a JO target (JobOrders.prod_target) is used when it is set.
+  A piece is written client name, then the JO: Elena Tan · 26-287: stuck in Setting 6 days.
+  A consignment line names the jewelry client, then the JO, and the consignee only in the sentence: Elena Tan · 26-280: with consignee Ana R. 16 days.
+  There is no "in Vault over 90 days" line.

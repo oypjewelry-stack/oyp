@@ -30,7 +30,7 @@ async function net(action, data) {
    signed-in session (a hash of the session token, never the token itself). A page opens at once from it, the server is
    asked again in the background, and the page redraws if the answer changed (unless the user already started using it).
    Cleared on log in, log out, session expiry and after any change (save / move / confirm ...), so a save always re-reads. */
-const CACHED = { dashboard: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1,
+const CACHED = { dashboard: 1, todoList: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1,
   pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1, consignList: 1 };
 const READS = Object.assign({ me: 1, admCustAudit: 1, apptClients: 1, costQuotes: 1, dashDrill: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1,
   jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, portalSteps: 1, consignSearch: 1 }, CACHED); // anything else changes data

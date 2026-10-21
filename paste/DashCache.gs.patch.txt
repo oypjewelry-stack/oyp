@@ -1,0 +1,16 @@
+DashCache.gs — two short edits, against the live file (the attached DashCache.gs).
+todoList is cached per role the same way as dashboard. Do not add todoDone, todoSnooze, or apptRequest.
+
+1. READS. FIND
+    ping: 1, me: 1, login: 1, logout: 1, dashboard: 1, dashDrill: 1, settingsGet: 1, settingsDesign: 1, listUsers: 1,
+
+REPLACE WITH
+    ping: 1, me: 1, login: 1, logout: 1, dashboard: 1, dashDrill: 1, todoList: 1, settingsGet: 1, settingsDesign: 1, listUsers: 1,
+
+2. Which answers may be saved. FIND
+  if (action !== 'dashboard' && action !== 'dashDrill') return null;
+  if (action === 'dashDrill' && String(req.what || '') !== 'jobs') return null; // one JO (what: job) is always live
+
+REPLACE WITH
+  if (action !== 'dashboard' && action !== 'dashDrill' && action !== 'todoList') return null;
+  if (action === 'dashDrill' && String(req.what || '') !== 'jobs') return null; // one JO (what: job) is always live

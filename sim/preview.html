@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OYP · To do preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@500;600&family=Bodoni+Moda:opsz,wght@6..96,400;500&family=Inter:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../app.css?v=33">
+<link rel="stylesheet" href="../todo.css?v=2">
+</head><body>
+<main id="main" class="main"></main>
+<div id="toast" class="toast hidden"></div>
+<script>
+window.OYP = {
+  esc: s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+  here: () => () => true,
+  toast: m => { const t = document.getElementById('toast'); t.textContent = m; t.classList.remove('hidden'); t.dataset.msg = m; },
+  locLabel: (k, l) => l || k,
+  call: async action => {
+    if (action === 'dashboard') {
+      const r = await fetch('out/admin.json');
+      return r.json();
+    }
+    if (action === 'todoList') {
+      const wait = window.__todoDelay || 0;
+      if (wait) await new Promise(ok => setTimeout(ok, wait));
+      const r = await fetch('out/todo.json');
+      return r.json();
+    }
+    if (action === 'contactList') return { ok: true, missing: 0, total: 8, missing_jos: [] };
+    if (action === 'portalSteps') return { ok: true, inbox: { items: [] } };
+    if (action === 'dashDrill') return { ok: true, jobs: [] };
+    if (action === 'todoDone' || action === 'todoSnooze') return { ok: true };
+    return { ok: true };
+  }
+};
+</script>
+<script src="../dash.js?v=28"></script>
+<script>
+location.hash = '#/dashboard';
+window.OYPDash.render(document.getElementById('main'), { username: 'owner', role: 'admin' });
+</script>
+</body></html>

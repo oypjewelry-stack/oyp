@@ -69,3 +69,6 @@
 .aphol{display:block;font-size:calc(10.5px*var(--fs));line-height:1.25;color:#a0782c;font-family:var(--label);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aphol.open{color:#5c7d5c}.aphol.pending{color:#b3261e}.apmd .aphol{margin:calc(1px*var(--sp)) 0 calc(2px*var(--sp))}.aphold{color:#8a6d1f}.chip.red{color:#b3261e;border-color:#b3261e}
 .aplegend .apcx{margin-left:auto;padding:calc(4px*var(--sp)) calc(10px*var(--sp));font-size:calc(11px*var(--fs))}.aplegend .apcx b{margin-left:calc(4px*var(--sp))}
+.apdot.rq{background:var(--gold)}
+.apblk.rq{background:#fffdf6;border-left-color:var(--gold)}
+.apcard.rq{box-shadow:inset 3px 0 0 var(--gold)}

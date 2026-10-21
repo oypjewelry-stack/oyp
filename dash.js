@@ -19,7 +19,7 @@ const ago = d => { if (!d) return ''; const n = Math.round((Date.now() - Date.pa
 // per-JO lists that the dashboard does not carry (locations, sales, pending, consigned JOs) come once from dashDrill (DashboardDrill.gs).
 const D = { r: null, cc: null, x: null, at: 0, user: null, ordOn: false };
 // Section order on this device, per signed-in name. Empty, or a save of this order, means the default. Reset clears the save. KPI bubbles are not in this list: they stay above the sections.
-const SEC_ORDER = ['board', 'loc', 'sales', 'consign', 'msgs', 'pay'];
+const SEC_ORDER = ['todo', 'board', 'loc', 'sales', 'consign', 'msgs', 'pay'];
 const SEC_LEGACY = ['msgs', 'loc', 'sales', 'board', 'consign', 'pay']; // the previous default, so a device that stored it picks up the new one
 const ordKey = u => 'oypDashOrder:' + (u && u.username || 'device');
 function readOrder(u) {
@@ -385,11 +385,12 @@ async function render(main, u, fresh) { // fresh (Refresh) still paints what we 
   const gen = ++dashGen;
   const still = () => live() && gen === dashGen;
   const drill = currentDrill();
-  if (D.user && u && D.user.username !== u.username) { D.r = null; D.cc = null; D.inbox = null; D.mail = null; D.x = null; D.at = 0; jobsAt = 0; }
+  if (D.user && u && D.user.username !== u.username) { D.r = null; D.cc = null; D.inbox = null; D.mail = null; D.x = null; D.at = 0; jobsAt = 0; D.todo = null; D.todoAll = false; D.todoLoading = false; D.todoFilt = 'all'; D.todoOpen = ''; }
   D.user = u; D.ordOn = !!(u && u.role === 'admin');
   if (!D.r || !D.r.ok) { const saved = readSnap(u); if (saved) { D.r = saved; D.at = D.at || Date.now(); } }
   restoreJobs(u);
   if (!D.inbox) { const savedIn = readInbox(u); if (savedIn && savedIn.items.length) D.inbox = savedIn; }
+  if (fresh) D.todoForce = true;
   const had = !!(D.r && D.r.ok);
   // portalSteps {inbox:1}: client approvals / questions (Portal.gs v3; admin + production manager). An older Portal.gs answers without
   // "inbox" -> no card. (portalSteps, not a new action name, so a server without v3 never sees an unknown action.)
@@ -428,6 +429,118 @@ async function render(main, u, fresh) { // fresh (Refresh) still paints what we 
   if (had) { const hint = main.querySelector('#dUpd'); if (hint) hint.remove(); return; }
   main.innerHTML = `<h2>Dashboard</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for the dashboard yet.' : (r && r.error) || 'Could not load')}</p>`;
 }
+/* ---------- To do: its own read, after the dashboard has painted (Todo.gs todoList). ---------- */
+const TODO_CHIPS = [['all', 'All'], ['appt', 'Appointments'], ['prod', 'Production'], ['pay', 'Payments'], ['quote', 'Quotes'], ['cons', 'Consignment'], ['stock', 'Stock & rate'], ['msg', 'Messages'], ['shop', 'Shop'], ['rev', 'To review']];
+const TODO_BUCKET = { today: 'Today', week: 'This week', idea: 'Suggestions' };
+const TODO_VIS = 8;
+let todoGen = 0;
+function todoRows() {
+  const t = D.todo;
+  return t && t.ok && Array.isArray(t.items) ? t.items : null;
+}
+function todoMark(esc, text) {
+  return esc(text || '').replace(/(\d{2}-\d{3,}|CS-[\w-]+)/g, '<span style="white-space:nowrap">$1</span>');
+}
+function todoHold() {
+  return `<section class="dcard todo" data-dsec="todo" aria-busy="true"><div class="dtitle"><span class="dname"><h3>To do</h3></span><span class="lab">Reminders · deadlines · suggestions</span></div><div class="skel tdskel" aria-label="Loading to do"><i></i><i></i><i></i></div></section>`;
+}
+function todoHtml(esc) {
+  if (!D.todo) return todoHold();
+  if (D.todo.ok === false) return `<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3></span><span class="lab">Reminders · deadlines · suggestions</span></div><p class="muted">${esc(D.todo.error || 'Could not load')}</p></section>`;
+  const all = todoRows() || [];
+  const counts = {};
+  all.forEach(it => { counts[it.area] = (counts[it.area] || 0) + 1; });
+  let filt = D.todoFilt || 'all';
+  if (filt !== 'all' && !counts[filt]) { filt = 'all'; D.todoFilt = 'all'; }
+  const chips = TODO_CHIPS.filter(([k]) => k === 'all' || counts[k]);
+  const shown = filt === 'all' ? all : all.filter(it => it.area === filt);
+  const vis = !D.todoAll && shown.length > TODO_VIS ? shown.slice(0, TODO_VIS) : shown;
+  const groups = ['today', 'week', 'idea'].map(b => vis.filter(it => (it.bucket || 'week') === b)).filter(g => g.length);
+  const row = it => {
+    const open = D.todoOpen === it.id;
+    const tag = (it.flag ? it.flag + ' · ' : '') + (it.tag || '');
+    const go = it.open || (it.jo ? 'Open ' + it.jo : 'Open');
+    const acts = open ? `<div class="tdacts"><a class="pill sm" href="${esc(it.href || '#/dashboard')}" data-td="go" data-id="${esc(it.id)}">${esc(go)}</a><button type="button" class="pill sm outline" data-td="done" data-id="${esc(it.id)}">Done</button><span class="tdsnz"><span class="lab">Snooze</span><button type="button" class="fchip" data-td="snooze" data-until="tomorrow" data-id="${esc(it.id)}">Tomorrow</button><button type="button" class="fchip" data-td="snooze" data-until="3d" data-id="${esc(it.id)}">3 days</button><button type="button" class="fchip" data-td="snooze" data-until="7d" data-id="${esc(it.id)}">1 week</button></span></div>` : '';
+    return `<div class="tdrow${it.late ? ' late' : ''}${it.sug ? ' sug' : ''}${open ? ' open' : ''}" data-id="${esc(it.id)}"><span class="chip tdtag${it.late ? ' gold' : ''}">${esc(tag)}</span><span class="tdtxt">${todoMark(esc, it.text)}</span><button type="button" class="tdmore" data-td="more" data-id="${esc(it.id)}" aria-label="More">⋯</button><span class="tdgo">›</span>${acts}</div>`;
+  };
+  const body = vis.length ? groups.map(g => `<div class="tdgrp"><div class="tdgh"><span class="lab">${TODO_BUCKET[g[0].bucket] || 'This week'}</span><span class="kn">${g.length}</span></div>${g.map(row).join('')}</div>`).join('') : '<p class="muted">All clear.</p>';
+  const more = shown.length > TODO_VIS ? `<button type="button" class="lnk tdall" data-td="all">${D.todoAll ? 'Show less' : 'Show all (' + shown.length + ')'}</button>` : '';
+  const badge = D.todo.total > all.length ? D.todo.total : all.length;
+  return `<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3><span class="tdcount">${badge}</span></span><span class="lab">Reminders · deadlines · suggestions</span></div>
+    <div class="rvchips tdchips" role="tablist" aria-label="To do areas">${chips.map(([k, lab]) => `<button type="button" class="fchip${filt === k ? ' on' : ''}" data-tdf="${k}">${lab}<b>${k === 'all' ? all.length : counts[k]}</b></button>`).join('')}</div>
+    ${body}
+    ${more}
+    <p class="muted tdfoot">Tap a line to open it. ⋯ gives Done or Snooze. Done and snoozed items come back only if the issue is still there after the snooze.</p></section>`;
+}
+function loadTodo(main, u) {
+  const force = !!D.todoForce;
+  D.todoForce = false;
+  if (!force && D.todo && D.todo.ok && D.todoUser === (u && u.username)) return;
+  if (!force && D.todoLoading && D.todoStill && D.todoStill()) return; // this visit already asked
+  const gen = ++todoGen;
+  const still = window.OYP.here();
+  D.todoStill = still;
+  D.todoLoading = true;
+  D.todoUser = u && u.username;
+  const apply = r => {
+    if (gen !== todoGen) return;
+    D.todoLoading = false;
+    if (!still()) return;
+    D.todo = r;
+    if (main.querySelector('[data-dsec="todo"]')) paintTodo(main);
+  };
+  window.OYP.call('todoList').then(r => {
+    apply((r && r.ok) ? r : { ok: false, items: [], total: 0, error: (r && r.error) || 'Could not load' });
+  }).catch(() => apply({ ok: false, items: [], total: 0, error: 'Could not load' }));
+}
+function paintTodo(main) {
+  const sec = main.querySelector('[data-dsec="todo"]');
+  if (!sec) return;
+  sec.outerHTML = todoHtml(window.OYP.esc);
+  wireTodo(main);
+}
+function todoGo(it) {
+  if (it.jo && canOpen(D.user)) { openJO(it.jo, { jo: it.jo, description: it.text || '', client: '' }, 'To do'); return; }
+  const href = it.href || '#/dashboard';
+  if (href === '#dMsgs') {
+    const el = document.getElementById('dMsgs');
+    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  if (href.charAt(0) === '#') location.hash = href;
+}
+function wireTodo(main) {
+  const sec = main.querySelector('[data-dsec="todo"]');
+  if (!sec || sec.dataset.tdwire) return;
+  sec.dataset.tdwire = '1';
+  sec.addEventListener('click', async e => {
+    const chip = e.target.closest('[data-tdf]');
+    if (chip) { e.preventDefault(); D.todoFilt = chip.dataset.tdf; D.todoOpen = ''; paintTodo(main); return; }
+    const btn = e.target.closest('[data-td]');
+    const row = e.target.closest('.tdrow');
+    if (!btn && !row) return;
+    const id = (btn && btn.dataset.id) || (row && row.dataset.id);
+    const act = btn ? btn.dataset.td : 'go';
+    if (act === 'all') { e.preventDefault(); D.todoAll = !D.todoAll; paintTodo(main); return; }
+    const items = todoRows() || [];
+    const it = items.find(x => x.id === id);
+    if (act === 'more') { e.preventDefault(); e.stopPropagation(); D.todoOpen = D.todoOpen === id ? '' : id; paintTodo(main); return; }
+    if (act === 'done' || act === 'snooze') {
+      e.preventDefault(); e.stopPropagation();
+      if (btn) btn.disabled = true;
+      const r = await window.OYP.call(act === 'done' ? 'todoDone' : 'todoSnooze', act === 'done' ? { id } : { id, until: btn.dataset.until });
+      if (!r || !r.ok) { if (btn) btn.disabled = false; return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save'); }
+      if (D.todo && Array.isArray(D.todo.items)) { D.todo.items = D.todo.items.filter(x => x.id !== id); if (D.todo.total > 0) D.todo.total--; }
+      D.todoOpen = '';
+      paintTodo(main);
+      if (window.OYP.toast) window.OYP.toast(act === 'done' ? 'Done' : 'Snoozed');
+      return;
+    }
+    if (!it) return;
+    if (btn) e.preventDefault();
+    todoGo(it);
+  });
+}
 function draw(main, u) {
   const { esc } = window.OYP, r = D.r, cc = D.cc, live = window.OYP.here();
   if (!r || !r.ok) return;
@@ -447,6 +560,7 @@ function draw(main, u) {
   ${cc && cc.ok ? `<a class="kpi ${cc.missing ? 'gold' : ''} kpilink" href="#/review" id="dNoCC" title="${esc(cc.missing ? 'No mobile or email on file: ' + cc.missing_jos.join(', ') : '')}"><span class="lab">No client contact</span><b>${esc(cc.missing)}</b><small>${esc(cc.missing ? 'of ' + cc.total + ' JOs · can\'t track their order' : 'every JO has a mobile or email')}</small></a>` : ''}</div>`;
 
   const parts = {};
+  parts.todo = todoHtml(esc);
   // D.inbox is filled when portalSteps arrives. It is not cleared here, so a redraw keeps the messages already on screen.
   D.mail = (r && Object.prototype.hasOwnProperty.call(r, 'inquiries')) ? (Array.isArray(r.inquiries) ? r.inquiries : []) : null; // email: whoever the server already includes `inquiries` for
   parts.board = `<section class="dcard" data-dsec="board"><div class="dtitle"><span class="dname"><h3>Job board</h3></span><span class="lab">${r.locations ? 'In production · ' : ''}By stage · late first</span></div><div class="kanban">${r.board.map(col => `
@@ -486,9 +600,11 @@ function draw(main, u) {
   const miss = (r.missing || []).filter(t => !{ Settings: 1, Items: 1, Consignees: 1, Consignments: 1, ConsignmentItems: 1 }[t]); // Settings is optional. Items is inventory. Only a missing Consignment tab is a consignment warning.
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
-  main.querySelector('#dRef').onclick = () => render(main, u, true);
+  main.querySelector('#dRef').onclick = () => { D.todoForce = true; render(main, u, true); };
   if (r.locations) paintLoc(main, esc);
   wireLayout(main, u);
+  wireTodo(main);
+  loadTodo(main, u);
   if (!(D.x && D.x.ok && jobsAt && Date.now() - jobsAt < 20000)) D.jobsUpdating = true;
   if ((r.locations || []).some(l => l.key === 'sold') && soldPeriod() !== 'all') ensureSales().then(() => { if (live() && main.querySelector('#locRow')) paintLoc(main, esc); });
   if (can.sales) { paintSales(main, esc); wireSales(main, esc); ensureSales().then(() => { if (live() && salesView() !== 'month') paintSales(main, esc); }); }
@@ -782,7 +898,7 @@ async function drillPage(main, u, kind, key, keepScroll, quiet) {
   if (!x || (res && res.changed)) return drillPage(main, u, kind, key, true, true);
   const hint = main.querySelector('#dUpd'); if (hint) hint.remove();
 }
-const SEC_LABEL = { msgs: 'Messages', loc: 'Location', sales: 'Sales', board: 'Job board', consign: 'Consignment', pay: 'Recent payments' };
+const SEC_LABEL = { todo: 'To do', msgs: 'Messages', loc: 'Location', sales: 'Sales', board: 'Job board', consign: 'Consignment', pay: 'Recent payments' };
 function layoutLocState(list, u) {
   const canon = locCanon(list), byKey = {};
   (list || []).forEach(l => { if (l && l.key) byKey[l.key] = l; });
