@@ -631,7 +631,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=6';
+  link.href = (base || '') + 'print.css?v=7';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {

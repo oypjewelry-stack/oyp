@@ -228,6 +228,66 @@ function fitLine(text, maxW, start, min) {
   if (size) return { text: text, size: size };
   return { text: ellipsis(text, maxW, min), size: min };
 }
+/* Right edge of the ink, in label pixels, for text drawn at x = 0. Same 4× threshold as stampText. */
+function inkSpan(text, size) {
+  var m = metricsOf(text, size);
+  var tw = Math.max(2, Math.ceil(m.w + 4));
+  var th = Math.max(2, Math.ceil(m.ascent + m.descent + 4));
+  var canvas = makeCanvas(tw * SCALE, th * SCALE);
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000000';
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.font = fontCss(size);
+  var ascent = ctx.measureText(text).actualBoundingBoxAscent || size * SCALE * 0.72;
+  ctx.fillText(text, 0, Math.round(ascent));
+  var data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  var maxX = -1, x, y, dy, dx, dark, si;
+  for (y = 0; y < th; y++) for (x = 0; x < tw; x++) {
+    dark = 0;
+    for (dy = 0; dy < SCALE; dy++) for (dx = 0; dx < SCALE; dx++) {
+      si = ((y * SCALE + dy) * canvas.width + (x * SCALE + dx)) * 4;
+      if (data[si] < 150) dark++;
+    }
+    if (dark >= 6 && x > maxX) maxX = x;
+  }
+  return { right: maxX < 0 ? 0 : maxX };
+}
+/* Largest size whose ink ends on targetRight, at most 1 px short and never past it. */
+function sizeForInk(text, targetRight, start, min) {
+  var lo, hi, mid, span, best, guard;
+  if (!text) return null;
+  if (start < min) start = min;
+  lo = min;
+  hi = start;
+  best = null;
+  guard = 0;
+  while (hi - lo > 0.05 && guard < 28) {
+    guard++;
+    mid = (lo + hi) / 2;
+    span = inkSpan(text, mid);
+    if (span.right > targetRight) hi = mid;
+    else { best = { size: mid, span: span }; lo = mid; }
+  }
+  if (!best) {
+    span = inkSpan(text, min);
+    if (span.right > targetRight) {
+      text = ellipsis(text, Math.max(8, targetRight), min);
+      span = inkSpan(text, min);
+    }
+    return { text: text, size: min, span: span };
+  }
+  span = best.span;
+  while (span.right < targetRight - 1 && best.size + 0.1 <= start + 0.001) {
+    mid = Math.round((best.size + 0.1) * 1000) / 1000;
+    span = inkSpan(text, mid);
+    if (span.right > targetRight) break;
+    best = { size: mid, span: span };
+  }
+  return { text: text, size: best.size, span: best.span };
+}
 
 /* 4x fillText, then a coverage threshold. Faint gray fringes stay white. QR is not on this canvas. */
 function stampText(img, runs, box) {
@@ -302,14 +362,20 @@ function render(opts) {
     var mod = 3, quiet = 4;
     var qpix = mods ? qrSize(mods, mod, quiet) : 0;
     var gap = qpix ? 8 : 0;
-    var colW = Math.max(8, box.labelW - pad * 2 - qpix - gap - 2);
+    /* Right ink margin matches the QR's left ink margin. The quiet zone is white, so the ink starts after it. */
+    function tagTarget() {
+      var leftInk = qpix ? pad + quiet * mod : pad;
+      return Math.max(8, box.labelW - 1 - leftInk - (pad + qpix + gap));
+    }
+    var colW = tagTarget() + 1;
     /* Module 3 leaves a short column. Below 22 px, Inter caps are under about 2 mm, so drop the QR to module 2. */
     if (mods && specs.length && fitSpecs(specs, colW).size < 22 && qrSize(mods, 2, quiet) <= box.labelH - pad * 2) {
       mod = 2;
       qpix = qrSize(mods, mod, quiet);
       gap = 8;
-      colW = Math.max(8, box.labelW - pad * 2 - qpix - gap - 2);
+      colW = tagTarget() + 1;
     }
+    var target = tagTarget();
     var innerH = box.labelH - pad * 2 - 2;
     var specCap = SPEC_PX;
     var fitted = { size: 0, lines: [] };
@@ -317,11 +383,23 @@ function render(opts) {
     var block = 0, joM = { ascent: 0, descent: 0 }, lineH = 0, guard = 0;
     while (guard < 40) {
       guard++;
-      fitted = specs.length ? fitSpecs(specs, colW, specCap) : { size: 0, lines: [] };
-      specPx = fitted.size;
+      var longest = '', longestW = -1;
+      specs.forEach(function (t) {
+        var w = metricsOf(t, 16).w;
+        if (w > longestW) { longestW = w; longest = t; }
+      });
+      var specInk = specs.length ? sizeForInk(longest, target, specCap, SPEC_MIN) : null;
+      specPx = specInk ? specInk.size : 0;
+      fitted = {
+        size: specPx,
+        lines: specs.map(function (t) {
+          if (!specPx || inkSpan(t, specPx).right <= target) return t;
+          return ellipsis(t, Math.max(8, target), specPx);
+        })
+      };
       var joMin = specPx ? specPx + 2 : 18;
       if (joMin > JO_MAX) joMin = JO_MAX;
-      joFit = jo ? fitLine(jo, colW, JO_MAX, joMin) : null;
+      joFit = jo ? sizeForInk(jo, target, JO_MAX, joMin) : null;
       joPx = joFit ? joFit.size : 0;
       joM = joFit ? metricsOf(joFit.text, joPx) : { ascent: 0, descent: 0 };
       lineH = 0;
@@ -358,35 +436,43 @@ function render(opts) {
     stampText(img, runs, box);
     if (mods) img.qr(mods, qrBox.x, qrBox.y, mod, quiet);
   } else {
-    /* QR fills the 20 mm height down to about 1.5 mm margins. The JO fills the
-       width that is left, with about 1 mm kept clear on the right. */
+    /* QR stays the size that fills the 20 mm height. Its left ink margin is
+       repeated on the right, and the JO shrinks into the width that is left. */
     var mods2 = jo ? makeQr(jo) : null;
     var qrMax = box.labelH - px(1.5) * 2;
     var picked = mods2 ? chooseQr(mods2, qrMax) : { mod: 3, quiet: 4, size: 0 };
     var mod2 = picked.mod, quiet2 = picked.quiet, qpix2 = picked.size;
     var gap2 = qpix2 ? 4 : 0;
-    var beside2 = Math.max(8, box.labelW - pad * 2 - qpix2 - gap2 - 2);
+    var leftInk2 = qpix2 ? pad + quiet2 * mod2 : pad;
+    var target2 = Math.max(8, box.labelW - 1 - leftInk2 - (pad + qpix2 + gap2));
     var sub = smallLine(opts);
     var innerH = box.labelH - pad * 2;
+    var cardJo = null;
     if (jo) {
-      var cardJo = fitLine(jo, beside2, 72, 16);
+      cardJo = sizeForInk(jo, target2, 72, 16);
       joPx = cardJo.size;
       lines.push(cardJo.text);
     }
     var subFit = null;
-    if (sub && jo) {
-      var subMax = Math.max(12, joPx - 6);
-      subFit = fitLine(sub, beside2, Math.min(22, subMax), 12);
-      if (subFit.size >= joPx) subFit = null;
+    function fitSub() {
+      if (!sub || !cardJo) return null;
+      var subStart = Math.max(12, Math.min(22, joPx - 6));
+      var fit = sizeForInk(sub, cardJo.span.right, subStart, 9);
+      if (fit.size >= joPx) return null;
+      return fit;
     }
+    subFit = fitSub();
     var guardCard = 0;
-    while (jo && guardCard < 40) {
+    while (jo && cardJo && guardCard < 40) {
       var jmTry = metricsOf(lines[0], joPx);
       var smTry = subFit ? metricsOf(subFit.text, subFit.size) : null;
-      var tall = jmTry.ascent + jmTry.descent + (smTry ? 4 + smTry.ascent + smTry.descent : 0);
-      if (tall <= innerH || joPx <= 16) break;
+      var tallC = jmTry.ascent + jmTry.descent + (smTry ? 4 + smTry.ascent + smTry.descent : 0);
+      if (tallC <= innerH || joPx <= 16) break;
       joPx -= 1;
-      if (subFit && subFit.size >= joPx) subFit = null;
+      cardJo = sizeForInk(lines[0], target2, joPx, 16);
+      joPx = cardJo.size;
+      lines[0] = cardJo.text;
+      subFit = fitSub();
       guardCard++;
     }
     if (subFit) lines.push(subFit.text);

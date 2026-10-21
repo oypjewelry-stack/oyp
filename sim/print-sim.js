@@ -105,6 +105,25 @@ function landscape(img) {
   return ink;
 }
 eq(clearMargin(long) && clearMargin(wide), 'spec ink stays about 1 mm inside the 30 mm edges');
+function sideMargins(img) {
+  const x0 = img.offsetX;
+  let left = -1, right = -1;
+  for (let x = 0; x < img.labelW; x++) for (let y = 0; y < img.labelH; y++) {
+    if (img.data[(y * img.width + x0 + x) * 4] === 0) {
+      if (left < 0) left = x;
+      right = x;
+    }
+  }
+  return { left: left, right: img.labelW - 1 - right };
+}
+function sameMargin(img, msg) {
+  const m = sideMargins(img);
+  eq(m.left >= 0 && Math.abs(m.left - m.right) <= 1, msg);
+}
+sameMargin(L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21' }), 'B31 JO card left and right ink margins match');
+sameMargin(L.render({ kind: 'jo_card', model: 'B31', jo: '26-1287', due: '2026-10-21' }), 'a long JO card keeps equal side margins');
+sameMargin(L.render(Object.assign({ model: 'B1' }, tag)), 'B1 jewelry tag left and right ink margins match');
+sameMargin(L.render(Object.assign({ model: 'B1', jo: '26-1287' }, tag)), 'a long jewelry tag keeps equal side margins');
 const cal = L.render({ kind: 'cal_tag', model: 'B31' });
 eq(cal.width === 600 && cal.height === 560 && cal.lines.length === 0 && cal.qr === '', 'calibration has no JO text and no name');
 function darkAt(img, x, y) { return img.data[(y * img.width + x) * 4] === 0; }
@@ -247,8 +266,8 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=8') && index.includes('print-label.js?v=7') && index.includes('nav.js?v=21') && index.includes('app.js?v=30') && index.includes('settings.js?v=19') && index.includes('print.css?v=6') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=7') && read('nav.js').includes('print.js?v=8') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(index.includes('print.js?v=8') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=21') && index.includes('app.js?v=30') && index.includes('settings.js?v=19') && index.includes('print.css?v=7') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=8') && read('nav.js').includes('print.js?v=8') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
@@ -261,6 +280,7 @@ eq(read('print.js').includes('Open in Chrome or Edge to connect a printer') && r
 eq(testPage.indexOf('<h2>Printer</h2>') < testPage.indexOf('<h2>Print queue</h2>') && testPage.indexOf('<h2>Print queue</h2>') < testPage.indexOf('<h2>Label alignment</h2>'), 'print test leads with printer settings, then the queue, then label alignment');
 eq(read('print.js').includes('id="prDark"') && read('print.css').includes('#prDark .pill.sm{min-width:32px'), 'each darkness number is a staff pill at least 32 px wide');
 eq(read('print.js').includes('labelOpts') && !/client:\s*item\.client/.test(read('print.js')), 'the printer payload builder does not copy the client name');
+eq(testPage.includes("textContent = 'Download'") && testPage.includes("textContent = 'PRINT'") && !testPage.includes('DOWNLOAD PNG') && testPage.includes("png.className = 'pill sm outline'") && testPage.includes("go.className = 'pill sm'") && testCss.includes('.oyp-pr-acts .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);border-width:1px;padding-top:calc(9px*var(--sp) - 1px)'), 'Download matches Print in size and stays an outline');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('print-sim passed');
