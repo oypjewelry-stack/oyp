@@ -30,6 +30,8 @@
 :where(.oyp-qmain .kf){display:flex;flex-wrap:wrap;gap:calc(4px * var(--sp,1));margin-top:calc(7px * var(--sp,1))}
 :where(.oyp-qbtns,.oyp-pr-acts){display:flex;flex-wrap:wrap;gap:calc(10px * var(--sp,1));align-items:center}
 :where(.oyp-pr-acts){margin-top:calc(6px * var(--sp,1))}
+.oyp-pr-acts .pill.sm{white-space:nowrap}
+.oyp-pr-acts .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);border-width:1px;padding-top:calc(9px*var(--sp) - 1px);padding-bottom:calc(9px*var(--sp) - 1px)}
 
 .oyp-qmain{flex:1;min-width:140px}
 .oyp-qprev{width:84px;height:auto;flex:none;display:block;background:#8e8e8e;border-radius:calc(8px * var(--rad,1))}
