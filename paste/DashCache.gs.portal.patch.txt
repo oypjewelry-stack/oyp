@@ -1,0 +1,11 @@
+DashCache.gs — one short edit. portalAppts does not change the dashboard, so loading My orders must not start a new generation.
+Do not add portalApptRequest. A new request is a write: the portal calls fastBump_(), and a generation that is missing this name also treats it as a write.
+
+The FIND line is the attached DashCache.gs. The To do patch does not change it.
+
+1. READS.
+FIND
+    custLogout: 1, clientLookup: 1, clientPhoto: 1, portalSteps: 1
+
+REPLACE WITH
+    custLogout: 1, clientLookup: 1, clientPhoto: 1, portalSteps: 1, portalAppts: 1

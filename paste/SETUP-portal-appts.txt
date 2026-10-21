@@ -1,0 +1,29 @@
+Customer portal appointment requests — what to paste.
+
+Depends on the To do Appointments.gs patch already being in the project (apptRequest_, status requested, no calendar event).
+
+Patches, against the live files (exact FIND / REPLACE)
+  Portal.gs      paste/Portal.gs.patch.txt           portalAppts (read) and portalApptRequest (write). The write calls apptRequest_ with source "portal".
+  Fast.gs        paste/Fast.gs.portal.patch.txt      add portalAppts to FAST.READS only
+  DashCache.gs   paste/DashCache.gs.portal.patch.txt add portalAppts to DCACHE.READS only
+
+Do not add portalApptRequest to FAST.READS, FAST.CACHE, or DCACHE.READS.
+Do not add an email step. ptApptRequest_ does not create a calendar event and does not email the customer.
+The Telegram line is the same ptNotify_ / botPost_ path as a quote approval or a client question.
+
+New action names
+  portalAppts          read, signed-in customer, own rows only
+  portalApptRequest    write, signed-in customer, status requested, source portal
+
+oauthScopes
+  None. No appsscript.json change.
+
+Setup function
+  None new.
+
+Then
+  Deploy > Manage deployments > pencil > New version > Deploy.
+  Do not use New deployment.
+
+Site
+  my/index.html, my/my.js, and cust.css ship on GitHub Pages. The form is on My orders after sign-in.

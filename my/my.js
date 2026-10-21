@@ -89,6 +89,7 @@ async function home(flag) {
   jobs = r.jobs; const c = r.customer;
   if (r.safe_photos !== true) jobs.forEach(j => { j.photos = 0; }); // older server: show no photos at all
   app.innerHTML = `<p class="lab">Hello</p><h1>${esc(c.full_name)}</h1><p class="grey">${esc(c.mobile)}</p>
+  <div id="myap"></div>
   ${!jobs.length ? `<p class="note">${c.status === 'pending' || flag === 'pending' ? 'Thanks for signing up! We couldn\'t match your account to an order yet. We\'ll link your orders shortly.' : 'No orders yet.'}</p>` : ''}
   <div class="list">${jobs.map((j, i) => `<button class="row" data-i="${i}"><span class="th" data-jo="${esc(j.jo)}"></span><span><b>${esc(j.description || 'Order ' + j.jo)}</b>
   <span class="grey">Order ${esc(j.jo)}${j.due_date ? ' · due ' + esc(j.due_date) : ''}</span><br><span class="chipg">${esc(j.status === 'done' ? 'Ready' : j.stage || 'In progress')}</span></span></button>`).join('')}</div>
@@ -96,6 +97,7 @@ async function home(flag) {
   app.querySelectorAll('.row').forEach(b => b.onclick = () => detail(jobs[b.dataset.i]));
   jobs.forEach(j => j.photos && photo(j.jo).then(src => { const el = app.querySelector(`.th[data-jo="${CSS.escape(j.jo)}"]`); if (el && src) el.style.backgroundImage = `url("${src}")`; }));
   document.getElementById('out').onclick = async () => { await call('custLogout', {}, sess()); clear(); start(); };
+  mountAppts();
 }
 /* ---------- v3 ---------- */
 let V3 = { r: null, filter: 'all' };
@@ -117,6 +119,7 @@ function homeV3(r, flag) {
   V3.r = r; jobs = r.jobs; const c = r.customer, wait = jobs.filter(j => j.quote && j.quote.can_approve);
   const f = FILTERS.find(x => x[0] === V3.filter) || FILTERS[0], shown = jobs.map((j, i) => [j, i]).filter(([j]) => !f[2] || f[2](j));
   app.innerHTML = `<p class="lab">Hello</p><h1>${esc(c.full_name)}</h1><p class="grey">${esc(c.mobile)}</p>
+  <div id="myap"></div>
   ${wait.length ? `<section class="myq"><p class="sec">Waiting for your approval</p>${wait.map(j => `<button class="myqrow" data-jo="${esc(j.jo)}"><span><b>${esc(j.item)}</b>
     <span class="grey sm">Order ${esc(j.jo)} · ${peso(j.quote.total)}${j.quote.valid_until ? ' · valid until ' + esc(j.quote.valid_until) : ''}</span></span><span class="pill sm">REVIEW</span></button>`).join('')}</section>` : ''}
   ${!jobs.length ? `<p class="note">${c.status === 'pending' || flag === 'pending' ? 'Thanks for signing up! We couldn\'t match your account to an order yet. We\'ll link your orders shortly.' : 'No orders yet.'}</p>`
@@ -129,6 +132,80 @@ function homeV3(r, flag) {
   app.querySelectorAll('.ofil button').forEach(b => b.onclick = () => { V3.filter = b.dataset.f; homeV3(r, flag); });
   shown.forEach(([j]) => j.photos && photo(j.jo).then(src => { const el = app.querySelector(`.th[data-jo="${CSS.escape(j.jo)}"]`); if (el && src) el.style.backgroundImage = `url("${src}")`; }));
   document.getElementById('out').onclick = async () => { await call('custLogout', {}, sess()); clear(); start(); };
+  mountAppts();
+}
+/* ---------- appointment requests (signed-in only; the server keeps other people's bookings to itself) ---------- */
+const APPT_TYPES = [['fitting', 'Fitting'], ['pickup', 'Pickup'], ['appraisal', 'Appraisal'], ['repair', 'Repair']];
+const apptPad = n => String(n).padStart(2, '0');
+function apptClock(min) {
+  let h = Math.floor(min / 60), m = min % 60, ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return h + (m ? ':' + apptPad(m) : '') + ' ' + ap;
+}
+function apptDayLabel(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return '';
+  const [y, mo, d] = day.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const DN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return DN[dt.getUTCDay()] + ' ' + MON[mo - 1] + ' ' + d;
+}
+function apptRow(a) {
+  const when = a.status === 'booked' && a.time ? apptDayLabel(a.day) + ', ' + a.time : (a.preferred ? 'Preferred ' + apptDayLabel(a.day) + ', ' + a.preferred : apptDayLabel(a.day));
+  return `<div class="arow"><b class="alab">${esc(a.type_label || a.type || 'Visit')}</b><span class="ast">${esc(a.label || '')}</span>${when ? `<span class="grey sm">${esc(when)}</span>` : ''}${a.note ? `<span class="grey sm">${esc(a.note)}</span>` : ''}</div>`;
+}
+function apptTimes(hours, type) {
+  const open = hours && hours.open != null ? Number(hours.open) : 9 * 60;
+  const close = hours && hours.close != null ? Number(hours.close) : 16 * 60;
+  const step = hours && hours.step ? Number(hours.step) : 15;
+  const need = type === 'appraisal' ? 15 : 60;
+  let o = '';
+  for (let m = open; m + need <= close; m += step) o += `<option value="${apptPad(Math.floor(m / 60))}:${apptPad(m % 60)}">${apptClock(m)}</option>`;
+  return o || '<option value="">No time in shop hours</option>';
+}
+async function mountAppts(sent) {
+  const host = document.getElementById('myap');
+  if (!host || !sess()) return;
+  host.innerHTML = '<p class="sec">Appointments</p><p class="grey">Loading…</p>';
+  const r = await call('portalAppts', {}, sess());
+  if (!document.getElementById('myap')) return;
+  if (!r.ok) {
+    host.innerHTML = r.code === 'OLD_BACKEND' ? '' : `<p class="sec">Appointments</p><p class="err">${esc(r.error || 'Could not load')}</p>`;
+    return;
+  }
+  if (r.setup === false) {
+    host.innerHTML = '<p class="sec">Appointments</p><p class="grey">Appointment requests are not switched on yet.</p>';
+    return;
+  }
+  const list = Array.isArray(r.appts) ? r.appts : [];
+  const open = list.filter(a => a.status === 'requested').length;
+  const limit = r.limit || 3;
+  const hours = r.hours || {};
+  host.innerHTML = `<p class="sec">Appointments</p>
+    ${sent ? '<p class="note" id="apSent">Request sent. We\'ll confirm the time.</p>' : ''}
+    ${list.map(apptRow).join('') || '<p class="grey">No visits yet.</p>'}
+    ${hours.label ? `<p class="grey sm">Shop hours: ${esc(hours.label)}</p>` : ''}
+    ${open >= limit ? '<p class="note">You already have 3 requests waiting. We\'ll confirm those first.</p>' : `<div class="card apform">
+      <label class="field"><span class="lab">Visit</span><select id="apKind">${APPT_TYPES.map(([k, lab]) => `<option value="${k}">${lab}</option>`).join('')}</select></label>
+      ${field('apDay', 'Preferred date', 'date')}
+      <label class="field"><span class="lab">Preferred time</span><select id="apTime">${apptTimes(hours, 'fitting')}</select></label>
+      <label class="field"><span class="lab">Note</span><textarea id="apNote" maxlength="500" placeholder="Optional"></textarea></label>
+      <p id="apErr" class="err" role="alert"></p><button id="apGo" class="pill wide">REQUEST APPOINTMENT</button></div>`}`;
+  const kind = document.getElementById('apKind');
+  const dayEl = document.getElementById('apDay');
+  if (dayEl) dayEl.min = new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10);
+  if (kind) kind.onchange = () => { const t = document.getElementById('apTime'); const cur = t.value; t.innerHTML = apptTimes(hours, kind.value); if ([...t.options].some(o => o.value === cur)) t.value = cur; };
+  const go = document.getElementById('apGo');
+  if (!go) return;
+  go.onclick = () => busy(go, async () => {
+    const err = t => { const el = document.getElementById('apErr'); if (el) el.textContent = t || ''; };
+    const day = v('apDay'), start = document.getElementById('apTime').value;
+    if (!day || !start) return err('Pick a date and a time');
+    const res = await call('portalApptRequest', { type: kind.value, day, start, note: document.getElementById('apNote').value.trim() }, sess());
+    if (!res.ok) return err(res.error || 'Could not send');
+    if (!res.sent) return err('Could not send');
+    mountAppts(true);
+  });
 }
 function detailV3(j, toQuote, note, error) {
   app.classList.add('wide'); window.scrollTo(0, 0);
