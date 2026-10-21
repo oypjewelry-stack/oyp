@@ -8,7 +8,7 @@
 <script src="../design.js?v=6"></script>
 <link rel="stylesheet" href="../app.css?v=38">
 <link rel="stylesheet" href="../settings.css?v=10">
-<link rel="stylesheet" href="../print.css?v=7">
+<link rel="stylesheet" href="../print.css?v=8">
 <link rel="icon" type="image/png" href="../favicon.png"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
 </head><body>
 <header class="top">
@@ -18,22 +18,30 @@
 </header>
 <div id="menu" class="menu hidden"></div>
 <main class="main set pr-page">
-  <h2>Printer</h2>
-  <div id="printSet"></div>
-  <h2>Print queue</h2>
-  <div class="setbox" id="printQueue"></div>
-  <h2>Label alignment</h2>
-  <p class="muted">Chrome or Edge on Windows, Mac, and Android. USB serial is the fallback on a computer. iPhone and iPad Safari cannot connect. The sticker is the JO number. The name stays on the queue list only.</p>
-  <p id="prSum" class="muted"></p>
-  <p id="prOff" class="muted"></p>
-  <div class="pr-previews" id="prViews"></div>
+  <section class="pr-sec">
+    <h2>Printer</h2>
+    <div id="printSet"></div>
+  </section>
+  <section class="pr-sec">
+    <h2>Print queue</h2>
+    <div class="setbox" id="printQueue"></div>
+  </section>
+  <section class="pr-sec">
+    <h2>Label alignment</h2>
+    <div class="pr-copy">
+      <p class="muted">Chrome or Edge on Windows, Mac, and Android. USB serial is the fallback on a computer. iPhone and iPad Safari cannot connect. The sticker is the JO number. The name stays on the queue list only.</p>
+      <p id="prSum" class="muted"></p>
+      <p id="prOff" class="muted"></p>
+    </div>
+    <div class="pr-previews" id="prViews"></div>
+  </section>
 </main>
 <div id="toast" class="toast hidden"></div>
 <script src="../vendor/qrcode.js?v=1"></script>
 <script src="../vendor/niimbluelib-0.47.1.js?v=1"></script>
 <script src="../print-label.js?v=8"></script>
-<script src="../print.js?v=9"></script>
-<script src="../nav.js?v=22"></script>
+<script src="../print.js?v=10"></script>
+<script src="../nav.js?v=23"></script>
 <script>
 (function () {
   var menu = document.getElementById('menu');
