@@ -406,6 +406,7 @@ function render(opts) {
   return {
     width: box.width, height: box.height, data: img.d, lines: lines, qr: qrText,
     offsetX: box.offsetX, labelW: box.labelW, labelH: box.labelH, tail: box.tail,
+    shiftX: shiftX, shiftY: shiftY,
     specPx: specPx, joPx: joPx, preset: box.preset, kind: kind, head: head, qrBox: qrBox
   };
 }
@@ -422,8 +423,89 @@ function toCanvas(rendered) {
   return c;
 }
 
+/* Display only. The print bitmap stays the full head. This crops to the sticker,
+   30×20 or 30×25 plus the 45 mm tail, and draws it as paper: white, rounded,
+   on a mid-gray field, so the edges and the margins are visible. A saved
+   horizontal offset moves the ink inside that paper. The fold line is not printed. */
+var PREVIEW_GRAY = '#8e8e8e';
+function roundPath(ctx, x, y, w, h, r) {
+  var rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+function stickerPixels(rendered) {
+  var w = rendered.labelW, h = rendered.labelH + (rendered.tail || 0);
+  var data = new Uint8ClampedArray(w * h * 4);
+  var i, sx0 = rendered.offsetX - (rendered.shiftX || 0), y, x, sy, sx, si, di;
+  for (i = 0; i < data.length; i += 4) data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 255;
+  for (y = 0; y < h; y++) {
+    sy = y;
+    if (sy < 0 || sy >= rendered.height) continue;
+    for (x = 0; x < w; x++) {
+      sx = sx0 + x;
+      if (sx < 0 || sx >= rendered.width) continue;
+      si = (sy * rendered.width + sx) * 4;
+      di = (y * w + x) * 4;
+      data[di] = rendered.data[si];
+      data[di + 1] = rendered.data[si + 1];
+      data[di + 2] = rendered.data[si + 2];
+      data[di + 3] = 255;
+    }
+  }
+  return { width: w, height: h, data: data };
+}
+function preview(rendered, opts) {
+  opts = opts || {};
+  var scale = opts.scale > 0 ? opts.scale : 4;
+  var smooth = opts.smooth !== false;
+  var labelW = rendered.labelW, labelH = rendered.labelH, tail = rendered.tail || 0;
+  var stickerH = labelH + tail;
+  var pad = px(4), radius = px(2);
+  var src = stickerPixels(rendered);
+  var srcCanvas = makeCanvas(labelW, stickerH);
+  var sctx = srcCanvas.getContext('2d');
+  var id = sctx.createImageData(labelW, stickerH);
+  id.data.set(src.data);
+  sctx.putImageData(id, 0, 0);
+  var outW = (labelW + pad * 2) * scale, outH = (stickerH + pad * 2) * scale;
+  var canvas = makeCanvas(outW, outH);
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = PREVIEW_GRAY;
+  ctx.fillRect(0, 0, outW, outH);
+  var x = pad * scale, y = pad * scale, w = labelW * scale, h = stickerH * scale, rad = radius * scale;
+  roundPath(ctx, x, y, w, h, rad);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.save();
+  roundPath(ctx, x, y, w, h, rad);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = !!smooth;
+  if (smooth && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(srcCanvas, x, y, w, h);
+  if (tail) {
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(60,60,60,0.28)';
+    ctx.lineWidth = Math.max(1, scale);
+    var fy = Math.round(y + labelH * scale) + 0.5;
+    ctx.moveTo(x, fy);
+    ctx.lineTo(x + w, fy);
+    ctx.stroke();
+  }
+  ctx.restore();
+  var out = ctx.getImageData(0, 0, outW, outH);
+  return {
+    width: outW, height: outH, data: out.data, canvas: canvas,
+    labelW: labelW, labelH: labelH, tail: tail, scale: scale, pad: pad, radius: radius
+  };
+}
+
 root.OYPLabel = {
-  render: render, toCanvas: toCanvas, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
+  render: render, toCanvas: toCanvas, preview: preview, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
   ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, printPx: printPx
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPLabel;

@@ -147,6 +147,30 @@ const base = L.render(Object.assign({ model: 'B31' }, card));
 const moved = L.render(Object.assign({ model: 'B31', shiftX: L.px(0.5), shiftY: L.px(-1) }, card));
 eq(moved.offsetX === base.offsetX + L.px(0.5) && moved.qrBox.y === base.qrBox.y - L.px(1), 'a saved offset moves the JO card on the head');
 eq(L.printPx('B31', 600) === L.px(72) && L.printPx('B1', 384) === 384, 'B31 centres on its 72 mm print width and B1 centres on its 384 px head');
+const cardView = L.preview(base, { scale: 4, smooth: true });
+const tagView = L.preview(L.render(Object.assign({ model: 'B1' }, tag)), { scale: 4, smooth: true });
+const pad = L.px(4) * 4, rad = L.px(2) * 4;
+function pxAt(img, x, y) {
+  const i = (y * img.width + x) * 4;
+  return [img.data[i], img.data[i + 1], img.data[i + 2]];
+}
+const corner = pxAt(cardView, 0, 0);
+const paper = pxAt(cardView, pad + rad + 8, pad + 6);
+const outside = pxAt(cardView, pad + 1, pad + 1);
+const foldY = pad + tagView.labelH * 4;
+const fold = pxAt(tagView, pad + Math.round(tagView.labelW * 4 / 2), foldY);
+const above = pxAt(tagView, pad + Math.round(tagView.labelW * 4 / 2), foldY - 8);
+eq(cardView.width === (240 + L.px(4) * 2) * 4 && cardView.height === (160 + L.px(4) * 2) * 4 && tagView.height === (560 + L.px(4) * 2) * 4, 'a preview is the label, with gray around it');
+eq(corner[0] < 180 && corner[0] > 100 && paper[0] > 250 && outside[0] < 180, 'the sticker is a white rounded rectangle on mid-gray');
+eq(tagView.tail === 360 && fold[0] < above[0] - 8, 'the jewelry preview draws a faint fold between the head and the tail');
+const shifted = L.preview(moved, { scale: 1, smooth: false });
+const still = L.preview(base, { scale: 1, smooth: false });
+function inkX(img) {
+  let min = img.width;
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) if (img.data[(y * img.width + x) * 4] < 40 && x < min) min = x;
+  return min;
+}
+eq(inkX(shifted) > inkX(still), 'a horizontal offset moves the ink inside the sticker preview');
 }
 
 const ctx = { console, Math, Date, String, Object, Array, Number, JSON, LockService: {}, SpreadsheetApp: {} };
@@ -219,9 +243,16 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=3') && index.includes('print-label.js?v=4') && index.includes('nav.js?v=16') && index.includes('app.js?v=29') && index.includes('settings.js?v=18') && index.includes('print.css?v=2'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=4') && read('nav.js').includes('print.js?v=3'), 'the scanner injects the current label renderer');
+eq(index.includes('print.js?v=6') && index.includes('print-label.js?v=5') && index.includes('nav.js?v=19') && index.includes('app.js?v=30') && index.includes('settings.js?v=19') && index.includes('print.css?v=5') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=5') && read('nav.js').includes('print.js?v=6') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
+eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
+const testPage = read('staff/print-test.html'), testCss = read('print.css');
+const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
+eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
+eq(testCss.includes('grid-template-columns:1fr 1fr') && testCss.includes('.pr-stage') && testCss.includes('justify-content:center') && /max-width:800px/.test(testCss), 'print test is two equal columns and stacks below an iPad portrait');
+eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && testPage.indexOf('id="printChip"') < testPage.indexOf('class="logo"') && testPage.includes('app.css?v=38') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header, with the printer pill left of the logo');
+eq(read('print.js').includes('Print queue not set up yet') && read('print.js').includes('No stickers waiting') && read('print.js').includes('class="pill sm"') && read('print.js').includes('class="dchip') && read('print.js').includes('class="setp') && read('print.js').includes('class="cn"') && read('print.js').includes('whomenu') && read('print.css').includes(':where(') && !read('print.css').includes('.oyp-pr-btn') && testPage.includes("'dcard'") && testPage.includes("'dtitle'") && testPage.includes('class="setbox" id="printQueue"'), 'print controls use the staff cards, pills, rows, and menu');
 eq(read('print.js').includes('labelOpts') && !/client:\s*item\.client/.test(read('print.js')), 'the printer payload builder does not copy the client name');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
