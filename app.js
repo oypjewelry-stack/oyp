@@ -146,8 +146,8 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.OFFICE_NAV || window.OYPNav.NAV; // nav.js: same menu in the scanner, minus back-office-only pages (Production)
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
-const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
-  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment
+const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
+  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do
 // Menu order on this device, per signed-in name. Empty = today's menu. The scanner keeps the shared list in nav.js.
 const navKey = u => 'oypNavOrder:' + (u && u.username || 'device');
 function readNavOrder(u) {
@@ -218,7 +218,7 @@ function route() {
   const u = user();
   if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; warm(); return; }
   const cur0 = (location.hash.match(/^#\/(\w+)/) || [])[1];
-  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && cur0 === 'appts')) { // staff: simple home; Appointments in the back office (Production: Susan + admins only)
+  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'todo'))) { // staff: simple home; Appointments and To do open in the back office (Production: Susan + admins only)
     show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
   }
   show('vOffice'); $('title').textContent = 'Back office';
@@ -228,6 +228,7 @@ function route() {
   const want = canon.some(n => n[0] === cur) ? cur : ALIAS[cur] && canon.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
   const page = want || canon[0][0]; // opening a page still starts at today's first item when the link is not a menu item
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
+  $('title').textContent = page === 'todo' ? 'TO DO' : 'Back office';
   renderNav(u, page); // desktop sidebar: items scroll; the name block stays at the bottom
   const title = canon.find(n => n[0] === page)[1];
   schedulePrefetch(canon, page);
@@ -238,6 +239,7 @@ function route() {
   if (page === 'appts' && window.OYPAppts) return window.OYPAppts.render($('main'), u); // appts.js
   if (page === 'consignment' && window.OYPConsign) return window.OYPConsign.render($('main'), u); // consign.js
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
+  if (page === 'todo' && window.OYPTodo) return window.OYPTodo.render($('main'), u);
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
   if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
@@ -251,7 +253,7 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 /* ---------- prefetch: once the page on screen has its data, quietly load the other menu pages' data (3 at a time) ---------- */
-const PAGE_READS = { dashboard: [['dashboard'], ['contactList']], review: [['jobReviewList'], ['contactList']], estimate: [['costRates'], ['priceGet']],
+const PAGE_READS = { dashboard: [['dashboard'], ['contactList']], todo: [['todoList']], review: [['jobReviewList'], ['contactList']], estimate: [['costRates'], ['priceGet']],
   jos: [['invList']], production: [['prodBoard']], inventory: [['matList']], prices: [['priceGet']], customers: [['pplList']], shop: [['admShopList']],
   payments: [['payData']], quotes: [['payData']], balances: [['payData']], clients: [['payData']], settings: [['settingsGet']],
   appts: [['apptList', () => window.OYPAppts && window.OYPAppts.range && window.OYPAppts.range()]],
