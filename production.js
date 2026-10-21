@@ -8,7 +8,7 @@
 'use strict';
 const PASTE_NOTE = 'This page needs the Production paste in Apps Script (see the instructions).';
 const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const S = { r: null, at: 0, skew: 0, q: '', worker: '', stage: '', delayed: false, mine: null, pcol: '', job: null, wk: null, move: null, u: null };
+const S = { r: null, at: 0, skew: 0, q: '', worker: '', stage: '', delayed: false, mine: null, pcol: '', job: null, wk: null, move: null, u: null, choose: false, sel: new Set() };
 const $ = id => document.getElementById(id);
 const esc = s => window.OYP.esc(s);
 const call = (a, d) => window.OYP.call(a, d);
@@ -85,7 +85,9 @@ function drawBoard(main) {
       ${phone ? '' : `<label class="ivsel"><span class="lab">Stage</span><select id="pS"><option value="">All stages</option>${r.columns.map(c => `<option value="${c.key}" ${S.stage === c.key ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>`}
       <button class="fchip ${S.delayed ? 'on' : ''}" id="pD">Delayed only <b>${nd}</b></button>
       ${r.me_worker ? `<button class="fchip ${S.mine ? 'on' : ''}" id="pM">Mine</button>` : ''}
-      ${S.q || S.worker || S.stage || S.delayed || S.mine ? '<button class="ivclr" id="pClr">Clear</button>' : ''}</div>`;
+      ${S.q || S.worker || S.stage || S.delayed || S.mine ? '<button class="ivclr" id="pClr">Clear</button>' : ''}
+      <button type="button" class="pill sm outline" id="pChoose">${S.choose ? 'Done' : 'Select'}</button>
+      ${S.sel.size ? `<button type="button" class="pill sm" id="pPrint">Print stickers (${S.sel.size})</button>` : ''}</div>`;
   const filtered = !!(S.q || S.worker || S.stage || S.delayed || S.mine);
   if (!r.cards.length) { // nothing in production at all
     if (!$('pWrap')) main.innerHTML = '<div class="prod" id="pWrap"></div><div id="pSheetBox"></div><div id="pMoveBox"></div>';
@@ -104,6 +106,7 @@ function drawBoard(main) {
   }
   const none = filtered && !list.length ? `<div class="pnomatch"><span>No JOs match${S.q ? ' “' + esc(S.q) + '”' : ''}.</span> <button class="ivclr" id="pClr2">Clear filters</button></div>` : '';
   if (!$('pWrap')) main.innerHTML = '<div class="prod" id="pWrap"></div><div id="pSheetBox"></div><div id="pMoveBox"></div>'; // the sheets live outside the part that redraws
+  $('pWrap').classList.toggle('choose', !!S.choose);
   $('pWrap').innerHTML = `${head('board')}${sum}${filt}${none}${board}`;
   wireBoard(main); loadThumbs(main); tick();
 }
@@ -113,8 +116,9 @@ function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, cl
     c.due ? `<span class="chip ${c.late ? 'plate' : ''}">${c.late ? 'Past due ' : 'Due '}${dShort(c.due)}</span>` : '', `<span class="chip pdays">${esc(daysTxt(c))}</span>`,
     c.stage_label.toLowerCase() !== col(c.col).label.toLowerCase() ? `<span class="chip" title="${esc(c.stage_label)}">${esc(c.stage_label)}</span>` : '', c.review ? '<span class="chip">To review</span>' : ''].join('');
   const desc = c.description || 'No description yet', who = c.assignee || 'Unassigned';
-  return `<div class="pcard tap${c.delayed ? ' dl' : ''}${c.late ? ' late' : ''}" data-jo="${c.jo}" ${phone ? '' : 'draggable="true"'}>
-    <div class="pcm"><div class="pth" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}>${c.photo ? '' : '<span>No scan</span>'}</div>
+  const ck = S.choose ? `<label class="pck"><input type="checkbox" data-pck="${esc(c.jo)}" ${S.sel.has(c.jo) ? 'checked' : ''} aria-label="Select ${esc(c.jo)}"></label>` : '';
+  return `<div class="pcard tap${c.delayed ? ' dl' : ''}${c.late ? ' late' : ''}${S.sel.has(c.jo) ? ' on' : ''}" data-jo="${c.jo}" ${phone ? '' : 'draggable="true"'}>
+    <div class="pcm"><div class="pth" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}>${ck}${c.photo ? '' : '<span>No scan</span>'}</div>
     <div class="pbd"><div class="kjo">${window.OYP.piece(c.client, c.jo)}${c.photo && c.photo.version ? `<span class="pver" title="Version ${esc(c.photo.version)} (latest)">Ver. ${esc(c.photo.version)}</span>` : ''}</div>
       <div class="kd" title="${esc(desc)}">${esc(desc)}</div>
       <div class="kc" title="${esc(who)}">${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
@@ -131,6 +135,19 @@ function wireBoard(main) {
   if ($('pM')) $('pM').onclick = () => { S.mine = !S.mine; redraw(); };
   const clr = () => { S.q = ''; S.worker = ''; S.stage = ''; S.delayed = false; S.mine = false; redraw(); };
   if ($('pClr')) $('pClr').onclick = clr; if ($('pClr2')) $('pClr2').onclick = clr;
+  if ($('pChoose')) $('pChoose').onclick = () => { S.choose = !S.choose; if (!S.choose) S.sel.clear(); redraw(); };
+  if ($('pPrint')) $('pPrint').onclick = () => {
+    const items = [...S.sel].map(jo => ({ jo: jo, kind: 'jo_card' }));
+    if (!window.OYPPrint || !window.OYPPrint.printStickers) return toast('Print is not loaded');
+    window.OYPPrint.printStickers(items).then(r => { if (!r || r.ok === false) return; S.sel.clear(); S.choose = false; redraw(); });
+  };
+  main.querySelectorAll('[data-pck]').forEach(input => input.onclick = e => {
+    e.stopPropagation();
+    const jo = input.dataset.pck;
+    if (S.sel.has(jo)) S.sel.delete(jo); else S.sel.add(jo);
+    redraw();
+  });
+  main.querySelectorAll('.pck').forEach(el => el.onclick = e => e.stopPropagation());
   main.querySelectorAll('[data-pcol]').forEach(b => b.onclick = () => { S.pcol = b.dataset.pcol; redraw(); });
   main.querySelectorAll('.pcard').forEach(el => el.onclick = e => { if (e.target.closest('[data-move]')) return; location.hash = '#/production/jo/' + el.dataset.jo; });
   main.querySelectorAll('[data-move]').forEach(b => b.onclick = e => { e.stopPropagation(); const c = S.r.cards.find(x => x.jo === b.dataset.move), nx = nextCol(c); openMove(c, nx.key); });

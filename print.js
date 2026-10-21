@@ -424,6 +424,77 @@ function printQueued() {
   state.printQueued = true;
   kick();
 }
+function enqueueBatch(payload) {
+  return callPrint('printEnqueueBatch', payload || {});
+}
+function printStickers(list) {
+  var items = (list || []).filter(function (it) { return it && it.jo && it.kind; });
+  if (!items.length) { toast('Select a sticker first'); return Promise.resolve(); }
+  return enqueueBatch({ items: items }).then(function (r) {
+    if (!r || r.ok === false) { toast((r && r.error) || 'Could not queue those stickers'); return r; }
+    toast('Queued ' + (r.queued || 0) + (r.skipped ? ' · ' + r.skipped + ' already waiting' : ''));
+    refresh();
+    if (serverAuto() && state.connected) kick();
+    return r;
+  });
+}
+function mountRange(el) {
+  if (!el || el.getAttribute('data-wired')) return;
+  el.setAttribute('data-wired', '1');
+  el.innerHTML = '<div class="setrow"><div class="setl"><span class="lab">Print a range</span><span class="muted">Every JO that exists between these numbers, in order. Missing numbers are skipped.</span></div>'
+    + '<div class="setv pr-range"><input id="prFrom" placeholder="26-280" aria-label="From JO" autocomplete="off">'
+    + '<input id="prTo" placeholder="26-300" aria-label="To JO" autocomplete="off">'
+    + '<select id="prKind" aria-label="Sticker type"><option value="jo_card">JO card</option><option value="jewelry_tag">Jewelry tag</option></select>'
+    + '<button type="button" class="pill sm" id="prRangeGo" disabled>Queue</button></div></div>'
+    + '<p class="muted" id="prRangeN"></p>';
+  var timer = 0;
+  function fields() {
+    return {
+      from: (document.getElementById('prFrom') || {}).value || '',
+      to: (document.getElementById('prTo') || {}).value || '',
+      kind: (document.getElementById('prKind') || {}).value || 'jo_card'
+    };
+  }
+  function preview() {
+    var f = fields(), note = document.getElementById('prRangeN'), btn = document.getElementById('prRangeGo');
+    if (!String(f.from).trim() || !String(f.to).trim()) {
+      if (note) note.textContent = '';
+      if (btn) btn.disabled = true;
+      return;
+    }
+    enqueueBatch({ from: String(f.from).trim(), to: String(f.to).trim(), kind: f.kind, preview: 1 }).then(function (r) {
+      if (!note) return;
+      if (!r || r.ok === false) {
+        note.textContent = r && r.count ? (r.count + ' stickers. Queue up to 200 at a time.') : ((r && r.error) || 'Could not count those JOs');
+        if (btn) btn.disabled = true;
+        return;
+      }
+      var n = r.count || 0;
+      note.textContent = n === 1 ? '1 sticker' : (n + ' stickers');
+      if (btn) btn.disabled = n < 1;
+    });
+  }
+  function schedule() { clearTimeout(timer); timer = setTimeout(preview, 300); }
+  ['prFrom', 'prTo', 'prKind'].forEach(function (id) {
+    var n = document.getElementById(id);
+    if (!n) return;
+    n.oninput = schedule;
+    n.onchange = schedule;
+  });
+  var go = document.getElementById('prRangeGo');
+  if (go) go.onclick = function () {
+    if (go.disabled) return;
+    var f = fields();
+    go.disabled = true;
+    enqueueBatch({ from: String(f.from).trim(), to: String(f.to).trim(), kind: f.kind }).then(function (r) {
+      if (!r || r.ok === false) { toast((r && r.error) || 'Could not queue that range'); preview(); return; }
+      toast('Queued ' + (r.queued || 0) + (r.skipped ? ' · ' + r.skipped + ' already waiting' : ''));
+      refresh();
+      if (serverAuto() && state.connected) kick();
+      preview();
+    });
+  };
+}
 function markLocal(id, status, error) {
   if (!id) return;
   if (status === 'printed') state.done[id] = 1;
@@ -1182,6 +1253,7 @@ function mountQueue(el) {
   if (!el) return;
   el.setAttribute('data-oyp-q', '1');
   el.innerHTML = queueHtml(state.last);
+  mountRange(document.getElementById('printRange'));
   refresh();
 }
 function mountChip() { drawChip(); }
@@ -1217,7 +1289,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=10';
+  link.href = (base || '') + 'print.css?v=11';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -1277,5 +1349,5 @@ function start() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();
 
-root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, printQueued: printQueued, download: download, connect: connect, disconnect: disconnect, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx };
+root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, printQueued: printQueued, printStickers: printStickers, enqueueBatch: enqueueBatch, download: download, connect: connect, disconnect: disconnect, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx };
 })(typeof window !== 'undefined' ? window : globalThis);

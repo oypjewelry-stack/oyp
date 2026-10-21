@@ -57,6 +57,10 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .pr-page #printSet .setbox + p.muted{margin:calc(8px * var(--sp,1)) 0 0;max-width:none}
 .pr-copy{display:flex;flex-direction:column;gap:calc(22px * var(--sp,1))}
 .pr-page .pr-copy p.muted{margin:0;max-width:none}
+.pr-range{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp,1));align-items:center}
+.pr-range input,.pr-range select{border:1.5px solid #111;border-radius:calc(12px * var(--rad,1));padding:calc(8px * var(--sp,1)) calc(10px * var(--sp,1));font-family:var(--body,Inter,system-ui,sans-serif);font-size:calc(15px * var(--fs,1));background:#fff;width:8.2em}
+.pr-page #printRange .setrow{align-items:end}
+.pr-page #prRangeN{margin:calc(8px * var(--sp,1)) 0 0}
 .pr-previews{display:grid;grid-template-columns:1fr 1fr;gap:calc(24px * var(--sp,1));align-items:start;margin:calc(22px * var(--sp,1)) 0 0}
 .pr-col{display:flex;flex-direction:column;min-width:0}
 .pr-stage{width:100%;background:#8e8e8e;display:flex;justify-content:center;align-items:flex-start}

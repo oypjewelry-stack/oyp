@@ -288,16 +288,16 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=13') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=26') && index.includes('app.js?v=31') && index.includes('settings.js?v=19') && index.includes('print.css?v=10') && index.includes('app.css?v=38') && index.includes('settings.css?v=10'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=8') && read('nav.js').includes('print.js?v=13') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=13') && read('staff/print-test.html').includes('print.css?v=10') && read('staff/print-test.html').includes('nav.js?v=26'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=14') && index.includes('print-label.js?v=8') && index.includes('nav.js?v=27') && index.includes('app.js?v=31') && index.includes('settings.js?v=20') && index.includes('print.css?v=11') && index.includes('app.css?v=39') && index.includes('settings.css?v=10') && index.includes('inv.js?v=10') && index.includes('production.js?v=9') && index.includes('production.css?v=8'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=8') && read('nav.js').includes('print.js?v=14') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=14') && read('staff/print-test.html').includes('print.css?v=11') && read('staff/print-test.html').includes('nav.js?v=27') && read('staff/print-test.html').includes('app.css?v=39'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
 const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
 eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
 eq(testCss.includes('grid-template-columns:1fr 1fr') && testCss.includes('.pr-stage') && testCss.includes('justify-content:center') && /max-width:800px/.test(testCss), 'print test is two equal columns and stacks below an iPad portrait');
-eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && !testPage.includes('printChip') && !index.includes('printChip') && testPage.includes('class="office"') && testPage.includes('id="side"') && testPage.includes('class="side"') && testPage.includes('OYPNav.sideHtml') && testPage.includes('app.css?v=38') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header and the same left menu, with no printer pill');
+eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && !testPage.includes('printChip') && !index.includes('printChip') && testPage.includes('class="office"') && testPage.includes('id="side"') && testPage.includes('class="side"') && testPage.includes('OYPNav.sideHtml') && testPage.includes('app.css?v=39') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header and the same left menu, with no printer pill');
 eq(read('print.js').includes('Print queue not set up yet') && read('print.js').includes('No stickers waiting') && read('print.js').includes('class="pill sm"') && read('print.js').includes('class="dchip') && read('print.js').includes('class="setp') && read('print.js').includes('class="cn"') && read('print.js').includes('whomenu') && read('print.css').includes(':where(') && !read('print.css').includes('.oyp-pr-btn') && testPage.includes("'dcard'") && testPage.includes("'dtitle'") && testPage.includes('class="setbox" id="printQueue"'), 'print controls use the staff cards, pills, rows, and menu');
 eq(read('print.js').includes('Open in Chrome or Edge to connect a printer') && read('print.js').includes("iPad can't connect a printer. Stickers wait in the print queue.") && read('print.js').includes('Connect by Bluetooth') && read('print.js').includes('Connect by USB') && read('print.js').includes('aria-label="Close"') && read('print.js').includes("e.key !== 'Escape'"), 'Safari sees how to connect, and the queue panel can close');
 eq(testPage.indexOf('<h2>Print queue</h2>') < testPage.indexOf('<h2>Settings</h2>') && testPage.indexOf('<h2>Settings</h2>') < testPage.indexOf('<h2>Label alignment</h2>') && testPage.indexOf('<h2>Printer</h2>') < 0, 'print test leads with the queue, then settings, then label alignment');
@@ -355,6 +355,39 @@ const setBack = ctx.printAutoSet_({ on: 1 }, { username: 'ada' });
 eq(setOn.auto === false && setBack.ok && setBack.auto === true && ctx.printAutoOn_(), 'print_auto is a shared script property');
 const scanOn = ctx.printEnqueue_('26-402', 'jo_card', 'scanner', {});
 eq(scanOn.created, 'auto on queues a scan again');
+propBag.print_auto = '0';
+const batchJobs = [{ jo: '26-280' }, { jo: '26-281' }, { jo: '26-283A' }, { jo: '26-283' }, { jo: '26-300' }, { jo: '26-301' }, { jo: '25-290' }];
+ctx.jobRows_ = function (name) { return name === 'JobOrders' ? batchJobs : []; };
+const batchWrites = [];
+const batchSheet = {
+  getLastRow() { return 4; },
+  getRange(row, col, numRows, numCols) {
+    return { setNumberFormat() { return this; }, setValues(lines) { batchWrites.push({ row, col, numRows, numCols, lines }); }, getValues() { return [[]]; } };
+  }
+};
+ctx.printReadRows_ = function () { return { sh: batchSheet, rows: sheetRows, head: ctx.PRINT_COLS }; };
+const beforeBatch = sheetRows.length;
+const preview = ctx.printEnqueueBatch_({ from: '26-280', to: '26-300', kind: 'jo_card', preview: 1 }, { username: 'ada' });
+const ordered = ctx.printBatchJobs_({ from: '26-280', to: '26-300', kind: 'jewelry_tag' });
+eq(preview.ok && preview.preview && preview.count === 5 && batchWrites.length === 0 && sheetRows.length === beforeBatch, 'a range preview counts existing JOs and writes nothing');
+eq(ordered.ok && ordered.jobs.map(j => j.jo).join(',') === '26-280,26-281,26-283,26-283A,26-300', 'a range keeps JO order and skips missing numbers');
+const ranged = ctx.printEnqueueBatch_({ from: '26-280', to: '26-300', kind: 'jo_card' }, { username: 'ada' });
+eq(ranged.ok && ranged.queued === 5 && ranged.auto === false && batchWrites.length === 1 && batchWrites[0].lines.length === 5 && batchWrites[0].numRows === 5, 'a manual range queues while auto-print is off, in one setValues');
+const rangedAgain = ctx.printEnqueueBatch_({ from: '26-280', to: '26-300', kind: 'jo_card' }, { username: 'ada' });
+eq(rangedAgain.ok && rangedAgain.queued === 0 && rangedAgain.skipped === 5 && batchWrites.length === 1, 'a second range skips stickers already queued');
+const listedBatch = ctx.printEnqueueBatch_({ items: [{ jo: '26-280', kind: 'jo_card' }, { jo: '26-280', kind: 'jo_card' }, { jo: '26-310', kind: 'jewelry_tag' }] }, { username: 'ada' });
+eq(listedBatch.ok && listedBatch.queued === 1 && listedBatch.skipped === 1 && batchWrites.length === 2 && batchWrites[1].lines.length === 1, 'a list queues one new sticker and skips the duplicate');
+sheetRows.push({ print_id: 'pq-failb', jo: '26-320', kind: 'jo_card', status: 'failed', error: 'x', _r: 3 });
+const failWrites = batchWrites.length;
+const requeued = ctx.printEnqueueBatch_({ items: [{ jo: '26-320', kind: 'jo_card' }] }, { username: 'ada' });
+const failRow = sheetRows.find(r => r.print_id === 'pq-failb');
+eq(requeued.queued === 1 && failWrites === batchWrites.length && failRow.status === 'queued' && failRow._w === 1 && sheetRows.filter(r => r.jo === '26-320').length === 1, 'a failed row in a batch is requeued in place');
+const tooMany = [];
+for (let n = 0; n < 201; n++) tooMany.push({ jo: '26-' + String(1000 + n), kind: 'jo_card' });
+const capRows = sheetRows.length;
+const capped = ctx.printEnqueueBatch_({ items: tooMany }, { username: 'ada' });
+eq(capped.ok === false && capped.code === 'CAP' && capped.count === 201 && batchWrites.length === failWrites && sheetRows.length === capRows, 'more than 200 stickers are refused and nothing is written');
+eq(read('inv.js').includes('id="ivChoose"') && read('inv.js').includes('Print stickers (${n})') && read('inv.js').includes("jewelry_tag' : 'jo_card'") && read('production.js').includes('id="pChoose"') && read('production.js').includes('Print stickers (${S.sel.size})') && read('production.js').includes("kind: 'jo_card'") && read('app.css').includes('.iv.choose .ivck') && !read('app.css').includes('.ivcard:hover .ivck') && read('print.js').includes('Print a range') && read('print.js').includes('preview: 1') && read('print.js').includes("'printEnqueueBatch'") && read('settings.js').includes('id="printRange"') && testPage.includes('id="printRange"'), 'lists stay clear until Select, and a range shows its count before it queues');
 eq(testPage.includes("textContent = 'Download'") && testPage.includes("textContent = 'PRINT'") && !testPage.includes('DOWNLOAD PNG') && testPage.includes("png.className = 'pill sm outline'") && testPage.includes("go.className = 'pill sm'") && testCss.includes('.oyp-pr-acts .pill.sm.outline,.oyp-qbtns .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-family:var(--head,\'Libre Bodoni\',Georgia,serif);font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);letter-spacing:0;border-width:1px;padding-top:calc(9px*var(--sp) - 1px)'), 'Download matches Print in size and stays an outline');
 
 function bootPrint(opts) {

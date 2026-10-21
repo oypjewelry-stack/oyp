@@ -105,7 +105,7 @@ function printRowsList_(rows) {
   return out;
 }
 
-function isPrintAction_(a) { return a === 'printMark' || a === 'printEnqueue' || a === 'printReprint' || a === 'printAutoSet'; }
+function isPrintAction_(a) { return a === 'printMark' || a === 'printEnqueue' || a === 'printReprint' || a === 'printAutoSet' || a === 'printEnqueueBatch'; }
 
 function printLock_(fn) {
   if (typeof withLock_ === 'function') return withLock_(fn);
@@ -284,6 +284,106 @@ function printEnqueueRun_(jo, kind, by, reprint, manual) {
   res.auto = printAutoOn_();
   return res;
 }
+var PRINT_BATCH_CAP = 200;
+function printJoParts_(jo) {
+  var n = printNormJo_(jo);
+  var m = n.match(/^(\d{2})-(\d{3,4})([A-Z])?$/);
+  if (!m) return null;
+  return { yy: m[1], n: parseInt(m[2], 10), suf: m[3] || '', jo: n };
+}
+function printBatchJobs_(req) {
+  req = req || {};
+  var list = [], i, it, jo, kind, items = req.items || req.jobs || [];
+  if (items && items.length) {
+    for (i = 0; i < items.length; i++) {
+      it = items[i] || {};
+      jo = printNormJo_(typeof it === 'string' ? it : it.jo);
+      kind = printKind_((it && it.kind) || req.kind);
+      if (jo && kind) list.push({ jo: jo, kind: kind });
+    }
+  } else if (req.from || req.to) {
+    kind = printKind_(req.kind);
+    if (!kind) return { ok: false, error: 'Pick a sticker type' };
+    var a = printJoParts_(req.from), b = printJoParts_(req.to);
+    if (!a || !b) return { ok: false, error: 'Use JO numbers like 26-280 and 26-300' };
+    if (a.yy !== b.yy) return { ok: false, error: 'From and To need the same year' };
+    var lo = Math.min(a.n, b.n), hi = Math.max(a.n, b.n);
+    var look = printLookup_(), hit = {}, keys = Object.keys(look.jobs), p;
+    keys.forEach(function (key) {
+      p = printJoParts_(key);
+      if (!p || p.yy !== a.yy || p.n < lo || p.n > hi) return;
+      hit[p.jo] = p;
+    });
+    Object.keys(hit).sort(function (x, y) {
+      if (hit[x].n !== hit[y].n) return hit[x].n - hit[y].n;
+      return hit[x].suf < hit[y].suf ? -1 : hit[x].suf > hit[y].suf ? 1 : 0;
+    }).forEach(function (id) { list.push({ jo: id, kind: kind }); });
+  } else return { ok: false, error: 'Need stickers to queue' };
+  var seen = {}, uniq = [];
+  list.forEach(function (job) {
+    var id = job.jo + '\n' + job.kind;
+    if (seen[id]) return;
+    seen[id] = 1;
+    uniq.push(job);
+  });
+  if (uniq.length > PRINT_BATCH_CAP) return { ok: false, error: 'Queue up to 200 stickers at a time', code: 'CAP', count: uniq.length };
+  return { ok: true, jobs: uniq };
+}
+function printBatchOne_(rows, jo, kind, by, now) {
+  jo = printNormJo_(jo);
+  kind = printKind_(kind);
+  if (!jo || !kind) return null;
+  var queued = null, failed = null, i, row;
+  for (i = 0; i < rows.length; i++) {
+    row = rows[i];
+    if (row.jo !== jo || row.kind !== kind) continue;
+    if (row.status === 'queued') queued = row;
+    else if (row.status === 'failed' && !failed) failed = row;
+  }
+  if (queued) return { item: queued, created: false, duplicate: true };
+  if (failed) return { item: printRowReset_(failed), created: false, requeued: true };
+  var item = {
+    print_id: 'pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + rows.length + '-' + Math.floor(Math.random() * 1000000),
+    jo: jo, kind: kind, status: 'queued', created_at: String(now || ''), created_by: String(by || ''),
+    printed_at: '', printed_by: '', device_id: '', error: ''
+  };
+  rows.push(item);
+  return { item: item, created: true };
+}
+function printWriteRows_(pack, rows) {
+  if (!rows || !rows.length || !pack || !pack.sh || !pack.sh.getRange) return;
+  var head = pack.head && pack.head.length ? pack.head : PRINT_COLS;
+  var width = Math.max(head.length, 1), lines = [], r, c, k, line;
+  for (r = 0; r < rows.length; r++) {
+    line = [];
+    for (c = 0; c < width; c++) { k = head[c]; line.push(PRINT_COLS.indexOf(k) >= 0 ? String(rows[r][k] || '') : ''); }
+    lines.push(line);
+  }
+  var start = pack.sh.getLastRow() + 1;
+  pack.sh.getRange(start, 1, lines.length, width).setNumberFormat('@').setValues(lines);
+  for (r = 0; r < rows.length; r++) Object.defineProperty(rows[r], '_r', { value: start + r, enumerable: false, writable: true });
+}
+function printEnqueueBatch_(req, user) {
+  if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  var plan = printBatchJobs_(req);
+  if (!plan.ok) return plan;
+  if (req && (req.preview === 1 || req.preview === true || req.preview === '1')) return { ok: true, preview: true, count: plan.jobs.length, auto: printAutoOn_() };
+  return printLock_(function () {
+    var pack = printReadRows_(), now = new Date().toISOString(), by = user.username;
+    var fresh = [], re = [], skipped = 0, i, one;
+    for (i = 0; i < plan.jobs.length; i++) {
+      one = printBatchOne_(pack.rows, plan.jobs[i].jo, plan.jobs[i].kind, by, now);
+      if (!one) continue;
+      if (one.created) fresh.push(one.item);
+      else if (one.requeued) re.push(one.item);
+      else skipped++;
+    }
+    if (fresh.length) printWriteRows_(pack, fresh);
+    for (i = 0; i < re.length; i++) printWriteRow_(pack, re[i]);
+    if (fresh.length || re.length) printRevBump_();
+    return { ok: true, queued: fresh.length + re.length, skipped: skipped, auto: printAutoOn_() };
+  });
+}
 function printEnqueue_(jo, kind, actor, opts) {
   opts = opts || {};
   var by = typeof actor === 'string' ? actor : (actor && actor.username) || '';
@@ -315,6 +415,7 @@ function handlePrint_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
   if (req.action === 'printMark') return printMark_(req, user);
   if (req.action === 'printAutoSet') return printAutoSet_(req, user);
+  if (req.action === 'printEnqueueBatch') return printEnqueueBatch_(req, user);
   return printEnqueue_(req.jo, req.kind, user.username, { reprint: req.action === 'printReprint' || !!req.reprint, manual: !!req.manual });
 }
 function printAfterMove_(req, res, user) {

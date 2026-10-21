@@ -22,7 +22,7 @@ const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see
 const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, suppress: false, busy: false, offer: '', scanned: [] };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [] };
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
@@ -90,15 +90,16 @@ function ivDraw(main) {
   const filt = IV.stage || IV.loc || IV.type, edit = ivEdit(), n = IV.sel.size, ids = L.map(j => j.jo);
   const allOn = ids.length > 0 && ids.every(id => IV.sel.has(id));
   const moves = ivMoveLocs().map(l => `<option value="${esc(l[0])}">${esc(locLab(l[0]))}</option>`).join('');
-  const bar = edit && n ? `<div class="ivbar" role="toolbar" aria-label="Selected items">
+  const bar = n ? `<div class="ivbar" role="toolbar" aria-label="Selected items">
       <b class="ivn">${n} selected</b>
-      <select id="ivMove" aria-label="Move to…"><option value="">Move to…</option>${moves}</select>
+      <button type="button" class="pill sm" id="ivPrint">Print stickers (${n})</button>
+      ${edit ? `<select id="ivMove" aria-label="Move to…"><option value="">Move to…</option>${moves}</select>
       <button type="button" class="pill sm" id="ivArch">Archive</button>
-      ${IV.view === 'archived' ? '<button type="button" class="pill sm outline" id="ivUnarch">Unarchive</button>' : ''}
+      ${IV.view === 'archived' ? '<button type="button" class="pill sm outline" id="ivUnarch">Unarchive</button>' : ''}` : ''}
       <button type="button" class="lnk" id="ivClear">Clear</button>
     </div>` : '';
-  main.innerHTML = `<div class="iv${n || IV.picking ? ' picking' : ''}${n ? ' hasbar' : ''}">
-    <div class="dhead"><h2>${esc(title)}</h2><span class="lab">${esc(plural(L.length, 'item'))}</span></div>
+  main.innerHTML = `<div class="iv${IV.choose ? ' choose' : ''}${n ? ' hasbar' : ''}">
+    <div class="dhead"><h2>${esc(title)}</h2><span class="dheadacts"><span class="lab">${esc(plural(L.length, 'item'))}</span><button type="button" class="pill sm outline" id="ivChoose">${IV.choose ? 'Done' : 'Select'}</button></span></div>
     <p class="muted">Every JO and finished piece. ${can.open ? 'Tap one to open its JO card.' : 'View only: tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     <div class="rvchips ivchips">${Object.keys(IVIEWS).map(k => `<button class="fchip tap ${IV.view === k ? 'on' : ''}" data-iv="${k}">${esc(IVIEWS[k][0])} <b>${cnt(k)}</b></button>`).join('')}</div>
@@ -107,7 +108,7 @@ function ivDraw(main) {
     ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
     <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
-    ${edit && L.length ? `<label class="ivall"><input type="checkbox" id="ivAll" ${allOn ? 'checked' : ''}><span>Select all</span></label>${n ? `<span class="ivcount">${n} selected</span>` : ''}` : ''}
+    ${IV.choose && L.length ? `<label class="ivall"><input type="checkbox" id="ivAll" ${allOn ? 'checked' : ''}><span>Select all</span></label>${n ? `<span class="ivcount">${n} selected</span>` : ''}` : ''}
     <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can, edit)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
     ${bar}
   </div>${IV.open ? ivSheet(r.jobs.find(j => j.jo === IV.open), edit) : ''}`;
@@ -126,8 +127,8 @@ function ivCard(j, can, edit) {
   if (can.cost) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
   if (can.price) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
   const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo), arch = j.location === 'archived';
-  const tools = edit ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>
-      <button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="${IV.menu === j.jo ? 'true' : 'false'}">⋯</button>` : '';
+  const tools = (IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '')
+      + (edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="${IV.menu === j.jo ? 'true' : 'false'}">⋯</button>` : '');
   const menu = edit && IV.menu === j.jo ? `<div class="ivmenu" role="menu"><button type="button" data-arch="${esc(j.jo)}">${arch ? 'Unarchive' : 'Archive'}</button><button type="button" data-detail="${esc(j.jo)}">Details</button></div>` : '';
   return `<div class="ivcard tap${on ? ' on' : ''}${IV.menu === j.jo ? ' menu' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${tools}${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>${menu}
     <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
@@ -205,6 +206,16 @@ function ivWire(main) {
     if (ids.length) IV.anchor = ids[ids.length - 1];
     IV.picking = IV.sel.size > 0;
     ivDraw(main);
+  };
+  if ($('#ivChoose')) $('#ivChoose').onclick = () => {
+    IV.choose = !IV.choose;
+    if (!IV.choose) { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.menu = ''; }
+    ivDraw(main);
+  };
+  if ($('#ivPrint')) $('#ivPrint').onclick = () => {
+    const items = ivJobs([...IV.sel]).map(j => ({ jo: j.jo, kind: j.on_hand && !MAKING[j.location] ? 'jewelry_tag' : 'jo_card' }));
+    if (!window.OYPPrint || !window.OYPPrint.printStickers) return window.OYP.toast('Print is not loaded');
+    window.OYPPrint.printStickers(items).then(r => { if (!window.OYP.here()()) return; if (!r || r.ok === false) return; IV.sel.clear(); IV.scanned = []; IV.choose = false; IV.picking = false; ivDraw(main); });
   };
   if ($('#ivClear')) $('#ivClear').onclick = () => { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.menu = ''; ivDraw(main); };
   if ($('#ivMove')) $('#ivMove').onchange = e => { const loc = e.target.value; if (!loc) return; ivBulk(main, [...IV.sel], loc, 'move'); };

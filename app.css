@@ -263,7 +263,8 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivck{top:8px;left:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.94);border-radius:6px}
 .ivck input{width:16px;height:16px;margin:0;accent-color:#111;cursor:pointer}
 .ivmore{top:8px;right:8px;width:28px;height:28px;border:0;border-radius:6px;background:rgba(255,255,255,.94);color:#111;font-size:18px;line-height:1;cursor:pointer}
-.ivcard:hover .ivck,.ivcard:hover .ivmore,.ivcard.on .ivck,.ivcard.menu .ivmore,.iv.picking .ivck,.iv.picking .ivmore,html.iv-coarse .ivck,html.iv-coarse .ivmore,.ivck:focus-within{opacity:1;pointer-events:auto}
+.ivcard:hover .ivmore,.ivcard.menu .ivmore,.iv.choose .ivmore,html.iv-coarse .ivmore{opacity:1;pointer-events:auto}
+.iv.choose .ivck,.ivck:focus-within{opacity:1;pointer-events:auto}
 .ivmenu{position:absolute;top:40px;right:8px;z-index:4;background:#fff;border:1px solid #111;border-radius:10px;min-width:132px;padding:4px;display:flex;flex-direction:column}
 .ivmenu button{background:#fff;border:0;text-align:left;padding:8px 10px;cursor:pointer;font-family:var(--body);font-size:calc(14px*var(--fs));color:#111;border-radius:8px}
 .ivmenu button:hover{background:#faf8f1}
