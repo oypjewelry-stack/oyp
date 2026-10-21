@@ -110,6 +110,8 @@ function labelOpts(item, kind) {
   };
 }
 function taskName(client) {
+  var forced = load().task;
+  if (forced && forced !== 'auto' && lib().printTasks && lib().printTasks[forced]) return forced; // Settings > Labels > Print mode
   var named = client.getPrintTaskType && client.getPrintTaskType();
   if (named) return named;
   var info = client.getPrinterInfo ? client.getPrinterInfo() : {};
@@ -136,12 +138,14 @@ function sendToPrinter(item) {
     labelType: L.LabelType.WithGaps,
     pageColor: L.PageColorType.SingleColor
   });
+  /* Same order as the niimbluelib example: printEnd always runs, also after an error, so the printer is not left mid-job. */
+  var end = function () { return task.printEnd ? Promise.resolve(task.printEnd()).catch(function () {}) : null; };
   return Promise.resolve(task.printInit()).then(function () {
     return task.printPage(encoded, 1);
   }).then(function () {
     return task.waitForFinished();
-  }).then(function () {
-    if (name === 'D110M_V4' && task.printEnd) return task.printEnd();
+  }).then(end, function (err) {
+    return Promise.resolve(end()).then(function () { throw err; });
   });
 }
 function claimFresh(item, now) {
@@ -190,15 +194,32 @@ function printLocal(opts) {
     return sendToPrinter(item).catch(function () { toast('Sticker did not print'); });
   });
 }
+/* The PNG is the label only (240 px wide), not the whole printhead, so the Niimbot app does not shrink it.
+   A tag button only knows the JO, so its specs are read first (printQueue with jo is a read). The name is dropped. */
 function download(kind, item) {
   if (!root.OYPLabel) return;
-  var rendered = root.OYPLabel.render(labelOpts(item, kind));
-  var canvas = root.OYPLabel.toCanvas(rendered);
-  if (!canvas) return;
-  var a = document.createElement('a');
-  a.href = canvas.toDataURL('image/png');
-  a.download = (kind === 'jewelry_tag' ? 'tag-' : 'sticker-') + (rendered.qr || 'label') + '.png';
-  document.body.appendChild(a); a.click(); a.remove();
+  item = Object.assign({}, item || {});
+  delete item.client;
+  var needSpecs = kind === 'jewelry_tag' && item.jo && !item.metal && !item.karat && !item.stone_type && !item.stone && !item.size && !item.weight_g && !item.weight;
+  var ready = needSpecs ? callPrint('printQueue', { jo: item.jo }).then(function (r) {
+    var spec = (r && r.ok && r.spec) || {};
+    delete spec.client;
+    return Object.assign({}, spec, item);
+  }, function () { return item; }) : Promise.resolve(item);
+  return ready.then(function (it) {
+    var rendered = root.OYPLabel.render(labelOpts(it, kind));
+    var full = root.OYPLabel.toCanvas(rendered);
+    if (!full) return;
+    var canvas = document.createElement('canvas');
+    canvas.width = rendered.labelW; canvas.height = rendered.height;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(full, rendered.offsetX, 0, rendered.labelW, rendered.height, 0, 0, rendered.labelW, rendered.height);
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = (kind === 'jewelry_tag' ? 'tag-' : 'sticker-') + (rendered.qr || 'label') + '.png';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
 }
 function cancel(id) {
   return callPrint('printMark', { print_id: id, op: 'cancelled', device_id: deviceId() }).then(function () { refresh(); });
@@ -258,7 +279,7 @@ function isFinal(req, res) {
 function afterOk(req, res) {
   if (!res || res.ok === false) return;
   var kind = '', jo = req.jo;
-  if (req.imageBase64 && !req.op && !req.action && (req.page === 1 || req.page === '1')) kind = 'jo_card';
+  if (req.imageBase64 && !req.op && !req.action && (parseInt(req.page, 10) || 1) === 1) kind = 'jo_card'; // same page rule as Code.gs
   else if (req.action === 'prodMove' && isFinal(req, res)) kind = 'jewelry_tag';
   if (!kind || !jo) return;
   var will = state.connected && load().auto && printsKind(kind);
@@ -278,6 +299,7 @@ function installFetch() {
     var method = String(opts.method || 'GET').toUpperCase();
     var p = orig.apply(this, arguments);
     if (method !== 'POST' || typeof raw !== 'string') return p;
+    if (raw.indexOf('"prodMove"') < 0 && raw.indexOf('"imageBase64"') < 0) return p; // only a move or a scan upload can queue a sticker; skip parsing everything else
     var body;
     try { body = JSON.parse(raw); } catch (e) { return p; }
     if (!body) return p;
@@ -402,17 +424,19 @@ function mountSettings(el) {
   var cfg = load(), k = kinds();
   el.innerHTML = '<div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">When this printer is connected, print a new JO card or a finished jewelry tag on its own. Off still keeps the queue, and Print now still prints.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (cfg.auto ? ' checked' : '') + '><span>' + (cfg.auto ? 'On' : 'Off') + '</span></label></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv"><select id="prDark">' + [1, 2, 3, 4, 5].map(function (n) { return '<option value="' + n + '"' + (cfg.darkness === n ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Leave on Auto. If a B31 feeds but prints nothing, try D110M_V4, then B1.</span></div><div class="setv"><select id="prTask">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards (30×20). A B1 starts on jewelry tags (30×25, blank 45 mm tail). Either one can print both.</span></div><div class="setv oyp-kinds"><label><input type="checkbox" id="prJo"' + (k.jo_card ? ' checked' : '') + '> JO card</label><label><input type="checkbox" id="prTag"' + (k.jewelry_tag ? ' checked' : '') + '> Jewelry tag</label></div></div></div>'
     + '<p class="muted">Stickers print the JO number, not the client name. The list below still shows the name first, for example Elena Tan · 26-287.</p>';
   function persist() {
     var next = load();
     next.auto = document.getElementById('prAuto').checked;
     next.darkness = Math.max(1, Math.min(5, document.getElementById('prDark').value | 0 || 3));
+    var tk = document.getElementById('prTask'); next.task = tk ? tk.value : 'auto';
     next.kinds = { jo_card: document.getElementById('prJo').checked, jewelry_tag: document.getElementById('prTag').checked };
     save(next);
     var lab = document.querySelector('#prAuto + span'); if (lab) lab.textContent = next.auto ? 'On' : 'Off';
   }
-  ['prAuto', 'prDark', 'prJo', 'prTag'].forEach(function (id) { var n = document.getElementById(id); if (n) n.onchange = persist; });
+  ['prAuto', 'prDark', 'prTask', 'prJo', 'prTag'].forEach(function (id) { var n = document.getElementById(id); if (n) n.onchange = persist; });
 }
 function mountQueue(el) {
   if (!el) return;

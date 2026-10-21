@@ -12,8 +12,8 @@ Setup function
   Another device skips a claim newer than 3 minutes. The same device can claim again. A claim older than 3 minutes can be taken.
 
 Patches, against the live files
-  Code.gs        paste/Code.gs.print.patch.txt         page-1 scan queues a JO card; scanner ops printQueue, printMark, printEnqueue, printReprint
-  Production.gs  paste/Production.gs.print.patch.txt   final prodMove queues a jewelry tag. The live file is not in this repo: add the one line on the success path of prodMove_ if the note's shape is not what you see.
+  Code.gs        paste/Code.gs.print.patch.txt         page-1 scan queues a JO card; scanner ops printQueue, printMark, printEnqueue, printReprint (placed before fastBump_)
+  Production.gs  paste/Production.gs.print.patch.txt   a move into Pickup (notify or pickup) queues a jewelry tag. Exact FIND on the prodMove_ return line.
   Auth.gs        paste/Auth.gs.print.patch.txt         printQueue returns directly (not dcacheRead_). Writes go through handlePrint_.
   Fast.gs        paste/Fast.gs.print.patch.txt         printQueue in FAST.READS only
   DashCache.gs   paste/DashCache.gs.print.patch.txt    printQueue in DCACHE.READS only
@@ -24,13 +24,14 @@ Do not add printMark, printEnqueue, or printReprint to FAST.READS, FAST.CACHE, D
 printQueue is already on the client READS list and not on the client CACHED list, so the 15 second poll does not wipe the other pages.
 
 Assumed live functions (this repo does not contain the current Production.gs or the live Code.gs / Auth.gs / Fast.gs / DashCache.gs):
-  recordScan_(req, jo, file, folder, ocrText, found, ocrError) and the deletePage op line, as in paste/Code.gs.txt
-  prodMove_(req, user), success object with to (column key). Final is pickup, notify, or for_pickup, or final / final_step on that object.
+  recordScan_(req, jo, file, folder, ocrText, found, ocrError) and the token check line, as in paste/Code.gs.txt
+  prodMove_(req, user) inside withLock_, success object with to (stage code). Final is notify or pickup (the Pickup column).
   handleAction_ uses a, req, s.user, and the line `if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);`
   Fast.gs READS still contains `priceHistory: 1, priceJobCost: 1,`
   DashCache.gs READS still contains `settingsDesign: 1, listUsers: 1,`
-  jobRows_('JobOrders') returns objects with jo and, when the columns exist, client / client_name, metal, karat, weight_g, stone_type, stone_size, size, due_date, current_stage.
-  The client name is joined only for the on-screen queue list. It is not a column on PrintQueue, and a row still prints when the job has no name.
+  jobRows_('JobOrders') returns objects with jo, client_id, metal, karat, weight_g, stone_type, stone_size, size, due_date, current_stage.
+  The client name comes from the Clients tab (client_id) for the on-screen queue list only. It is not a column on PrintQueue and is never sent to the label renderer.
+  PrintQueue writes one row at a time (append or update in place). It never clears or rewrites the tab.
   ss_() and withLock_ are used when they exist. Otherwise the script uses the active spreadsheet and LockService.getScriptLock.
 
 oauthScopes

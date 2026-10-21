@@ -134,6 +134,40 @@ eq(listed.every(r => r.status === 'queued' || r.status === 'failed') && listed.s
 const bare = ctx.printRowsEnqueue_([], '26-287', 'jewelry_tag', 'ada', '2026-10-21T00:00:00.000Z', false);
 eq(bare.ok && bare.item.jo === '26-287' && !('client' in bare.item), 'a queued row does not store a client name');
 
+// Sheet side: specs and the on-screen name come from one JobOrders read and one Clients read; a Date due prints as a day.
+let jobReads = 0;
+ctx.jobRows_ = function (name) {
+  jobReads++;
+  if (name === 'JobOrders') return [{ jo: '26-287', client_id: 'c-1', metal: 'yellow gold', karat: '18k', weight_g: 3.2, stone_type: 'diamond', stone_size: '0.5ct', size: '6', due_date: new Date(2026, 9, 27) }];
+  if (name === 'Clients') return [{ client_id: 'c-1', name: 'Elena Tan' }];
+  return [];
+};
+const look = ctx.printLookup_();
+const d1 = ctx.printDecorate_({ print_id: 'pq-1', jo: '26-287', kind: 'jewelry_tag', status: 'queued' }, look);
+const d2 = ctx.printDecorate_({ print_id: 'pq-2', jo: '26-287', kind: 'jo_card', status: 'queued' }, look);
+eq(jobReads === 2 && d1.client === 'Elena Tan' && d2.client === 'Elena Tan', 'the queue reads JobOrders and Clients once and shows the name on screen');
+eq(d1.due_date === '2026-10-27' && d1.metal === 'yellow gold' && d1.stone_size === '0.5ct', 'a Date due is a day, specs are joined');
+const r1 = L.render(Object.assign({ model: 'B1', kind: 'jewelry_tag' }, { jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size }));
+const r2 = L.render({ model: 'B1', kind: 'jewelry_tag', jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size, client: d1.client });
+eq(same(r1.data, r2.data) && noName(r2), 'a decorated row prints the same pixels with or without the name');
+const card2 = L.render({ model: 'B31', kind: 'jo_card', jo: '26-287', due: d1.due_date });
+eq(card2.lines.indexOf('DUE 27 OCT') >= 0, 'a JO card due line reads DUE 27 OCT');
+let locks = 0;
+ctx.withLock_ = function (fn) { locks++; return fn(); };
+const sheetRows = [];
+ctx.printReadRows_ = function () { return { sh: null, rows: sheetRows, head: ctx.PRINT_COLS }; };
+ctx.printWriteRow_ = function (pack, row) { row._w = 1; };
+ctx.printAfterMove_({ jo: '26-287', to: 'pickup' }, { ok: true, jo: '26-287', to: 'notify' }, { username: 'susan' });
+eq(locks === 0 && sheetRows.length === 1 && sheetRows[0].kind === 'jewelry_tag', 'a move into Pickup queues a tag without taking the lock again');
+ctx.printAfterMove_({ jo: '26-288', to: 'qc' }, { ok: true, jo: '26-288', to: 'qc' }, { username: 'susan' });
+eq(sheetRows.length === 1, 'a move into QC queues nothing');
+ctx.printEnqueue_('26-290', 'jo_card', 'scanner', {});
+eq(locks === 1 && sheetRows.length === 2, 'a scan enqueue takes the lock once');
+const codePatch = read('paste/Code.gs.print.patch.txt'), pq = read('paste/PrintQueue.gs');
+eq(codePatch.indexOf("Bad token' });\n    if (req.op === 'printQueue'") >= 0 && codePatch.indexOf('deletePage') < 0, 'scanner print ops sit before fastBump_, so a poll keeps the page cache');
+eq(pq.indexOf('clearContents') < 0, 'PrintQueue never clears the tab');
+eq(read('print.js').indexOf('printEnd ? Promise.resolve(task.printEnd())') >= 0, 'printEnd runs after every print task');
+
 const app = read('app.js'), index = read('staff/index.html'), fast = read('paste/Fast.gs.print.patch.txt'), dash = read('paste/DashCache.gs.print.patch.txt');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a client read and is not cached');

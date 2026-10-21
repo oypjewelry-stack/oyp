@@ -1,12 +1,13 @@
-Production.gs — one line on the success path of prodMove_.
-The live Production.gs is not in this repo, so this is not a literal FIND against a file we can see.
-Assumed function: prodMove_(req, user). The staff page sends action prodMove with jo and to.
-Final step means the destination is pickup, notify, or for_pickup, or the returned object sets final / final_step.
-Do not treat an empty next column as final.
+Production.gs — one find/replace on the success return of prodMove_. Checked against the Production.gs we have on file (Oct 20, with the client-steps change) and the Oct 19 copy: the line is identical in both and appears once.
+Moving a piece into the Pickup column (stage notify or pickup) queues its jewelry tag. Any other move does nothing.
+prodMove_ already runs inside withLock_, so PrintQueue.gs adds the row without taking the lock a second time.
 
-After the move is saved, and before the success return, with `moved` the object you are about to return:
+FIND
+  return { ok: true, jo: key, from: card.stage, from_label: card.stage_label, to: code, to_label: prodLabel_(code), by: user.username, at: t, stopped: stopped, stage_id: sid, location: set.location || loc, step_target: tgt };
 
-    try { if (typeof printAfterMove_ === 'function') printAfterMove_(req, moved, user); } catch (e) {}
+REPLACE WITH
+  var moved = { ok: true, jo: key, from: card.stage, from_label: card.stage_label, to: code, to_label: prodLabel_(code), by: user.username, at: t, stopped: stopped, stage_id: sid, location: set.location || loc, step_target: tgt };
+  try { if (typeof printAfterMove_ === 'function') printAfterMove_(req, moved, user); } catch (e) {}
+  return moved;
 
-If a line in the live file already returns that object under another name, pass that name instead of moved.
-The staff page also calls printEnqueue when the move response says the piece reached that destination, so a sticker is still queued before this line is pasted. This line is what keeps it when the browser never makes that call.
+If Ctrl+H finds 0 matches, stop and send me a copy of Production.gs. Do not edit it by hand.
