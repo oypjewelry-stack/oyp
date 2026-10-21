@@ -611,7 +611,6 @@ function claimAndPrint(item, link) {
       logMs('claim', clock() - tClaim);
       if (r && r.code === 'TAKEN') {
         state.cool[id] = Date.now() + 1500;
-        setTimeout(function () { if (wantsQueue()) kick(); }, 1500);
         return;
       }
       if (markFailed(r, 'Could not print that sticker')) {
