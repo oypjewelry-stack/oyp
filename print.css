@@ -6,7 +6,13 @@
 .topend{display:flex;align-items:center;gap:calc(8px * var(--sp,1))}
 .oyp-pr{position:relative;display:inline-flex;align-items:center;flex:none}
 .oyp-pr .pill{white-space:nowrap}
-.oyp-pr .whomenu{left:auto;right:0;top:calc(100% + 6px);bottom:auto;min-width:210px;z-index:40}
+.oyp-pr .whomenu{left:auto;right:0;top:calc(100% + 6px);bottom:auto;min-width:280px;max-width:calc(100vw - 16px);z-index:40}
+.oyp-pr .whomenu .oyp-pr-note{display:block;margin:0;padding:calc(12px * var(--sp,1)) calc(18px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(13px * var(--fs,1));font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;color:#777;cursor:default}
+.oyp-pr-bar{display:flex;align-items:center;justify-content:space-between;gap:calc(12px * var(--sp,1));padding:calc(8px * var(--sp,1)) 0 calc(2px * var(--sp,1))}
+.oyp-pr-bar .seth{margin:0}
+.oyp-pr-x{width:32px;height:32px;border:1px solid #ddd;border-radius:50%;background:#fff;color:#111;padding:0;line-height:1;font-size:16px;cursor:pointer;flex:none}
+.oyp-pr-x:hover{background:#faf8f1}
+#prDark .pill.sm{min-width:32px;text-align:center}
 .oyp-pr-panel{position:fixed;right:12px;top:64px;width:min(420px,calc(100vw - 24px));max-height:70vh;overflow:auto;background:#fff;border:1px solid #eee;border-radius:calc(14px * var(--rad,1));z-index:40;padding:calc(4px * var(--sp,1)) calc(18px * var(--sp,1));box-shadow:0 8px 24px rgba(0,0,0,.08)}
 .oyp-pr-menu.hidden,.oyp-pr-panel.hidden{display:none}
 

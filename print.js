@@ -10,7 +10,7 @@ var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
 var POLL = 15000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, timer: 0, pumping: false, busy: {}, open: '', chain: Promise.resolve() };
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, timer: 0, pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve() };
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -452,6 +452,10 @@ function chipText() {
   if (state.connected) return state.model || 'Printer';
   return 'Printer';
 }
+function connectNote() {
+  if (ios()) return "iPad can't connect a printer. Stickers wait in the print queue.";
+  return 'Open in Chrome or Edge to connect a printer';
+}
 function drawChip() {
   var slot = document.getElementById('printChip');
   if (!slot) return;
@@ -459,11 +463,16 @@ function drawChip() {
   slot.innerHTML = '<span class="oyp-pr"><button type="button" class="pill sm' + (on ? '' : ' outline') + '" id="oypPrBtn" aria-haspopup="menu" aria-expanded="false">' + esc(chipText().toUpperCase()) + '</button><div class="whomenu oyp-pr-menu hidden" id="oypPrMenu"></div></span>';
   var menu = document.getElementById('oypPrMenu');
   var bits = [];
-  if (canBt()) bits.push('<button type="button" data-pr="bluetooth">Bluetooth</button>');
-  if (canSerial()) bits.push('<button type="button" data-pr="serial">USB serial</button>');
+  if (!canBt() && !canSerial()) bits.push('<p class="muted oyp-pr-note" role="note">' + esc(connectNote()) + '</p>');
+  else if (!state.connected) {
+    if (canBt()) bits.push('<button type="button" data-pr="bluetooth">Connect by Bluetooth</button>');
+    if (canSerial()) bits.push('<button type="button" data-pr="serial">Connect by USB</button>');
+  } else {
+    if (canBt()) bits.push('<button type="button" data-pr="bluetooth">Bluetooth</button>');
+    if (canSerial()) bits.push('<button type="button" data-pr="serial">USB serial</button>');
+  }
   if (state.connected) bits.push('<button type="button" data-pr="disconnect">Disconnect</button>');
   bits.push('<button type="button" data-pr="queue">Print queue</button>');
-  if (!bits.length) bits.push('<button type="button" disabled>No Web Bluetooth on this browser</button>');
   menu.innerHTML = bits.join('');
 }
 function toggleMenu(force) {
@@ -472,6 +481,26 @@ function toggleMenu(force) {
   menu.classList.toggle('hidden', !show);
   var btn = document.getElementById('oypPrBtn');
   if (btn) btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+  if (show && btn) {
+    state.armUntil = Date.now() + 400;
+    state.armBox = btn.getBoundingClientRect();
+  } else if (!show) {
+    state.armUntil = 0;
+    state.armBox = null;
+  }
+}
+function armedAt(e) {
+  var b = state.armBox;
+  if (!b || Date.now() >= state.armUntil) return false;
+  return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
+}
+function panelEl() { return document.getElementById('oypPrintPanel'); }
+function panelOpen() { var p = panelEl(); return !!(p && !p.classList.contains('hidden')); }
+function closePanel() { var p = panelEl(); if (p) p.classList.add('hidden'); }
+function openPanel() {
+  var p = ensurePanel();
+  p.classList.remove('hidden');
+  refresh();
 }
 function ensurePanel() {
   var p = document.getElementById('oypPrintPanel');
@@ -479,15 +508,9 @@ function ensurePanel() {
   p = document.createElement('div');
   p.id = 'oypPrintPanel';
   p.className = 'oyp-pr-panel set hidden';
-  p.setAttribute('data-oyp-q', '1');
+  p.innerHTML = '<div class="oyp-pr-bar"><h3 class="lab seth">Print queue</h3><button type="button" class="oyp-pr-x" data-pr="close" aria-label="Close">✕</button></div><div data-oyp-q="1"></div>';
   document.body.appendChild(p);
   return p;
-}
-function togglePanel() {
-  var p = ensurePanel();
-  var show = p.classList.contains('hidden');
-  p.classList.toggle('hidden', !show);
-  if (show) refresh();
 }
 
 function mmSelect(id, value, label) {
@@ -499,8 +522,9 @@ function mmSelect(id, value, label) {
   return html + '</select>';
 }
 function darkSeg(value) {
-  return '<div class="seg" id="prDark" role="group" aria-label="Darkness">' + [1, 2, 3, 4, 5].map(function (n) {
-    return '<button type="button" data-dark="' + n + '"' + (value === n ? ' class="on"' : '') + '>' + n + '</button>';
+  return '<div class="setdays" id="prDark" role="group" aria-label="Darkness">' + [1, 2, 3, 4, 5].map(function (n) {
+    var on = value === n;
+    return '<button type="button" class="pill sm' + (on ? ' on' : ' outline') + '" data-dark="' + n + '">' + n + '</button>';
   }).join('') + '</div>';
 }
 function kindChip(id, on, label) {
@@ -544,7 +568,11 @@ function mountSettings(el) {
   });
   el.querySelectorAll('#prDark button').forEach(function (b) {
     b.onclick = function () {
-      el.querySelectorAll('#prDark button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      el.querySelectorAll('#prDark button').forEach(function (x) {
+        var on = x === b;
+        x.classList.toggle('on', on);
+        x.classList.toggle('outline', !on);
+      });
       persist();
     };
   });
@@ -603,7 +631,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=5';
+  link.href = (base || '') + 'print.css?v=6';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -619,21 +647,34 @@ function start() {
   document.addEventListener('click', function (e) {
     var pr = e.target.closest('[data-pr]');
     if (pr) {
+      if (pr.closest('#oypPrMenu') && armedAt(e)) return;
       var act = pr.getAttribute('data-pr');
       toggleMenu(false);
       if (act === 'bluetooth') connect('bluetooth');
       else if (act === 'serial') connect('serial');
       else if (act === 'disconnect') disconnect();
-      else togglePanel();
+      else if (act === 'close') closePanel();
+      else if (act === 'queue') openPanel();
       return;
     }
-    if (e.target.closest('#oypPrBtn')) { toggleMenu(); return; }
+    if (e.target.closest('#oypPrBtn')) {
+      if (armedAt(e)) return;
+      if (panelOpen()) { closePanel(); toggleMenu(false); return; }
+      toggleMenu();
+      return;
+    }
     if (!e.target.closest('#oypPrMenu')) toggleMenu(false);
+    if (panelOpen() && !e.target.closest('#oypPrintPanel')) closePanel();
     var b = e.target.closest('[data-oyp-print]');
     if (b) { printJo(b.getAttribute('data-oyp-print'), b.getAttribute('data-jo'), { reprint: true }); return; }
     var png = e.target.closest('[data-oyp-png]');
     if (png) { download(png.getAttribute('data-oyp-png'), { jo: png.getAttribute('data-jo') }); return; }
     if (e.target.closest('[data-q]')) onQueueClick(e);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    toggleMenu(false);
+    closePanel();
   });
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && state.connected) pump(); });
 }
