@@ -57,6 +57,16 @@ function samePiece(a, b) {
 }
 const $ = id => document.getElementById(id);
 const S = { r: null, mode: 'list', tab: 'sheets', id: '', showClosed: false, draft: null, q: '', hits: [], scan: null, edit: '', pay: null, busy: false, stream: null, raf: 0, markAs: 'returned', note: null };
+function pieceBits(it, opts) {
+  const id = it.jo || '';
+  if (opts && opts.joOnly) return `<b class="cn">${window.OYP.esc(id || it.item_id || '—')}</b>`; // the printed sheet goes to the consignee: JO only
+  const html = id ? window.OYP.piece(it.client, id) : '';
+  return html || `<b class="cn">${window.OYP.esc(it.item_id || it.jo || '—')}</b>`;
+}
+function hitLabel(h) {
+  const id = h.jo || h.item_id || 'Item';
+  return window.OYP.piece(h.jo ? h.client : '', id) || `<b>${window.OYP.esc(id)}</b>`;
+}
 const scanQueue = [];
 let scanBusy = false, qTimer = 0;
 let camGen = 0, U = null;
@@ -154,7 +164,7 @@ function drawList() {
     ${noteHtml('find', esc)}
     <p class="muted">Type a CS number or scan a JO to open that sheet. Mark each piece returned or sold. Returning one piece leaves the others out.</p>
     ${open.length ? `<div class="tw"><table class="dt"><thead><tr><th><span class="lab">Consignee</span></th><th><span class="lab">Date out</span></th><th><span class="lab">Items</span></th><th><span class="lab">Days out</span></th><th><span class="lab">Overdue</span></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">${r.setup === false ? 'Nothing to show until the Consignment tab exists.' : 'No open consignment sheets.'}</p>`}
-    ${loose.length ? `<div class="csloose"><p class="muted">Marked consigned, not on a sheet.</p><div class="tw"><table class="dt"><tbody>${loose.map(j => `<tr><td><b class="cn">${esc(j.jo || j.item_id || '—')}</b><br><span class="muted">${esc(j.description || '')}</span></td><td><button type="button" class="lnk" data-loose="${esc(j.jo || '')}" data-item="${esc(j.item_id || '')}" data-desc="${esc(j.description || '')}">CONSIGN</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}
+    ${loose.length ? `<div class="csloose"><p class="muted">Marked consigned, not on a sheet.</p><div class="tw"><table class="dt"><tbody>${loose.map(j => `<tr><td>${pieceBits(j)}<br><span class="muted">${esc(j.description || '')}</span></td><td><button type="button" class="lnk" data-loose="${esc(j.jo || '')}" data-item="${esc(j.item_id || '')}" data-desc="${esc(j.description || '')}" data-client="${esc(j.client || '')}">CONSIGN</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}
     ${closed.length ? `<button type="button" class="cstog" id="csClosed">${S.showClosed ? 'Hide closed' : 'Show closed (' + closed.length + ')'}</button>` : ''}
     ${S.showClosed && closed.length ? `<div class="tw"><table class="dt"><tbody>${closedRows}</tbody></table></div>` : ''}
   </div>`;
@@ -214,9 +224,9 @@ function personByName(s) {
 }
 function drawNew() {
   const { esc } = window.OYP, d = S.draft || blankDraft(), people = (S.r.consignees || []);
-  const hits = (S.hits || []).map((h, i) => `<button type="button" class="cshit" data-hit="${i}"><b>${esc(h.jo || h.item_id || 'Item')}</b> ${esc(h.description || '')}
+  const hits = (S.hits || []).map((h, i) => `<button type="button" class="cshit" data-hit="${i}">${hitLabel(h)} ${esc(h.description || '')}
     <span class="muted">${esc(h.location || '')}${h.blocked ? ' · ' + esc(h.blocked) : ''}</span></button>`).join('');
-  const lines = d.items.map((it, i) => `<tr><td><b class="cn">${esc(it.jo || it.item_id || 'Item')}</b><br><span class="muted">${esc(it.description || '')}</span></td>
+  const lines = d.items.map((it, i) => `<tr><td>${pieceBits(it)}<br><span class="muted">${esc(it.description || '')}</span></td>
     ${prices() ? `<td><input class="csval" data-val="${i}" inputmode="decimal" value="${esc(it.value || '')}" placeholder="₱" aria-label="Agreed value"></td>` : ''}
     <td><button type="button" class="lnk" data-rm="${i}">Remove</button></td></tr>`).join('');
   return `<div class="cs">
@@ -248,7 +258,7 @@ function drawSheet(printing) {
   const { esc } = window.OYP, s = sheetBy(S.id);
   if (!s) return `<div class="cs"><button type="button" class="csback" id="csBack">‹ Back</button><p class="muted">That sheet is not on the list.</p></div>`;
   const showVal = prices();
-  const body = (s.items || []).map(it => `<tr class="${it.overdue ? 'od' : ''}"><td><b class="cn">${esc(it.jo || '—')}</b>${it.item_id ? `<br><span class="muted">${esc(it.item_id)}</span>` : ''}</td>
+  const body = (s.items || []).map(it => `<tr class="${it.overdue ? 'od' : ''}"><td>${pieceBits(it, printing ? { joOnly: true } : null)}${it.item_id ? `<br><span class="muted">${esc(it.item_id)}</span>` : ''}</td>
     <td>${esc(it.description || '—')}</td>
     ${showVal ? `<td class="r">${it.value != null && it.value !== '' ? esc(peso(it.value)) : '—'}</td>` : ''}
     <td>${it.status === 'consigned' ? (it.overdue ? '<span class="chip gold">Overdue</span>' : '<span class="chip">Out</span>') : `<span class="chip">${esc(it.status === 'sold' ? 'Sold' : 'Returned')}</span>`}
@@ -290,7 +300,7 @@ function drawReturn() {
   const { esc } = window.OYP, s = sheetBy(S.id);
   if (!s) return `<div class="cs"><button type="button" class="csback" id="csBack">‹ Back</button><p class="muted">That sheet is not on the list.</p></div>`;
   const back = (s.items || []).filter(it => it.status === 'returned');
-  const rows = back.map(it => `<tr><td><b class="cn">${esc(it.jo || it.item_id || '—')}</b></td><td>${esc(it.description || '—')}</td><td>${esc(day(it.returned_at) || day(S.r && S.r.today) || '—')}</td></tr>`).join('');
+  const rows = back.map(it => `<tr><td>${pieceBits(it, { joOnly: true })}</td><td>${esc(it.description || '—')}</td><td>${esc(day(it.returned_at) || day(S.r && S.r.today) || '—')}</td></tr>`).join('');
   const slip = `<article class="csheet">
     <p class="csno"><span class="lab">Return</span>${esc(s.consignment_id)}</p>
     <div class="csbrand"><img src="${esc(logoSrc())}" alt=""><b>OYP Jewelry</b></div>
@@ -380,7 +390,7 @@ function wire(main) {
   main.querySelectorAll('a.cssigned, a.csthumb').forEach(a => a.onclick = e => e.stopPropagation());
   const cl = $('csClosed'); if (cl) cl.onclick = () => { S.showClosed = !S.showClosed; draw(main); };
   main.querySelectorAll('[data-loose]').forEach(b => b.onclick = () => {
-    S.mode = 'new'; S.draft = blankDraft([{ jo: b.dataset.loose || '', item_id: b.dataset.item || '', description: b.dataset.desc || '', value: '' }]);
+    S.mode = 'new'; S.draft = blankDraft([{ jo: b.dataset.loose || '', item_id: b.dataset.item || '', description: b.dataset.desc || '', value: '', client: b.dataset.client || '' }]);
     S.q = ''; S.hits = []; draw(main);
   });
   main.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { S.edit = b.dataset.edit; S.tab = 'people'; draw(main); });
@@ -438,7 +448,7 @@ async function search(main) {
   if (!r || !r.ok) { $('csHits').innerHTML = `<p class="muted">${window.OYP.esc((r && r.error) || 'Could not search')}</p>`; return; }
   S.hits = r.hits || [];
   const esc = window.OYP.esc;
-  $('csHits').innerHTML = S.hits.length ? `<div class="cshits">${S.hits.map((h, i) => `<button type="button" class="cshit" data-hit="${i}"><b>${esc(h.jo || h.item_id || 'Item')}</b> ${esc(h.description || '')} <span class="muted">${esc(h.location || '')}${h.blocked ? ' · ' + esc(h.blocked) : ''}</span></button>`).join('')}</div>` : '<p class="muted">Nothing matches.</p>';
+  $('csHits').innerHTML = S.hits.length ? `<div class="cshits">${S.hits.map((h, i) => `<button type="button" class="cshit" data-hit="${i}">${hitLabel(h)} ${esc(h.description || '')} <span class="muted">${esc(h.location || '')}${h.blocked ? ' · ' + esc(h.blocked) : ''}</span></button>`).join('')}</div>` : '<p class="muted">Nothing matches.</p>';
   $('csHits').querySelectorAll('[data-hit]').forEach(b => b.onclick = () => addHit(main, Number(b.dataset.hit)));
 }
 function addHit(main, i) {
@@ -446,7 +456,7 @@ function addHit(main, i) {
   if (h.blocked) { S.hits = []; setNote('dup', h.blocked, 'add'); beep('dup'); if ($('csQ')) $('csQ').value = ''; S.q = ''; return paintScan(main, 'csQ'); }
   readDraft();
   if (onDraft(h)) { setNote('dup', 'Already on this sheet · ' + (h.jo || h.item_id || 'that piece'), 'add'); beep('dup'); if ($('csQ')) $('csQ').value = ''; S.q = ''; return paintScan(main, 'csQ'); }
-  S.draft.items.push({ jo: h.jo || '', item_id: h.item_id || '', description: h.description || '', value: '' });
+  S.draft.items.push({ jo: h.jo || '', item_id: h.item_id || '', description: h.description || '', value: '', client: h.client || '' });
   S.q = ''; S.hits = [];
   if ($('csQ')) $('csQ').value = '';
   setNote('ok', addedText(h), 'add');
@@ -749,7 +759,7 @@ async function commitAdd(main, raw) {
   else if (onDraft(choice.hit)) { S.hits = []; setNote('dup', 'Already on this sheet · ' + (choice.hit.jo || choice.hit.item_id || 'that piece'), 'add'); beep('dup'); }
   else {
     readDraft();
-    S.draft.items.push({ jo: choice.hit.jo || '', item_id: choice.hit.item_id || '', description: choice.hit.description || '', value: '' });
+    S.draft.items.push({ jo: choice.hit.jo || '', item_id: choice.hit.item_id || '', description: choice.hit.description || '', value: '', client: choice.hit.client || '' });
     S.hits = []; S.q = '';
     setNote('ok', addedText(choice.hit), 'add');
     beep('ok');

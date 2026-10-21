@@ -130,8 +130,8 @@ function ivCard(j, can, edit) {
       <button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="${IV.menu === j.jo ? 'true' : 'false'}">⋯</button>` : '';
   const menu = edit && IV.menu === j.jo ? `<div class="ivmenu" role="menu"><button type="button" data-arch="${esc(j.jo)}">${arch ? 'Unarchive' : 'Archive'}</button><button type="button" data-detail="${esc(j.jo)}">Details</button></div>` : '';
   return `<div class="ivcard tap${on ? ' on' : ''}${IV.menu === j.jo ? ' menu' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${tools}${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>${menu}
-    <div class="ivb"><div class="kjo">${esc(j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
-    <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}${j.client ? `<div class="kc">${esc(j.client)}</div>` : ''}
+    <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
+    <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}
     <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div></div>`;
 }
 function ivSheet(j, edit) { // details. Roles that can't open the JO card land here from the tile. Editors open it from the tile menu.
@@ -140,7 +140,7 @@ function ivSheet(j, edit) { // details. Roles that can't open the JO card land h
   const act = edit ? `<div class="ivacts"><button type="button" class="pill sm outline" id="ivArchOne">${arch ? 'Unarchive' : 'Archive'}</button>
       <p class="muted">Archive keeps the JO on record. Nothing is deleted.</p></div>` : '';
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
-    <div class="dhead"><h2>JO ${esc(j.jo)}</h2><span class="lab">${edit ? 'Details' : 'View only'}</span></div>
+    <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${edit ? 'Details' : 'View only'}</span></div>
     <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
     <p class="kd">${esc(j.description || 'No details')}</p>
     <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}

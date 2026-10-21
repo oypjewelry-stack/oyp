@@ -1,0 +1,75 @@
+Consignment.gs — client name on piece rows, for roles that already may see client names.
+Do not paste a new Consignment.gs over the live file. Apply each FIND / REPLACE in order.
+Do not edit Fast.gs or DashCache.gs. consignList and consignSearch are already reads. This adds a field to those answers. No new action, no new oauth scope, no setup function.
+Then Deploy > Manage deployments > pencil > New version > Deploy.
+
+The consignee is not the client. The name comes from Clients, through JobOrders.client_id.
+A role with DASH_ROLES.clients false (bench staff) gets no client field. Admin and production manager already may see names, and they are the only consignment roles.
+
+FIND
+    res.balance = roll.balance;
+  }
+  return res;
+}
+
+REPLACE WITH
+    res.balance = roll.balance;
+  }
+  consignAttachNames_(res, user);
+  return res;
+}
+
+FIND
+  hits.forEach(function (h) { h.blocked = consignBlockReason_(h.jo, h.item_id, h.location); });
+  hits.sort(function (a, b) { return consignCmp_(a.jo || a.item_id, b.jo || b.item_id); });
+  return { ok: true, q: q, hits: hits.slice(0, 30) };
+}
+
+REPLACE WITH
+  hits.forEach(function (h) { h.blocked = consignBlockReason_(h.jo, h.item_id, h.location); });
+  hits.sort(function (a, b) { return consignCmp_(a.jo || a.item_id, b.jo || b.item_id); });
+  if (consignMayName_(user)) {
+    var names = consignNamesByJo_();
+    hits.forEach(function (h) {
+      var k = h.jo && jobKey_(h.jo), name = k && names[k];
+      if (name) h.client = name;
+    });
+  }
+  return { ok: true, q: q, hits: hits.slice(0, 30) };
+}
+
+FIND
+function consignMoneySafe_(v) { try { return consignMoney_(v); } catch (e) { return ''; } }
+function consignCmp_(a, b) { a = String(a || ''); b = String(b || ''); return a < b ? -1 : a > b ? 1 : 0; }
+
+REPLACE WITH
+function consignMoneySafe_(v) { try { return consignMoney_(v); } catch (e) { return ''; } }
+function consignCmp_(a, b) { a = String(a || ''); b = String(b || ''); return a < b ? -1 : a > b ? 1 : 0; }
+function consignMayName_(user) {
+  if (!user || typeof DASH_ROLES === 'undefined' || !DASH_ROLES[user.role]) return false;
+  return !!DASH_ROLES[user.role].clients;
+}
+function consignNamesByJo_() {
+  var byId = {}, byJo = {};
+  if (typeof ss_ !== 'function' || !ss_().getSheetByName('Clients') || !ss_().getSheetByName('JobOrders')) return byJo;
+  jobRows_('Clients').forEach(function (c) {
+    var id = jobStr_(c.client_id), name = jobStr_(c.name);
+    if (id && name) byId[id] = name;
+  });
+  jobRows_('JobOrders').forEach(function (j) {
+    var k = jobKey_(j.jo), name = byId[jobStr_(j.client_id)];
+    if (k && name) byJo[k] = name;
+  });
+  return byJo;
+}
+function consignAttachNames_(res, user) {
+  if (!consignMayName_(user) || !res) return;
+  var names = consignNamesByJo_();
+  var stamp = function (it) {
+    if (!it || !it.jo) return;
+    var k = jobKey_(it.jo), name = k && names[k];
+    if (name) it.client = name;
+  };
+  (res.sheets || []).forEach(function (s) { (s.items || []).forEach(stamp); });
+  (res.loose || []).forEach(stamp);
+}

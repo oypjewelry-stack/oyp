@@ -115,9 +115,9 @@ function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, cl
   const desc = c.description || 'No description yet', who = c.assignee || 'Unassigned';
   return `<div class="pcard tap${c.delayed ? ' dl' : ''}${c.late ? ' late' : ''}" data-jo="${c.jo}" ${phone ? '' : 'draggable="true"'}>
     <div class="pcm"><div class="pth" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}>${c.photo ? '' : '<span>No scan</span>'}</div>
-    <div class="pbd"><div class="kjo"><span class="pjn">${esc(c.jo)}</span>${c.photo && c.photo.version ? `<span class="pver" title="Version ${esc(c.photo.version)} (latest)">Ver. ${esc(c.photo.version)}</span>` : ''}</div>
+    <div class="pbd"><div class="kjo">${window.OYP.piece(c.client, c.jo)}${c.photo && c.photo.version ? `<span class="pver" title="Version ${esc(c.photo.version)} (latest)">Ver. ${esc(c.photo.version)}</span>` : ''}</div>
       <div class="kd" title="${esc(desc)}">${esc(desc)}</div>
-      <div class="kc" title="${esc((c.client ? c.client + ' · ' : '') + who)}">${c.client ? esc(c.client) + ' · ' : ''}${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
+      <div class="kc" title="${esc(who)}">${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
       ${c.running.length ? `<div class="prun"><i></i>${esc(c.running[0].worker)} · <span data-since="${c.running[0].since}">${elapsed(c.running[0].since)}</span></div>` : '<div class="prun pslot" aria-hidden="true"></div>'}</div></div>
     <div class="kf">${chips}</div>
     ${phone ? (nx && !(staff && c.col === 'pickup') ? `<button class="pmove" data-move="${c.jo}">Move to ${esc(nx.label)} <span>▸</span></button>` : '<div class="pmove pmnone" aria-hidden="true">Last stage</div>') : ''}</div>`;
