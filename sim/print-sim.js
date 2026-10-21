@@ -60,8 +60,9 @@ const tag = { kind: 'jewelry_tag', jo: '26-287', karat: '18k', metal: 'gold', st
   const t2 = L.render(Object.assign({ model }, tag));
   eq(t.width === head && t.height === 560 && t.offsetX === ox && t.labelW === 240 && t.labelH === 200 && t.tail === 360, model + ' jewelry tag is ' + head + '×560, head 240×200, tail 360');
   eq(same(t.data, t2.data), model + ' jewelry tag pixels ignore the client name');
-  eq(noName(t) && t.lines[0] === '26-287' && t.specPx === L.SPEC_PX && t.joPx > t.specPx && t.lines.indexOf('18K GOLD') >= 0 && t.lines.indexOf('DIAMOND') >= 0 && t.lines.indexOf('SIZE 6 4.2 G') >= 0, model + ' jewelry tag is the JO plus specs, and the JO is larger');
+  eq(noName(t) && t.lines[0] === '26-287' && t.joPx > t.specPx && t.specPx >= 16 && t.specPx <= L.SPEC_PX && t.lines.indexOf('18K GOLD') >= 0 && t.lines.indexOf('DIAMOND') >= 0 && t.lines.indexOf('SIZE 6 4.2 G') >= 0, model + ' jewelry tag is the JO plus specs, and the JO is larger');
   eq(tailWhite(t), model + ' jewelry tag tail is blank');
+  eq(landscape(t), model + ' jewelry tag reads landscape, QR on the left and text on the right');
   eq(decode(t) === '26-287', model + ' jewelry tag QR is 26-287');
 });
 
@@ -72,10 +73,29 @@ eq(wide.specPx >= 14 && wide.joPx > wide.specPx && noName(wide) && wide.lines.so
 function clearMargin(img) {
   const m = L.px(1), x0 = img.offsetX;
   for (let y = 0; y < img.labelH; y++) for (let x = 0; x < img.labelW; x++) {
-    if (x >= m && x < img.labelW - m) continue;
+    const edge = x < m || x >= img.labelW - m || y < m || y >= img.labelH - m;
+    if (!edge) continue;
     if (img.data[(y * img.width + x0 + x) * 4] !== 255) return false;
   }
   return true;
+}
+/* Text sits beside the QR, not under it, and stays inside the head. */
+function landscape(img) {
+  const box = img.qrBox;
+  if (!box || box.x > img.offsetX + L.px(1) + 1) return false;
+  const right = box.x + box.size;
+  let ink = false;
+  for (let y = 0; y < img.labelH; y++) {
+    for (let x = right + 2; x < img.offsetX + img.labelW - L.px(1); x++) {
+      if (img.data[(y * img.width + x) * 4] === 0) ink = true;
+    }
+  }
+  for (let y = box.y + box.size + 2; y < img.labelH; y++) {
+    for (let x = img.offsetX; x < right - 4; x++) {
+      if (img.data[(y * img.width + x) * 4] === 0) return false;
+    }
+  }
+  return ink;
 }
 eq(clearMargin(long) && clearMargin(wide), 'spec ink stays about 1 mm inside the 30 mm edges');
 const cal = L.render({ kind: 'cal_tag', model: 'B31' });
@@ -185,7 +205,8 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=2') && index.includes('print-label.js?v=2') && index.includes('nav.js?v=14') && index.includes('app.js?v=29') && index.includes('settings.js?v=18') && index.includes('print.css?v=1'), 'print assets are cache-busted');
+eq(index.includes('print.js?v=2') && index.includes('print-label.js?v=3') && index.includes('nav.js?v=15') && index.includes('app.js?v=29') && index.includes('settings.js?v=18') && index.includes('print.css?v=1'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=3'), 'the scanner injects the current label renderer');
 eq(read('print.js').includes('labelOpts') && !/client:\s*item\.client/.test(read('print.js')), 'the printer payload builder does not copy the client name');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }

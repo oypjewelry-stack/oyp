@@ -1,8 +1,10 @@
 /* Niimbot sticker bitmaps. 203 dpi, print direction "top": canvas width is the printhead,
    canvas height is the feed. The 30 mm label is centred. Text is Inter Bold (OFL), drawn with
    fillText at 4x and reduced to the 1-bit label. QR modules stay crisp rectangles.
-   The client name is never read. JO card: 30×20 (240×160). Jewelry tag: 30×25 head plus a
-   45 mm blank tail, 560 px gap to gap. */
+   The client name is never read. JO card: 30×20 (240×160), QR on the left. Jewelry tag:
+   the same landscape reading on the 30×25 head (240×200), then a 45 mm blank tail.
+   B1 and B31 print direction is "top", so x is already across the label and the
+   bitmap is not rotated. A "left" encoder would turn it 90 degrees. */
 (function (root) {
 'use strict';
 if (root.OYPLabel) return;
@@ -191,8 +193,8 @@ function ellipsis(text, maxW, size) {
   return out;
 }
 /* One size for every spec line. Shrink until the longest fits, then ellipsis. */
-function fitSpecs(lines, maxW) {
-  var size = SPEC_PX;
+function fitSpecs(lines, maxW, cap) {
+  var size = cap && cap < SPEC_PX ? cap : SPEC_PX;
   while (size > SPEC_MIN && lines.some(function (t) { return metricsOf(t, size).w > maxW; })) size -= 1;
   return { size: size, lines: lines.map(function (t) { return ellipsis(t, maxW, size); }) };
 }
@@ -264,41 +266,66 @@ function render(opts) {
     if (kind === 'cal_tag') img.rect(x0 + 4, box.labelH - 1, box.labelW - 8, 1);
     img.rect(x0 + 6, 6, 8, 8);
   } else if (kind === 'jewelry_tag') {
+    /* QR on the left, JO (largest) and spec lines on the right, inside the head.
+       Two pixels of slack so the 4× threshold cannot spill into the 1 mm margin. */
     var specs = specLines(opts);
     var mods = jo ? makeQr(jo) : null;
     var mod = 3, quiet = 4;
-    var innerW = box.labelW - pad * 2;
-    var fitted = specs.length ? fitSpecs(specs, innerW) : { size: 0, lines: [] };
-    specPx = fitted.size;
-    var specInk = specPx ? metricsOf('H', specPx) : { ascent: 0, descent: 0 };
-    var lineH = specInk.ascent + specInk.descent;
-    var specGap = 4;
-    var specBlock = fitted.lines.length ? fitted.lines.length * lineH + (fitted.lines.length - 1) * specGap : 0;
     var qpix = mods ? qrSize(mods, mod, quiet) : 0;
-    var specTop = box.labelH - pad - specBlock;
-    if (qpix > specTop - pad - 4) { mod = 2; qpix = mods ? qrSize(mods, mod, quiet) : 0; }
-    var beside = Math.max(0, innerW - qpix - 8);
-    var joMin = specPx ? specPx + 2 : 18;
-    if (jo) {
-      var besideSize = sizeThatFits(jo, beside, JO_MAX, joMin);
-      if (besideSize) {
-        joPx = besideSize;
-        var jm = metricsOf(jo, joPx);
-        var ty = pad + Math.max(0, Math.round((qpix - jm.ascent - jm.descent) / 2));
-        lines.push(jo);
-        runs.push({ text: jo, x: x0 + pad + qpix + 8, y: ty, size: joPx });
-      } else {
-        var under = fitLine(jo, innerW, JO_MAX, joMin);
-        joPx = under.size;
-        lines.push(under.text);
-        runs.push({ text: under.text, x: x0 + pad, y: pad + qpix + 4, size: joPx });
-      }
+    var gap = qpix ? 8 : 0;
+    var colW = Math.max(8, box.labelW - pad * 2 - qpix - gap - 2);
+    /* Module 3 leaves a short column. Below 22 px, Inter caps are under about 2 mm, so drop the QR to module 2. */
+    if (mods && specs.length && fitSpecs(specs, colW).size < 22 && qrSize(mods, 2, quiet) <= box.labelH - pad * 2) {
+      mod = 2;
+      qpix = qrSize(mods, mod, quiet);
+      gap = 8;
+      colW = Math.max(8, box.labelW - pad * 2 - qpix - gap - 2);
     }
-    if (mods) qrBox = { x: x0 + pad, y: pad, size: qpix };
-    fitted.lines.forEach(function (t, i) {
-      lines.push(t);
-      runs.push({ text: t, x: x0 + pad, y: specTop + i * (lineH + specGap), size: specPx });
+    var innerH = box.labelH - pad * 2 - 2;
+    var specCap = SPEC_PX;
+    var fitted = { size: 0, lines: [] };
+    var joFit = null;
+    var block = 0, joM = { ascent: 0, descent: 0 }, lineH = 0, guard = 0;
+    while (guard < 40) {
+      guard++;
+      fitted = specs.length ? fitSpecs(specs, colW, specCap) : { size: 0, lines: [] };
+      specPx = fitted.size;
+      var joMin = specPx ? specPx + 2 : 18;
+      if (joMin > JO_MAX) joMin = JO_MAX;
+      joFit = jo ? fitLine(jo, colW, JO_MAX, joMin) : null;
+      joPx = joFit ? joFit.size : 0;
+      joM = joFit ? metricsOf(joFit.text, joPx) : { ascent: 0, descent: 0 };
+      lineH = 0;
+      if (specPx && fitted.lines.length) {
+        var tall = { ascent: 0, descent: 0 };
+        fitted.lines.forEach(function (t) {
+          var m = metricsOf(t, specPx);
+          if (m.ascent > tall.ascent) tall.ascent = m.ascent;
+          if (m.descent > tall.descent) tall.descent = m.descent;
+        });
+        lineH = tall.ascent + tall.descent;
+      }
+      var specBlock = fitted.lines.length ? fitted.lines.length * lineH + (fitted.lines.length - 1) * 4 : 0;
+      var joBlock = joFit ? joM.ascent + joM.descent : 0;
+      block = joBlock + (joFit && fitted.lines.length ? 4 : 0) + specBlock;
+      if (block <= innerH || specCap <= SPEC_MIN) break;
+      specCap -= 1;
+    }
+    if (joFit) lines.push(joFit.text);
+    fitted.lines.forEach(function (t) { lines.push(t); });
+    var textX = x0 + pad + qpix + gap;
+    var textY = pad + Math.max(0, Math.round((innerH - block) / 2));
+    var yRun = textY;
+    if (joFit) {
+      runs.push({ text: joFit.text, x: textX, y: yRun, size: joPx });
+      yRun += joM.ascent + joM.descent + (fitted.lines.length ? 4 : 0);
+    }
+    fitted.lines.forEach(function (t) {
+      runs.push({ text: t, x: textX, y: yRun, size: specPx });
+      yRun += lineH + 4;
     });
+    var qrY = pad + Math.max(0, Math.round((innerH - qpix) / 2));
+    if (mods) qrBox = { x: x0 + pad, y: qrY, size: qpix };
     stampText(img, runs, box);
     if (mods) img.qr(mods, qrBox.x, qrBox.y, mod, quiet);
   } else {
