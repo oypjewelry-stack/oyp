@@ -1,0 +1,137 @@
+PrintQueue.gs — two auto-print switches, and no second sticker for a JO that already has one queued or printed. Apply paste/PrintQueue.gs.batch.patch.txt first.
+Script properties print_auto_jo_card and print_auto_jewelry_tag. A missing key follows print_auto. A missing print_auto stays on.
+Off for a kind adds no row of that kind. A manual batch or reprint still queues. A queued row is kept. A printed row is not queued again. A failed row is put back in the queue.
+
+FIND
+  var i, row, queued = null, failed = null, any = null;
+  for (i = 0; i < rows.length; i++) {
+    row = rows[i];
+    if (row.jo !== jo || row.kind !== kind) continue;
+    any = row;
+    if (row.status === 'queued') queued = row;
+    if (row.status === 'failed') failed = row;
+  }
+  if (queued) return { ok: true, item: queued, created: false };
+  /* Reprint must not add a second row while a failed one is still on screen. Put that row back in the queue. */
+  if (failed && reprint) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
+  if (!reprint && any) return { ok: true, item: any, created: false, skipped: true };
+  if (allowCreate === false) return { ok: true, skipped: true, auto: false };
+
+REPLACE WITH
+  var i, row, queued = null, failed = null, printed = null;
+  for (i = 0; i < rows.length; i++) {
+    row = rows[i];
+    if (row.jo !== jo || row.kind !== kind) continue;
+    if (row.status === 'queued') queued = row;
+    else if (row.status === 'failed' && !failed) failed = row;
+    else if (row.status === 'printed') printed = row;
+  }
+  if (queued) return { ok: true, item: queued, created: false };
+  /* Reprint must not add a second row while a failed one is still on screen. Put that row back in the queue. */
+  if (failed && reprint) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
+  if (!reprint && printed) return { ok: true, item: printed, created: false, skipped: true };
+  if (allowCreate === false) return { ok: true, skipped: true, auto: false };
+  if (failed) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
+
+FIND
+function printAutoOn_() {
+  var p = printProps_();
+  if (!p) return true;
+  var v = p.getProperty('print_auto');
+  if (v == null || v === '') return true;
+  return v === '1' || v === 'true' || v === 'on';
+}
+function printAutoSet_(req, user) {
+  if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  var p = printProps_();
+  if (!p) return { ok: false, error: 'Auto-print is not available yet' };
+  var on = true;
+  if (req && (req.on === false || req.on === 0 || req.on === '0' || req.auto === false || req.auto === 0 || req.auto === '0')) on = false;
+  p.setProperty('print_auto', on ? '1' : '0');
+  printRevBump_();
+  return { ok: true, auto: on, rev: printRevRead_() };
+}
+
+REPLACE WITH
+function printAutoKey_(kind) {
+  return kind === 'jewelry_tag' ? 'print_auto_jewelry_tag' : 'print_auto_jo_card';
+}
+function printOff_(v) {
+  return v === false || v === 0 || v === '0' || v === 'false';
+}
+function printAutoOn_(kind) {
+  var p = printProps_();
+  if (!p) return true;
+  if (!kind) return printAutoOn_('jo_card') && printAutoOn_('jewelry_tag');
+  var v = p.getProperty(printAutoKey_(kind));
+  if (v == null || v === '') {
+    var legacy = p.getProperty('print_auto');
+    if (legacy == null || legacy === '') return true;
+    return legacy === '1' || legacy === 'true' || legacy === 'on';
+  }
+  return v === '1' || v === 'true' || v === 'on';
+}
+function printAutoMap_() {
+  return { jo_card: printAutoOn_('jo_card'), jewelry_tag: printAutoOn_('jewelry_tag') };
+}
+function printAutoSet_(req, user) {
+  if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  var p = printProps_();
+  if (!p) return { ok: false, error: 'Auto-print is not available yet' };
+  req = req || {};
+  function write(kind, on) { p.setProperty(printAutoKey_(kind), on ? '1' : '0'); }
+  if (req.kind) {
+    var k = printKind_(req.kind);
+    if (!k) return { ok: false, error: 'Pick a sticker type' };
+    write(k, !printOff_(req.on));
+  } else if (req.jo_card != null || req.jewelry_tag != null) {
+    if (req.jo_card != null) write('jo_card', !printOff_(req.jo_card));
+    if (req.jewelry_tag != null) write('jewelry_tag', !printOff_(req.jewelry_tag));
+  } else {
+    var both = !printOff_(req.on) && !printOff_(req.auto);
+    write('jo_card', both);
+    write('jewelry_tag', both);
+  }
+  printRevBump_();
+  return { ok: true, auto: printAutoMap_(), rev: printRevRead_() };
+}
+
+FIND
+  var allow = !!manual || !!reprint || printAutoOn_();
+
+REPLACE WITH
+  var allow = !!manual || !!reprint || printAutoOn_(kind);
+
+FIND
+  res.auto = printAutoOn_();
+  return res;
+}
+
+REPLACE WITH
+  res.auto = printAutoMap_();
+  return res;
+}
+
+FIND
+return { ok: true, preview: true, count: plan.jobs.length, auto: printAutoOn_() };
+
+REPLACE WITH
+return { ok: true, preview: true, count: plan.jobs.length, auto: printAutoMap_() };
+
+FIND
+return { ok: true, queued: fresh.length + re.length, skipped: skipped, auto: printAutoOn_() };
+
+REPLACE WITH
+return { ok: true, queued: fresh.length + re.length, skipped: skipped, auto: printAutoMap_() };
+
+FIND
+return { ok: true, brief: true, rev: printRevRead_(), auto: printAutoOn_() };
+
+REPLACE WITH
+return { ok: true, brief: true, rev: printRevRead_(), auto: printAutoMap_() };
+
+FIND
+var out = { ok: true, rev: printRevEnsure_(), auto: printAutoOn_(), items:
+
+REPLACE WITH
+var out = { ok: true, rev: printRevEnsure_(), auto: printAutoMap_(), items:

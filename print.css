@@ -19,6 +19,7 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 #oypPrMenu button:hover{background:#faf8f1}
 #oypPrMenu .settog{display:flex;align-items:center;gap:calc(8px * var(--sp,1));width:100%;box-sizing:border-box;margin:0;padding:calc(12px * var(--sp,1)) calc(18px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(12px * var(--fs,1));font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#111;cursor:pointer}
 #oypPrMenu .settog input{width:20px;height:20px;accent-color:#111}
+#oypPrMenu .settog .oyp-k{flex:1;text-align:left}
 .oyp-pr-bar{display:flex;align-items:center;justify-content:space-between;gap:calc(12px * var(--sp,1));padding:calc(8px * var(--sp,1)) 0 calc(2px * var(--sp,1))}
 .oyp-pr-bar .seth{margin:0}
 .oyp-pr-x{width:32px;height:32px;border:1px solid #ddd;border-radius:50%;background:#fff;color:#111;padding:0;line-height:1;font-size:16px;cursor:pointer;flex:none}

@@ -138,7 +138,7 @@ function printsKind(kind) { return !!kinds()[kind]; }
 function summary() {
   var cfg = load(), k = kinds();
   var who = state.connected ? (state.model || 'Printer') : (cfg.model ? cfg.model + ' not connected' : 'Not connected');
-  var bits = [who, serverAuto() ? 'auto on' : 'auto off', 'darkness ' + cfg.darkness];
+  var bits = [who, serverAuto('jo_card') ? 'JO sticker on' : 'JO sticker off', serverAuto('jewelry_tag') ? 'tag on' : 'tag off', 'darkness ' + cfg.darkness];
   ['B31', 'B1'].forEach(function (m) {
     var o = offsetMm(m);
     if (o.x || o.y) bits.push(m + ' offset ' + o.x.toFixed(1) + ', ' + o.y.toFixed(1) + ' mm');
@@ -410,16 +410,28 @@ function markPrinting(on) {
   document.querySelectorAll('[data-q]').forEach(function (b) { b.disabled = !!on; });
   paintDots();
 }
-function serverAuto() {
-  if (typeof state.auto === 'boolean') return state.auto;
-  return load().auto !== false;
+function autoFrom(v) {
+  if (v && typeof v === 'object') return { jo_card: v.jo_card !== false, jewelry_tag: v.jewelry_tag !== false };
+  if (typeof v === 'boolean') return { jo_card: v, jewelry_tag: v };
+  return null;
+}
+function serverAuto(kind) {
+  var a = state.auto && typeof state.auto === 'object' ? state.auto : null;
+  if (!a) {
+    var cfg = load();
+    a = cfg.autoKinds && typeof cfg.autoKinds === 'object' ? cfg.autoKinds : { jo_card: cfg.auto !== false, jewelry_tag: cfg.auto !== false };
+  }
+  if (!kind) return a.jo_card !== false || a.jewelry_tag !== false;
+  return a[kind] !== false;
 }
 function noteAuto(r) {
-  if (!r || typeof r.auto !== 'boolean' || state.auto === r.auto) return;
-  state.auto = r.auto;
+  var next = r && autoFrom(r.auto);
+  if (!next) return;
+  if (state.auto && state.auto.jo_card === next.jo_card && state.auto.jewelry_tag === next.jewelry_tag) return;
+  state.auto = next;
   paintAuto();
 }
-function wantsQueue() { return serverAuto() || !!state.printQueued; }
+function wantsQueue() { return !!state.printQueued || serverAuto('jo_card') || serverAuto('jewelry_tag'); }
 function printQueued() {
   state.printQueued = true;
   kick();
@@ -434,7 +446,7 @@ function printStickers(list) {
     if (!r || r.ok === false) { toast((r && r.error) || 'Could not queue those stickers'); return r; }
     toast('Queued ' + (r.queued || 0) + (r.skipped ? ' · ' + r.skipped + ' already waiting' : ''));
     refresh();
-    if (serverAuto() && state.connected) kick();
+    if (state.connected) kick();
     return r;
   });
 }
@@ -490,7 +502,7 @@ function mountRange(el) {
       if (!r || r.ok === false) { toast((r && r.error) || 'Could not queue that range'); preview(); return; }
       toast('Queued ' + (r.queued || 0) + (r.skipped ? ' · ' + r.skipped + ' already waiting' : ''));
       refresh();
-      if (serverAuto() && state.connected) kick();
+      if (state.connected) kick();
       preview();
     });
   };
@@ -695,9 +707,9 @@ function queueHtml(r) {
   var items = r.items || [];
   if (!items.length) return '<p class="muted oyp-qempty">No stickers waiting</p>';
   var dis = state.printing ? ' disabled' : '';
-  var waiting = 0;
-  items.forEach(function (it) { if (it.status === 'queued') waiting += 1; });
-  var drain = (!serverAuto() && waiting) ? '<div class="fbtns oyp-qbtns"><button type="button" class="pill sm" data-q="drain"' + dis + '>Print queued</button></div>' : '';
+  var held = 0;
+  items.forEach(function (it) { if (it.status === 'queued' && !serverAuto(it.kind)) held += 1; });
+  var drain = held ? '<div class="fbtns oyp-qbtns"><button type="button" class="pill sm" data-q="drain"' + dis + '>Print queued</button></div>' : '';
   return drain + items.map(function (it, i) {
     var kind = it.kind === 'jewelry_tag' ? 'Jewelry tag' : 'JO card';
     var failed = it.status === 'failed';
@@ -770,10 +782,10 @@ function isFinal(req, res) {
 function afterOk(req, res) {
   if (!res || res.ok === false) return;
   var kind = '', jo = req.jo;
-  if (req.imageBase64 && !req.op && !req.action && (parseInt(req.page, 10) || 1) === 1) kind = 'jo_card'; // same page rule as Code.gs
-  else if (req.action === 'prodMove' && isFinal(req, res)) kind = 'jewelry_tag';
+  /* A scan is queued only by Code.gs. Watching the upload here queued a second JO card and ignored printJo and printTag. */
+  if (req.action === 'prodMove' && isFinal(req, res)) kind = 'jewelry_tag';
   if (!kind || !jo) return;
-  var will = state.connected && serverAuto() && printsKind(kind);
+  var will = state.connected && serverAuto(kind) && printsKind(kind);
   callPrint('printEnqueue', { jo: jo, kind: kind, reprint: false }).then(function (r) {
     if (!will) return;
     if (r && r.ok && r.item && r.item.status === 'queued') return claimAndPrint(r.item);
@@ -790,7 +802,7 @@ function installFetch() {
     var method = String(opts.method || 'GET').toUpperCase();
     var p = orig.apply(this, arguments);
     if (method !== 'POST' || typeof raw !== 'string') return p;
-    if (raw.indexOf('"prodMove"') < 0 && raw.indexOf('"imageBase64"') < 0) return p; // only a move or a scan upload can queue a sticker; skip parsing everything else
+    if (raw.indexOf('"prodMove"') < 0) return p; // a scan is queued by the server; only a Pickup move still prints from this page
     var body;
     try { body = JSON.parse(raw); } catch (e) { return p; }
     if (!body) return p;
@@ -810,6 +822,7 @@ function nextLocal() {
   for (i = 0; i < items.length; i++) {
     it = items[i];
     if (!it || it.status !== 'queued' || !printsKind(it.kind)) continue;
+    if (!state.printQueued && !serverAuto(it.kind)) continue;
     if (state.inflight[it.print_id] || state.done[it.print_id] || state.busy[it.print_id]) continue;
     if (state.cool[it.print_id] && state.cool[it.print_id] > now) continue;
     if (!claimFresh(it, now)) continue;
@@ -1041,34 +1054,39 @@ function paintDots() {
     el.title = title;
   });
 }
-function paintAuto() {
-  var on = serverAuto();
-  var head = document.getElementById('prHeadAuto');
-  if (head) {
-    head.checked = on;
-    var span = head.parentNode && head.parentNode.querySelector('span');
-    if (span) span.textContent = on ? 'On' : 'Off';
-  }
-  var box = document.getElementById('prAuto');
-  if (box) box.checked = on;
-  var lab = document.querySelector('#prAuto + span');
-  if (lab) lab.textContent = on ? 'On' : 'Off';
+function paintOneAuto(id, kind) {
+  var box = document.getElementById(id);
+  if (!box) return;
+  var on = serverAuto(kind);
+  box.checked = on;
+  var spans = box.parentNode ? box.parentNode.querySelectorAll('span') : [];
+  for (var i = 0; i < spans.length; i++) if (spans[i].textContent === 'On' || spans[i].textContent === 'Off') spans[i].textContent = on ? 'On' : 'Off';
 }
-function setAuto(on) {
-  var prev = state.auto;
-  state.auto = !!on;
+function paintAuto() {
+  paintOneAuto('prHeadJo', 'jo_card');
+  paintOneAuto('prHeadTag', 'jewelry_tag');
+  paintOneAuto('prAutoJo', 'jo_card');
+  paintOneAuto('prAutoTag', 'jewelry_tag');
+}
+function setAuto(kind, on) {
+  var prev = state.auto ? { jo_card: state.auto.jo_card !== false, jewelry_tag: state.auto.jewelry_tag !== false } : { jo_card: serverAuto('jo_card'), jewelry_tag: serverAuto('jewelry_tag') };
+  state.auto = { jo_card: prev.jo_card, jewelry_tag: prev.jewelry_tag };
+  state.auto[kind] = !!on;
   paintAuto();
-  callPrint('printAutoSet', { on: on ? 1 : 0 }).then(function (r) {
-    if (!r || r.ok === false) {
+  callPrint('printAutoSet', { kind: kind, on: on ? 1 : 0 }).then(function (r) {
+    if (!r || r.ok === false || !r.auto) {
       state.auto = prev;
       paintAuto();
       toast((r && r.error) || 'Could not save auto-print');
       return;
     }
-    state.auto = !!r.auto;
+    state.auto = autoFrom(r.auto);
+    var cfg = load();
+    cfg.autoKinds = state.auto;
+    save(cfg);
     if (r.rev != null) state.rev = String(r.rev);
     paintAuto();
-    if (state.auto) kick();
+    if (state.auto[kind]) kick();
   });
 }
 function ensurePrinterMenu() {
@@ -1099,8 +1117,8 @@ function fillPrinterMenu() {
   var menu = ensurePrinterMenu();
   var on = state.connected;
   var bits = [];
-  var auto = serverAuto();
-  bits.push('<label class="settog"><input type="checkbox" id="prHeadAuto"' + (auto ? ' checked' : '') + '><span>' + (auto ? 'On' : 'Off') + '</span></label>');
+  bits.push('<label class="settog"><span class="oyp-k">JO sticker</span><input type="checkbox" id="prHeadJo"' + (serverAuto('jo_card') ? ' checked' : '') + '><span>' + (serverAuto('jo_card') ? 'On' : 'Off') + '</span></label>');
+  bits.push('<label class="settog"><span class="oyp-k">Jewelry tag</span><input type="checkbox" id="prHeadTag"' + (serverAuto('jewelry_tag') ? ' checked' : '') + '><span>' + (serverAuto('jewelry_tag') ? 'On' : 'Off') + '</span></label>');
   if (on) bits.push('<p class="muted oyp-pr-note">' + esc(state.model || 'Printer') + '</p>');
   if (!canBt() && !canSerial()) bits.push('<p class="muted oyp-pr-note" role="note">' + esc(connectNote()) + '</p>');
   else if (!on) {
@@ -1113,8 +1131,10 @@ function fillPrinterMenu() {
   }
   bits.push('<button type="button" data-pr="queue">Print queue</button>');
   menu.innerHTML = bits.join('');
-  var head = document.getElementById('prHeadAuto');
-  if (head) head.addEventListener('change', function () { setAuto(head.checked); });
+  ['prHeadJo', 'prHeadTag'].forEach(function (id) {
+    var box = document.getElementById(id);
+    if (box) box.addEventListener('change', function () { setAuto(id === 'prHeadJo' ? 'jo_card' : 'jewelry_tag', box.checked); });
+  });
 }
 function drawChip() {
   paintDots();
@@ -1200,9 +1220,14 @@ function mmPair(xid, x, xLabel, yid, y, yLabel) {
 }
 function mountSettings(el) {
   if (!el) return;
-  var cfg = load(), k = kinds(), b31 = offsetMm('B31'), b1 = offsetMm('B1'), on = serverAuto();
+  var cfg = load(), k = kinds(), b31 = offsetMm('B31'), b1 = offsetMm('B1');
+  function tog(id, kind) {
+    var on = serverAuto(kind);
+    return '<label class="settog"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '><span>' + (on ? 'On' : 'Off') + '</span></label>';
+  }
   el.innerHTML = '<div class="set"><div class="setbox">'
-    + '<div class="setrow"><div class="setl"><span class="lab">Auto-print</span><span class="muted">On: new JO cards and finished tags are queued and printed. Off: nothing is queued or printed.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="prAuto"' + (on ? ' checked' : '') + '><span>' + (on ? 'On' : 'Off') + '</span></label></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">JO sticker</span><span class="muted">On queues and prints a new JO card. Off does not queue it.</span></div><div class="setv">' + tog('prAutoJo', 'jo_card') + '</div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">Jewelry tag</span><span class="muted">On queues and prints a jewelry tag. Off does not queue it. A manual batch still queues.</span></div><div class="setv">' + tog('prAutoTag', 'jewelry_tag') + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv">' + darkSeg(cfg.darkness) + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Auto starts a B31 on the B1 page size, and remembers the task this printer answers. D110M_V4 and B1 stay as manual choices.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards. A B1 starts on jewelry tags. Either one can print both.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
@@ -1211,10 +1236,6 @@ function mountSettings(el) {
     + '</div><p class="muted">Stickers print the JO number, not the client name. The queue still shows the name first, for example Elena Tan · 26-287.</p></div>';
   function persist() {
     var next = load();
-    var auto = document.getElementById('prAuto');
-    var want = !!(auto && auto.checked);
-    if (want !== serverAuto()) setAuto(want);
-    next.auto = want;
     var darkBtn = el.querySelector('#prDark button.on');
     next.darkness = Math.max(1, Math.min(5, darkBtn ? (darkBtn.getAttribute('data-dark') | 0) : 3));
     var tk = document.getElementById('prTask'); next.task = tk ? tk.value : 'auto';
@@ -1232,7 +1253,11 @@ function mountSettings(el) {
     save(next);
     paintAuto();
   }
-  ['prAuto', 'prTask', 'prX31', 'prY31', 'prX1', 'prY1'].forEach(function (id) { var n = document.getElementById(id); if (n) n.onchange = persist; });
+  ['prTask', 'prX31', 'prY31', 'prX1', 'prY1'].forEach(function (id) { var n = document.getElementById(id); if (n) n.onchange = persist; });
+  [['prAutoJo', 'jo_card'], ['prAutoTag', 'jewelry_tag']].forEach(function (pair) {
+    var n = document.getElementById(pair[0]);
+    if (n) n.onchange = function () { setAuto(pair[1], n.checked); };
+  });
   ['prJo', 'prTag'].forEach(function (id) {
     var n = document.getElementById(id);
     if (!n) return;
@@ -1289,7 +1314,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=11';
+  link.href = (base || '') + 'print.css?v=12';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {

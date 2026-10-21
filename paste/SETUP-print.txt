@@ -12,7 +12,7 @@ Setup function
   Another device skips a claim newer than 3 minutes. The same device can claim again. A claim older than 3 minutes can be taken.
 
 Patches, against the live files
-  Code.gs        paste/Code.gs.print.patch.txt         page-1 scan queues a JO card; scanner ops printQueue, printMark, printEnqueue, printReprint (placed before fastBump_)
+  Code.gs        paste/Code.gs.print.patch.txt         page-1 scan queues a JO card and a jewelry tag (printJo / printTag, missing means yes); scanner ops printQueue, printMark, printEnqueue, printReprint (placed before fastBump_)
   Production.gs  paste/Production.gs.print.patch.txt   a move into Pickup (notify or pickup) queues a jewelry tag. Exact FIND on the prodMove_ return line.
   Auth.gs        paste/Auth.gs.print.patch.txt         printQueue returns directly (not dcacheRead_). Writes go through handlePrint_.
   Fast.gs        paste/Fast.gs.print.patch.txt         printQueue in FAST.READS only
@@ -46,4 +46,5 @@ Site
   A connected printer checks printQueue about every 5 seconds. With PrintQueue.gs.rev.patch.txt pasted, that check is only the oypPrintRev cache value. Without it, the page stays on a full read every 15 seconds.
   PrintQueue.gs.auto.patch.txt stores print_auto in script properties. On queues new JO cards and finished tags. Off adds no rows from a scan or a Pickup move. Apply it after the rev patch.
   PrintQueue.gs.batch.patch.txt queues a chosen list or a JO range even when auto-print is off. Apply it after the auto patch. At most 200 stickers, written in one setValues. A JO already queued for that sticker is skipped.
+  PrintQueue.gs.kinds.patch.txt replaces print_auto with print_auto_jo_card and print_auto_jewelry_tag. Apply it after the batch patch. A missing key still follows print_auto, and a missing print_auto stays on. printEnqueue_ skips a sticker that is already queued or printed for that JO. Code.gs.print.patch.txt is the only Code.gs paste: page 1 calls printEnqueue_ for jo_card when printJo is not false, and for jewelry_tag when printTag is not false.
   The device that saved the page, or moved the piece to the last step, prints at once when its printer is connected and allowed to print that kind, then marks the row printed.

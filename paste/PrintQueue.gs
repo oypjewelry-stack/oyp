@@ -32,19 +32,20 @@ function printRowsEnqueue_(rows, jo, kind, by, now, reprint, allowCreate) {
   jo = printNormJo_(jo);
   kind = printKind_(kind);
   if (!jo || !kind) return { ok: false, error: 'Need a JO and a sticker type' };
-  var i, row, queued = null, failed = null, any = null;
+  var i, row, queued = null, failed = null, printed = null;
   for (i = 0; i < rows.length; i++) {
     row = rows[i];
     if (row.jo !== jo || row.kind !== kind) continue;
-    any = row;
     if (row.status === 'queued') queued = row;
-    if (row.status === 'failed') failed = row;
+    else if (row.status === 'failed' && !failed) failed = row;
+    else if (row.status === 'printed') printed = row;
   }
   if (queued) return { ok: true, item: queued, created: false };
   /* Reprint must not add a second row while a failed one is still on screen. Put that row back in the queue. */
   if (failed && reprint) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
-  if (!reprint && any) return { ok: true, item: any, created: false, skipped: true };
+  if (!reprint && printed) return { ok: true, item: printed, created: false, skipped: true };
   if (allowCreate === false) return { ok: true, skipped: true, auto: false };
+  if (failed) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
   var item = {
     print_id: 'pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + Math.floor(Math.random() * 1000000),
     jo: jo, kind: kind, status: 'queued', created_at: String(now || ''), created_by: String(by || ''),
@@ -150,22 +151,47 @@ function printProps_() {
     return PropertiesService.getScriptProperties();
   } catch (e) { return null; }
 }
-function printAutoOn_() {
+function printAutoKey_(kind) {
+  return kind === 'jewelry_tag' ? 'print_auto_jewelry_tag' : 'print_auto_jo_card';
+}
+function printOff_(v) {
+  return v === false || v === 0 || v === '0' || v === 'false';
+}
+function printAutoOn_(kind) {
   var p = printProps_();
   if (!p) return true;
-  var v = p.getProperty('print_auto');
-  if (v == null || v === '') return true;
+  if (!kind) return printAutoOn_('jo_card') && printAutoOn_('jewelry_tag');
+  var v = p.getProperty(printAutoKey_(kind));
+  if (v == null || v === '') {
+    var legacy = p.getProperty('print_auto');
+    if (legacy == null || legacy === '') return true;
+    return legacy === '1' || legacy === 'true' || legacy === 'on';
+  }
   return v === '1' || v === 'true' || v === 'on';
+}
+function printAutoMap_() {
+  return { jo_card: printAutoOn_('jo_card'), jewelry_tag: printAutoOn_('jewelry_tag') };
 }
 function printAutoSet_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
   var p = printProps_();
   if (!p) return { ok: false, error: 'Auto-print is not available yet' };
-  var on = true;
-  if (req && (req.on === false || req.on === 0 || req.on === '0' || req.auto === false || req.auto === 0 || req.auto === '0')) on = false;
-  p.setProperty('print_auto', on ? '1' : '0');
+  req = req || {};
+  function write(kind, on) { p.setProperty(printAutoKey_(kind), on ? '1' : '0'); }
+  if (req.kind) {
+    var k = printKind_(req.kind);
+    if (!k) return { ok: false, error: 'Pick a sticker type' };
+    write(k, !printOff_(req.on));
+  } else if (req.jo_card != null || req.jewelry_tag != null) {
+    if (req.jo_card != null) write('jo_card', !printOff_(req.jo_card));
+    if (req.jewelry_tag != null) write('jewelry_tag', !printOff_(req.jewelry_tag));
+  } else {
+    var both = !printOff_(req.on) && !printOff_(req.auto);
+    write('jo_card', both);
+    write('jewelry_tag', both);
+  }
   printRevBump_();
-  return { ok: true, auto: on, rev: printRevRead_() };
+  return { ok: true, auto: printAutoMap_(), rev: printRevRead_() };
 }
 function printSheet_() {
   var ss = typeof ss_ === 'function' ? ss_() : SpreadsheetApp.getActive();
@@ -274,14 +300,14 @@ function printDecorate_(item, look) {
 }
 function printEnqueueRun_(jo, kind, by, reprint, manual) {
   var pack = printReadRows_(), now = new Date().toISOString();
-  var allow = !!manual || !!reprint || printAutoOn_();
+  var allow = !!manual || !!reprint || printAutoOn_(kind);
   var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint, allow);
   if (res.created || res.requeued) {
     printWriteRow_(pack, res.item);
     printRevBump_();
   }
   if (res.item) res.item = printDecorate_(res.item);
-  res.auto = printAutoOn_();
+  res.auto = printAutoMap_();
   return res;
 }
 var PRINT_BATCH_CAP = 200;
@@ -367,7 +393,7 @@ function printEnqueueBatch_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
   var plan = printBatchJobs_(req);
   if (!plan.ok) return plan;
-  if (req && (req.preview === 1 || req.preview === true || req.preview === '1')) return { ok: true, preview: true, count: plan.jobs.length, auto: printAutoOn_() };
+  if (req && (req.preview === 1 || req.preview === true || req.preview === '1')) return { ok: true, preview: true, count: plan.jobs.length, auto: printAutoMap_() };
   return printLock_(function () {
     var pack = printReadRows_(), now = new Date().toISOString(), by = user.username;
     var fresh = [], re = [], skipped = 0, i, one;
@@ -381,7 +407,7 @@ function printEnqueueBatch_(req, user) {
     if (fresh.length) printWriteRows_(pack, fresh);
     for (i = 0; i < re.length; i++) printWriteRow_(pack, re[i]);
     if (fresh.length || re.length) printRevBump_();
-    return { ok: true, queued: fresh.length + re.length, skipped: skipped, auto: printAutoOn_() };
+    return { ok: true, queued: fresh.length + re.length, skipped: skipped, auto: printAutoMap_() };
   });
 }
 function printEnqueue_(jo, kind, actor, opts) {
@@ -405,9 +431,9 @@ function printMark_(req, user) {
 }
 function printQueue_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
-  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_(), auto: printAutoOn_() };
+  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_(), auto: printAutoMap_() };
   var pack = printReadRows_(), look = printLookup_();
-  var out = { ok: true, rev: printRevEnsure_(), auto: printAutoOn_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
+  var out = { ok: true, rev: printRevEnsure_(), auto: printAutoMap_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
   if (req && req.jo && printNormJo_(req.jo)) out.spec = printDecorate_({ jo: printNormJo_(req.jo) }, look); // read only: specs for a PNG of one JO
   return out;
 }
