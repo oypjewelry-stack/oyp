@@ -20,18 +20,29 @@ function printFindRow_(rows, printId) {
   for (i = 0; i < rows.length; i++) if (rows[i].print_id === id) return rows[i];
   return null;
 }
+function printRowReset_(row) {
+  row.status = 'queued';
+  row.error = '';
+  row.device_id = '';
+  row.printed_at = '';
+  row.printed_by = '';
+  return row;
+}
 function printRowsEnqueue_(rows, jo, kind, by, now, reprint) {
   jo = printNormJo_(jo);
   kind = printKind_(kind);
   if (!jo || !kind) return { ok: false, error: 'Need a JO and a sticker type' };
-  var i, row, queued = null, any = null;
+  var i, row, queued = null, failed = null, any = null;
   for (i = 0; i < rows.length; i++) {
     row = rows[i];
     if (row.jo !== jo || row.kind !== kind) continue;
     any = row;
     if (row.status === 'queued') queued = row;
+    if (row.status === 'failed') failed = row;
   }
   if (queued) return { ok: true, item: queued, created: false };
+  /* Reprint must not add a second row while a failed one is still on screen. Put that row back in the queue. */
+  if (failed && reprint) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
   if (!reprint && any) return { ok: true, item: any, created: false, skipped: true };
   var item = {
     print_id: 'pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + Math.floor(Math.random() * 1000000),
@@ -65,6 +76,16 @@ function printRowsMark_(rows, printId, op, device, user, now, error) {
     row.status = 'cancelled';
     row.error = '';
     return { ok: true, item: row };
+  }
+  if (op === 'requeue') {
+    if (row.status === 'queued') return { ok: true, item: row };
+    if (row.status !== 'failed') return { ok: false, error: 'Not failed', code: 'STATE' };
+    for (var q = 0; q < rows.length; q++) {
+      if (rows[q] !== row && rows[q].jo === row.jo && rows[q].kind === row.kind && rows[q].status === 'queued') {
+        return { ok: true, item: rows[q] };
+      }
+    }
+    return { ok: true, item: printRowReset_(row), requeued: true };
   }
   if (op === 'printed' || op === 'failed') {
     if (row.status !== 'queued') return { ok: false, error: 'Not queued', code: 'STATE' };
@@ -199,7 +220,7 @@ function printDecorate_(item, look) {
 function printEnqueueRun_(jo, kind, by, reprint) {
   var pack = printReadRows_(), now = new Date().toISOString();
   var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint);
-  if (res.created) printWriteRow_(pack, res.item);
+  if (res.created || res.requeued) printWriteRow_(pack, res.item);
   if (res.item) res.item = printDecorate_(res.item);
   return res;
 }

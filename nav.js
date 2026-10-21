@@ -53,7 +53,7 @@ function ordered(user) {
 }
 /* Printer is a menu row, not a header pill. It stays directly under Settings for every role that can print. */
 function printerItemHtml() {
-  return '<a data-oyp-printer="1" role="button" tabindex="0">Printer<span class="oyp-pr-dot" aria-hidden="true"></span></a>';
+  return '<a data-oyp-printer="1" role="button" tabindex="0" title="Printer not connected">Printer<span class="oyp-pr-dot" aria-hidden="true"></span></a>';
 }
 function withPrinter(parts) {
   var out = [], placed = false, i;
@@ -107,7 +107,7 @@ if (typeof document !== 'undefined' && document.createElement) {
   src = cs && (cs.src || '');
   var base = src ? src.replace(/[^/]*$/, '') : '';
   if (base && !document.querySelector('script[src*="print.js"]')) {
-    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=8', 'print.js?v=11'].forEach(function (rel) {
+    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=8', 'print.js?v=12'].forEach(function (rel) {
       var ps = document.createElement('script');
       ps.src = base + rel;
       ps.async = false;
