@@ -70,6 +70,7 @@ function create(opts) {
       for (const it of all) {
         if (it.state === 'uploading') { it.state = 'waiting'; it.nextAt = 0; await store.put(it); } // tab closed mid-upload
         if (it.state === 'deleting' && it.inflight) { it.inflight = false; await store.put(it); } // closed mid-upload: delete by session + page
+        if (it.state === 'needsjo' && realJo(it.jo)) { it.state = it.image ? 'waiting' : 'failed'; it.held = false; await store.put(it); }
         seq = Math.max(seq, it.seq || 0); items.set(it.id, it);
       }
       await prune(); ready = true; emit(); reap();
@@ -94,7 +95,8 @@ function create(opts) {
     const it = { id, jo: p.jo, page: p.page, filename: p.filename, scan: p.scan || '', image: p.image, thumb: p.thumb || '',
       state: held ? 'needsjo' : 'waiting', tries: 0, nextAt: 0, error: '', found: [], createdAt: now(), seq: ++seq, rev: ((old && old.rev) || 0) + 1, savedAt: 0,
       clientId: p.clientId || makeClientId(), printJo: p.printJo !== false, printTag: p.printTag !== false,
-      plain: !!p.plain, token: p.token != null ? String(p.token) : '', api: p.api || '', shot: p.shot || 0 };
+      plain: !!p.plain, token: p.token != null ? String(p.token) : '', api: p.api || '', shot: p.shot || 0,
+      joCrop: p.joCrop || (old && old.joCrop) || '', joGuess: p.joGuess || (old && old.joGuess) || '', joTyped: !!(p.joTyped || (old && old.joTyped)) };
     await save(it); emit(); if (!held) kick(); return it;
   }
   // The JO number was typed or read later. Every page of that capture starts uploading, page 1 first.
@@ -125,6 +127,15 @@ function create(opts) {
     for (const id of dropped) await store.del(id);
     for (const x of group) await save(x);
     kick(); return true;
+  }
+  async function patch(id, extra) {
+    if (!ready) await load();
+    const it = items.get(id);
+    if (!it || !extra) return null;
+    if (extra.joCrop != null) it.joCrop = extra.joCrop;
+    if (extra.joGuess != null) it.joGuess = extra.joGuess;
+    if (extra.joTyped != null) it.joTyped = !!extra.joTyped;
+    await save(it); emit(); return it;
   }
   function schedule() {
     clearT(timer); timer = null;
@@ -242,10 +253,14 @@ function create(opts) {
   function wake() { for (const it of items.values()) { if (it.state === 'waiting') it.nextAt = 0; if (it.state === 'deleting') it.delAt = 0; } kick(); reap(); } // back online / app opened
   function counts() {
     const c = { waiting: 0, uploading: 0, saved: 0, mismatch: 0, failed: 0, needsjo: 0 };
-    for (const it of items.values()) if (it.state in c) c[it.state]++;
+    for (const it of items.values()) {
+      if (!(it.state in c)) continue;
+      if (it.state === 'needsjo' && realJo(it.jo)) { c.waiting++; continue; } // a number is already on the row
+      c[it.state]++;
+    }
     c.pending = c.waiting + c.uploading; c.total = c.waiting + c.uploading + c.saved + c.mismatch + c.failed + c.needsjo; return c;
   }
-  const api = { load, add, bindJo, pump, kick, wake, retry, retryFailed, remove, discard, reap, counts, list, get: id => items.get(id), prune, deleting: () => all().filter(x => x.state === 'deleting') };
+  const api = { load, add, bindJo, patch, pump, kick, wake, retry, retryFailed, remove, discard, reap, counts, list, get: id => items.get(id), prune, deleting: () => all().filter(x => x.state === 'deleting') };
   return api;
 }
 // Later unread pages of the same scan. Only page 1 has the JO box, so removing it takes these with it.
@@ -273,16 +288,26 @@ function label(it, isOnline) {
     case 'needsjo': return 'JO number not read. Type it here. The photo stays on this phone.';
     case 'waiting': return it.error ? (isOnline === false ? 'Waiting for internet' : 'Waiting, will retry (' + it.error + ')') : (isOnline === false ? 'Waiting for internet' : 'Waiting to upload');
     case 'uploading': return 'Uploading…';
-    case 'saved': return it.verified ? 'Saved ✓ JO verified' : 'Saved ✓ (no JO number read on this page)';
+    case 'saved': return it.joTyped ? ('Saved to ' + it.jo + ' (JO typed in)') : ('Saved to ' + it.jo);
     case 'mismatch': return 'Saved, but card reads ' + (it.found || []).join(', ') + ' (typed ' + it.jo + '). Check!';
     case 'failed': return 'Failed: ' + (it.error || 'upload failed');
   }
   return it.state;
 }
 function realJo(s) {
-  const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
+  // O is a zero in the number. An en dash is a hyphen. A trailing letter stays a revision.
+  const t = String(s || '').toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-').replace(/O/g, '0');
+  const m = t.match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
   const n = m ? m[1] + '-' + m[2] + (m[3] || '') : '';
   return /^\d{2}-\d{3,4}[A-Z]?$/.test(n) ? n : '';
+}
+// The capture screen shows the latest three of these. Same id updates in place.
+function capSteps(list, step) {
+  const next = (list || []).map(s => ({ id: s.id, text: s.text, state: s.state }));
+  const row = { id: step && step.id, text: step && step.text || '', state: (step && step.state) || 'run' };
+  const i = next.findIndex(s => s.id === row.id);
+  if (i >= 0) next[i] = row; else next.push(row);
+  return next.slice(-3);
 }
 function captureStamp(scan) {
   const s = String(scan || '');
@@ -320,6 +345,6 @@ function reprocessPlan(row, knownJo) {
   if (wasHeld) return { held: true, bind: false, jo: row.jo || 'OCR', plain: false };
   return { held: false, bind: false, jo: realJo(row.jo) || row.jo, plain: false };
 }
-const api = { create, memoryStore, idbStore, label, removePrompt, extraNeedsjo, keyOf, realJo, captureStamp, sameCapture, cardJoPlan, reprocessPlan, STATES, MAX_TRIES, MAX_PARALLEL, BACKOFF };
+const api = { create, memoryStore, idbStore, label, removePrompt, extraNeedsjo, keyOf, realJo, capSteps, captureStamp, sameCapture, cardJoPlan, reprocessPlan, STATES, MAX_TRIES, MAX_PARALLEL, BACKOFF };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.OYPQueue = api;
 })(typeof window !== 'undefined' ? window : globalThis);

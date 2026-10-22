@@ -42,7 +42,9 @@ const JPEG_WORKER = 'jpeg-worker.js?v=20261021b';
 /* ---------- JO normalisation (shared logic with Code.gs) ---------- */
 function normJO(s) {
   // keeps a revision letter: '26-005B', '26-005 b' -> '26-005B'
-  const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
+  // an en dash is a hyphen, and O inside the number is a zero: '26–36O' -> '26-360'
+  const t = String(s || '').toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-').replace(/O/g, '0');
+  const m = t.match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
   return m ? m[1] + '-' + m[2] + (m[3] || '') : String(s || '').trim().toUpperCase().replace(/^J\.?O\.?\s*#?\s*/, '');
 }
 window.normJO = normJO;
@@ -477,10 +479,38 @@ function renderOut(src, quad, enh, maxPx) {
   const cv = window.cv;
   if (quad && cv && cv.Mat) { try { const m = cv.imread(out), d = CardDetector.deskew(cv, m); cv.imshow(out, d.mat); m.delete(); d.mat.delete(); } catch (err) { console.warn(err); } }
   if (enh && cv && cv.Mat) { try { const m = cv.imread(out), e = CardDetector.enhance(cv, m); cv.imshow(out, e); m.delete(); e.delete(); } catch (err) { console.warn(err); } }
-  out = rotateCanvas(out, rotFor(out)); // upright before compression, thumbnail, queue and upload
+  out = orientPage(out, !!quad); // text upright before compression, thumbnail, queue and upload
   // Every warped page is the same pixel size, so a zone box lands on the same part of the card.
+  const extra = out.__oypExtra || 0;
   if (quad && window.CardDetector && CardDetector.fitStandard) out = CardDetector.fitStandard(out, maxPx || MAX_PX);
+  out.__oypExtra = extra;
+  if (quad) window.__oypZoneExtra = extra;
   return out;
+}
+function quarterKey(q) {
+  q = ((q % 4) + 4) % 4;
+  return q === 1 ? 'cw' : q === 2 ? '180' : q === 3 ? 'ccw' : 'none';
+}
+function legacyQuarters(c) {
+  const k = rotFor(c);
+  return k === 'ccw' ? 3 : k === '180' ? 2 : k === 'none' ? 0 : 1;
+}
+// A warped card follows the text, not only the photo's shape. The zone boxes were drawn on the
+// old shape-based frame, so __oypExtra is how many extra clockwise quarters this page turned.
+function orientPage(out, warped) {
+  const cv = window.cv;
+  let turns = legacyQuarters(out), extra = 0;
+  if (warped && cv && cv.Mat && window.CardDetector && CardDetector.uprightTurns) {
+    try {
+      const m = cv.imread(out);
+      const up = CardDetector.uprightTurns(cv, m);
+      m.delete();
+      if (up >= 0 && up < 4) { extra = (up - turns + 4) % 4; turns = up; }
+    } catch (err) { console.warn(err); }
+  }
+  const page = rotateCanvas(out, quarterKey(turns));
+  page.__oypExtra = extra;
+  return page;
 }
 function pageCanvas(src) { // the frame cropFrom sees: detect, warp, deskew, turn, standard size. No upload.
   let quad = null;
@@ -537,6 +567,7 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
   p.clientId = newClientId(); // a new photo, including a re-crop. Retries keep the id already stored on the queue item.
   Object.assign(p, shotContext());
   if (p.held) p.image = image; // the capture screen still reads the number from this copy
+  if (p.held && image && !p.joCrop) { try { p.joCrop = await joCropUrl(image); } catch (e) { console.warn(e); } }
   if (replace && photo.last && photo.last.pg === replace) { // Adjust crop on a Scan JO photo
     photo.last.pg = Object.assign({ quad }, p);
     const i = cap.pages.findIndex(x => x === replace || (x.scan === replace.scan && x.filename === replace.filename && x.page === replace.page));
@@ -586,7 +617,7 @@ function warpJS(src, q, maxPx) {
    The photo goes through the same detector, crop, enhance, rotation and savePage() as a live shot. It saves straight away
    (live shots save straight away when the outline is clean); the result card offers Adjust crop afterwards. */
 const photo = { busy: false, cont: false, last: null };
-const cap = { pages: [], saving: false, asking: false, reading: false, filing: null }; // pages of the capture currently on screen
+const cap = { pages: [], saving: false, asking: false, reading: false, filing: null, steps: [] }; // pages of the capture currently on screen
 let captureView = null; // one joStatus() result for the render that paints the tile, the line, and the counter
 
 /* JO sticker and Jewelry tag: both on by default, each remembered on this phone.
@@ -832,24 +863,55 @@ function captureStamp(scan) {
   const i = s.indexOf('@');
   return i >= 0 ? s.slice(i + 1) : '';
 }
-function stickersSoon(jo) { // page 1 only. Fire-and-forget: printEnqueue uses the JO number, and a later upload does not duplicate it.
+function stickersSoon(jo, scan) { // the JO is known. printEnqueue uses the number, and a later upload does not duplicate it.
   jo = realJO(jo);
   if (!jo) return;
-  const pages = cap.pages || [];
-  const later = pages.some(p => (parseInt(p.page, 10) || 1) > 1);
-  const filed = pages.some(p => (parseInt(p.page, 10) || 1) === 1 && !p.held && p.jo !== 'OCR');
-  if (later || filed || state.page > 1) return;
-  const key = (captureStamp(state.scan) || state.scan || '') + '|' + jo; // the stamp stays put when OCR@stamp is renamed to the JO
+  const src = scan || state.scan;
+  const key = (captureStamp(src) || src || '') + '|' + jo; // the stamp stays put when OCR@stamp is renamed to the JO
   if (stickerSentFor === key) return;
   stickerSentFor = key;
+  const kinds = [];
+  if (stickerOn('jo')) kinds.push('jo_card'); // B31
+  if (stickerOn('tag')) kinds.push('jewelry_tag'); // B1
+  if (!kinds.length) return;
   const token = localStorage.getItem(LS.token) || '';
   const go = window.__oypNativeFetch || fetch;
-  const post = kind => {
+  capStep({ id: 'send', text: 'Sending to printer…', state: 'run' });
+  let left = kinds.length, bad = false;
+  kinds.forEach(kind => {
     const body = JSON.stringify({ op: 'printEnqueue', token, jo, kind });
-    go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body }).catch(() => {});
+    go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body })
+      .then(r => r.json())
+      .then(j => { if (!j || j.ok === false) bad = true; })
+      .catch(() => { bad = true; })
+      .then(() => {
+        if (--left) return;
+        if (bad) capStep({ id: 'send', text: 'Stickers did not queue. Check the printers on the staff page.', state: 'err' });
+        else {
+          capStep({ id: 'send', text: 'Stickers queued for ' + jo, state: 'ok' });
+          setTimeout(() => note('Stickers queued for ' + jo), 0);
+          watchPrinted(jo, kinds);
+        }
+      });
+  });
+}
+function watchPrinted(jo, kinds) {
+  let n = 0;
+  const token = localStorage.getItem(LS.token) || '';
+  const go = window.__oypNativeFetch || fetch;
+  const tick = () => {
+    n++;
+    go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ op: 'printQueue', token, jo }) })
+      .then(r => r.json())
+      .then(j => {
+        const got = (j && j.printedKinds) || [];
+        if (kinds.every(k => got.indexOf(k) >= 0)) capStep({ id: 'printed', text: 'Printed', state: 'ok' });
+        else if (n < 8) setTimeout(tick, 3000);
+      })
+      .catch(() => { if (n < 8) setTimeout(tick, 3000); });
   };
-  if (stickerOn('jo')) post('jo_card');
-  if (stickerOn('tag')) post('jewelry_tag');
+  setTimeout(tick, 3000);
 }
 let earlyRead = null;
 function acceptCardJo(jo) { // the card read won. File every held page of this scan, or remember the number before the page is stored.
@@ -1054,11 +1116,132 @@ async function postReadJo(b64) {
 }
 async function ocrJoNumber(dataUrl) { // readJo on the JO-number zone only. A typed number never comes through here.
   await waitZones();
-  const zone = zonesNow().find(z => z && z.id === 'jo');
+  const zone = zoneForScan(zonesNow().find(z => z && z.id === 'jo'));
   if (!zone) return '';
-  const b64 = await cropZoneB64(dataUrl, zone);
+  let b64 = await cropZoneB64(dataUrl, zone);
   if (!b64) return '';
-  return joFromRead(await postReadJo(b64));
+  b64 = await uprightB64(b64);
+  const read = joFromRead(await postReadJo(b64));
+  if (read) return read;
+  const hand = realJO(await handReadJo(b64));
+  return hand || '';
+}
+function zoneForScan(zone) {
+  const extra = window.__oypZoneExtra || 0;
+  if (!zone || !extra || !window.OYPZones || typeof OYPZones.turnZone !== 'function') return zone;
+  return OYPZones.turnZone(zone, extra);
+}
+async function uprightB64(b64) {
+  const url = await uprightCrop(b64);
+  const i = String(url || '').indexOf(',');
+  return i >= 0 ? String(url).slice(i + 1) : (url || b64);
+}
+async function uprightCrop(b64) {
+  const src = String(b64 || '');
+  const url = src.indexOf('data:') === 0 ? src : 'data:image/jpeg;base64,' + src;
+  const img = await loadDataUrl(url);
+  if (!img) return url;
+  const cv = window.cv;
+  if (!(cv && cv.Mat && window.CardDetector && CardDetector.uprightTurns)) return url;
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+  if (!c.width) return url;
+  c.getContext('2d').drawImage(img, 0, 0);
+  try {
+    const m = cv.imread(c);
+    const q = CardDetector.uprightTurns(cv, m);
+    m.delete();
+    const o = rotateCanvas(c, quarterKey(q));
+    const out = o.toDataURL('image/jpeg', 0.85);
+    if (o !== c) o.width = o.height = 0;
+    return out;
+  } catch (e) { console.warn(e); return url; }
+}
+let tessP = null;
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (tessP) return tessP;
+  tessP = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('tesseract'));
+    s.onerror = () => reject(new Error('tesseract'));
+    document.head.appendChild(s);
+  });
+  return tessP;
+}
+async function prepDigitUrl(b64) {
+  const img = await loadDataUrl(String(b64 || '').indexOf('data:') === 0 ? b64 : 'data:image/jpeg;base64,' + b64);
+  if (!img) return '';
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  if (!w0 || !h0) return '';
+  const c = document.createElement('canvas');
+  c.width = w0; c.height = h0;
+  c.getContext('2d').drawImage(img, 0, 0);
+  const cv = window.cv;
+  if (cv && cv.Mat && window.CardDetector && CardDetector.prepDigits) {
+    try {
+      const m = cv.imread(c);
+      const bin = CardDetector.prepDigits(cv, m);
+      const out = document.createElement('canvas');
+      cv.imshow(out, bin);
+      m.delete(); bin.delete();
+      const url = out.toDataURL('image/png');
+      out.width = out.height = 0; c.width = c.height = 0;
+      return url;
+    } catch (e) { console.warn(e); }
+  }
+  const o = document.createElement('canvas');
+  o.width = w0 * 3; o.height = h0 * 3;
+  const g = o.getContext('2d');
+  g.drawImage(c, 0, 0, o.width, o.height);
+  const id = g.getImageData(0, 0, o.width, o.height), d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+    const v = y > 160 ? 255 : 0;
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  g.putImageData(id, 0, 0);
+  c.width = c.height = 0;
+  return o.toDataURL('image/png');
+}
+async function handReadJo(b64) {
+  try {
+    const url = await prepDigitUrl(b64);
+    if (!url) return '';
+    const T = await loadTesseract();
+    const worker = await T.createWorker('eng');
+    try {
+      await worker.setParameters({ tessedit_char_whitelist: '0123456789-', tessedit_pageseg_mode: '7' });
+      const res = await worker.recognize(url);
+      const text = (res && res.data && res.data.text) || '';
+      const jo = realJO(text);
+      if (jo) return jo;
+      return String(text).toUpperCase().replace(/[^0-9-]/g, '').slice(0, 8);
+    } finally { try { await worker.terminate(); } catch (e) {} }
+  } catch (e) { console.warn('hand', e); return ''; }
+}
+async function joCropUrl(dataUrl) {
+  await waitZones();
+  const img = await loadDataUrl(dataUrl);
+  if (!img) return '';
+  const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+  if (!sw || !sh) return '';
+  const zone = zoneForScan(zonesNow().find(z => z && z.id === 'jo'));
+  let x = 0, y = 0, w = sw, h = Math.max(8, Math.round(sh * 0.18));
+  if (zone) {
+    x = Math.round(zone.x * sw); y = Math.round(zone.y * sh);
+    w = Math.round(zone.w * sw); h = Math.round(zone.h * sh);
+  }
+  if (x < 0) x = 0; if (y < 0) y = 0;
+  if (x + w > sw) w = sw - x; if (y + h > sh) h = sh - y;
+  if (w < 8 || h < 8) return '';
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, x, y, w, h, 0, 0, w, h);
+  const raw = c.toDataURL('image/jpeg', 0.85);
+  c.width = c.height = 0;
+  return uprightCrop(raw);
 }
 async function ocrJoPage(dataUrl) { // one readJo of the whole first page when the zone crop named nothing
   const b64 = await pageReadB64(dataUrl);
@@ -1067,7 +1250,8 @@ async function ocrJoPage(dataUrl) { // one readJo of the whole first page when t
 }
 function fileHeld(jo) { // the number is known: rename the kept pages and upload them as that JO
   jo = realJO(jo); if (!jo) return false;
-  stickersSoon(jo); // while the page is still held, so the filed guard does not skip the one print
+  capStep({ id: 'scan', text: 'JO ' + jo + ' read', state: 'ok' });
+  stickersSoon(jo); // while the page is still held, so the sticker is not skipped
   const oldScan = state.scan;
   const stamp = captureStamp(oldScan) || Date.now().toString(36);
   state.jo = jo; state.scan = jo + '@' + stamp;
@@ -1088,7 +1272,9 @@ function fileHeld(jo) { // the number is known: rename the kept pages and upload
   return true;
 }
 function askForJo() { // the photo is already on the capture screen; she types the number once
-  cap.asking = true; cap.reading = false; renderCapture();
+  cap.asking = true; cap.reading = false;
+  capStep({ id: 'scan', text: 'JO not read, tap Correct number', state: 'err' });
+  renderCapture();
   const input = $('capJoInput');
   if (input) setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 30);
 }
@@ -1118,7 +1304,8 @@ async function handlePhotos(files, fromCamera) {
   const fresh = !sameCard;
   if (fresh) {
     state.jo = typed || 'OCR'; state.page = 0; state.scan = state.jo + '@' + Date.now().toString(36); cap.pages = [];
-    cap.asking = false; cap.reading = false;
+    cap.asking = false; cap.reading = false; cap.steps = [];
+    capStep({ id: 'scan', text: 'Scanning JO number…', state: 'run' });
     const ask = $('capJoInput'); if (ask) ask.value = '';
   } else if (typed && state.jo === 'OCR') fileHeld(typed);
   photo.cont = false; // consumed; Next page sets it again on the tap that opens the camera
@@ -1172,7 +1359,28 @@ function capState(pg) {
   if (it.state === 'failed') return { cls: 'err', t: 'Failed', retry: it.id };
   return { cls: 'queued', t: it.state };
 }
+function capStep(step) {
+  cap.steps = OYPQueue.capSteps(cap.steps, step);
+  paintSteps();
+}
+function paintSteps() {
+  const ol = $('capSteps');
+  if (!ol) return;
+  ol.classList.toggle('hidden', !cap.steps.length);
+  ol.innerHTML = cap.steps.map(s => `<li class="${esc(s.state)}"><i aria-hidden="true"></i><span>${esc(s.text)}</span></li>`).join('');
+}
+function syncUploadStep() {
+  const pg = (cap.pages || []).find(p => (parseInt(p.page, 10) || 1) === 1);
+  if (!pg) return;
+  const it = capMatch(pg);
+  if (!it) return;
+  const page = parseInt(pg.page, 10) || 1;
+  if (it.state === 'uploading' || it.state === 'waiting') cap.steps = OYPQueue.capSteps(cap.steps, { id: 'up', text: 'Uploading page ' + page + '…', state: 'run' });
+  else if (it.state === 'saved' || it.state === 'mismatch') cap.steps = OYPQueue.capSteps(cap.steps, { id: 'up', text: 'Uploaded', state: 'ok' });
+  else if (it.state === 'failed') cap.steps = OYPQueue.capSteps(cap.steps, { id: 'up', text: 'Upload failed. Open Pending uploads to retry.', state: 'err' });
+}
 function renderCapture() {
+  syncUploadStep();
   const view = readCapture();
   const strip = $('capStrip'), box = $('lastScan');
   if ($('capJo')) {
@@ -1204,6 +1412,7 @@ function renderCapture() {
       prog.textContent = held ? (cap.asking ? 'This photo stays here until you tap Save.' : 'Reading the JO number…') : !cap.pages.length && !cap.saving ? '' : failed ? (failed + (failed > 1 ? ' pages failed' : ' page failed')) : pending ? (pending === 1 ? '1 page still uploading' : pending + ' pages still uploading') : 'All saved';
     }
   }
+  paintSteps();
   const retryAll = $('btnCapRetry'); if (retryAll) retryAll.classList.toggle('hidden', !failed);
   if (box) {
     const L = photo.last;
@@ -1216,7 +1425,7 @@ function finishCapture() {
   if (photo.busy) return; // the page being saved still goes into the queue when it finishes
   photo.cont = false;
   const c = queue.counts();
-  cap.pages = []; cap.saving = false; photo.last = null;
+  cap.pages = []; cap.saving = false; cap.steps = []; photo.last = null;
   $('joInput').value = '';
   showView('startView'); renderCapture();
   if (c.needsjo) note('Type the JO number in Pending uploads. The photo stays on this phone, and the sticker queues once the number is in.');
@@ -1233,6 +1442,14 @@ $('btnNextPage').addEventListener('click', e => {
 });
 $('btnNextPage').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('btnNextPage').click(); } });
 $('btnCapDone').onclick = finishCapture;
+function armScanStep(e) { // synchronous: the first step is on screen before the camera opens
+  if (photo.busy) return;
+  const next = e && e.currentTarget && e.currentTarget.id === 'btnNextPage';
+  showView('capView');
+  capStep(next ? { id: 'page', text: 'Scanning page…', state: 'run' } : { id: 'scan', text: 'Scanning JO number…', state: 'run' });
+}
+$('btnScanJO').addEventListener('pointerdown', armScanStep);
+$('btnNextPage').addEventListener('pointerdown', armScanStep);
 $('capJoForm').addEventListener('submit', e => {
   e.preventDefault();
   const jo = realJO($('capJoInput').value);
@@ -1247,6 +1464,14 @@ $('btnScanJO').addEventListener('click', e => {
 });
 $('btnScanJO').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('btnScanJO').click(); } });
 $('lnkGallery').addEventListener('click', e => { photo.cont = false; if (photo.busy) e.preventDefault(); });
+$('filePhoto').addEventListener('cancel', () => {
+  if (photo.busy || cap.pages.length) return;
+  const only = cap.steps.length === 1 && cap.steps[0].state === 'run' && (cap.steps[0].id === 'scan' || cap.steps[0].id === 'page');
+  if (!only) return;
+  cap.steps = [];
+  showView('startView');
+  renderCapture();
+});
 ['filePhoto', 'fileGallery'].forEach(id => $(id).addEventListener('change', e => {
   const fs = e.target.files, fromCamera = id === 'filePhoto';
   handlePhotos(fs, fromCamera).finally(() => {
@@ -1340,14 +1565,27 @@ function rowHtml(it, withJO) {
   const btns = it.state === 'failed' ? `<div class="acts"><button class="retry" data-retry="${esc(it.id)}">Retry</button>${rm}</div>`
     : it.state === 'uploading' ? '<span class="spin" aria-hidden="true"></span>' : '';
   const x = withJO ? `<button type="button" class="qx" data-discard="${esc(it.id)}" aria-label="Remove">×</button>` : '';
-  const fix = needs && withJO && (parseInt(it.page, 10) || 1) === 1
-    ? `<form class="jofix" data-jo-for="${esc(it.id)}"><div class="jofixrow"><input aria-label="JO number" placeholder="26-001" autocapitalize="characters" autocomplete="off" inputmode="text"><button class="jofixgo" type="submit">Save</button></div></form>`
+  const page1 = (parseInt(it.page, 10) || 1) === 1;
+  const crop = needs && withJO && page1 && it.joCrop
+    ? `<button type="button" class="jocrop" data-view="${esc(it.id)}" aria-label="JO number on the card"><img alt="JO number on the card" src="${esc(it.joCrop)}"></button>`
+    : '';
+  const pad = needs && withJO && page1 ? joPadHtml(it.id) : '';
+  const guess = esc(it.joGuess || '');
+  const fix = needs && withJO && page1
+    ? `${crop}${pad}<form class="jofix" data-jo-for="${esc(it.id)}"><div class="jofixrow"><input aria-label="JO number" placeholder="26-001" value="${guess}" autocapitalize="characters" autocomplete="off" inputmode="text"><button class="jofixgo" type="submit">Save</button></div></form>`
     : '';
   const sw = (withJO || (it.state !== 'failed' && !needs)) ? ` data-sw="${esc(it.id)}"` : ''; // Pending uploads: every row. Page strip: not failed, not unread.
   const name = withJO ? ((needs ? 'JO not read' : 'JO ' + it.jo) + ' · page ' + it.page) : it.filename;
-  const label = needs && (parseInt(it.page, 10) || 1) !== 1 ? 'Waiting for the JO number on page 1.' : OYPQueue.label(it, isOn());
-  return `<li class="${it.state}"${sw}><img alt="" src="${esc(it.thumb)}"><div class="tx"><div class="nm">${esc(name)}</div>`
+  const label = needs && !page1 ? 'Waiting for the JO number on page 1.' : OYPQueue.label(it, isOn());
+  const thumb = withJO && needs
+    ? `<button type="button" class="qthumb" data-view="${esc(it.id)}" aria-label="View this page"><img alt="" src="${esc(it.thumb)}"></button>`
+    : `<img alt="" src="${esc(it.thumb)}">`;
+  return `<li class="${it.state}"${sw}>${thumb}<div class="tx"><div class="nm">${esc(name)}</div>`
     + `<div class="st ${st}">${esc(label)}</div>${fix}</div>${btns}${x}</li>`;
+}
+function joPadHtml(id) {
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '-', '0', 'del'];
+  return `<div class="jopad">${keys.map(k => `<button type="button" data-pad="${k}"${k === 'del' ? ' aria-label="Delete"' : ''}>${k === 'del' ? '⌫' : esc(k)}</button>`).join('')}</div>`;
 }
 function renderQueue() {
   const c = queue.counts(), n = c.pending + c.failed + (c.needsjo || 0), txt = statusText(c);
@@ -1382,10 +1620,27 @@ function renderQueueBody(c, n, txt) {
 }
 function applyQueueJo(it, jo) {
   jo = realJO(jo); if (!jo || !it) return false;
-  if (it.scan && it.scan === state.scan) return fileHeld(jo);
-  const stamp = String(it.scan || '').split('@')[1] || Date.now().toString(36);
-  queue.bindJo(it.scan, jo, jo + '@' + stamp, page => pageName(jo, page.page, page.shot));
+  const scan = it.scan;
+  const stamp = String(scan || '').split('@')[1] || Date.now().toString(36);
+  stickersSoon(jo, scan);
+  const bound = (scan && scan === state.scan) ? fileHeld(jo) : queue.bindJo(scan, jo, jo + '@' + stamp, page => pageName(jo, page.page, page.shot));
+  Promise.resolve(bound).then(() => markTyped(scan, jo)).then(() => {
+    note('Saved to ' + jo);
+    const next = document.querySelector('#qList li.needsjo .jofix input');
+    if (next) { try { next.focus(); next.select(); } catch (e) {} }
+    const view = $('joView');
+    if (view && !view.classList.contains('hidden')) {
+      const id = next && next.closest('[data-jo-for]') && next.closest('[data-jo-for]').getAttribute('data-jo-for');
+      const row = id && queue.get(id);
+      if (row) openJoView(row); else view.classList.add('hidden');
+    }
+  });
   return true;
+}
+function markTyped(scan, jo) {
+  const stamp = String(scan || '').split('@')[1] || '';
+  const rows = queue.list().filter(row => row.jo === jo && (row.scan === scan || (stamp && String(row.scan || '').split('@')[1] === stamp)));
+  return rows.reduce((p, row) => p.then(() => queue.patch(row.id, { joTyped: true })), Promise.resolve());
 }
 document.addEventListener('submit', e => {
   const f = e.target && e.target.closest && e.target.closest('[data-jo-for]'); if (!f) return;
@@ -1395,7 +1650,95 @@ document.addEventListener('submit', e => {
   if (input) input.blur(); // Enter submits while the box is focused; blur so the list can show the number
   applyQueueJo(queue.get(f.getAttribute('data-jo-for')), jo);
 });
+function openJoView(it) {
+  if (!it) return;
+  const v = $('joView'); if (!v) return;
+  v.classList.remove('hidden');
+  v.dataset.id = it.id;
+  const img = $('jovImg');
+  const src = it.image || it.thumb || it.joCrop || '';
+  if (img) img.src = src.indexOf('data:') === 0 || src.indexOf('blob:') === 0 || src.indexOf('http') === 0 ? src : (src ? 'data:image/jpeg;base64,' + src : '');
+  const input = $('jovJo');
+  if (input) input.value = (it.state === 'needsjo' && it.joGuess) || '';
+  const bar = $('jovBar');
+  if (bar) bar.setAttribute('data-jo-for', it.id);
+  joZoom.reset();
+}
+const joZoom = { scale: 1, x: 0, y: 0, pts: new Map(), lastTap: 0, pinch: 0 };
+joZoom.reset = function () { joZoom.scale = 1; joZoom.x = 0; joZoom.y = 0; joZoom.pinch = 0; joZoom.apply(); };
+joZoom.apply = function () {
+  const img = $('jovImg'); if (!img) return;
+  if (joZoom.scale === 1 && !joZoom.x && !joZoom.y) { img.style.transform = ''; return; }
+  img.style.transform = 'translate(calc(-50% + ' + joZoom.x + 'px), calc(-50% + ' + joZoom.y + 'px)) scale(' + joZoom.scale + ')';
+};
+function bindJoView() {
+  const stage = $('jovStage'); if (!stage) return;
+  const close = $('jovClose');
+  if (close) close.addEventListener('click', () => $('joView').classList.add('hidden'));
+  stage.addEventListener('dblclick', () => {
+    if (joZoom.scale > 1) joZoom.reset();
+    else { joZoom.scale = 2.5; joZoom.apply(); }
+  });
+  stage.addEventListener('touchstart', e => {
+    for (const t of e.changedTouches) joZoom.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+    if (e.touches.length === 1) {
+      const now = Date.now();
+      if (now - joZoom.lastTap < 280) {
+        if (joZoom.scale > 1) joZoom.reset();
+        else { joZoom.scale = 2.5; joZoom.apply(); }
+        joZoom.lastTap = 0;
+      } else joZoom.lastTap = now;
+    }
+    if (e.touches.length === 2) {
+      const a = e.touches[0], b = e.touches[1];
+      joZoom.pinch = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+    }
+  }, { passive: true });
+  stage.addEventListener('touchmove', e => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const a = e.touches[0], b = e.touches[1];
+      const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+      joZoom.scale = Math.min(5, Math.max(1, joZoom.scale * (dist / (joZoom.pinch || dist))));
+      joZoom.pinch = dist;
+      if (joZoom.scale === 1) { joZoom.x = 0; joZoom.y = 0; }
+      joZoom.pts.set(a.identifier, { x: a.clientX, y: a.clientY });
+      joZoom.pts.set(b.identifier, { x: b.clientX, y: b.clientY });
+      joZoom.apply();
+      return;
+    }
+    if (e.touches.length === 1 && joZoom.scale > 1) {
+      e.preventDefault();
+      const t = e.touches[0], prev = joZoom.pts.get(t.identifier);
+      if (prev) { joZoom.x += t.clientX - prev.x; joZoom.y += t.clientY - prev.y; }
+      joZoom.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+      joZoom.apply();
+    } else {
+      for (const t of e.changedTouches) joZoom.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+    }
+  }, { passive: false });
+  const end = e => { for (const t of e.changedTouches) joZoom.pts.delete(t.identifier); if (e.touches.length < 2) joZoom.pinch = 0; };
+  stage.addEventListener('touchend', end);
+  stage.addEventListener('touchcancel', end);
+}
+bindJoView();
 document.addEventListener('click', e => {
+  const pad = e.target.closest && e.target.closest('[data-pad]');
+  if (pad) {
+    const root = pad.closest('li, #joView');
+    const input = root && root.querySelector('input');
+    if (!input) return;
+    const k = pad.getAttribute('data-pad');
+    input.value = k === 'del' ? input.value.slice(0, -1) : input.value + k;
+    try { input.focus(); } catch (err) {}
+    return;
+  }
+  const viewBtn = e.target.closest && e.target.closest('[data-view]');
+  if (viewBtn) {
+    const it = queue.get(viewBtn.getAttribute('data-view'));
+    if (it) openJoView(it);
+    return;
+  }
   if (e.target.closest && e.target.closest('.upcount')) return showQueue();
   const r = e.target.closest('[data-retry]'); if (r) return queue.retry(r.dataset.retry);
   const m = e.target.closest('[data-rm]');
@@ -1410,7 +1753,7 @@ document.addEventListener('click', e => {
 var swHold = false, swDirty = false; // var: renderQueue may run before this line
 function qEditing() {
   const a = document.activeElement;
-  return !!(a && a.closest && a.closest('#qList .jofix input, #qList .jofix textarea'));
+  return !!(a && a.closest && a.closest('#qList .jofix input, #qList .jofix textarea, #joView input'));
 }
 function swRelease() { swHold = false; if (swDirty) { swDirty = false; renderQueue(); } }
 const SWIPE = { START: 10, RATIO: 1.5, MIN: 80, FRAC: 0.35 };
@@ -1529,7 +1872,7 @@ function scanHelp() { const h = document.querySelector('#startView .help'); if (
 scanHelp();
 window.addEventListener('oyp-zones-ready', () => setTimeout(scanHelp, 50));
 loadCV().then(cv => { if (cv && cv.Mat) reprocessPlain(); }).catch(() => {});
-window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, acceptCardJo, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS };
+window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, acceptCardJo, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS, capStep, uprightCrop, handReadJo, openJoView };
 })();
 
 // owner: stone background only while the start screen is shown

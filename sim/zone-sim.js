@@ -260,7 +260,7 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=16'), 'scan-zones cache bust is v16');
+eq(read('nav.js').includes('scan-zones.js?v=17'), 'scan-zones cache bust is v17');
 eq(zonesSrc.includes('grid-template-columns:1fr auto 1fr') && zonesSrc.includes('.ozbar b{grid-column:2;justify-self:center') && zonesSrc.includes('.ozbar [data-z="close"]{grid-column:1') && zonesSrc.includes('.ozbar [data-z="save"]{grid-column:3'), 'the zone title is centered on the bar');
 eq(zonesSrc.includes('@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}') && zonesSrc.includes('height:calc(34px * var(--sp, 1))') && !/ellipsis/.test(zonesSrc), 'a narrow bar uses an 18px title and 34px buttons, with the full words');
 eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, then draw its box on the sample photo.') && zonesSrc.includes('Swipe on the card to scroll the page.') && zonesSrc.includes('.oznote li{margin:0;padding:0}') && !zonesSrc.includes('Tag each section of the card once'), 'the zone help is a short bulleted list');
@@ -274,8 +274,8 @@ eq(Z.instructWanted() === false, 'a closed instructions list is remembered');
 localStorage.removeItem('oypScanInstruct');
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
-eq(read('staff/index.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('nav.js?v=47'), 'staff pages load nav.js v47');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=47') && read('scan/index.html').includes('app.js?v=20261022m') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022m'), 'the scanner page keeps the production nav host at v47');
+eq(read('staff/index.html').includes('nav.js?v=48') && read('staff/print-test.html').includes('nav.js?v=48'), 'staff pages load nav.js v48');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=48') && read('scan/index.html').includes('app.js?v=20261022n') && read('scan/index.html').includes('detector.js?v=20261022j') && read('scan/index.html').includes('queue.js?v=20261022n'), 'the scanner page keeps the production nav host at v48');
 
 const heldPage = { clientId: 'c1', jo: 'OCR', held: true, page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' };
 const filing = Z.joFiling(heldPage, '26-287b', true);
@@ -310,6 +310,25 @@ const unread = Z.joStatus({
   rows: [{ clientId: 'c1', jo: 'OCR', state: 'needsjo', page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' }]
 });
 eq(unread.counter === '1 needs JO' && unread.counterErr === true && unread.tiles[0].t === 'Type JO' && unread.line === 'Reading the JO number…', 'an unread queued page still counts as needs JO');
+const typedJo = Z.joStatus({
+  jo: '26-363', scan: '26-363@abc', prevScan: 'OCR@abc', toast: 'JO 26-363.', fromCard: false, online: true,
+  filename: '26-363-p1-102226.jpg', page: 1, clientId: 'c1',
+  pages: [{ clientId: 'c1', jo: '26-363', held: false, page: 1, filename: '26-363-p1-102226.jpg', scan: '26-363@abc' }],
+  rows: [
+    { clientId: 'c1', jo: '26-363', state: 'saved', page: 1, filename: '26-363-p1-102226.jpg', scan: '26-363@abc' },
+    { clientId: 'c9', jo: 'OCR', state: 'needsjo', page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' }
+  ]
+});
+eq(typedJo.counter.indexOf('needs JO') < 0 && typedJo.tiles[0].t === 'Saved', 'a typed JO on this card is not still 1 needs JO');
+const otherJo = Z.joStatus({
+  jo: '26-363', scan: '26-363@abc', toast: 'JO 26-363.', fromCard: false, online: true,
+  pages: [{ jo: '26-363', held: false, page: 1, filename: 'a.jpg', scan: '26-363@abc' }],
+  rows: [
+    { jo: '26-363', state: 'saved', page: 1, filename: 'a.jpg', scan: '26-363@abc' },
+    { jo: 'OCR', state: 'needsjo', page: 1, filename: 'b.jpg', scan: 'OCR@other' }
+  ]
+});
+eq(otherJo.counter === '1 needs JO' && otherJo.counterErr === true, 'a different page that truly has no JO still counts');
 const fileAsSrc = zonesSrc.slice(zonesSrc.indexOf('function fileAs'), zonesSrc.indexOf('function addCorrectBtn'));
 eq(fileAsSrc.indexOf('fileHeld(jo)') !== -1 && fileAsSrc.indexOf('fileHeld(jo)') < fileAsSrc.indexOf('say('), 'the held pages are bound before the toast');
 eq(fileAsSrc.indexOf('renderQueue') !== -1 && fileAsSrc.indexOf('say(') !== -1 && fileAsSrc.indexOf('renderQueue') < fileAsSrc.indexOf('say('), 'the toast is set in the same turn as the capture render');

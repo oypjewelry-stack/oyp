@@ -427,9 +427,9 @@ function detectorUrl() {
   var tags = document.getElementsByTagName('script'), i, src;
   for (i = tags.length - 1; i >= 0; i--) {
     src = tags[i].src || '';
-    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022i');
+    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022j');
   }
-  return 'scan/detector.js?v=20261022i';
+  return 'scan/detector.js?v=20261022j';
 }
 function loadDetector() {
   if (root.CardDetector && root.CardDetector.standardPage && root.CardDetector.warpQuad && root.CardDetector.fitStandard) return Promise.resolve(root.CardDetector);
@@ -532,9 +532,17 @@ function cropFrom(img, zone) {
     return i >= 0 ? url.slice(i + 1) : '';
   } catch (e) { return ''; }
 }
+function zoneOnScan(zone) {
+  var extra = root.__oypZoneExtra || 0;
+  if (!zone || !extra) return zone;
+  return turnZone(zone, extra);
+}
 function crops(b64, zones) {
   var jo = null, fields = [];
-  zones.forEach(function (z) { if (z.id === 'jo') jo = z; else fields.push(z); });
+  (zones || []).forEach(function (z) {
+    var u = zoneOnScan(z);
+    if (u.id === 'jo') jo = u; else fields.push(u);
+  });
   if (!jo) return Promise.resolve(null);
   return loadImage(b64).then(function (img) {
     if (!img) return null;
@@ -1469,7 +1477,8 @@ var lastThumb = '';
 
 function normJo(s) {
   if (typeof root.normJO === 'function') return root.normJO(s);
-  var m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
+  var t = String(s || '').toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-').replace(/O/g, '0');
+  var m = t.match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
   return m ? m[1] + '-' + m[2] + (m[3] || '') : String(s || '').trim().toUpperCase().replace(/^J\.?O\.?\s*#?\s*/, '');
 }
 function validJo(s) { return /^\d{2}-\d{3,4}[A-Z]?$/.test(normJo(s)); }
@@ -1554,7 +1563,7 @@ function rollback(item) {
 }
 function cropJo(dataUrl) {
   var jo = null;
-  state.zones.forEach(function (z) { if (z.id === 'jo') jo = z; });
+  state.zones.forEach(function (z) { if (z.id === 'jo') jo = zoneOnScan(z); });
   if (!jo) return Promise.resolve('');
   var src = String(dataUrl || '');
   if (src.indexOf('data:') !== 0) src = 'data:image/jpeg;base64,' + src;
@@ -1605,16 +1614,38 @@ function reasonMsg(r) {
   if (!r.jo) return 'No JO number was read from the box. Type it to save this page.';
   return 'The number in the box is unclear. Type it to save this page.';
 }
+function uprightCrop(b64) {
+  var sc = scan();
+  if (!b64 || !sc || typeof sc.uprightCrop !== 'function') return Promise.resolve(b64);
+  return Promise.resolve(sc.uprightCrop(b64)).then(function (url) {
+    if (!url) return b64;
+    var i = String(url).indexOf(',');
+    return i >= 0 ? String(url).slice(i + 1) : url;
+  }).catch(function () { return b64; });
+}
+function handGuess(b64) {
+  var sc = scan();
+  if (!b64 || !sc || typeof sc.handReadJo !== 'function') return Promise.resolve('');
+  return Promise.resolve(sc.handReadJo(b64)).catch(function () { return ''; });
+}
 function resolveJo(item) {
   lastFromCard = false;
   lastImage = item.image || lastImage;
   lastThumb = item.thumb || lastThumb;
   say('Reading the JO number…');
   return cropJo(item.image).then(function (b64) {
-    if (!b64) return askJo({ msg: 'No JO number box on this photo. Type the JO number to save this page.' });
-    return readJo(b64).then(function (r) {
-      if (r && r.ok && r.jo && validJo(r.jo) && !r.low) { lastFromCard = true; return normJo(r.jo); }
-      return askJo({ jo: r && r.jo, msg: reasonMsg(r) });
+    if (!b64) return '';
+    return uprightCrop(b64).then(function (up) {
+      item.joCrop = 'data:image/jpeg;base64,' + (up || b64);
+      return readJo(up || b64).then(function (r) {
+        if (r && r.ok && r.jo && validJo(r.jo) && !r.low) { lastFromCard = true; return normJo(r.jo); }
+        var hinted = r && r.jo ? normJo(r.jo) : '';
+        return handGuess(up || b64).then(function (g) {
+          if (g && validJo(g)) { lastFromCard = true; return normJo(g); }
+          item.joGuess = (g && String(g).trim()) || (!validJo(hinted) ? hinted : '') || '';
+          return '';
+        });
+      });
     });
   });
 }
@@ -1639,6 +1670,10 @@ function joFiling(item, jo, fromCard) {
     toast: ok ? (fromCard ? ('JO ' + jo + ', from the card.') : ('JO ' + jo + '.')) : ''
   };
 }
+function stampOf(scan) {
+  var s = String(scan || ''), i = s.indexOf('@');
+  return i >= 0 ? s.slice(i + 1) : '';
+}
 function cardAccepted(snap) {
   var toast = String(snap && snap.toast || '');
   var m = toast.match(/^JO (\d{2}-\d{3,4}[A-Z]?), from the card\.$/);
@@ -1646,14 +1681,20 @@ function cardAccepted(snap) {
   if (!(jo && (snap.fromCard || m))) return '';
   return jo;
 }
+function knownJo(snap) {
+  var from = cardAccepted(snap);
+  if (from) return from;
+  if (validJo(snap && snap.jo)) return normJo(snap.jo);
+  var typed = String(snap && snap.toast || '').match(/^JO (\d{2}-\d{3,4}[A-Z]?)\.$/);
+  return typed ? typed[1] : '';
+}
 /* Tile, gold line, and counter for the capture screen. A from-the-card toast is part of
    the same record, so the readout cannot still say reading or needs-JO. */
 function joStatus(snap) {
   snap = snap || {};
   var toast = String(snap.toast || '');
-  var jo = cardAccepted(snap);
+  var jo = knownJo(snap);
   var accepted = !!jo;
-  if (!accepted && validJo(snap.jo)) jo = normJo(snap.jo);
   var pages = (snap.pages || []).map(function (p) { return Object.assign({}, p); });
   var rows = (snap.rows || []).map(function (r) { return Object.assign({}, r); });
   if (accepted) {
@@ -1667,8 +1708,9 @@ function joStatus(snap) {
         if (snap.filename) p.filename = snap.filename;
       } else if (snap.scan && (p.scan === snap.prevScan || p.jo === jo)) p.scan = snap.scan;
     });
+    var stamp = stampOf(snap.scan) || stampOf(snap.prevScan);
     rows.forEach(function (r) {
-      var mine = r.state === 'needsjo' && ((snap.clientId && r.clientId === snap.clientId) || r.scan === snap.prevScan || (r.scan === snap.scan && (r.jo === HOLD || r.jo === jo)));
+      var mine = r.state === 'needsjo' && ((snap.clientId && r.clientId === snap.clientId) || r.scan === snap.prevScan || (stamp && stampOf(r.scan) === stamp) || (r.scan === snap.scan && (r.jo === HOLD || r.jo === jo)));
       if (!mine) return;
       r.state = 'waiting'; r.jo = jo; r.held = false;
       if (snap.scan) r.scan = snap.scan;
@@ -1718,7 +1760,7 @@ function joStatus(snap) {
   var pending = 0, needs = 0, failed = 0;
   rows.forEach(function (r) {
     if (r.state === 'waiting' || r.state === 'uploading') pending++;
-    else if (r.state === 'needsjo') needs++;
+    else if (r.state === 'needsjo' && !validJo(r.jo)) needs++;
     else if (r.state === 'failed') failed++;
   });
   var counter = pending ? (pending + ' uploading') : needs ? (needs === 1 ? '1 needs JO' : needs + ' need JO') : failed ? (failed + ' failed') : '';
@@ -1815,7 +1857,16 @@ function installQueue(sc) {
     if (page === 1) ocrChain = resolveJo(item);
     else ocrChain = ocrChain.then(function (jo) { return jo || ''; });
     return ocrChain.then(function (jo) {
-      if (!jo || !validJo(jo)) { rollback(item); if (page === 1) say('Page not saved.'); return null; }
+      if (!jo || !validJo(jo)) {
+        if (page === 1) {
+          say('JO not read, tap Correct number');
+          var scMiss = scan();
+          if (scMiss && typeof scMiss.capStep === 'function') scMiss.capStep({ id: 'scan', text: 'JO not read, tap Correct number', state: 'err' });
+        }
+        item.held = true;
+        item.jo = HOLD;
+        return orig(item);
+      }
       fileAs(item, jo, page === 1 && lastFromCard, page === 1);
       return Promise.resolve(orig(item)).then(function (saved) {
         lastFiled.id = (saved && saved.id) || (item.jo + '|' + item.filename + '|' + item.scan);

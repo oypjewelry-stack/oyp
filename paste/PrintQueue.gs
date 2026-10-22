@@ -435,7 +435,12 @@ function printQueue_(req, user) {
   if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_(), auto: printAutoMap_() };
   var pack = printReadRows_(), look = printLookup_();
   var out = { ok: true, rev: printRevEnsure_(), auto: printAutoMap_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
-  if (req && req.jo && printNormJo_(req.jo)) out.spec = printDecorate_({ jo: printNormJo_(req.jo) }, look); // read only: specs for a PNG of one JO
+  if (req && req.jo && printNormJo_(req.jo)) {
+    var joN = printNormJo_(req.jo), printedKinds = [], pi;
+    out.spec = printDecorate_({ jo: joN }, look); // read only: specs for a PNG of one JO
+    for (pi = 0; pi < pack.rows.length; pi++) if (pack.rows[pi].jo === joN && pack.rows[pi].status === 'printed' && printedKinds.indexOf(pack.rows[pi].kind) < 0) printedKinds.push(pack.rows[pi].kind);
+    out.printedKinds = printedKinds; // the scanner says Printed when the station has marked these
+  }
   return out;
 }
 function handlePrint_(req, user) {

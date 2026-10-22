@@ -141,7 +141,7 @@ if (typeof document !== 'undefined' && document.createElement && document.addEve
   }
   if (base && !document.querySelector('script[src*="scan-zones.js"]')) {
     var zs = document.createElement('script');
-    zs.src = base + 'scan-zones.js?v=16';
+    zs.src = base + 'scan-zones.js?v=17';
     (document.head || document.documentElement).appendChild(zs);
   }
   // Card Scanner start screen: drop the stone photo. Other screens are already white.
