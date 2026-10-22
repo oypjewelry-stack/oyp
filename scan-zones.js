@@ -100,6 +100,77 @@ function loadImage(src) {
     img.src = src.indexOf('data:') === 0 ? src : 'data:image/jpeg;base64,' + src;
   });
 }
+/* Chrome and Edge, on desktop and Android, cannot decode HEIC. Fetch this only for a .heic/.heif file.
+   The bundle's global is an init function; calling it returns the object with HeifDecoder. */
+var HEIC_DECODER = 'https://cdn.jsdelivr.net/npm/libheif-js@1.23.5/libheif-wasm/libheif-bundle.js';
+var heicApi = null;
+var heicLib = null;
+function isHeic(file) {
+  var name = String(file && file.name || '').toLowerCase();
+  var type = String(file && file.type || '').toLowerCase();
+  return /\.hei[cf]$/.test(name) || type.indexOf('image/heic') === 0 || type.indexOf('image/heif') === 0;
+}
+function loadHeicDecoder() {
+  if (heicApi) return Promise.resolve(heicApi);
+  if (heicLib) return heicLib;
+  heicLib = new Promise(function (resolve, reject) {
+    function take(api) {
+      if (!api || !api.HeifDecoder) { heicLib = null; reject(new Error('decoder')); return; }
+      heicApi = api;
+      resolve(api);
+    }
+    function fromGlobal() {
+      var lib = root.libheif;
+      if (lib && lib.HeifDecoder) { take(lib); return; }
+      if (typeof lib !== 'function') { heicLib = null; reject(new Error('decoder')); return; }
+      Promise.resolve().then(function () { return lib(); }).then(take, function () { heicLib = null; reject(new Error('decoder')); });
+    }
+    if (root.libheif) { fromGlobal(); return; }
+    var s = document.createElement('script');
+    s.src = HEIC_DECODER;
+    s.async = true;
+    s.onload = fromGlobal;
+    s.onerror = function () { heicLib = null; reject(new Error('decoder')); };
+    (document.head || document.documentElement).appendChild(s);
+  });
+  return heicLib;
+}
+function heicToJpegUrl(file) {
+  return loadHeicDecoder().then(function (lib) {
+    return file.arrayBuffer().then(function (buf) {
+      var images;
+      try { images = new lib.HeifDecoder().decode(new Uint8Array(buf)); }
+      catch (e) { throw new Error('decode'); }
+      if (!images || !images.length) throw new Error('empty');
+      var image = images[0];
+      var w = image.get_width(), h = image.get_height();
+      if (!w || !h) throw new Error('size');
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      var ctx = c.getContext('2d');
+      var imageData = ctx.createImageData(w, h);
+      return new Promise(function (resolve, reject) {
+        try {
+          image.display(imageData, function (displayData) {
+            if (!displayData) { reject(new Error('display')); return; }
+            try {
+              ctx.putImageData(displayData, 0, 0);
+              resolve(c.toDataURL('image/jpeg', 0.92));
+            } catch (err) { reject(err); }
+          });
+        } catch (err) { reject(err); }
+      });
+    });
+  });
+}
+function readDataUrl(file) {
+  return new Promise(function (resolve, reject) {
+    var rd = new FileReader();
+    rd.onload = function () { resolve(String(rd.result || '')); };
+    rd.onerror = function () { reject(rd.error || new Error('read')); };
+    rd.readAsDataURL(file);
+  });
+}
 function cropFrom(img, zone) {
   try {
     var sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
@@ -241,13 +312,17 @@ function ensureCss() {
     '.ozcustom{display:inline-flex;align-items:center;gap:6px;cursor:text}',
     '.ozcustom input{text-transform:none;letter-spacing:0;font:15px Inter,Helvetica,sans-serif;border:0;padding:0;width:7.5em;background:transparent;color:#111}',
     '.oztools button.on{border-color:#d4af37;background:#faf8f1}',
-    '.ozfile input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}',
+    '.ozpick{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}',
     '.ozsave,.ozghost{border-radius:999px;padding:10px 16px;font:500 12px/1 Inter,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}',
     '.ozsave{background:#111;color:#fff;border:0}',
     '.ozsave:disabled{opacity:.45}',
     '.ozghost{background:#fff;color:#111;border:1px solid #ddd}',
     '.ozstage{position:relative;max-width:720px;border:1px solid #eee;border-radius:14px;overflow:hidden;background:#f6f4ee;touch-action:none}',
     '.ozstage canvas{width:100%;height:auto;display:block;touch-action:none;cursor:crosshair}',
+    '.ozstage:not(.ozhas) canvas{cursor:pointer}',
+    '.ozstage.ozhot{box-shadow:inset 0 0 0 2px #d4af37}',
+    '.ozupload{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1}',
+    '.ozstage.ozhas .ozupload{display:none}',
     '.ozlist{list-style:none;padding:0;margin:12px 0;max-width:720px}',
     '.ozlist li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid #f1f1f1;font-size:14px}',
     '.ozlist li.on{background:#faf8f1}',
@@ -319,13 +394,17 @@ function Editor(host, pop) {
     + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box.</p>'
     + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
     + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
-    + '<label class="ozfile">Sample photo<input type="file" accept="image/*"></label></div>'
-    + '<div class="ozstage"><canvas aria-label="Sample JO card. Drag a box on the photo."></canvas></div>'
+    + '<button type="button" class="ozfile" data-z="change">Change photo</button>'
+    + '<input class="ozpick" data-z="file" type="file" accept="image/*,.heic,.heif" tabindex="-1" aria-hidden="true"></div>'
+    + '<div class="ozstage"><canvas aria-label="Drop a JO card photo here, or click to upload."></canvas>'
+    + '<button type="button" class="ozsave ozupload" data-z="upload">Upload photo</button></div>'
     + '<ul class="ozlist"></ul>'
     + '<div class="ozrow"><button type="button" class="ozlink" data-z="clear">Clear boxes</button></div>'
     + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
     + '<p class="ozstatus" aria-live="polite"></p>';
   var canvas = host.querySelector('canvas');
+  var stage = host.querySelector('.ozstage');
+  var uploadBtn = host.querySelector('[data-z="upload"]');
   var list = host.querySelector('.ozlist');
   var status = host.querySelector('.ozstatus');
   var tok = host.querySelector('[data-z="token"]');
@@ -391,10 +470,26 @@ function Editor(host, pop) {
       g.strokeRect(x + w - hs, y + h - hs, hs, hs);
     });
     if (!img) {
+      var prompt = 'Drop a JO card photo here, or click to upload.';
+      var size = 22;
       g.fillStyle = '#666';
-      g.font = '500 22px Inter, Helvetica, sans-serif';
-      g.fillText('Choose a sample photo, pick a label, then drag its box.', 24, H / 2);
+      g.font = '500 ' + size + 'px Inter, Helvetica, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'bottom';
+      while (size > 14 && g.measureText(prompt).width > W - 48) {
+        size -= 1;
+        g.font = '500 ' + size + 'px Inter, Helvetica, sans-serif';
+      }
+      var cssH = stage.clientHeight || H;
+      var btnH = uploadBtn && uploadBtn.offsetHeight ? uploadBtn.offsetHeight : 34;
+      var textY = H / 2 - (btnH / 2 + 14) * (H / cssH);
+      if (textY < size + 8) textY = size + 8;
+      g.fillText(prompt, W / 2, textY);
+      g.textAlign = 'start';
+      g.textBaseline = 'alphabetic';
     }
+    stage.classList.toggle('ozhas', !!img);
+    canvas.setAttribute('aria-label', img ? 'Sample JO card. Drag a box on the photo.' : 'Drop a JO card photo here, or click to upload.');
   }
   function renderList() {
     list.innerHTML = zones.map(function (z, i) {
@@ -473,19 +568,73 @@ function Editor(host, pop) {
     zones = []; selected = -1; dirty = true; paint(); renderList();
     setStatus('Boxes cleared here. Save to keep that.');
   });
-  var file = host.querySelector('input[type="file"]');
+  var file = host.querySelector('[data-z="file"]');
+  var photoSeq = 0;
+  function openPicker() { file.click(); }
+  function readPhoto(f) {
+    if (!f) return;
+    var seq = ++photoSeq;
+    var heic = isHeic(f);
+    var keep = status.textContent;
+    if (keep === 'Opening photo…' || keep === 'Could not open that photo.') keep = '';
+    if (heic) setStatus('Opening photo…');
+    var pending = heic ? heicToJpegUrl(f) : readDataUrl(f);
+    pending.then(function (url) { return loadImage(url); }).then(function (im) {
+      if (seq !== photoSeq) return;
+      if (!im) { setStatus('Could not open that photo.'); return; }
+      img = im;
+      paint();
+      if (heic && status.textContent === 'Opening photo…') setStatus(keep);
+      host.dispatchEvent(new CustomEvent('oyp-zones-preview', { bubbles: true }));
+    }, function () {
+      if (seq !== photoSeq) return;
+      setStatus('Could not open that photo.');
+    });
+  }
   file.addEventListener('change', function () {
     var f = file.files && file.files[0];
-    if (!f) return;
-    var rd = new FileReader();
-    rd.onload = function () {
-      loadImage(String(rd.result)).then(function (im) {
-        img = im;
-        paint();
-        host.dispatchEvent(new CustomEvent('oyp-zones-preview', { bubbles: true }));
-      });
-    };
-    rd.readAsDataURL(f);
+    file.value = '';
+    readPhoto(f);
+  });
+  uploadBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    openPicker();
+  });
+  host.querySelector('[data-z="change"]').addEventListener('click', openPicker);
+  stage.addEventListener('click', function (e) {
+    if (img) return;
+    if (e.target && e.target.closest && e.target.closest('[data-z="upload"]')) return;
+    openPicker();
+  });
+  var dragDepth = 0;
+  function hasFiles(e) {
+    var dt = e.dataTransfer;
+    if (!dt || !dt.types) return false;
+    for (var i = 0; i < dt.types.length; i++) if (dt.types[i] === 'Files') return true;
+    return false;
+  }
+  stage.addEventListener('dragenter', function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth += 1;
+    stage.classList.add('ozhot');
+  });
+  stage.addEventListener('dragover', function (e) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  });
+  stage.addEventListener('dragleave', function () {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) stage.classList.remove('ozhot');
+  });
+  stage.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dragDepth = 0;
+    stage.classList.remove('ozhot');
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files[0]) readPhoto(files[0]);
   });
   canvas.addEventListener('pointerdown', function (e) {
     if (!img) return;
