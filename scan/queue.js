@@ -48,7 +48,7 @@ function create(opts) {
   const normJO = opts.normJO || (s => String(s || '').toUpperCase());
   // del(tombstone) -> { ok, deleted } | { unsupported: true } (older script) ; throws on no connection (retried later)
   const del = opts.del || null, onDeleted = opts.onDeleted || (() => {});
-  let items = new Map(), active = 0, pumping = false, pumpQueued = false, timer = null, loaded = null, seq = 0, reaping = false, reapTimer = null;
+  let items = new Map(), active = 0, pumping = false, pumpQueued = false, timer = null, loaded = null, ready = false, seq = 0, reaping = false, reapTimer = null;
 
   const all = () => [...items.values()].sort((a, b) => a.createdAt - b.createdAt || a.seq - b.seq);
   const list = () => all().filter(x => x.state !== 'deleting');
@@ -58,7 +58,10 @@ function create(opts) {
     try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
     return 'c' + now().toString(36) + Math.random().toString(36).slice(2, 12);
   }
-  function needsNumber(p) { return !!(p && (p.held || p.needsJo || !p.jo || p.jo === 'OCR')); }
+  function needsNumber(p) {
+    if (p && realJo(p.jo)) return false; // the card number is known; a leftover held flag must not keep the page from uploading
+    return !!(p && (p.held || p.needsJo || !p.jo || p.jo === 'OCR'));
+  }
 
   function load() {
     if (loaded) return loaded;
@@ -69,7 +72,7 @@ function create(opts) {
         if (it.state === 'deleting' && it.inflight) { it.inflight = false; await store.put(it); } // closed mid-upload: delete by session + page
         seq = Math.max(seq, it.seq || 0); items.set(it.id, it);
       }
-      await prune(); emit(); reap();
+      await prune(); ready = true; emit(); reap();
     })();
     return loaded;
   }
@@ -97,26 +100,31 @@ function create(opts) {
   // The JO number was typed or read later. Every page of that capture starts uploading, page 1 first.
   // The clientId stays so a retry of the same photo is still the same photo.
   async function bindJo(scan, jo, newScan, nameFor) {
-    await load();
+    if (!ready) await load();
     jo = normJO(jo);
     if (!jo || !scan) return false;
-    const group = all().filter(x => x.scan === scan && x.state === 'needsjo');
+    // OCR@stamp and 26-287B@stamp are one capture. A different stamp stays where it is.
+    const group = all().filter(x => x.state === 'needsjo' && sameCapture(x.scan, scan));
     if (!group.length) return false;
+    const dropped = [];
     for (const x of group) {
       const filename = nameFor ? nameFor(x) : x.filename;
-      const scan = newScan || x.scan;
+      const nextScan = newScan || x.scan;
       const prev = x.id;
       x.jo = jo;
       x.filename = filename;
-      x.scan = scan;
+      x.scan = nextScan;
       x.id = keyOf(x.jo, x.filename, x.scan);
       x.state = x.image ? 'waiting' : 'failed';
       x.nextAt = 0; x.error = ''; x.held = false;
       if (!x.image) x.error = x.error || 'photo missing';
-      if (prev !== x.id) { items.delete(prev); await store.del(prev); }
-      await save(x);
+      if (prev !== x.id) { items.delete(prev); dropped.push(prev); }
+      items.set(x.id, x);
     }
-    emit(); kick(); return true;
+    emit(); // the counter leaves "needs JO" before IndexedDB, in the same turn as the page update
+    for (const id of dropped) await store.del(id);
+    for (const x of group) await save(x);
+    kick(); return true;
   }
   function schedule() {
     clearT(timer); timer = null;
@@ -271,6 +279,47 @@ function label(it, isOnline) {
   }
   return it.state;
 }
-const api = { create, memoryStore, idbStore, label, removePrompt, extraNeedsjo, keyOf, STATES, MAX_TRIES, MAX_PARALLEL, BACKOFF };
+function realJo(s) {
+  const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
+  const n = m ? m[1] + '-' + m[2] + (m[3] || '') : '';
+  return /^\d{2}-\d{3,4}[A-Z]?$/.test(n) ? n : '';
+}
+function captureStamp(scan) {
+  const s = String(scan || '');
+  const i = s.indexOf('@');
+  return i >= 0 ? s.slice(i + 1) : '';
+}
+function sameCapture(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const sa = captureStamp(a), sb = captureStamp(b);
+  return !!(sa && sa === sb);
+}
+// What to do once the card names a JO. enqueueHeld is for a page not stored yet.
+// bind is for a needsjo row already stored. release means a held page or that row is still waiting on the number.
+function cardJoPlan(opts) {
+  opts = opts || {};
+  const jo = realJo(opts.jo);
+  const scan = String(opts.scan || '');
+  const stamp = captureStamp(scan) || String(opts.stamp || '');
+  const rows = opts.rows || [];
+  const pages = opts.pages || [];
+  if (!jo) return { known: false, jo: '', enqueueHeld: true, bind: false, clearReading: false, sticker: false, stickerKey: '', newScan: scan, held: true, release: false };
+  const newScan = stamp ? (jo + '@' + stamp) : jo;
+  const stickerKey = (stamp || newScan) + '|' + jo;
+  const bind = rows.some(r => r && r.state === 'needsjo' && (sameCapture(r.scan, scan) || (stamp && captureStamp(r.scan) === stamp)));
+  const heldPages = pages.some(p => p && (p.held || p.jo === 'OCR'));
+  return { known: true, jo, newScan, enqueueHeld: false, bind, clearReading: true, held: false, sticker: opts.stickerFor !== stickerKey, stickerKey, release: heldPages || bind };
+}
+// A plain page is shot again once the detector loads. A JO already read from the card is not put back on hold.
+function reprocessPlan(row, knownJo) {
+  row = row || {};
+  const jo = realJo(knownJo);
+  const wasHeld = row.state === 'needsjo' || row.jo === 'OCR' || row.held;
+  if (wasHeld && jo) return { held: false, bind: true, jo: jo, plain: false };
+  if (wasHeld) return { held: true, bind: false, jo: row.jo || 'OCR', plain: false };
+  return { held: false, bind: false, jo: realJo(row.jo) || row.jo, plain: false };
+}
+const api = { create, memoryStore, idbStore, label, removePrompt, extraNeedsjo, keyOf, realJo, captureStamp, sameCapture, cardJoPlan, reprocessPlan, STATES, MAX_TRIES, MAX_PARALLEL, BACKOFF };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.OYPQueue = api;
 })(typeof window !== 'undefined' ? window : globalThis);

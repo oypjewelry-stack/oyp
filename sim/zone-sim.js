@@ -260,7 +260,7 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=15'), 'scan-zones cache bust is v15');
+eq(read('nav.js').includes('scan-zones.js?v=16'), 'scan-zones cache bust is v16');
 eq(zonesSrc.includes('grid-template-columns:1fr auto 1fr') && zonesSrc.includes('.ozbar b{grid-column:2;justify-self:center') && zonesSrc.includes('.ozbar [data-z="close"]{grid-column:1') && zonesSrc.includes('.ozbar [data-z="save"]{grid-column:3'), 'the zone title is centered on the bar');
 eq(zonesSrc.includes('@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}') && zonesSrc.includes('height:calc(34px * var(--sp, 1))') && !/ellipsis/.test(zonesSrc), 'a narrow bar uses an 18px title and 34px buttons, with the full words');
 eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, then draw its box on the sample photo.') && zonesSrc.includes('Swipe on the card to scroll the page.') && zonesSrc.includes('.oznote li{margin:0;padding:0}') && !zonesSrc.includes('Tag each section of the card once'), 'the zone help is a short bulleted list');
@@ -274,8 +274,8 @@ eq(Z.instructWanted() === false, 'a closed instructions list is remembered');
 localStorage.removeItem('oypScanInstruct');
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
-eq(read('staff/index.html').includes('nav.js?v=46') && read('staff/print-test.html').includes('nav.js?v=46'), 'staff pages load nav.js v46');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=46') && read('scan/index.html').includes('app.js?v=20261022l') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022j'), 'the scanner page keeps the production nav host at v46');
+eq(read('staff/index.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('nav.js?v=47'), 'staff pages load nav.js v47');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=47') && read('scan/index.html').includes('app.js?v=20261022m') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022m'), 'the scanner page keeps the production nav host at v47');
 
 const heldPage = { clientId: 'c1', jo: 'OCR', held: true, page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' };
 const filing = Z.joFiling(heldPage, '26-287b', true);
@@ -311,6 +311,7 @@ const unread = Z.joStatus({
 });
 eq(unread.counter === '1 needs JO' && unread.counterErr === true && unread.tiles[0].t === 'Type JO' && unread.line === 'Reading the JO number…', 'an unread queued page still counts as needs JO');
 const fileAsSrc = zonesSrc.slice(zonesSrc.indexOf('function fileAs'), zonesSrc.indexOf('function addCorrectBtn'));
+eq(fileAsSrc.indexOf('fileHeld(jo)') !== -1 && fileAsSrc.indexOf('fileHeld(jo)') < fileAsSrc.indexOf('say('), 'the held pages are bound before the toast');
 eq(fileAsSrc.indexOf('renderQueue') !== -1 && fileAsSrc.indexOf('say(') !== -1 && fileAsSrc.indexOf('renderQueue') < fileAsSrc.indexOf('say('), 'the toast is set in the same turn as the capture render');
 eq(app.includes('OYPZones.joStatus(captureSnap())') && app.includes('captureView'), 'the page tile, the gold line, and the counter share one readout');
 

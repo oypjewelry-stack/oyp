@@ -545,6 +545,8 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
   // Durable the moment the JPEG exists. The camera returns as soon as this write finishes; the upload does not.
   try { await queue.add(Object.assign({ image, plain: !!plain }, p)); }
   catch (e) { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); }
+  // The read can finish while this add is in flight and rename only its copy. Bind the page that is still held.
+  if ((p.held || p.jo === 'OCR') && realJO(state.jo)) fileHeld(realJO(state.jo));
   renderCapture();
   return p;
 }
@@ -825,14 +827,19 @@ function loadPhotoMain(file) {
 const cvSoon = ms => Promise.race([loadCV().catch(() => null), new Promise(r => setTimeout(() => r(null), ms))])
   .then(() => (window.cv && window.cv.Mat) ? window.cv : null);
 let stickerSentFor = '';
+function captureStamp(scan) {
+  const s = String(scan || '');
+  const i = s.indexOf('@');
+  return i >= 0 ? s.slice(i + 1) : '';
+}
 function stickersSoon(jo) { // page 1 only. Fire-and-forget: printEnqueue uses the JO number, and a later upload does not duplicate it.
   jo = realJO(jo);
   if (!jo) return;
   const pages = cap.pages || [];
   const later = pages.some(p => (parseInt(p.page, 10) || 1) > 1);
-  const filed = pages.some(p => (parseInt(p.page, 10) || 1) === 1 && !p.held);
+  const filed = pages.some(p => (parseInt(p.page, 10) || 1) === 1 && !p.held && p.jo !== 'OCR');
   if (later || filed || state.page > 1) return;
-  const key = (state.scan || '') + '|' + jo;
+  const key = (captureStamp(state.scan) || state.scan || '') + '|' + jo; // the stamp stays put when OCR@stamp is renamed to the JO
   if (stickerSentFor === key) return;
   stickerSentFor = key;
   const token = localStorage.getItem(LS.token) || '';
@@ -845,13 +852,27 @@ function stickersSoon(jo) { // page 1 only. Fire-and-forget: printEnqueue uses t
   if (stickerOn('tag')) post('jewelry_tag');
 }
 let earlyRead = null;
+function acceptCardJo(jo) { // the card read won. File every held page of this scan, or remember the number before the page is stored.
+  jo = realJO(jo);
+  if (!jo) return false;
+  const plan = OYPQueue.cardJoPlan({ jo, scan: state.scan, pages: cap.pages, rows: queue.list(), stickerFor: stickerSentFor });
+  if (!plan.known) return false;
+  if (plan.sticker) stickersSoon(jo);
+  if (plan.release) return fileHeld(jo);
+  if (!realJO(state.jo)) {
+    state.jo = plan.jo; state.scan = plan.newScan; cap.reading = false; cap.asking = false;
+    const start = $('joInput'); if (start) start.value = plan.jo;
+  }
+  return true;
+}
 function startEarlyRead(dataUrl) { // the JO crop does not need enhance, so the sticker can be queued while enhance runs
   const scan = state.scan;
+  const stamp = captureStamp(scan);
   earlyRead = (async () => {
     let jo = '';
     try { jo = await ocrJoNumber(dataUrl); } catch (e) { console.warn('readJo', e); }
     if (!jo) { try { jo = await ocrJoPage(dataUrl); } catch (e) { console.warn('readJo page', e); } }
-    if (jo && state.scan === scan) stickersSoon(jo);
+    if (jo && (state.scan === scan || (stamp && captureStamp(state.scan) === stamp))) acceptCardJo(jo);
     return jo;
   })();
 }
@@ -916,10 +937,11 @@ async function reprocessPlain() { // a page saved before OpenCV arrived. Replace
       th.getContext('2d').drawImage(out, 0, 0, th.width, th.height);
       const thumb = th.toDataURL('image/jpeg', 0.6);
       out.width = out.height = 0; src.width = src.height = 0;
-      const held = it.state === 'needsjo' || it.jo === 'OCR';
-      await queue.add(Object.assign({}, it, { image, thumb, plain: false, held }));
+      const plan = OYPQueue.reprocessPlan(it, realJO(state.jo));
+      await queue.add(Object.assign({}, it, { image, thumb, plain: false, held: plan.held, boundJo: plan.bind ? plan.jo : '' }));
       const pg = cap.pages.find(p => (it.clientId && p.clientId === it.clientId) || (p.scan === it.scan && p.filename === it.filename));
       if (pg) { pg.thumb = thumb; pg.plain = false; pg.quad = quad; if (pg.image) pg.image = image; }
+      if (plan.bind) fileHeld(plan.jo);
     }
     renderCapture();
   } catch (e) { console.warn('reprocess', e); }
@@ -1045,21 +1067,23 @@ async function ocrJoPage(dataUrl) { // one readJo of the whole first page when t
 }
 function fileHeld(jo) { // the number is known: rename the kept pages and upload them as that JO
   jo = realJO(jo); if (!jo) return false;
+  stickersSoon(jo); // while the page is still held, so the filed guard does not skip the one print
   const oldScan = state.scan;
-  const stamp = String(oldScan || '').split('@')[1] || Date.now().toString(36);
+  const stamp = captureStamp(oldScan) || Date.now().toString(36);
   state.jo = jo; state.scan = jo + '@' + stamp;
   cap.asking = false; cap.reading = false;
   const start = $('joInput'); if (start) start.value = jo;
   const ask = $('capJoInput'); if (ask) ask.value = '';
-  if (oldScan) queue.bindJo(oldScan, jo, state.scan, it => pageName(jo, it.page, it.shot));
   cap.pages.forEach(p => {
-    if (!p.held) return;
+    if (!p.held && p.jo !== 'OCR') return;
     const image = p.image;
+    const prevScan = p.scan, prevName = p.filename;
     p.jo = jo; p.scan = state.scan; p.filename = pageName(jo, p.page, p.shot); p.held = false; delete p.image;
-    const queued = queue.list().some(x => (p.clientId && x.clientId === p.clientId) || (x.scan === p.scan && x.page === p.page));
+    const queued = queue.list().some(x => (p.clientId && x.clientId === p.clientId) || (x.scan === prevScan && (x.page === p.page || x.filename === prevName)) || (x.scan === p.scan && x.page === p.page));
     if (image && !queued) queue.add(Object.assign({ image, plain: !!p.plain }, p)).catch(e => { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); });
   });
   if (photo.last && photo.last.pg) { photo.last.pg.jo = jo; photo.last.pg.scan = state.scan; photo.last.pg.filename = pageName(jo, photo.last.pg.page, photo.last.pg.shot); photo.last.pg.held = false; }
+  if (oldScan) queue.bindJo(oldScan, jo, state.scan, it => pageName(jo, it.page, it.shot));
   renderCapture();
   return true;
 }
@@ -1069,7 +1093,9 @@ function askForJo() { // the photo is already on the capture screen; she types t
   if (input) setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 30);
 }
 async function readHeldJo() {
-  if (cap.reading || cap.asking || realJO(state.jo)) return;
+  if (cap.reading || cap.asking) return;
+  const stillHeld = () => cap.pages.some(p => p.held || p.jo === 'OCR');
+  if (realJO(state.jo)) { if (stillHeld()) fileHeld(realJO(state.jo)); return; }
   const page = cap.pages.find(p => p.held && p.image && (parseInt(p.page, 10) || 1) === 1);
   if (!page && !earlyRead) return;
   cap.reading = true; renderCapture();
@@ -1081,7 +1107,7 @@ async function readHeldJo() {
     if (jo) stickersSoon(jo);
   }
   cap.reading = false;
-  if (realJO(state.jo)) return;
+  if (realJO(state.jo)) { if (stillHeld()) fileHeld(realJO(state.jo)); return; }
   if (jo) fileHeld(jo); else askForJo();
 }
 async function handlePhotos(files, fromCamera) {
@@ -1114,7 +1140,7 @@ async function handlePhotos(files, fromCamera) {
   } catch (e) { console.error(e); note('Could not save the photo: ' + (e.message || e)); }
   finally { cap.saving = false; photoBusy(false); if (!saved && fresh && !cap.pages.length) showView('startView'); renderCapture(); }
   if (fromCamera && saved) photo.reopen = true; // straight back to the camera; the upload keeps going
-  if (state.jo === 'OCR') readHeldJo(); // does not block the next shot
+  if (state.jo === 'OCR' || cap.pages.some(p => p.held || p.jo === 'OCR')) readHeldJo(); // does not block the next shot
 }
 function captureSnap() { // the capture and the queue, plus the filing when a card JO was just accepted
   const f = cap.filing || null;
@@ -1503,7 +1529,7 @@ function scanHelp() { const h = document.querySelector('#startView .help'); if (
 scanHelp();
 window.addEventListener('oyp-zones-ready', () => setTimeout(scanHelp, 50));
 loadCV().then(cv => { if (cv && cv.Mat) reprocessPlain(); }).catch(() => {});
-window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS };
+window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, acceptCardJo, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS };
 })();
 
 // owner: stone background only while the start screen is shown
