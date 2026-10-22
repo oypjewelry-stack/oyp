@@ -260,12 +260,13 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=11'), 'scan-zones cache bust is v11');
+eq(read('nav.js').includes('scan-zones.js?v=12'), 'scan-zones cache bust is v12');
+eq(zonesSrc.includes('grid-template-columns:1fr auto 1fr') && zonesSrc.includes('.ozbar b{grid-column:2;justify-self:center') && zonesSrc.includes('.ozbar [data-z="close"]{grid-column:1') && zonesSrc.includes('.ozbar [data-z="save"]{grid-column:3'), 'the zone title is centered on the bar');
 eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, then draw its box on the sample photo.') && zonesSrc.includes('Swipe on the card to scroll the page.') && zonesSrc.includes('.oznote li{margin:0;padding:0}') && !zonesSrc.includes('Tag each section of the card once'), 'the zone help is a short bulleted list');
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
-eq(read('staff/index.html').includes('nav.js?v=40') && read('staff/print-test.html').includes('nav.js?v=40'), 'staff pages load nav.js v40');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=40') && read('scan/index.html').includes('app.js?v=20261022i') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v40');
+eq(read('staff/index.html').includes('nav.js?v=41') && read('staff/print-test.html').includes('nav.js?v=41'), 'staff pages load nav.js v41');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=41') && read('scan/index.html').includes('app.js?v=20261022i') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v41');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');
