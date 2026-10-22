@@ -9,8 +9,8 @@ var DEFAULT_API = 'https://script.google.com/macros/s/AKfycbzUmacbdvb0V2nw9ekhar
 var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
-var POLL = 5000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, prepared: {}, preparing: {}, toldDown: false };
+var POLL = 1000;
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, hot: {}, prepared: {}, preparing: {}, toldDown: false };
 /* Slot 0 is state. Slot 1 is the second printer on the same page. Each has its own link, chain, and device id. */
 var peer = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, chain: Promise.resolve() };
 var PAGE_MS = 20000;
@@ -740,16 +740,108 @@ function claimAndPrint(item, link) {
   });
   return done;
 }
+function stickerKey(kind, jo) { return String(kind || '') + '\n' + String(jo || ''); }
+function newPrintId() {
+  return 'pq-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
+}
+function localItem(kind, jo, id, extra) {
+  extra = extra || {};
+  return {
+    print_id: id, jo: jo, kind: kind, status: 'queued',
+    due_date: extra.due_date || extra.due || '',
+    date: extra.date || extra.given || '',
+    current_stage: extra.current_stage || extra.stage || '',
+    metal: extra.metal || '', karat: extra.karat || '',
+    weight_g: extra.weight_g, weight: extra.weight,
+    stone_type: extra.stone_type || extra.stone || '',
+    stone_size: extra.stone_size || '', size: extra.size || '',
+    description: extra.description || ''
+  };
+}
+/* A tap prints from the fields already on the page. The queue write is a log, with this print_id, and it does not hold the printer. */
 function printJo(kind, jo, opts) {
   opts = opts || {};
   var reprint = opts.reprint !== false;
-  return callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint }).then(function (r) {
-    if (!r || r.ok === false) { toast((r && r.error) || 'Sticker did not print'); return r; }
-    var item = r.item || { jo: jo, kind: kind };
-    if (!linkFor(item.kind || kind)) { toast(holdText(item.kind || kind)); refresh(); return r; }
-    if (item.status && item.status !== 'queued') { toast('That sticker is already ' + item.status); refresh(); return r; }
-    return claimAndPrint(item).then(function () { return r; });
-  }).catch(function () { toast('Sticker did not print'); });
+  var link = linkFor(kind);
+  if (!link || !link.connected) {
+    return callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint }).then(function (r) {
+      if (!r || r.ok === false) { toast((r && r.error) || 'Sticker did not print'); return r; }
+      toast(holdText(kind));
+      refresh();
+      return r;
+    }).catch(function () { toast('Sticker did not print'); });
+  }
+  var key = stickerKey(kind, jo);
+  if (state.hot[key]) { toast('That sticker is already printing'); return Promise.resolve(); }
+  var id = newPrintId();
+  var item = localItem(kind, jo, id, opts.item);
+  var tracked = [id];
+  state.hot[key] = id;
+  state.inflight[id] = 1;
+  state.busy[id] = 1;
+  var prep = prepareItem(item, link);
+  var tEnq = clock();
+  var logged = callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint, print_id: id, device_id: devId(link) }).then(function (r) {
+    logMs('enqueue', clock() - tEnq);
+    var idOut = r && r.item && r.item.print_id;
+    if (idOut && tracked.indexOf(idOut) < 0) {
+      tracked.push(idOut);
+      state.inflight[idOut] = 1;
+      state.busy[idOut] = 1;
+    }
+    return r || { ok: false, error: 'Sticker did not print' };
+  }, function () {
+    logMs('enqueue', clock() - tEnq);
+    return { ok: false, error: 'No connection' };
+  });
+  logMs('claim', 0, 'local');
+  var printedOk = false, failWhy = '';
+  var job = work(link, function () {
+    if (!link.connected) { toast(holdText(kind)); return logged; }
+    markPrinting(link, true);
+    toast('Printing…');
+    return sendToPrinter(item, prep, link).then(function () {
+      printedOk = true;
+      toast('Printed');
+    }, function (err) {
+      failWhy = failRow(err);
+      toast(failToast(err));
+    }).then(function () {
+      return logged.then(function (r) {
+        var idOut = (r && r.item && r.item.print_id) || id;
+        if (!r || r.ok === false) {
+          if (printedOk) toast('Printed, but the queue did not update');
+          return r;
+        }
+        if (printedOk) {
+          state.done[idOut] = 1;
+          if (r.item && r.item.status && r.item.status !== 'queued' && r.item.status !== 'failed') return r;
+          markLocal(idOut, 'printed');
+          markLater(idOut, 'printed', '', link);
+          return r;
+        }
+        if (!failWhy) return r;
+        markLocal(idOut, 'failed', failWhy);
+        return callPrint('printMark', { print_id: idOut, mark: 'failed', device_id: devId(link), error: failWhy }).then(function (done) {
+          markFailed(done, 'The sticker failed, and the queue did not update');
+          refresh();
+          return r;
+        });
+      });
+    }).then(function (v) { markPrinting(link, false); return v; }, function (err) { markPrinting(link, false); throw err; });
+  });
+  return Promise.resolve(job).then(function (v) { return v; }, function (err) {
+    markPrinting(link, false);
+    toast(failToast(err));
+  }).finally(function () {
+    delete state.hot[key];
+    tracked.forEach(function (pid) {
+      delete state.inflight[pid];
+      delete state.busy[pid];
+    });
+    if (wantsQueue()) kick();
+    pump();
+  });
 }
 function printAgain(item) {
   if (!item) return;
@@ -827,7 +919,7 @@ function cancel(id) {
   });
 }
 function reprint(item) {
-  return printJo(item.kind, item.jo, { reprint: true });
+  return printJo(item.kind, item.jo, { reprint: true, item: item });
 }
 
 function screenLabel(item) {
@@ -987,7 +1079,7 @@ function onQueueClick(e) {
   if (q === 'cancel') cancel(it.print_id);
   else if (q === 'again') printAgain(it);
   else if (q === 'reprint') reprint(it);
-  else printJo(it.kind, it.jo, { reprint: false });
+  else claimAndPrint(it);
 }
 
 function isFinal(req, res) {
@@ -1040,7 +1132,7 @@ function nextLocal(link) {
     it = items[i];
     if (!it || it.status !== 'queued' || linkFor(it.kind) !== link) continue;
     if (!state.printQueued && !serverAuto(it.kind)) continue;
-    if (state.inflight[it.print_id] || state.done[it.print_id] || state.busy[it.print_id]) continue;
+    if (state.hot[stickerKey(it.kind, it.jo)] || state.inflight[it.print_id] || state.done[it.print_id] || state.busy[it.print_id]) continue;
     if (state.cool[it.print_id] && state.cool[it.print_id] > now) continue;
     if (!claimFresh(it, now, link)) continue;
     return it;
@@ -1072,10 +1164,11 @@ function pump() {
     kick();
   }).finally(function () { state.pumping = false; });
 }
-/* Every 5s asks only for the rev. A server without that cheap answer falls back to a full read every 15s. */
+/* On screen, every 1s asks only for the rev. A hidden tab checks every 5th tick. A server without that cheap answer falls back to a full read every 3rd tick that actually runs. */
 function pollTick() {
   if (!anyUp() || state.pumping) return;
   state.ticks = (state.ticks || 0) + 1;
+  if (!pageVisible() && state.ticks % 5 !== 0) return;
   if (state.briefOk === false) {
     if (state.ticks % 3 !== 0) return;
     pump();
