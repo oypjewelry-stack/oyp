@@ -648,7 +648,8 @@ function ensureCss() {
     '.oz-inline{margin-top:8px}',
     '.ozbar{display:flex;flex-wrap:wrap;align-items:center;gap:calc(8px * var(--sp, 1));margin-bottom:calc(8px * var(--sp, 1))}',
     '.ozbar b{font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:calc(22px * var(--fs, 1));flex:1 0 160px}',
-    '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.45;color:#444;max-width:720px;margin:0 0 calc(12px * var(--sp, 1))}',
+    '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.35;color:#444;max-width:720px;margin:0 0 calc(12px * var(--sp, 1));padding:0 0 0 1.15em;list-style:disc}',
+    '.oznote li{margin:0;padding:0}',
     '.oztools{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp, 1));margin:0 0 calc(12px * var(--sp, 1))}',
     '.oztools button,.ozfile,.ozcustom{border:1px solid #ddd;background:#fff;border-radius:999px;padding:calc(8px * var(--sp, 1)) calc(12px * var(--sp, 1));font:500 calc(12px * var(--fs, 1))/1.2 Inter,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}',
     '.ozfile{height:calc(34px * var(--sp, 1));display:inline-flex;align-items:center;justify-content:center;padding:0 calc(12px * var(--sp, 1));box-sizing:border-box}',
@@ -761,7 +762,18 @@ function Editor(host, pop) {
     + '<p class="ozstatus" data-tone="dirty" aria-live="polite"><i class="ozdot" aria-hidden="true"></i><span class="ozmsg"></span></p>'
     + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
     + '<button type="button" class="oztokchange" data-z="changetoken" hidden>Change token</button>'
-    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box. A vertical phone photo is turned once so the card reads upright. A photo that is already horizontal is left as it is. Rotate turns it again. When the card edges are found, the sample is straightened to one fixed card size, the same frame a scan is cropped from. Draw box, or a press-and-hold, adds a box. A one-finger drag on the empty card scrolls the page.</p>'
+    + '<ul class="oznote">'
+    + '<li>Pick a label, then draw its box on the sample photo.</li>'
+    + '<li>Labels: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or type your own.</li>'
+    + '<li>Page 1 reads the JO number only from the JO number box. Other boxes are read under their own label.</li>'
+    + '<li>Later pages of the card are read in full.</li>'
+    + '<li>Tap Draw box, or press and hold, to add a box.</li>'
+    + '<li>Drag a box to move it. Drag its corner to resize it.</li>'
+    + '<li>Drawing a label again replaces its box.</li>'
+    + '<li>Vertical photos turn upright on their own. Rotate turns it again.</li>'
+    + '<li>The photo is trimmed to the card\'s edges, the same as a scan.</li>'
+    + '<li>Swipe on the card to scroll the page.</li>'
+    + '</ul>'
     + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
     + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
     + '<button type="button" class="ozfile" data-z="rot" hidden aria-label="Rotate 90 degrees clockwise">Rotate</button>'

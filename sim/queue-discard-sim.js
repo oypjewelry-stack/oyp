@@ -82,6 +82,6 @@ const page = (jo, p, extra) => Object.assign({ jo, page: p, filename: jo + '-p' 
   ok(/button, input, textarea/.test(app), 'a tap on the JO box or Save does not start a swipe');
   ok(/#qList li\[data-sw\]/.test(css) && /touch-action:manipulation/.test(css), 'Pending uploads rows use the same swipe styling, and the JO box keeps its own touch');
   ok(/app\.js\?v=20261022i/.test(html) && /queue\.js\?v=20261022h/.test(html) && /style\.css\?v=20261022e/.test(html), 'cache-busts moved past v20261022h for app.js');
-  ok(/nav\.js\?v=39/.test(html) && /detector\.js\?v=20261022i/.test(html), 'nav.js is v39 and the detector matches the measured card');
+  ok(/nav\.js\?v=40/.test(html) && /detector\.js\?v=20261022i/.test(html), 'nav.js is v40 and the detector matches the measured card');
   console.log('queue-discard tests passed:', n);
 })().catch(e => { console.error(e); process.exit(1); });
