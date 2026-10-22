@@ -505,13 +505,17 @@ const autoRow = T.rowHtml(escHtml, { id: 'prod-1', manual: 0, tag: 'Production',
 check(manualRow.indexOf('tdtick') >= 0 && manualRow.indexOf('tdmore') < 0 && manualRow.indexOf('Mine · Fri') >= 0, 'a manual row has the round tick and the Mine chip', manualRow);
 check(autoRow.indexOf('tdmore') >= 0 && autoRow.indexOf('tdtick') < 0 && autoRow.indexOf('Production') >= 0, 'an auto row keeps the more menu');
 check(T.rowHtml(escHtml, Object.assign({}, overdue, { late: 1 }), { user: ada, today: day }).indexOf('chip tdtag gold') >= 0, 'overdue uses the gold chip');
-check(T.addBar(escHtml, [{ username: 'ann', name: 'Ann' }]).indexOf('Add a to-do') >= 0 && T.addBar(escHtml, []).indexOf('type="date"') >= 0, 'the add line is one field, a due date, and an assignee');
+const addHtml = T.addBar(escHtml, [{ username: 'ann', name: 'Ann' }]);
+check(addHtml.indexOf('Add a to-do') >= 0 && addHtml.indexOf('type="date"') >= 0 && addHtml.indexOf('type="submit"') >= 0 && addHtml.indexOf('>Add<') >= 0 && addHtml.indexOf(' disabled') >= 0 && /enterkeyhint="(?:enter|done)"/.test(addHtml), 'the add line is one field, a due date, an assignee, and Add');
+check(typeof T.isAddEnter === 'function' && T.isAddEnter({ key: 'Enter', target: { classList: { contains: c => c === 'tdaddin' } } }) && !T.isAddEnter({ key: 'Enter', target: { classList: { contains: () => false } } }) && !T.isAddEnter({ key: 'Enter', repeat: true, target: { classList: { contains: c => c === 'tdaddin' } } }), 'Enter in the text field is the add key');
 const card = fs.readFileSync(path.join(root, 'dash.js'), 'utf8');
 const page = fs.readFileSync(path.join(root, 'todo.js'), 'utf8');
 const navSrc = fs.readFileSync(path.join(root, 'nav.js'), 'utf8');
 const appSrc = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 check(card.indexOf('Add a to-do') < 0 && card.indexOf('addBar') >= 0 && card.indexOf("data-td=\"tick\"") < 0 && card.indexOf("act === 'tick'") >= 0, 'the card adds and ticks through the shared row');
 check(page.indexOf('placeholder="Add a to-do"') >= 0 && page.indexOf("['mine', 'Mine']") >= 0 && page.indexOf("['done', 'Done']") >= 0 && page.indexOf('data-tdscope="${k}"') >= 0 && page.indexOf('data-tdwho') >= 0 && page.indexOf('oypTodoWho') >= 0 && page.indexOf("return 'mine'") >= 0, 'the page has the add line, the Mine / Everyone control, and Done');
+check(page.indexOf("toast('Added.')") >= 0 && card.indexOf("toast('Added.')") >= 0 && page.indexOf('Added. It is under Everyone.') >= 0 && card.indexOf('Added. It is under Everyone.') >= 0, 'every save says Added, and a row outside Mine says where it went');
+check(page.indexOf('isAddEnter') >= 0 && card.indexOf('isAddEnter') >= 0 && page.indexOf('tdaddgo') >= 0, 'Enter and the Add button both reach the save');
 check(card.indexOf('whoBar') >= 0 && card.indexOf('readWho') >= 0 && card.indexOf('isMine') >= 0 && card.indexOf('Yours') >= 0 && card.indexOf('tdcount') >= 0, 'the dashboard card uses the same filter and its badge counts that filter');
 check(!/confirm\(/.test(page), 'delete does not ask for confirmation');
 check(page.indexOf('toastUndo') >= 0 && page.indexOf('>Undo<') >= 0, 'delete offers undo on the toast');
@@ -522,7 +526,7 @@ check(adminNav.indexOf("['dashboard', 'Dashboard']") >= 0 && adminNav.indexOf("[
 ['todoAdd', 'todoUpdate', 'todoUndo', 'todoDelete'].forEach(action => {
   check(!new RegExp(action + '\\s*:').test(appSrc), action + ' is not a client read');
 });
-check(fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.js?v=4') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.css?v=6') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('dash.js?v=33'), 'the new page assets are cache-busted');
+check(fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.js?v=5') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.css?v=7') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('dash.js?v=34'), 'the new page assets are cache-busted');
 delete global.document;
 const navMod = require(path.join(root, 'nav.js'));
 const phone = navMod.menuHtml(ada, 'todo', '');

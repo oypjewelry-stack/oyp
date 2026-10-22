@@ -33,7 +33,7 @@ Then
 
 Site
   staff/index.html, todo.js, dash.js, nav.js, app.js, and todo.css ship on GitHub Pages.
-  The dashboard card keeps its place. The top of the card is one line: Add a to-do, an optional due date, and an assignee. Enter adds it.
+  The dashboard card keeps its place. The top of the card is the text, an optional due date, an assignee, and Add. Enter in the text field adds it too. On a phone the text is full width, and the date, assignee, and Add sit on the next row. A save says Added, or Added. It is under Everyone. when the row is not in Mine.
   A manual row has a round tick. An automatic row keeps the ⋯ menu, with Done and Snooze.
   The left chip reads Mine when the viewer wrote the row, or From the other person's name when someone else assigned it. A due date is added on that chip: a short weekday this week (Mine · Fri), otherwise the month and day (Oct 28). Overdue uses the gold chip.
   The Mine filter is manual rows the viewer created or that were assigned to them.
