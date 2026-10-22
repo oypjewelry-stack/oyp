@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Swipe preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../app.css?v=43">
+<link rel="stylesheet" href="../todo.css?v=5">
+<link rel="stylesheet" href="../production.css?v=9">
+<link rel="stylesheet" href="../print.css?v=13">
+</head><body>
+<header class="top">
+  <button id="btnMenu" class="icon" aria-label="Menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000" stroke-width="1.5"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
+  <span id="title" class="title">OYP Jewelry</span>
+  <span class="topend"></span>
+</header>
+<section class="office">
+  <nav class="side"><div class="sidenav"><a class="on" href="#/home">Dashboard</a><a href="#/todo">To do</a><a href="#/jos">Inventory</a><a href="#/production">Production</a></div></nav>
+  <main class="main" id="main"></main>
+</section>
+<div id="toast" class="toast hidden"></div>
+<pre id="out" style="display:none"></pre>
+<script src="../swipe.js?v=1"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var list = q.get('list') || '';
+  var wantOpen = q.get('open') === '1';
+  var test = q.get('test') === '1';
+  var main = document.getElementById('main');
+  var lines = [];
+  function check(cond, msg) { lines.push((cond ? 'ok ' : 'FAIL ') + msg); if (!cond) window.__fail = (window.__fail || 0) + 1; }
+
+  function printHtml() {
+    return '<h2>Print queue</h2><p class="muted">Stickers waiting for the printer.</p><div data-oyp-q>'
+      + '<div class="setp oyp-qrow" data-id="p1" data-st="queued"><div class="setl oyp-qmain"><b class="cn">Elena Tan · 26-287</b><span class="kf"><span class="chip">JO card</span><span class="chip">Queued</span></span></div><div class="fbtns oyp-qbtns"><button type="button" class="pill sm" data-q="now" data-id="p1">PRINT</button><button type="button" class="pill sm outline" data-q="reprint" data-id="p1">REPRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="p1">CANCEL</button></div></div>'
+      + '<div class="setp oyp-qrow" data-id="p2" data-st="failed"><div class="setl oyp-qmain"><b class="cn">26-265</b><span class="kf"><span class="chip">Jewelry tag</span><span class="chip">Failed</span></span><span class="muted oyp-qerr">Printer did not respond</span></div><div class="fbtns oyp-qbtns"><button type="button" class="pill sm" data-q="again" data-id="p2">PRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="p2">CANCEL</button></div></div>'
+      + '</div>';
+  }
+  function todoHtml() {
+    return '<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3></span><span class="lab">Reminders · deadlines · suggestions</span></div>'
+      + '<div class="tdgrp"><div class="tdgh"><span class="lab">Today</span><span class="kn">2</span></div>'
+      + '<div class="tdrow manual" data-id="m1"><button type="button" class="tdtick" data-td="tick" data-id="m1" aria-label="Done"></button><span class="chip tdtag">Mine · Fri</span><span class="tdtxt">Call the caster</span></div>'
+      + '<div class="tdrow" data-id="a1"><span class="chip tdtag">Production</span><span class="tdtxt">26-287 is stuck in setting</span><button type="button" class="tdmore" data-td="more" data-id="a1" aria-label="More">⋯</button><span class="tdgo">›</span></div>'
+      + '</div><p class="muted tdfoot">Enter adds a to-do. Tick finishes one you typed. Tap any other line to open it. ⋯ gives Done or Snooze.</p></section>';
+  }
+  function invHtml() {
+    return '<div class="iv"><div class="dhead"><h2>Inventory</h2><span class="dheadacts"><span class="lab">2 items</span><button type="button" class="pill sm outline" id="ivChoose">Select</button></span></div>'
+      + '<p class="muted">Every JO and finished piece.</p><div class="ivgrid" id="ivGrid">'
+      + '<div class="ivcard tap" data-jo="26-287"><div class="ivph"><button type="button" class="ivmore" aria-label="Actions">⋯</button><span>No photo</span></div><div class="ivb"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div><div class="kf"><span class="chip dark">Vault</span></div></div></div>'
+      + '<div class="ivcard tap" data-jo="26-265"><div class="ivph"><button type="button" class="ivmore" aria-label="Actions">⋯</button><span>No photo</span></div><div class="ivb"><div class="kjo">26-265</div><div class="kd">Plain band, size 6</div><div class="kf"><span class="chip">Casting</span></div></div></div>'
+      + '</div></div>';
+  }
+  function prodHtml() {
+    return '<div class="prod" id="pWrap"><div class="phead"><h2>Production</h2></div><p class="muted psum">2 JOs in production</p>'
+      + '<div class="pboard" id="pBoard" style="grid-template-columns:repeat(2,minmax(126px,1fr))">'
+      + '<div class="pcol" data-col="setting"><div class="khead"><span class="lab">Setting</span><span class="kn">1</span></div>'
+      + '<div class="pcard tap" data-jo="26-287" draggable="true"><div class="pcm"><div class="pth"><span>No scan</span></div><div class="pbd"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div><div class="kc"><b>Mia</b></div></div></div><div class="kf"><span class="chip">Setting</span></div></div></div>'
+      + '<div class="pcol" data-col="polish"><div class="khead"><span class="lab">Polish</span><span class="kn">1</span></div>'
+      + '<div class="pcard tap" data-jo="26-265" draggable="true"><div class="pcm"><div class="pth"><span>No scan</span></div><div class="pbd"><div class="kjo">26-265</div><div class="kd">Plain band</div><div class="kc"><i>Unassigned</i></div></div></div><div class="kf"><span class="chip">Polish</span></div></div></div>'
+      + '</div></div>';
+  }
+  var views = { print: printHtml, todo: todoHtml, inv: invHtml, prod: prodHtml };
+  function mountList(name) {
+    main.innerHTML = views[name]();
+    if (name === 'print') OYPSwipe.mount(main.querySelector('[data-oyp-q]'), { item: '.oyp-qrow', ignore: '.oyp-qbtns', actions: function (row) {
+      var id = row.getAttribute('data-id'), acts = [];
+      if (row.getAttribute('data-st') === 'failed') acts.push({ label: 'Reprint', attrs: { 'data-q': 'reprint', 'data-id': id } });
+      acts.push({ label: 'Cancel', undoable: true, attrs: { 'data-q': 'cancel', 'data-id': id } });
+      return acts;
+    } });
+    if (name === 'todo') OYPSwipe.mount(main.querySelector('.todo'), { item: '.tdrow', ignore: '.tdmore, .tdtick', actions: function (row) {
+      var id = row.getAttribute('data-id');
+      if (row.classList.contains('manual')) return [{ label: 'Done', attrs: { 'data-td': 'tick', 'data-id': id } }];
+      return [
+        { label: 'Tomorrow', attrs: { 'data-td': 'snooze', 'data-until': 'tomorrow', 'data-id': id } },
+        { label: '3 days', attrs: { 'data-td': 'snooze', 'data-until': '3d', 'data-id': id } },
+        { label: '1 week', attrs: { 'data-td': 'snooze', 'data-until': '7d', 'data-id': id } },
+        { label: 'Done', attrs: { 'data-td': 'done', 'data-id': id } }
+      ];
+    } });
+    if (name === 'inv') OYPSwipe.mount(main.querySelector('#ivGrid'), { item: '.ivcard', ignore: '.ivmore', off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
+    if (name === 'prod') OYPSwipe.mount(main.querySelector('#pBoard'), { item: '.pcard', ignore: '.pck', off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
+  }
+  function show(name) {
+    document.getElementById('title').textContent = name === 'print' ? 'PRINT' : name === 'todo' ? 'TO DO' : name === 'inv' ? 'INVENTORY' : 'PRODUCTION';
+    mountList(name);
+    if (wantOpen) {
+      var row = main.querySelector('[data-st="failed"]') || main.querySelector('.tdrow:not(.manual)') || main.querySelector('.ivcard, .pcard, .oyp-qrow, .tdrow');
+      OYPSwipe.open(row);
+    }
+  }
+
+  function pointer(el, dx, dy) {
+    var r = el.getBoundingClientRect();
+    var x = r.left + Math.min(36, r.width / 2), y = r.top + r.height / 2;
+    var opt = function (cx, cy, buttons) { return { bubbles: true, cancelable: true, clientX: cx, clientY: cy, pointerId: 7, pointerType: 'mouse', button: 0, buttons: buttons }; };
+    el.dispatchEvent(new PointerEvent('pointerdown', opt(x, y, 1)));
+    document.dispatchEvent(new PointerEvent('pointermove', opt(x + dx * 0.5, y + dy * 0.5, 1)));
+    document.dispatchEvent(new PointerEvent('pointermove', opt(x + dx, y + dy, 1)));
+    document.dispatchEvent(new PointerEvent('pointerup', opt(x + dx, y + dy, 0)));
+  }
+
+  if (list && views[list]) { show(list); document.body.dataset.ready = '1'; }
+  if (!test) return;
+
+  var fails = [];
+  mountList('print');
+  var queued = main.querySelector('[data-st="queued"]');
+  var failed = main.querySelector('[data-st="failed"]');
+  check(queued.closest('.swclip') && queued.parentNode.classList.contains('swface'), 'a print row sits in the shared clip');
+  check(main.querySelector('[data-st="queued"]').parentNode.parentNode.querySelector('.swbtn').textContent === 'Cancel', 'a queued row reveals Cancel');
+  var failedBtns = failed.closest('.swclip').querySelectorAll('.swbtn');
+  check(failedBtns.length === 2 && failedBtns[0].textContent === 'Reprint' && failedBtns[1].textContent === 'Cancel', 'a failed row reveals Reprint and Cancel');
+  check(main.querySelector('.oyp-qbtns .pill') && main.querySelector('[data-q="cancel"]'), 'the existing print buttons stay');
+  pointer(queued, -120, 0);
+  check(queued.closest('.swclip').classList.contains('open'), 'a left pointer drag opens the row');
+  pointer(queued, 0, 80);
+  check(queued.closest('.swclip').classList.contains('open'), 'a vertical move on an open row does not by itself fight the open state before a new gesture');
+  OYPSwipe.close(queued);
+  pointer(queued, 2, 40);
+  check(!queued.closest('.swclip').classList.contains('open'), 'a vertical move scrolls instead of opening');
+  pointer(queued, 80, 0);
+  check(!queued.closest('.swclip').classList.contains('open'), 'a right drag does not open');
+
+  mountList('todo');
+  var manual = main.querySelector('.tdrow.manual');
+  var auto = main.querySelector('.tdrow:not(.manual)');
+  pointer(manual.querySelector('.tdtxt'), -100, 0);
+  check(manual.closest('.swclip').classList.contains('open'), 'a manual to-do opens');
+  check(manual.closest('.swclip').querySelector('.swbtn').textContent === 'Done', 'a manual to-do reveals Done');
+  check(manual.querySelector('.tdtick'), 'the tick stays on the row');
+  OYPSwipe.open(auto);
+  check(!manual.closest('.swclip').classList.contains('open') && auto.closest('.swclip').classList.contains('open'), 'only one row is open');
+  var labels = [].map.call(auto.closest('.swclip').querySelectorAll('.swbtn'), function (b) { return b.textContent; });
+  check(labels.join(',') === 'Tomorrow,3 days,1 week,Done', 'an auto to-do reveals Done and the snooze chips');
+  pointer(auto.querySelector('.tdtxt'), 0, 0);
+  check(!auto.closest('.swclip').classList.contains('open'), 'a tap on an open row closes it');
+
+  mountList('inv');
+  var card = main.querySelector('.ivcard');
+  check(card.querySelector('.ivmore'), 'the inventory menu stays');
+  pointer(card.querySelector('.kd'), -140, 0);
+  check(card.closest('.swclip').classList.contains('open') && card.closest('.swclip').querySelector('.swbtn').textContent === 'Archive', 'an inventory tile reveals Archive');
+  OYPSwipe.close();
+  document.body.dataset.sel = '1';
+  pointer(card.querySelector('.kd'), -140, 0);
+  check(!card.closest('.swclip').classList.contains('open'), 'Select turns swipe off');
+  document.body.dataset.sel = '';
+
+  mountList('prod');
+  var pcard = main.querySelector('.pcard');
+  check(pcard.getAttribute('draggable') === 'true', 'a production card stays draggable');
+  pointer(pcard.querySelector('.kd'), -130, 2);
+  check(pcard.closest('.swclip').classList.contains('open'), 'a left drag on a production card opens Archive');
+  check(pcard.draggable === true || pcard.getAttribute('draggable') === 'true', 'the kanban drag is restored after the swipe');
+  OYPSwipe.close(pcard);
+  document.body.dataset.sel = '1';
+  pointer(pcard.querySelector('.kd'), -130, 0);
+  check(!pcard.closest('.swclip').classList.contains('open'), 'production Select turns swipe off');
+  document.body.dataset.sel = '';
+
+  var lay = document.createElement('div');
+  lay.innerHTML = '<div class="dsec" data-dsec="todo"><div class="dtitle">To do</div><div class="tdrow" data-id="z"><span class="tdtxt">Hold</span></div></div>';
+  main.appendChild(lay);
+  OYPSwipe.mount(lay, { item: '.tdrow', actions: function () { return [{ label: 'Done' }]; } });
+  document.documentElement.classList.add('layedit');
+  pointer(lay.querySelector('.dtitle'), -80, 0);
+  check(!lay.querySelector('.tdrow').closest('.swclip').classList.contains('open'), 'Edit layout drag on the header does not open a swipe');
+  document.documentElement.classList.remove('layedit');
+  pointer(lay.querySelector('.tdtxt'), -80, 0);
+  check(lay.querySelector('.tdrow').closest('.swclip').classList.contains('open'), 'a row that is not the drag handle still swipes during Edit layout');
+
+  var table = document.createElement('div');
+  table.innerHTML = '<table><tr class="csrow"><td>Piece</td></tr></table>';
+  main.appendChild(table);
+  OYPSwipe.mount(table, { item: 'tr', actions: function () { return [{ label: 'Delete', danger: true }]; } });
+  check(!table.querySelector('.swclip'), 'a table row is not wrapped');
+
+  document.body.click();
+  var box = document.createElement('div');
+  box.innerHTML = '<div class="csitem">One piece</div>';
+  main.appendChild(box);
+  var ran = 0;
+  window.confirm = function (msg) { window.__ask = msg; return false; };
+  OYPSwipe.mount(box, { item: '.csitem', actions: function () { return [{ label: 'Remove', confirm: 'Remove this piece from the sheet?', run: function () { ran++; } }]; } });
+  box.querySelector('.swbtn').click();
+  check(window.__ask === 'Remove this piece from the sheet?' && ran === 0, 'Remove asks, and cancel does not run it');
+  window.confirm = function () { return true; };
+  box.querySelector('.swbtn').click();
+  check(ran === 1 && !box.querySelector('.swbtn').classList.contains('swdanger'), 'confirmed Remove runs, and it is not danger red');
+
+  var del = document.createElement('div');
+  del.innerHTML = '<div class="row">Gone</div>';
+  main.appendChild(del);
+  OYPSwipe.mount(del, { item: '.row', actions: function () { return [{ label: 'Delete' }]; } });
+  check(del.querySelector('.swbtn').classList.contains('swdanger'), 'Delete is the danger button');
+
+  document.getElementById('out').textContent = lines.join('\n') + (window.__fail ? '' : '\nSWIPE_OK');
+  document.getElementById('out').style.display = 'block';
+})();
+</script>
+</body></html>

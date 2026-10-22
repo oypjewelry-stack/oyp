@@ -177,6 +177,21 @@ function wireBoard(main) {
     cl.addEventListener('drop', e => { e.preventDefault(); cl.classList.remove('over'); const c = drag || S.r.cards.find(x => x.jo === e.dataTransfer.getData('text/plain'));
       if (!c || c.col === cl.dataset.col) return; if (!okDrop(c, cl.dataset.col)) return toast('Move one stage forward at a time'); openMove(c, cl.dataset.col); });
   });
+  const board = $('pBoard');
+  const u = S.u;
+  if (board && window.OYP.swipe && (can().all || (u && (u.role === 'admin' || u.role === 'production_manager')))) window.OYP.swipe(board, {
+    item: '.pcard',
+    ignore: '.pck, [data-move]',
+    off: () => S.choose,
+    actions: function (row) {
+      const jo = row.getAttribute('data-jo');
+      if (!jo) return [];
+      return [{ label: 'Archive', undoable: true, run: function () {
+        if (!window.OYP.archiveJos) return;
+        window.OYP.archiveJos([jo], 'archived', { after: () => reload() });
+      } }];
+    }
+  });
 }
 const okDrop = (c, k) => c.col !== k && (can().all || (nextCol(c) && nextCol(c).key === k && c.col !== 'pickup'));
 

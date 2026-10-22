@@ -618,6 +618,7 @@ function wireTodo(main) {
     if (btn) e.preventDefault();
     todoGo(it);
   });
+  if (window.OYPTodo && window.OYPTodo.bindSwipe) window.OYPTodo.bindSwipe(sec);
 }
 function draw(main, u) {
   const { esc } = window.OYP, r = D.r, cc = D.cc, live = window.OYP.here();
@@ -943,7 +944,7 @@ async function drillPage(main, u, kind, key, keepScroll, quiet) {
     if (x.value) c.push(`<span class="chip">${esc(x.value)}</span>`);
     if (x.jo && noCC.has(x.jo)) c.push('<span class="chip nocc">No contact</span>');
     const go = open && x.jo;
-    return `<div class="rvrow dr ${go ? 'go tap' : ''}"${go ? ` data-jo="${esc(x.jo)}"` : ''}><div class="rvi"><div class="kjo">${x.jo ? window.OYP.piece(x.client, x.jo) : `<span class="muted">${esc(x.item || '—')}</span>`}${x.parent_jo ? `<span class="muted sm">of ${esc(x.parent_jo)}</span>` : ''}${x.item && x.jo ? `<span class="muted sm">${esc(x.item)}</span>` : ''}</div>
+    return `<div class="rvrow dr ${go ? 'go tap' : ''}${x.sale ? ' sale' : ''}"${go ? ` data-jo="${esc(x.jo)}"` : ''}><div class="rvi"><div class="kjo">${x.jo ? window.OYP.piece(x.client, x.jo) : `<span class="muted">${esc(x.item || '—')}</span>`}${x.parent_jo ? `<span class="muted sm">of ${esc(x.parent_jo)}</span>` : ''}${x.item && x.jo ? `<span class="muted sm">${esc(x.item)}</span>` : ''}</div>
       <div class="kd">${esc(x.description || 'No details')}${x.with ? ' · ' + esc(x.with) : ''}</div><div class="kf">${c.join('')}</div></div>${go ? '<span class="chev">›</span>' : ''}</div>`;
   };
   const q = () => ((main.querySelector('#drQ') || {}).value || '').trim().toUpperCase();
@@ -963,7 +964,28 @@ async function drillPage(main, u, kind, key, keepScroll, quiet) {
     <div class="rvrows" id="drRows">${list()}</div>
     ${note ? `<p class="muted dnote">${esc(note)}</p>` : ''}
     ${!open && rows.some(x => x.jo) ? '<p class="muted dnote">Opening a JO card is for admin and production manager.</p>' : ''}</div>`;
-  const wire = () => main.querySelectorAll('.rvrow.go').forEach(el => el.onclick = () => openJO(el.dataset.jo, rows.find(x => x.jo === el.dataset.jo), title));
+  const wire = () => {
+    main.querySelectorAll('.rvrow.go').forEach(el => el.onclick = () => openJO(el.dataset.jo, rows.find(x => x.jo === el.dataset.jo && !x.sale) || rows.find(x => x.jo === el.dataset.jo), title));
+    const box = main.querySelector('#drRows');
+    if (open && box && window.OYP.swipe) window.OYP.swipe(box, {
+      item: '.rvrow.dr[data-jo]',
+      actions: function (row) {
+        if (row.classList.contains('sale')) return [];
+        const jo = row.getAttribute('data-jo');
+        const job = rows.find(x => x.jo === jo && !x.sale);
+        if (!job) return [];
+        const arch = job.location === 'archived';
+        const prev = job.location || '';
+        return [{ label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
+          if (!window.OYP.archiveJos) return;
+          window.OYP.archiveJos([jo], arch ? '' : 'archived', { word: arch ? 'Unarchived' : 'Archived', after: function (undone) {
+            job.location = undone ? prev : (arch ? '' : 'archived');
+            drillPage(main, u, kind, key, true);
+          } });
+        } }];
+      }
+    });
+  };
   const qi = main.querySelector('#drQ'); if (qi) qi.oninput = () => { main.querySelector('#drRows').innerHTML = list(); wire(); };
   wire(); scrollTo(0, y);
   const on = main.querySelector('.rvchips .fchip.on'); if (on) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20; // phone: the picked chip in view

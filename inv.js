@@ -169,11 +169,27 @@ async function ivBulk(main, jos, location, kind) {
   IV.busy = false;
   if (!window.OYP.here()()) return;
   if (!r || !r.ok) return window.OYP.toast(!r || r.error === 'Unknown action' ? BULK_NOTE : (r && r.error) || 'Could not update');
-  const done = new Set((r.set || []).map(x => x.jo));
+  const sets = r.set || [];
+  const done = new Set(sets.map(x => x.jo));
   IV.r.jobs.forEach(j => { if (done.has(j.jo)) j.location = location; });
   IV.sel.clear(); IV.scanned = []; IV.menu = ''; IV.anchor = ''; IV.picking = false;
   const n = done.size, word = kind === 'archive' ? 'Archived' : kind === 'unarchive' ? 'Unarchived' : 'Moved';
-  window.OYP.toast(word + ' ' + n + (r.missing && r.missing.length ? ' · ' + r.missing.length + ' not found' : ''));
+  const msg = word + ' ' + n + (r.missing && r.missing.length ? ' · ' + r.missing.length + ' not found' : '');
+  if ((kind === 'archive' || kind === 'unarchive') && window.OYP.toastUndo) {
+    window.OYP.toastUndo(msg, async () => {
+      const groups = {};
+      sets.forEach(s => { const from = s.from || ''; (groups[from] = groups[from] || []).push(s.jo); });
+      let bad = '';
+      for (const from of Object.keys(groups)) {
+        const back = await window.OYP.call('invBulk', { jos: groups[from], location: from });
+        if (!back || !back.ok) { bad = (back && back.error) || 'Could not undo'; break; }
+        const backSet = new Set((back.set || []).map(x => x.jo));
+        IV.r.jobs.forEach(j => { if (backSet.has(j.jo)) j.location = from; });
+      }
+      window.OYP.toast(bad || 'Restored');
+      await renderJos(main, IV.u);
+    });
+  } else window.OYP.toast(msg);
   await renderJos(main, IV.u);
 }
 function ivArchive(main, jos) {
@@ -274,6 +290,22 @@ function ivWire(main) {
     if (j.location === 'archived') ivBulk(main, [j.jo], '', 'unarchive'); else ivArchive(main, [j.jo]);
   };
   if ($('#ivSX')) { $('#ivSX').onclick = () => { IV.open = null; ivDraw(main); }; $('#ivSheet').onclick = e => { if (e.target.id === 'ivSheet') { IV.open = null; ivDraw(main); } }; }
+  const grid = $('#ivGrid');
+  if (grid && ivEdit() && window.OYP.swipe) window.OYP.swipe(grid, {
+    item: '.ivcard',
+    ignore: '.ivmore, .ivmenu, .ivck',
+    off: () => IV.choose || IV.sel.size > 0,
+    actions: function (row) {
+      const jo = row.getAttribute('data-jo');
+      const j = IV.r.jobs.find(x => x.jo === jo);
+      if (!j) return [];
+      const arch = j.location === 'archived';
+      return [{ label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
+        if (arch) return ivBulk(main, [jo], '', 'unarchive');
+        return ivArchive(main, [jo]);
+      } }];
+    }
+  });
   const on = main.querySelector('.ivchips .fchip.on'); if (on && innerWidth < 760) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20;
 }
 function ivThumbs(main, L) { // piece photos only. 300px thumbs, loaded as tiles scroll in (no 60-tile cap). L kept for the call site.
@@ -403,7 +435,17 @@ function mWire(main) {
   const done = async (r, msg) => {
     if (!live()) return; // the user moved on while saving: the save stands, just don't redraw over the new page
     if (!r || !r.ok) { MS.err = (r && r.error) || 'Could not save'; if (r && r.code === 'CONFLICT') { await renderMats(main, MS.u); MS.err = r.error; mDraw(main); } else { const e = $('#mErr'); if (e) e.textContent = MS.err; else toast(MS.err); ['#mvSave', '#maSave', '#meSave'].forEach(k => { if ($(k)) $(k).disabled = false; }); } return; } // fix and try again
-    MS.err = ''; toast(msg); if (r.item) MS.open = r.item.mat_id; if (msg === 'Archived' || msg === 'Restored') MS.view = 'all'; MS.adding = false; delete MS.hist[MS.open]; await renderMats(main, MS.u);
+    MS.err = '';
+    if ((msg === 'Archived' || msg === 'Restored') && r.item && window.OYP.toastUndo) {
+      const item = r.item, backTo = msg === 'Archived';
+      window.OYP.toastUndo(msg, async () => {
+        const ures = await call('matSave', { mat_id: item.mat_id, base_updated_at: item.updated_at, item: { active: backTo } });
+        if (!ures || !ures.ok) return toast((ures && ures.error) || 'Could not undo');
+        toast(backTo ? 'Restored' : 'Archived');
+        MS.view = 'all'; delete MS.hist[item.mat_id]; await renderMats(main, MS.u);
+      });
+    } else toast(msg);
+    if (r.item) MS.open = r.item.mat_id; if (msg === 'Archived' || msg === 'Restored') MS.view = 'all'; MS.adding = false; delete MS.hist[MS.open]; await renderMats(main, MS.u);
   };
   if ($('#maSave')) $('#maSave').onclick = async e => { keep(); const d = MS.draft, item = { kind: MS.kind, name: d.name, unit: d.unit, supplier: d.supplier, location: d.location, min_qty: d.min_qty, notes: d.notes };
     MFIELDS[MS.kind].forEach(([f]) => { item[f] = d[f]; }); item.qty = d.qty; item.unit_cost = d.unit_cost;
@@ -419,8 +461,17 @@ function mWire(main) {
   if ($('#meSave')) $('#meSave').onclick = async () => { const item = { name: val('#meName'), unit: val('#meUnit'), supplier: val('#meSup'), location: val('#meLoc'), min_qty: val('#meMin'), notes: val('#meNotes') };
     (MFIELDS[m.kind] || MFIELDS.other).forEach(([f]) => { item[f] = val('#me_' + f); }); MS.editing = true;
     await done(await call('matSave', { mat_id: m.mat_id, base_updated_at: m.updated_at, item }), 'Details saved'); MS.editing = false; };
-  if ($('#meArch')) $('#meArch').onclick = async () => { if (m.active && !confirm('Archive ' + m.name + '? It is hidden from the list. Nothing is deleted and you can restore it.')) return;
-    await done(await call('matSave', { mat_id: m.mat_id, base_updated_at: m.updated_at, item: { active: !m.active } }), m.active ? 'Archived' : 'Restored'); };
+  const matFlip = async item => { await done(await call('matSave', { mat_id: item.mat_id, base_updated_at: item.updated_at, item: { active: !item.active } }), item.active ? 'Archived' : 'Restored'); };
+  if ($('#meArch')) $('#meArch').onclick = async () => { if (m.active && !confirm('Archive ' + m.name + '? It is hidden from the list. Nothing is deleted and you can restore it.')) return; await matFlip(m); };
+  const mrows = main.querySelector('.rvrows');
+  if (mrows && (MS.r.can || {}).edit && window.OYP.swipe) window.OYP.swipe(mrows, {
+    item: '.mrow',
+    actions: function (row) {
+      const item = MS.r.items.find(x => x.mat_id === row.getAttribute('data-mat'));
+      if (!item) return [];
+      return [{ label: item.active ? 'Archive' : 'Restore', undoable: true, run: function () { matFlip(item); } }];
+    }
+  });
   const med = $('.medit'); if (med) med.ontoggle = () => { MS.editing = med.open; };
 }
 // a fresh visit (menu / link) on a phone starts on the list; on a desktop the last item stays open

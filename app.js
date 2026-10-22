@@ -86,7 +86,21 @@ function user() {
   if (!localStorage.getItem(K.s) || !exp || new Date(exp) < new Date()) return null;
   try { return JSON.parse(localStorage.getItem(K.u)); } catch (_) { return null; }
 }
-function toast(t) { const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 2600); }
+function toast(t) {
+  const el = $('toast'); if (!el) return;
+  el.textContent = t; el.classList.remove('hidden');
+  clearTimeout(toast.t); clearTimeout(toastUndo.t);
+  toast.t = setTimeout(() => el.classList.add('hidden'), 2600);
+}
+function toastUndo(msg, fn) {
+  const el = $('toast'); if (!el) return;
+  el.innerHTML = esc(msg) + ' <button type="button" class="tdundo">Undo</button>';
+  el.classList.remove('hidden');
+  clearTimeout(toast.t); clearTimeout(toastUndo.t);
+  const btn = el.querySelector('.tdundo');
+  if (btn) btn.onclick = () => { el.classList.add('hidden'); clearTimeout(toastUndo.t); Promise.resolve().then(fn).catch(() => {}); };
+  toastUndo.t = setTimeout(() => el.classList.add('hidden'), 5000);
+}
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // light placeholder while a page's first data loads (instead of a blank "Loading…")
@@ -507,7 +521,31 @@ function piece(name, jo) {
   const title = n && id ? n + ' · ' + id : (n || id);
   return `<span class="piece" title="${esc(title)}">${bits.join('')}</span>`;
 }
-window.OYP = { call, esc, toast, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
+async function archiveJos(jos, location, opts) {
+  opts = opts || {};
+  const r = await call('invBulk', { jos: jos, location: location });
+  if (!r || !r.ok) {
+    toast(!r || r.error === 'Unknown action' ? 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).' : ((r && r.error) || 'Could not update'));
+    return r;
+  }
+  const sets = r.set || [];
+  if (!sets.length) { toast(location ? 'Already there' : 'Nothing to restore'); return r; }
+  const word = opts.word || (location === 'archived' ? 'Archived' : 'Restored');
+  toastUndo(word + (sets.length > 1 ? ' ' + sets.length : ''), async () => {
+    const groups = {};
+    sets.forEach(s => { const from = s.from || ''; (groups[from] = groups[from] || []).push(s.jo); });
+    let bad = '';
+    for (const from of Object.keys(groups)) {
+      const back = await call('invBulk', { jos: groups[from], location: from });
+      if (!back || !back.ok) { bad = (back && back.error) || 'Could not undo'; break; }
+    }
+    toast(bad || 'Restored');
+    if (opts.after) { try { opts.after(true); } catch (e) {} }
+  });
+  if (opts.after) { try { opts.after(false); } catch (e) {} }
+  return r;
+}
+window.OYP = { call, esc, toast, toastUndo, archiveJos, swipe: (window.OYPSwipe && window.OYPSwipe.mount) || function () {}, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 // Edit layout is off on every load. Settings turns it on; Done turns it off. Order stays in localStorage either way.
 const LE = {
   on: false, fns: [],

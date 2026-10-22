@@ -105,6 +105,7 @@ function listHtml(esc, items, o) {
 
 const S = { data: null, scope: 'everyone', area: 'all', openId: '', editId: '', user: null, focus: false };
 function toastUndo(msg, fn) {
+  if (root.OYP && typeof root.OYP.toastUndo === 'function') return root.OYP.toastUndo(msg, fn);
   const el = document.getElementById('toast');
   if (!el || !root.OYP) return;
   try { clearTimeout(root.OYP.toast && root.OYP.toast.t); } catch (e) {}
@@ -322,6 +323,27 @@ function wire(main) {
     if (href === '#dMsgs') { const el = document.getElementById('dMsgs'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (href.charAt(0) === '#') location.hash = href;
   });
+  bindSwipe(sec);
+}
+function bindSwipe(sec) {
+  if (!sec || !root.OYP || !root.OYP.swipe) return;
+  root.OYP.swipe(sec, {
+    item: '.tdrow',
+    ignore: '.tdmore, .tdtick, .tddel, .tdacts, .tdadd, .tdedit',
+    actions: function (row) {
+      const id = row.getAttribute('data-id') || '';
+      if (row.classList.contains('manual')) {
+        if (row.querySelector('.tdtick.on')) return [];
+        return [{ label: 'Done', attrs: { 'data-td': 'tick', 'data-id': id } }];
+      }
+      return [
+        { label: 'Tomorrow', attrs: { 'data-td': 'snooze', 'data-until': 'tomorrow', 'data-id': id } },
+        { label: '3 days', attrs: { 'data-td': 'snooze', 'data-until': '3d', 'data-id': id } },
+        { label: '1 week', attrs: { 'data-td': 'snooze', 'data-until': '7d', 'data-id': id } },
+        { label: 'Done', attrs: { 'data-td': 'done', 'data-id': id } }
+      ];
+    }
+  });
 }
 function render(main, u) {
   S.user = u;
@@ -336,6 +358,6 @@ function render(main, u) {
     draw(main);
   }).catch(() => { if (!live()) return; S.data = { ok: false, items: [], done: [], people: [], error: 'Could not load' }; draw(main); });
 }
-root.OYPTodo = { today: today, chipLabel: chipLabel, dueBit: dueBit, isMine: isMine, visible: visible, bucketOf: bucketOf, compare: compare, fresh: fresh, areas: AREAS, addBar: addBar, listHtml: listHtml, rowHtml: rowHtml, render: render };
+root.OYPTodo = { today: today, chipLabel: chipLabel, dueBit: dueBit, isMine: isMine, visible: visible, bucketOf: bucketOf, compare: compare, fresh: fresh, areas: AREAS, addBar: addBar, listHtml: listHtml, rowHtml: rowHtml, render: render, bindSwipe: bindSwipe };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPTodo;
 })(typeof window !== 'undefined' ? window : globalThis);
