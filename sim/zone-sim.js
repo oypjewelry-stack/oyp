@@ -102,14 +102,46 @@ eq(crop(upright, upStored).ratio > 0.9, 'a box on the upright portrait view crop
 const existing = { x: 8 / 80, y: 6 / 40, w: 16 / 80, h: 10 / 40 };
 eq(crop(upright, existing).ratio > 0.9, 'an existing saved zone still crops the same pixels');
 
+/* A landscape EXIF result is already the scanner frame. A second clockwise turn is the old bug. */
 const raw = blank(30, 60);
 setRect(raw, 0, 0, 10, 10, RED);
 const oriented = rot90cw(raw);
-eq(oriented.w === 60 && oriented.h === 30, 'EXIF orientation 6 turns the file clockwise before the editor');
+eq(oriented.w === 60 && oriented.h === 30, 'EXIF orientation 6 on portrait samples is landscape');
 eq(Z.scannerTurns(oriented.w, oriented.h) === 0, 'the oriented landscape page is the scanner frame');
-const exifView = rot90cw(oriented);
-const exifStored = Z.viewToStored(redBounds(exifView), 1, 0);
-eq(crop(oriented, exifStored).ratio > 0.9, 'a box on the editor view crops the EXIF-oriented image');
+const exifBox = redBounds(oriented);
+const exifStored = Z.viewToStored(exifBox, 0, 0);
+eq(Math.abs(exifStored.x - exifBox.x) < 0.001 && crop(oriented, exifStored).ratio > 0.9, 'an already-landscape EXIF result is not turned again');
+const exifAgain = rot90cw(oriented);
+eq(crop(oriented, redBounds(exifAgain)).ratio < 0.5, 'a second clockwise turn misses the marker');
+eq(crop(oriented, Z.viewToStored(redBounds(exifAgain), 1, 0)).ratio > 0.9, 'Rotate still converts that extra turn back to the scanner frame');
+
+/* iPhone: landscape sensor pixels, EXIF 6. One application is the portrait she sees. rotFor turns that once. */
+const sensor = blank(80, 40);
+const afterExif = rot90cw(sensor);
+eq(afterExif.w === 40 && afterExif.h === 80, 'EXIF 6 on landscape sensor pixels is the portrait file');
+eq(Z.exifTagForPixels(80, 40, 6, { w: 80, h: 40 }) === 6, 'raw landscape pixels still need the EXIF 6 turn');
+eq(Z.exifTagForPixels(40, 80, 6, { w: 80, h: 40 }) === 1, 'a decoder that already swapped axes is not tagged again');
+eq(Z.exifTagForPixels(40, 80, 6, null) === 6, 'without a stored size the tag is still applied');
+eq(Z.exifTagForPixels(40, 80, 3, { w: 40, h: 80 }) === 3, 'a 180 tag is not dropped just because the axes match');
+setRect(afterExif, 4, 8, 12, 20, RED);
+const phoneUpright = rot90cw(afterExif);
+eq(Z.scannerTurns(afterExif.w, afterExif.h) === 1, 'the EXIF-applied portrait turns once, matching rotFor');
+const phoneBox = redBounds(phoneUpright);
+const phoneStored = Z.viewToStored(phoneBox, 1, 1);
+eq(Math.abs(phoneStored.x - phoneBox.x) < 0.001 && Math.abs(phoneStored.y - phoneBox.y) < 0.001, 'the opening view is the scanner crop');
+eq(crop(phoneUpright, phoneStored).ratio > 0.9, 'a box on the upright card crops the scanner frame');
+eq(crop(phoneUpright, redBounds(rot90cw(phoneUpright))).ratio < 0.5, 'turning the upright card again misses the marker');
+eq(Z.exifTagForPixels(3024, 4032, 1, { w: 3024, h: 4032 }) === 1, 'the stripped 3024x4032 portrait is not turned by EXIF');
+eq(Z.scannerTurns(3024, 4032) === 1 && Z.scannerTurns(4032, 3024) === 0, 'that portrait turns once and the landscape copy does not');
+
+localStorage.setItem('oypScanRotate', 'none');
+eq(Z.scannerTurns(40, 80) === 0 && Z.scannerTurns(80, 40) === 0, 'scanner setting none never turns');
+localStorage.setItem('oypScanRotate', '180');
+eq(Z.scannerTurns(80, 40) === 2 && Z.scannerTurns(40, 80) === 2, 'scanner setting 180 still turns a landscape page');
+localStorage.setItem('oypScanRotate', 'ccw');
+eq(Z.scannerTurns(40, 80) === 3 && Z.scannerTurns(80, 40) === 0, 'scanner setting ccw matches rotFor');
+localStorage.removeItem('oypScanRotate');
+eq(Z.scannerTurns(40, 80) === 1, 'an unset scanner rotation is clockwise');
 
 function jpegWithOrientation(orient) {
   const tiff = [0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08, 0x00, 0x01, 0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, (orient >> 8) & 255, orient & 255, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -117,8 +149,35 @@ function jpegWithOrientation(orient) {
   const len = payload.length + 2;
   return new Uint8Array([0xff, 0xd8, 0xff, 0xe1, (len >> 8) & 255, len & 255].concat(payload, [0xff, 0xd9]));
 }
+function jpegWithSize(w, h, orient) {
+  const app = jpegWithOrientation(orient);
+  const sof = [0xff, 0xc0, 0x00, 0x0b, 0x08, (h >> 8) & 255, h & 255, (w >> 8) & 255, w & 255, 0x01, 0x01, 0x11, 0x00];
+  const out = new Uint8Array(app.length - 2 + sof.length + 2);
+  out.set(app.subarray(0, app.length - 2), 0);
+  out.set(sof, app.length - 2);
+  out[out.length - 2] = 0xff; out[out.length - 1] = 0xd9;
+  return out;
+}
 eq(Z.jpegOrientation(jpegWithOrientation(6)) === 6, 'JPEG APP1 orientation is read before the view turn');
+eq(Z.jpegOrientation(jpegWithOrientation(1)) === 1, 'orientation 1 is left as 1');
+const sized = jpegWithSize(4032, 3024, 6);
+eq(Z.jpegSize(sized).w === 4032 && Z.jpegSize(sized).h === 3024, 'SOF size is the stored samples, not the EXIF view');
+eq(Z.jpegOrientation(sized) === 6, 'orientation and SOF are both read');
+eq(Z.exifTagForPixels(Z.jpegSize(sized).w, Z.jpegSize(sized).h, 6, Z.jpegSize(sized)) === 6, 'EXIF 6 on those stored samples is still due');
 eq(Z.exifQuarterTurns(6) === 1 && Z.exifQuarterTurns(8) === 3 && Z.exifQuarterTurns(3) === 2 && Z.exifQuarterTurns(1) === 0, 'EXIF quarter turns');
+const realPaths = [
+  process.env.ZONE_PHOTO,
+  '/tmp/zone-portrait.jpg',
+  '/cursor/stores/bot/grok-bot/agents/efcd9558-016b-4dea-89dc-d6bac9133134/attachments/01M5GY7MHSH8FQR3XBVT26PB4E.jpg'
+];
+const realPath = realPaths.find(function (p) { return p && fs.existsSync(p); });
+if (realPath) {
+  const realBytes = fs.readFileSync(realPath);
+  const realSize = Z.jpegSize(realBytes);
+  eq(!!realSize && realSize.w === 3024 && realSize.h === 4032, 'the attached portrait is 3024x4032');
+  eq(Z.jpegOrientation(realBytes) === 1, 'the attached file has no orientation tag');
+  eq(Z.exifTagForPixels(realSize.w, realSize.h, 1, realSize) === 1, 'the attached pixels are not tagged again');
+} else console.log('ok real portrait file not on this machine; synthetic 3024x4032 covered it');
 
 eq(Z.readToken(null) === '' && Z.readToken({ value: ' ab ' }) === 'ab', 'a missing token field does not throw');
 const joZones = [{ id: 'jo', label: 'JO number', x: 0.1, y: 0.1, w: 0.2, h: 0.2 }];
@@ -168,9 +227,15 @@ const app = read('scan/app.js');
 const build = app.slice(app.indexOf('function buildMenu'), app.indexOf('const menu'));
 eq(build.indexOf('Open the scanner from the back-office') < build.indexOf('scannerTailHtml'), 'the unsigned note stays above the scanner rows');
 eq(build.indexOf('>Print test</a>') < build.indexOf('>Log out</a>'), 'the offline menu still prints before Log out');
-eq(read('nav.js').includes('scan-zones.js?v=6'), 'scan-zones cache bust is v6');
-eq(read('staff/index.html').includes('nav.js?v=35') && read('staff/print-test.html').includes('nav.js?v=35'), 'staff pages load nav.js v35');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=35') && read('scan/index.html').includes('app.js?v=20261022e'), 'the scanner page keeps the production nav host at v35');
+eq(zonesSrc.includes('viewTurns = scannerTurns('), 'the opening turn follows the scanner');
+eq(zonesSrc.includes('function exifTagForPixels'), 'EXIF is applied only when the pixels are still the stored samples');
+eq(zonesSrc.includes('isHeic(file)) return heicToJpegUrl'), 'a HEIC is oriented by libheif, not by a second JPEG tag');
+eq(/function rotFor\(c\) \{ const k = rotation\(\); return \(k === 'cw' \|\| k === 'ccw'\) && c\.width > c\.height \? 'none' : k; \}/.test(app), 'rotFor still skips only cw and ccw on a landscape page');
+eq(app.includes('function applyJpegOrient') && app.includes('return applyJpegOrient(c, orient, raw)'), 'the scanner draws a missed EXIF tag once before rotFor');
+eq(app.includes('if (isHeic(file)) return heicToCanvas(file)'), 'a HEIC scan is not given a JPEG orientation on top of irot');
+eq(read('nav.js').includes('scan-zones.js?v=7'), 'scan-zones cache bust is v7');
+eq(read('staff/index.html').includes('nav.js?v=36') && read('staff/print-test.html').includes('nav.js?v=36'), 'staff pages load nav.js v36');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=36') && read('scan/index.html').includes('app.js?v=20261022f'), 'the scanner page keeps the production nav host at v36');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');

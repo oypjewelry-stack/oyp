@@ -642,15 +642,116 @@ function heicToCanvas(file) { // decode, then the same size cap as every other p
     });
   }));
 }
-function loadPhoto(file) { // EXIF orientation respected; very large photos scaled to PHOTO_SRC_PX so phones keep memory
+function u16be(bytes, i) { return (bytes[i] << 8) + bytes[i + 1]; }
+function u32be(bytes, i, le) {
+  return le ? (bytes[i] + (bytes[i + 1] << 8) + (bytes[i + 2] << 16) + (bytes[i + 3] * 16777216))
+    : ((bytes[i] * 16777216) + (bytes[i + 1] << 16) + (bytes[i + 2] << 8) + bytes[i + 3]);
+}
+function tiffOrientation(bytes, start, end) {
+  if (start + 8 > end) return 0;
+  const le = bytes[start] === 0x49 && bytes[start + 1] === 0x49;
+  if (!le && !(bytes[start] === 0x4d && bytes[start + 1] === 0x4d)) return 0;
+  const ifd = start + u32be(bytes, start + 4, le);
+  if (ifd + 2 > end) return 0;
+  const n = le ? bytes[ifd] + (bytes[ifd + 1] << 8) : u16be(bytes, ifd);
+  for (let i = 0; i < n; i++) {
+    const e = ifd + 2 + i * 12;
+    if (e + 12 > end) break;
+    const tag = le ? bytes[e] + (bytes[e + 1] << 8) : u16be(bytes, e);
+    if (tag === 0x0112) return (le ? bytes[e + 8] + (bytes[e + 9] << 8) : u16be(bytes, e + 8)) || 1;
+  }
+  return 0;
+}
+function jpegOrientation(bytes) {
+  if (!bytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return 1;
+  let i = 2;
+  while (i + 4 < bytes.length) {
+    if (bytes[i] !== 0xff) { i++; continue; }
+    while (i < bytes.length && bytes[i] === 0xff) i++;
+    if (i >= bytes.length) break;
+    const marker = bytes[i];
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (i + 3 >= bytes.length) break;
+    const len = u16be(bytes, i + 1);
+    if (len < 2 || i + 1 + len > bytes.length) break;
+    if (marker === 0xe1 && len > 8 && bytes[i + 3] === 0x45 && bytes[i + 4] === 0x78 && bytes[i + 5] === 0x69 && bytes[i + 6] === 0x66) {
+      const o = tiffOrientation(bytes, i + 9, i + 1 + len);
+      if (o) return o;
+    }
+    i += 1 + len;
+  }
+  return 1;
+}
+function jpegSize(bytes) {
+  if (!bytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < bytes.length) {
+    if (bytes[i] !== 0xff) { i++; continue; }
+    while (i < bytes.length && bytes[i] === 0xff) i++;
+    if (i >= bytes.length) break;
+    const marker = bytes[i];
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (i + 3 >= bytes.length) break;
+    const len = u16be(bytes, i + 1);
+    if (len < 2 || i + 1 + len > bytes.length) break;
+    const sof = (marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf);
+    if (sof && i + 7 < bytes.length) return { w: u16be(bytes, i + 6), h: u16be(bytes, i + 4) };
+    i += 1 + len;
+  }
+  return null;
+}
+/* Same decision as scan-zones.js. A swap tag whose axes already moved was applied by the decoder. */
+function exifTagForPixels(width, height, orient, raw) {
+  orient = Number(orient) || 1;
+  if (orient < 2 || orient > 8) return 1;
+  const swap = orient > 4;
+  if (swap && raw && raw.w && raw.h && ((raw.w > raw.h) !== (width > height))) return 1;
+  return orient;
+}
+function orientedCanvas(source, width, height, orient) {
+  orient = Number(orient) || 1;
+  const c = document.createElement('canvas');
+  const swap = orient > 4 && orient < 9;
+  c.width = swap ? height : width; c.height = swap ? width : height;
+  const g = c.getContext('2d');
+  if (orient === 2) g.transform(-1, 0, 0, 1, width, 0);
+  else if (orient === 3) g.transform(-1, 0, 0, -1, width, height);
+  else if (orient === 4) g.transform(1, 0, 0, -1, 0, height);
+  else if (orient === 5) g.transform(0, 1, 1, 0, 0, 0);
+  else if (orient === 6) g.transform(0, 1, -1, 0, height, 0);
+  else if (orient === 7) g.transform(0, -1, -1, 0, height, width);
+  else if (orient === 8) g.transform(0, -1, 1, 0, 0, width);
+  g.drawImage(source, 0, 0, width, height);
+  return c;
+}
+/* Decode paths use from-image. A 180° or mirror tag is left to that decoder: the size cannot
+   show whether it already ran, and drawing it again would flip the card. A swap tag is drawn
+   here only when the bitmap is still the stored samples (iOS ignoring imageOrientation). */
+function applyJpegOrient(c, orient, raw) {
+  const swap = orient > 4 && orient < 9;
+  const tag = swap ? exifTagForPixels(c.width, c.height, orient, raw) : 1;
+  if (tag === 1) return c;
+  return orientedCanvas(c, c.width, c.height, tag);
+}
+function loadPhoto(file) { // EXIF exactly once, then the caller runs rotFor. HEIC irot is libheif's display, not a JPEG tag.
   if (isHeic(file)) return heicToCanvas(file);
-  const viaWorker = () => file.arrayBuffer().then(buf => workerCall({ op: 'scale', buf, type: file.type || 'image/jpeg', maxPx: PHOTO_SRC_PX }, [buf])).then(res => {
-    const bmp = res.bitmap, c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
-    c.getContext('2d').drawImage(bmp, 0, 0); if (bmp.close) bmp.close(); return c;
+  const read = file.arrayBuffer ? file.arrayBuffer().catch(() => null) : Promise.resolve(null);
+  return read.then(buf => {
+    let orient = 1, raw = null;
+    if (buf) {
+      const bytes = new Uint8Array(buf);
+      orient = jpegOrientation(bytes);
+      raw = jpegSize(bytes);
+    }
+    const viaWorker = () => workerCall({ op: 'scale', buf, type: file.type || 'image/jpeg', maxPx: PHOTO_SRC_PX }, [buf]).then(res => {
+      const bmp = res.bitmap, c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+      c.getContext('2d').drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+      return applyJpegOrient(c, orient, raw);
+    });
+    const main = () => loadPhotoMain(file).then(c => applyJpegOrient(c, orient, raw));
+    if (!buf || !jpegWorkerRef()) return main();
+    return viaWorker().catch(e => { console.warn('scale worker', e); return main(); });
   });
-  const main = () => loadPhotoMain(file);
-  if (!jpegWorkerRef()) return main();
-  return viaWorker().catch(e => { console.warn('scale worker', e); return main(); });
 }
 function loadPhotoMain(file) {
   const draw = (el, w, h) => { const s = Math.min(1, PHOTO_SRC_PX / Math.max(w, h)), c = document.createElement('canvas');
@@ -1212,7 +1313,7 @@ const SCAN_HELP = "Tap to scan the JO and choose which sticker to print. If the 
 function scanHelp() { const h = document.querySelector('#startView .help'); if (h && h.textContent !== SCAN_HELP) h.textContent = SCAN_HELP; }
 scanHelp();
 window.addEventListener('oyp-zones-ready', () => setTimeout(scanHelp, 50));
-window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, finishCapture, realJO, joFromRead, fileHeld };
+window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, finishCapture, realJO, joFromRead, fileHeld, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize };
 })();
 
 // owner: stone background only while the start screen is shown
