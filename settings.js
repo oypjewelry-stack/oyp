@@ -18,7 +18,7 @@ const SECS = [
   ['scanner', 'Scanner', 'Page rotation, auto-snap, and where the JO number is read'],
   ['portal', 'Customer pages', 'Contact line, deposit and quote validity on Track my order / My orders'],
   ['design', 'Design', 'Text size in pixels, fonts, spacing, corners, and each button, header and shape'],
-  ['layout', 'Layout', 'Drag the side menu, the dashboard sections, and the location tiles on this device'],
+  ['layout', 'Layout', 'Reorder and hide the menu, dashboard sections, and location tiles on this device'],
   ['labels', 'Labels', 'Printer, darkness, and which stickers this device prints'],
   ['log', 'Change history', 'Who changed what, and when']];
 // Hidden from the Settings list (owner, Oct 18): Stage delays is unused (Production uses optional target dates, no standard days).
@@ -141,7 +141,7 @@ function section(s) {
   if (s === 'portal') return head(t[1], 'Clients see this line under their order on <b>Track my order</b> (oypjewelry.com/track), and when an order isn\'t found. Phone numbers and emails in it become tap-to-call and tap-to-email links. Type <b>none</b> to hide the line.')
     + `<div class="setbox">${field('portal.contact', 'Contact line')}${item('portal.deposit_pct') ? field('portal.deposit_pct', 'Deposit asked on a quote (%)', 'Shown on the client\'s quote as "Deposit to start". 0 = no deposit line.') : ''}${item('portal.quote_days') ? field('portal.quote_days', 'Quote valid for (days)', 'Counted from the day the quote was marked sent. After that the client can\'t approve it and is asked to message you for an updated price.') : ''}</div>` + saveBar();
   if (s === 'design') return head(t[1], 'Drag a slider and this page changes right away, so you can see it before saving. <b>SAVE</b> makes it the look for everyone: every staff phone and computer, and the customer pages (order lookup, shop). Other devices pick it up within a few minutes.') + designBox();
-  if (s === 'layout') return head(t[1], 'Turn editing on, then drag the side menu, the dashboard sections, and the location tiles into place. Done puts the controls away. The order is saved on this device only.') + layoutBox();
+  if (s === 'layout') return head(t[1], 'Edit layout, on the dashboard or any back-office page, shows the reorder and hide controls. Done saves them on this device. Each section header, location tile, and menu item moves and hides on its own. Log out stays last.');
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
   if (s === 'labels') return head(t[1], 'Saved on this device only. A JO card is the 30×20 sticker. A jewelry tag is 30×25 with a blank 45 mm tail. The client name stays on the queue list and is not printed.')
     + '<div id="printSet"></div><h3 class="lab seth">Print queue</h3><div class="setbox" id="printQueue"></div><div class="setbox" id="printRange"></div>';
@@ -491,7 +491,6 @@ function wire(main) {
     S.code = r.code ? { username: r.username, code: r.code } : null; reload(main); });
   if (!sec() || sec() !== 'staff') S.code = null;
   if (sec() === 'design') dsWire(main);
-  if (sec() === 'layout') layoutWire(main);
   if (sec() === 'scanner') {
     const go = () => { const h = $('zoneHost'); if (h && window.OYPZones) window.OYPZones.mount(h); };
     if (window.OYPZones) go(); else window.addEventListener('oyp-zones-ready', go, { once: true });
@@ -509,40 +508,6 @@ async function save(main) {
   Object.keys(values).forEach(k => { seen[k] = item(k).changed_at || ''; });
   if (Object.keys(values).length) { const r = await call('settingsSave', { values, seen }); if (!r.ok) return fail(r.error); }
   S.busy = false; S.types = null; S.typesDirty = false; toast('Saved'); reload(main);
-}
-function layoutBox() {
-  const on = window.OYPLayoutEdit && window.OYPLayoutEdit.editing();
-  const u = window.OYP.user();
-  const hidden = u && window.OYPDash && window.OYPDash.layout.locations.hidden(u) || [];
-  const shown = hidden.indexOf('archived') < 0;
-  return `<div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Edit layout</span><span class="muted">While this is on, drag a section by its header, a location tile, or a menu item into place. Location tiles show a hide mark, and Show and Reset appear for tiles you have changed. The dashboard and both menus stay clear when this is off.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="layEdit"${on ? ' checked' : ''}><span>${on ? 'On' : 'Off'}</span></label></div></div></div>
-    <div id="layMore"${on ? '' : ' hidden'}><div class="setbox"><div class="setrow"><div class="setl"><span class="lab">Archived location tile</span><span class="muted">On the dashboard Location row. The other tiles hide from their own mark while editing is on.</span></div><div class="setv"><label class="settog"><input type="checkbox" id="layArch"${shown ? ' checked' : ''}><span>${shown ? 'Shown' : 'Hidden'}</span></label></div></div></div></div>
-    <p class="muted">Open the dashboard to move its sections and the location tiles. The menu on this page, and the phone menu, move while editing is on.</p>`;
-}
-function layoutWire(main) {
-  const box = main.querySelector('#layEdit');
-  if (!box || !window.OYPLayoutEdit) return;
-  const lab = box.nextElementSibling;
-  const more = document.getElementById('layMore');
-  const sync = on => { if (lab) lab.textContent = on ? 'On' : 'Off'; if (more) more.hidden = !on; };
-  box.onchange = () => { window.OYPLayoutEdit.set(box.checked); sync(box.checked); };
-  const arch = main.querySelector('#layArch');
-  if (arch) arch.onchange = () => {
-    const u = window.OYP.user();
-    if (u && window.OYPDash) window.OYPDash.layout.locations.setHidden(u, 'archived', !arch.checked);
-    if (arch.nextElementSibling) arch.nextElementSibling.textContent = arch.checked ? 'Shown' : 'Hidden';
-  };
-  if (!S.layListen) {
-    S.layListen = true;
-    window.OYPLayoutEdit.listen(on => {
-      const b = document.getElementById('layEdit');
-      if (!b) return;
-      b.checked = !!on;
-      if (b.nextElementSibling) b.nextElementSibling.textContent = on ? 'On' : 'Off';
-      const m = document.getElementById('layMore');
-      if (m) m.hidden = !on;
-    });
-  }
 }
 window.addEventListener('hashchange', () => { S.types = null; S.typesDirty = false; if ((S.ds || S.dp || S.df) && sec() !== 'design') { S.ds = null; S.dp = null; S.df = null; if (window.OYPDesign) window.OYPDesign.restore(); } }); // leaving Design unsaved: back to the saved look
 window.OYPSettings = { render };
