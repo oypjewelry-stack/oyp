@@ -76,7 +76,7 @@ async function renderJos(main, u) {
 }
 function ivDraw(main) {
   const { esc } = window.OYP, r = IV.r, can = r.can || {}, L = ivShown(), title = IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
-  if (IV.offer) { const hid = ivFindBase(IV.offer); if (!hid || L.some(j => j.jo === hid.jo)) IV.offer = ''; }
+  if (IV.offer) { const hid = ivById(IV.offer); if (!hid || L.some(j => j.jo === hid.jo)) IV.offer = ''; }
   const liveIds = new Set(r.jobs.map(j => j.jo));
   [...IV.sel].forEach(id => { if (!liveIds.has(id)) IV.sel.delete(id); });
   IV.scanned = IV.scanned.filter(id => liveIds.has(id) && IV.sel.has(id));
@@ -482,8 +482,8 @@ window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.scan
    Any other Enter leaves the text as a filter.
    A sticker's QR is the JO itself (26-287 or 26-287A) or a link / prefixed text that contains one
    (jo=26-287, or a path ending in /26-287). The same read is in consign.js.
-   A trailing letter is the version and folds to the base JO, the same way jobMergeVersions_ does:
-   26-287A and 26-287B are both 26-287. If more than one version is still its own tile, the newest letter is the one selected. */
+   A sticker QR is the JO with its version letter (26-287B). That scan selects the 26-287B tile.
+   A scan with no letter still folds to the base. If several tiles share that base, the newest letter is the one selected. */
 const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_MAX = 400;
 let scanBuf = '', scanAt = 0, qLastAt = 0, qBurstLen = 0;
 function ivQNote() {
@@ -544,6 +544,15 @@ function ivFindBase(base) {
   hits.sort((a, b) => ivVer(b) - ivVer(a) || (joParts(a.jo).letter ? 1 : 0) - (joParts(b.jo).letter ? 1 : 0));
   return hits[0] || null;
 }
+function ivFindScan(p) {
+  if (p && p.letter) {
+    const full = p.base + p.letter;
+    const exact = (IV.r.jobs || []).find(j => String(j.jo).toUpperCase() === full);
+    if (exact) return exact;
+  }
+  return ivFindBase(p.base);
+}
+function ivById(id) { return id ? ((IV.r.jobs || []).find(j => j.jo === id) || ivFindBase(id)) : null; }
 function ivScanOn() { return !!(IV.r && ivEdit() && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
 function ivRefocus(main) { const s = main.querySelector('#ivQ'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
@@ -572,29 +581,29 @@ function ivScanCommit(raw, fromBox) {
   const p = joParts(raw);
   const shown = p ? p.base : String(raw || '').trim().replace(/\s+/g, ' ');
   const label = shown.length > 48 ? shown.slice(0, 45) + '…' : shown;
-  if (!p || !ivFindBase(p.base)) {
+  const job = p && ivFindScan(p);
+  if (!job) {
     const had = IV.offer; IV.offer = '';
     window.OYP.toast('JO ' + (label || '—') + ' not in Inventory');
     if (had) ivDraw(main);
     if (fromBox) ivRefocus(main);
     return;
   }
-  const job = ivFindBase(p.base);
   if (!ivShown().some(j => j.jo === job.jo)) {
-    IV.offer = p.base;
-    window.OYP.toast('JO ' + p.base + ' is hidden by a filter');
+    IV.offer = job.jo;
+    window.OYP.toast('JO ' + job.jo + ' is hidden by a filter');
     ivDraw(main); if (fromBox) ivRefocus(main);
     return;
   }
-  ivTake(main, job, p.base, fromBox);
+  ivTake(main, job, job.jo, fromBox);
 }
 function ivReveal(main) {
-  const base = IV.offer, job = base && ivFindBase(base);
+  const id = IV.offer, job = ivById(id);
   IV.offer = '';
   if (!job) { ivDraw(main); return; }
   IV.q = ''; IV.stage = ''; IV.loc = ''; IV.type = '';
   if (!IVIEWS[IV.view][1](job)) IV.view = job.location === 'archived' ? 'archived' : 'all';
-  ivTake(main, job, base, false);
+  ivTake(main, job, job.jo, false);
 }
 document.addEventListener('keydown', e => {
   if (!ivScanOn() || ivField(document.activeElement) || e.isComposing) return;

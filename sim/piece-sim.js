@@ -135,7 +135,7 @@ has('inv.js', 'window.OYP.piece(j.client, j.jo)');
 has('production.js', 'window.OYP.piece(c.client, c.jo)');
 has('review.js', 'window.OYP.piece(j.client, j.jo)');
 has('consign.js', 'function pieceBits');
-has('staff/index.html', 'app.css?v=43');
+has('staff/index.html', 'app.css?v=44');
 has('staff/index.html', 'app.js?v=34');
 has('staff/index.html', 'dash.js?v=32');
 has('staff/index.html', 'inv.js?v=13');

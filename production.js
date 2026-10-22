@@ -16,6 +16,13 @@ const toast = t => window.OYP.toast(t);
 const narrow = () => innerWidth < 760;
 const pad = n => String(n).padStart(2, '0');
 const route = () => { const m = location.hash.match(/^#\/production\/?(\w*)\/?([\w-]*)/) || []; return { view: m[1] || '', arg: decodeURIComponent(m[2] || '') }; };
+function joScan(raw) { // a sticker QR is the whole field: 26-287B stays distinct from 26-287
+  const u = String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
+  const m = u.match(/^(\d{2})-(\d{3,4})([A-Z])?$/);
+  return m ? { base: m[1] + '-' + m[2], letter: m[3] || '', text: m[1] + '-' + m[2] + (m[3] || '') } : null;
+}
+function onThis(jo) { const a = route().arg, p = joScan(a), id = String(jo || '').toUpperCase(); return a === jo || !!(p && p.letter && (p.base === id || p.text === id)); }
+function headJo(c) { const p = joScan(route().arg), jo = String(c && c.jo || ''); return p && p.letter && (jo.toUpperCase() === p.base || jo.toUpperCase() === p.text) ? p.text : jo; }
 const dShort = d => d ? MN[+d.slice(5, 7) - 1] + ' ' + +d.slice(8, 10) : '';
 const dLong = d => d ? DN[new Date(d + 'T00:00:00Z').getUTCDay()] + ', ' + dShort(d) : '';
 const hrs = m => { m = Math.round(m || 0); const h = Math.floor(m / 60), mm = m % 60; return !m ? '0 h' : !h ? mm + ' min' : h + ' h' + (mm ? ' ' + mm + ' m' : ''); };
@@ -81,9 +88,12 @@ async function reload() {
   const m = $('main'); if (m && route().view !== 'workers' && $('pBoard')) drawBoard(m);
 }
 function shown() {
-  const q = S.q.trim().toUpperCase(), me = S.r.me_worker;
-  return S.r.cards.filter(c => (!q || String(c.jo).toUpperCase().includes(q) || String(c.description || '').toUpperCase().includes(q) || String(c.client || '').toUpperCase().includes(q))
-    && (!S.worker || (S.worker === '-' ? !c.assignee_id : c.assignee_id === S.worker)) && (!S.delayed || c.delayed) && (!S.mine || c.assignee_id === me));
+  const q = S.q.trim().toUpperCase(), me = S.r.me_worker, p = joScan(q);
+  return S.r.cards.filter(c => {
+    const jo = String(c.jo).toUpperCase();
+    return (!q || jo.includes(q) || (p && (jo === p.text || jo === p.base)) || String(c.description || '').toUpperCase().includes(q) || String(c.client || '').toUpperCase().includes(q))
+      && (!S.worker || (S.worker === '-' ? !c.assignee_id : c.assignee_id === S.worker)) && (!S.delayed || c.delayed) && (!S.mine || c.assignee_id === me);
+  });
 }
 function head(tab) {
   return `<div class="phead"><h2>Production</h2><div class="seg prptabs"><a class="${tab === 'board' ? 'on' : ''}" href="#/production">Board</a><a class="${tab === 'workers' ? 'on' : ''}" href="#/production/workers">Workers</a></div></div>`;
@@ -142,6 +152,14 @@ function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, cl
 function wireBoard(main) {
   const redraw = () => drawBoard(main);
   const q = $('pQ'); q.oninput = () => { S.q = q.value; const pos = q.selectionStart; redraw(); const q2 = $('pQ'); q2.focus(); q2.setSelectionRange(pos, pos); };
+  q.onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    const p = joScan(q.value); if (!p) return;
+    e.preventDefault();
+    const exact = S.r.cards.find(c => String(c.jo).toUpperCase() === p.text);
+    S.q = '';
+    location.hash = '#/production/jo/' + encodeURIComponent(exact ? exact.jo : p.text);
+  };
   $('pW').onchange = e => { S.worker = e.target.value; redraw(); };
   if ($('pS')) $('pS').onchange = e => { S.stage = e.target.value; redraw(); };
   $('pD').onclick = () => { S.delayed = !S.delayed; redraw(); };
@@ -241,7 +259,9 @@ async function openJob(jo, live) {
   const box = $('pSheetBox'); if (!box) return;
   if (!S.job || S.job.card.jo !== jo) box.innerHTML = `<div class="ivsheet" id="pSheet"><div class="ivsbox pdet"><button class="lnk dback" id="pSX">‹ BACK</button><p class="muted">Loading JO ${esc(jo)}…</p></div></div>`;
   wireSheetClose();
-  const r = await call('prodJob', { jo }); if (!live() || route().arg !== jo) return;
+  let r = await call('prodJob', { jo }); if (!live() || route().arg !== jo) return;
+  const scanned = joScan(jo);
+  if ((!r || !r.ok) && scanned && scanned.letter) { r = await call('prodJob', { jo: scanned.base }); if (!live() || route().arg !== jo) return; } // the board stores the base JO; the route keeps the letter
   if (!r || !r.ok) { box.querySelector('.ivsbox').innerHTML = `<button class="lnk dback" id="pSX">‹ BACK</button><p class="muted">${esc((r && r.error) || 'Could not load')}</p>`; wireSheetClose(); return; }
   S.job = r; if (r.now) S.skew = Date.parse(r.now) - Date.now(); drawJob(); // prodJob is never cached, so its clock is current
 }
@@ -267,7 +287,7 @@ function drawJob() {
   const myRun = runs.find(s => s.worker_id === timerWho);
   box.innerHTML = `<div class="ivsheet" id="pSheet"><div class="ivsbox pdet">
     <button class="lnk dback" id="pSX">‹ BACK</button>
-    <div class="pdh"><h3>JO ${esc(c.jo)}</h3>${r.pages_version ? `<span class="chip">Version ${esc(r.pages_version)}</span>` : ''}${c.delayed ? '<span class="chip gold">Delayed</span>' : ''}${c.late ? '<span class="chip plate">Past due</span>' : ''}</div>
+    <div class="pdh"><h3>JO ${esc(headJo(c))}</h3>${r.pages_version ? `<span class="chip">Version ${esc(r.pages_version)}</span>` : ''}${c.delayed ? '<span class="chip gold">Delayed</span>' : ''}${c.late ? '<span class="chip plate">Past due</span>' : ''}</div>
     <div class="kd pdesc">${esc(c.description || 'No description yet')}</div>
     <div class="prpbig" id="pBig" ${r.pages[0] ? `data-full="${r.pages[0].file_id}"` : ''}>${r.pages[0] ? '' : '<span class="lab">No scan yet</span>'}</div>
     ${r.pages.length ? `<div class="pthumbs">${r.pages.map((p, i) => `<button class="pth xs ${i ? '' : 'on'}" data-pg="${p.file_id}" data-ph="${p.file_id}" data-jo="${c.jo}" aria-label="Page ${p.page}"></button>`).join('')}<span class="muted pvnote">${r.pages_version ? 'Version ' + esc(r.pages_version) + ' (latest) · ' : ''}${r.pages.length} page${r.pages.length > 1 ? 's' : ''}${r.older_sets ? ' · ' + r.older_sets + ' older scan' + (r.older_sets > 1 ? 's' : '') + ' in To review' : ''}</span></div>` : ''}
@@ -305,7 +325,7 @@ function drawJob() {
   };
   if (big.dataset.full) showBig(big.dataset.full);
   box.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { box.querySelectorAll('[data-pg]').forEach(x => x.classList.toggle('on', x === b)); showBig(b.dataset.pg); });
-  const after = async (res, msg) => { if (!res || !res.ok) { toast((res && res.error) || 'Could not save'); if (route().arg === c.jo) drawJob(); return false; } if (msg) toast(msg); S.at = 0; await reload(); const j = await call('prodJob', { jo: c.jo }); if (j && j.ok && route().arg === c.jo) { S.job = j; drawJob(); } return true; };
+  const after = async (res, msg) => { if (!res || !res.ok) { toast((res && res.error) || 'Could not save'); if (onThis(c.jo)) drawJob(); return false; } if (msg) toast(msg); S.at = 0; await reload(); const j = await call('prodJob', { jo: c.jo }); if (j && j.ok && onThis(c.jo)) { S.job = j; drawJob(); } return true; };
   if ($('pAsg')) $('pAsg').onchange = e => call('prodAssign', { jo: c.jo, worker_id: e.target.value }).then(x => after(x, 'Saved: ' + (x && x.assignee ? x.assignee + ' has JO ' + c.jo : 'nobody assigned')));
   if ($('pTake')) $('pTake').onclick = () => call('prodAssign', { jo: c.jo, worker_id: me }).then(x => after(x, 'JO ' + c.jo + ' is yours'));
   if ($('pTW')) $('pTW').onchange = () => drawTimerOnly();

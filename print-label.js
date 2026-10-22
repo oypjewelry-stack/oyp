@@ -454,7 +454,7 @@ function render(opts) {
     var innerH = box.labelH - pad * 2;
     var cardJo = null;
     if (jo) {
-      cardJo = sizeForInk(jo, target2, 72, 16);
+      cardJo = sizeForInk(jo, target2, 72, 12); // a 7-character JO plus a letter (26-1234A) is wider than the old 16 px floor
       joPx = cardJo.size;
       lines.push(cardJo.text);
     }

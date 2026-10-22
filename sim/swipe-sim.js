@@ -23,7 +23,7 @@ eq(swipe.needsConfirm({ label: 'Remove', confirm: 'Remove this piece from the sh
 eq(swipe.needsConfirm({ label: 'Archive', destructive: true }) === true, 'a destructive action with no undo asks');
 
 const page = read('todo.js'), card = read('dash.js'), print = read('print.js'), index = read('staff/index.html');
-eq(page.includes('function bindSwipe') && page.includes("'data-td': 'tick'") && page.includes("'data-td': 'done'") && page.includes("data-until': 'tomorrow'") && page.includes("data-until': '3d'") && page.includes("data-until': '7d'"), 'to-do swipe reuses Done and the snooze chips');
+eq(page.includes('function bindSwipe') && page.includes("'data-td': 'tick'") && page.includes("'data-td': 'done'") && page.includes("label: 'Snooze'") && page.includes("'data-td': 'more'") && page.includes('data-until="tomorrow"') && page.includes('data-until="3d"') && page.includes('data-until="7d"'), 'to-do swipe is Done plus Snooze, and Snooze opens the existing chips');
 eq(page.includes('toastUndo') && page.includes('>Undo<') && !/confirm\(/.test(page), 'to-do delete still undoes from the toast and does not ask');
 eq(card.includes('OYPTodo.bindSwipe') && card.indexOf('data-td="tick"') < 0 && card.includes('archiveJos'), 'the dashboard card uses the shared swipe, and drill rows archive');
 eq(print.includes('bindQueueSwipe') && print.includes("label: 'Cancel'") && print.includes("label: 'Reprint'") && print.includes("toastUndo('Cancelled'"), 'the print queue swipes Cancel, and Reprint on a failed row');
@@ -33,16 +33,16 @@ eq(read('review.js').includes('archiveJos') && read('review.js').includes("item:
 eq(read('consign.js').includes('Remove this piece from the sheet?') && read('consign.js').includes("item: '.csitem'"), 'a draft consignment piece swipes Remove and asks first');
 eq(!read('appts.js').includes('OYP.swipe') && !read('pay.js').includes('OYP.swipe'), 'appointments and quotes have no row-level archive, cancel, or delete, so they are unchanged');
 eq(read('app.js').includes('function toastUndo') && read('app.js').includes('async function archiveJos') && read('app.js').includes('swipe: (window.OYPSwipe && window.OYPSwipe.mount)'), 'undo and archive live on the shared OYP helper');
-eq(read('app.css').includes('button.swbtn.pill.sm') && read('app.css').includes('font-size:14px') && read('app.css').includes('height:34px') && read('app.css').includes('#b3261e') && read('app.css').includes('touch-action:pan-y'), 'revealed buttons are the 34px Libre Bodoni pills, red only in the danger rule');
-eq(index.includes('swipe.js?v=1') && index.includes('app.js?v=34') && index.includes('app.css?v=43'), 'swipe.js is loaded and cache-busted');
-eq(index.indexOf('swipe.js?v=1') < index.indexOf('app.js?v=34'), 'swipe.js loads before app.js');
+eq(read('app.css').includes('button.swbtn.pill.sm') && read('app.css').includes('font-family:var(--head)') && read('app.css').includes('height:34px') && read('app.css').includes('#b3261e') && read('app.css').includes('touch-action:pan-y') && read('app.css').includes('--sw-inset'), 'revealed buttons are 34px pills in the site face, inset by the row padding');
+eq(index.includes('swipe.js?v=2') && index.includes('app.js?v=34') && index.includes('app.css?v=44'), 'swipe.js is loaded and cache-busted');
+eq(index.indexOf('swipe.js?v=2') < index.indexOf('app.js?v=34'), 'swipe.js loads before app.js');
 
-const chromeRun = spawnSync('google-chrome', ['--headless=new', '--disable-gpu', '--no-sandbox', '--user-data-dir=/tmp/chrome-swipe-sim', '--virtual-time-budget=4000', '--dump-dom', 'file://' + path.join(root, 'sim/swipe-preview.html') + '?test=1'], { encoding: 'utf8', timeout: 30000 });
-if (!chromeRun.stdout) eq(false, 'headless gesture page produced no page', (chromeRun.stderr || chromeRun.error || '').toString().slice(0, 400));
-else {
-  const out = (chromeRun.stdout.split('id="out"')[1] || chromeRun.stdout);
-  eq(chromeRun.stdout.includes('SWIPE_OK'), 'pointer swipe, scroll, select, layout drag, and confirm behave in the browser', out.replace(/<[^>]+>/g, ' ').slice(0, 800));
-}
+[390, 1280].forEach(function (width) {
+  const chromeRun = spawnSync('google-chrome', ['--headless=new', '--disable-gpu', '--no-sandbox', '--user-data-dir=/tmp/chrome-swipe-sim-' + width, '--window-size=' + width + ',980', '--dump-dom', 'file://' + path.join(root, 'sim/swipe-preview.html') + '?test=1'], { encoding: 'utf8', timeout: 30000 });
+  const text = (chromeRun.stdout || '').replace(/<[^>]+>/g, ' ');
+  if (!chromeRun.stdout) eq(false, 'headless gesture page produced no page at ' + width, (chromeRun.stderr || chromeRun.error || '').toString().slice(0, 400));
+  else eq(chromeRun.stdout.includes('SWIPE_OK'), 'at ' + width + 'px the tray is fully visible and the gestures still behave', text.slice(text.indexOf('ok '), 900));
+});
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('swipe-sim passed');

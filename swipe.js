@@ -44,18 +44,34 @@ function suppressClick() {
   };
   root.document.addEventListener('click', kill, true);
 }
+function px(v) {
+  var n = parseFloat(v);
+  return n > 0 ? n : 0;
+}
+/* The row slides by every button, the gaps, and the row's own right padding.
+   Capping that distance is what left buttons half-covered. */
 function measure(clip) {
   var bar = clip.querySelector('.swacts');
   if (!bar) return 0;
-  var max = clip.clientWidth || 0;
-  var full = bar.scrollWidth || bar.offsetWidth || 0;
-  var w = full;
-  if (max && w > max) w = max;
-  if (w) {
-    clip.style.setProperty('--sw', w + 'px');
-    bar.style.width = w + 'px';
+  var face = clip.querySelector('.swface');
+  var row = face && face.firstElementChild;
+  var inset = 0;
+  if (row && root.getComputedStyle) inset = px(root.getComputedStyle(row).paddingRight);
+  clip.style.setProperty('--sw-inset', inset + 'px');
+  var buttons = bar.querySelectorAll('.swbtn');
+  var cs = root.getComputedStyle ? root.getComputedStyle(bar) : null;
+  var gap = cs ? px(cs.columnGap || cs.gap) : 6;
+  var w = (cs ? px(cs.paddingLeft) + px(cs.paddingRight) : 8);
+  for (var i = 0; i < buttons.length; i++) {
+    w += buttons[i].offsetWidth || 0;
+    if (i) w += gap;
   }
-  return w;
+  if (!(w > 0)) w = bar.scrollWidth || bar.offsetWidth || 0;
+  w = Math.ceil(w);
+  var dist = Math.ceil(w + inset);
+  clip.style.setProperty('--sw', dist + 'px');
+  if (w) bar.style.width = w + 'px';
+  return dist;
 }
 function snap(clip, open) {
   if (!clip) return;

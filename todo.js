@@ -337,9 +337,7 @@ function bindSwipe(sec) {
         return [{ label: 'Done', attrs: { 'data-td': 'tick', 'data-id': id } }];
       }
       return [
-        { label: 'Tomorrow', attrs: { 'data-td': 'snooze', 'data-until': 'tomorrow', 'data-id': id } },
-        { label: '3 days', attrs: { 'data-td': 'snooze', 'data-until': '3d', 'data-id': id } },
-        { label: '1 week', attrs: { 'data-td': 'snooze', 'data-until': '7d', 'data-id': id } },
+        { label: 'Snooze', attrs: { 'data-td': 'more', 'data-id': id } },
         { label: 'Done', attrs: { 'data-td': 'done', 'data-id': id } }
       ];
     }

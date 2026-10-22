@@ -393,14 +393,15 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.
 .rvbig>.phorig{position:fixed;top:16px;right:16px;left:auto;bottom:auto;background:transparent;color:#fff}
 .phstage .phtools{position:static}
 @media (prefers-reduced-motion:reduce){.phstage>img.phblur{filter:none;transform:none}}
-/* Swipe-left reveals the row's existing actions (swipe.js). The face slides; the buttons stay put. */
-.swclip{position:relative;overflow:hidden;touch-action:pan-y;min-width:0}
-.swface{position:relative;z-index:1;background:#fff;height:100%;min-width:0;transition:transform .18s ease}
+/* Swipe-left reveals the row's existing actions (swipe.js).
+   The card (.swclip) clips the tray. The row (.swface) slides clear of it and clips only its own text. */
+.swclip{position:relative;overflow:hidden;touch-action:pan-y;min-width:0;max-width:100%}
+.swface{position:relative;z-index:1;background:#fff;height:100%;min-width:0;overflow:hidden;transition:transform .18s ease}
 .swclip.swdrag>.swface,.swclip.swdrag{transition:none}
 .swclip.swdrag,.swclip.swdrag *{user-select:none}
 .swclip.open>.swface{transform:translateX(calc(-1 * var(--sw, 0px)))}
-.swacts{position:absolute;top:0;right:0;bottom:0;z-index:0;display:flex;align-items:center;justify-content:flex-end;gap:6px;box-sizing:border-box;padding:0 8px;max-width:100%}
-button.swbtn.pill.sm{height:34px;min-height:34px;box-sizing:border-box;font-family:"Libre Bodoni","Bodoni 72",Didot,serif;font-size:14px;font-weight:500;letter-spacing:0;line-height:1;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;text-transform:none;white-space:nowrap;flex:0 1 auto;min-width:0}
+.swacts{position:absolute;top:0;bottom:0;right:var(--sw-inset,0px);z-index:0;display:flex;align-items:center;justify-content:flex-end;gap:6px;box-sizing:border-box;width:max-content;max-width:none;padding:0 0 0 8px}
+button.swbtn.pill.sm{height:34px;min-height:34px;box-sizing:border-box;font-family:var(--head);font-size:var(--d-btnout-fp,calc(18px*var(--hs)));font-weight:var(--d-btnout-g,500);letter-spacing:0;line-height:1;padding:0 calc(18px*var(--sp,1));display:inline-flex;align-items:center;justify-content:center;text-transform:none;white-space:nowrap;flex:0 0 auto;width:auto;min-width:max-content}
 button.swbtn.pill.sm.outline{background:#fff;color:#111;border:1.5px solid #111}
 button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
 .ivgrid>.swclip{height:100%;display:flex;border-radius:calc(14px*var(--rad))}
@@ -410,5 +411,5 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
 .swclip>.swface>.pcard{margin-bottom:0}
 .swclip .oyp-qrow{border-bottom:1px solid #f1f1f1}
 .swclip:last-child .oyp-qrow{border-bottom:0}
-@media (max-width:760px){.ivgrid>.swclip{border-radius:0}}
+@media (max-width:760px){.ivgrid{grid-template-columns:minmax(0,1fr)}.ivgrid>.swclip{border-radius:0}}
 @media (prefers-reduced-motion:reduce){.swface{transition:none}}
