@@ -105,7 +105,22 @@ if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPNa
 // The scanner cannot take a repo change from this site, but it already loads this file.
 // JO card zones (scan-zones.js) ride along so a phone can label every section of the card without a scanner release.
 // The start screen's stone photo is replaced with plain white the same way.
-if (typeof document !== 'undefined' && document.createElement) {
+if (typeof document !== 'undefined' && document.createElement && document.addEventListener && document.querySelectorAll) {
+  // Pressed look on pointerdown, before any click handler can await. Cleared on release.
+  var pressSel = 'button, [role="button"], a.pill, a.fchip, a.lnk, .tap';
+  function pressClear() {
+    var nodes = document.querySelectorAll('.is-down'), n;
+    for (n = 0; n < nodes.length; n++) nodes[n].classList.remove('is-down');
+  }
+  document.addEventListener('pointerdown', function (e) {
+    var t = e.target, b;
+    if (!t || !t.closest) return;
+    b = t.closest(pressSel);
+    if (!b || b.disabled || b.getAttribute('aria-disabled') === 'true') return;
+    b.classList.add('is-down');
+  }, true);
+  document.addEventListener('pointerup', pressClear, true);
+  document.addEventListener('pointercancel', pressClear, true);
   var cs = document.currentScript, tags, i, src;
   if (!cs) {
     tags = document.getElementsByTagName('script');
@@ -126,7 +141,7 @@ if (typeof document !== 'undefined' && document.createElement) {
   }
   if (base && !document.querySelector('script[src*="scan-zones.js"]')) {
     var zs = document.createElement('script');
-    zs.src = base + 'scan-zones.js?v=14';
+    zs.src = base + 'scan-zones.js?v=15';
     (document.head || document.documentElement).appendChild(zs);
   }
   // Card Scanner start screen: drop the stone photo. Other screens are already white.

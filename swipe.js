@@ -1,6 +1,10 @@
 /* Shared swipe-left for staff lists. Same pointer idea as Edit layout drag in app.js:
    an 8px move picks an axis, a tap still clicks, and touch and mouse both use pointer events.
-   One row open at a time. The buttons behind the row are only actions the list already had. */
+   One row open at a time. The buttons behind the row are only actions the list already had.
+   On a fine pointer, a row whose swipe removes it also gets a corner ×, unless the row
+   already shows a button for that same action. The × runs the same action as the swipe
+   (the same confirm, the same Undo). A full-width photo keeps its width and the × sits
+   on the photo. Text rows keep a gap for it. Phones keep the swipe only. */
 (function (root) {
 'use strict';
 var THRESH = 8;
@@ -28,6 +32,17 @@ function needsConfirm(action) {
 }
 function isDanger(action) {
   return !!(action && (action.danger || /^delete$/i.test(String(action.label || '').trim())));
+}
+/* The corner × is only the action that takes the row off the list. Done and Snooze
+   stay on the row (tick and ⋯). Reprint stays behind the swipe. */
+function dismissAction(actions) {
+  if (!actions || !actions.length) return null;
+  var found = null, i, label;
+  for (i = 0; i < actions.length; i++) {
+    label = String(actions[i] && actions[i].label || '').trim().toLowerCase();
+    if (label === 'cancel' || label === 'archive' || label === 'unarchive' || label === 'remove' || label === 'restore' || label === 'delete') found = actions[i];
+  }
+  return found;
 }
 
 var gesture = null;
@@ -57,7 +72,10 @@ function measure(clip) {
   var face = clip.querySelector('.swface');
   var row = face && face.firstElementChild;
   var inset = 0;
-  if (row && root.getComputedStyle) inset = px(root.getComputedStyle(row).paddingRight);
+  /* --swx-base is the row's own right padding. The corner × adds 34px on top of
+     that, and that 34px is not part of the tray. */
+  if (row && row.style && row.style.getPropertyValue('--swx-base') !== '') inset = px(row.style.getPropertyValue('--swx-base'));
+  else if (row && root.getComputedStyle) inset = px(root.getComputedStyle(row).paddingRight);
   clip.style.setProperty('--sw-inset', inset + 'px');
   bar.style.width = '';
   var buttons = bar.querySelectorAll('.swbtn');
@@ -218,7 +236,74 @@ function wrap(row, actions) {
   clip.appendChild(face);
   face.appendChild(row);
   row.addEventListener('dragstart', onDragStart);
+  var gone = dismissAction(actions);
+  if (gone) addCorner(clip, face, row, gone);
   return clip;
+}
+function actionText(el) {
+  return String(el && el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+/* Print already shows CANCEL, and a consignment row already shows Remove.
+   Those stay the only control. A hidden button does not count. */
+function actionAlreadyShown(row, action) {
+  var name = String(action && action.label || '').trim().toLowerCase();
+  if (!name || !row || !row.querySelectorAll) return false;
+  var nodes = row.querySelectorAll('button, a'), i, el, cs;
+  for (i = 0; i < nodes.length; i++) {
+    el = nodes[i];
+    if (!el.classList || el.classList.contains('swbtn') || el.classList.contains('swx')) continue;
+    if (actionText(el) !== name) continue;
+    if (root.getComputedStyle) {
+      cs = root.getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+    }
+    return true;
+  }
+  return false;
+}
+/* Inventory tiles and production cards are a photo across the top. A small
+   thumb (review, the phone inventory row, a production list) is not. */
+function photoHost(row) {
+  if (!row || !row.querySelectorAll || !row.getBoundingClientRect) return null;
+  var rowBox = row.getBoundingClientRect();
+  if (!(rowBox.width >= 40)) return null;
+  var nodes = row.querySelectorAll('.ivph, .pth'), i, el, box;
+  for (i = 0; i < nodes.length; i++) {
+    el = nodes[i];
+    if (!el.classList || el.classList.contains('sm') || el.classList.contains('xs') || el.classList.contains('big')) continue;
+    box = el.getBoundingClientRect();
+    if (box.width < rowBox.width * 0.7 || box.height < 40) continue;
+    if (box.top > rowBox.top + 16) continue;
+    return el;
+  }
+  return null;
+}
+function addCorner(clip, face, row, action) {
+  if (actionAlreadyShown(row, action)) return;
+  var base = root.getComputedStyle ? px(root.getComputedStyle(row).paddingRight) : 0;
+  row.style.setProperty('--swx-base', base + 'px');
+  var b = root.document.createElement('button');
+  b.type = 'button';
+  b.className = 'swx';
+  var name = String(action.label || '').trim();
+  b.setAttribute('aria-label', name);
+  b.setAttribute('title', name);
+  if (action.attrs) Object.keys(action.attrs).forEach(function (k) {
+    if (k === 'class' || k === 'aria-label' || k === 'title') return;
+    b.setAttribute(k, action.attrs[k]);
+  });
+  b.innerHTML = '<svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.2 2.2 L9.8 9.8 M9.8 2.2 L2.2 9.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+  b.addEventListener('pointerdown', function (e) {
+    e.stopPropagation();
+  });
+  b.addEventListener('click', function (e) { onAction(e, action, row); });
+  var photo = photoHost(row);
+  if (photo) {
+    photo.appendChild(b);
+    photo.classList.add('hasx');
+    clip.classList.add('swphoto');
+  } else face.appendChild(b);
+  clip.classList.add('hasx');
 }
 function decorate(container, opt) {
   var rows = container.querySelectorAll(opt.item);
@@ -233,7 +318,7 @@ function decorate(container, opt) {
   }
 }
 function ignored(e, opt) {
-  var sel = 'button, a, input, textarea, select, label, .swbtn';
+  var sel = 'button, a, input, textarea, select, label, .swbtn, .swx';
   if (opt.ignore) sel += ', ' + opt.ignore;
   return !!(e.target.closest && e.target.closest(sel));
 }
@@ -243,6 +328,7 @@ function onPointerDown(e) {
   var container = e.currentTarget;
   var opt = container.oypSwipeOpt;
   if (!opt) return;
+  sync(container);
   if (typeof opt.off === 'function' && opt.off()) return;
   var html = root.document.documentElement;
   if (html && html.classList.contains('layedit') && e.target.closest('.dtitle, .dgrip, .lctile, [data-nkey], [data-lkey]')) return;
@@ -277,10 +363,27 @@ function mount(container, opt) {
   if (!container || !opt || !opt.item || typeof opt.actions !== 'function') return;
   container.oypSwipeOpt = opt;
   decorate(container, opt);
+  sync(container);
   if (container.dataset && container.dataset.oypswipe) return;
   if (container.dataset) container.dataset.oypswipe = '1';
   container.addEventListener('pointerdown', onPointerDown);
   armDoc();
+}
+function sync(container) {
+  var doc = root.document;
+  if (!doc) return;
+  var list = container ? [container] : (doc.querySelectorAll ? doc.querySelectorAll('[data-oypswipe]') : []);
+  var i, el, opt, on;
+  for (i = 0; i < list.length; i++) {
+    el = list[i];
+    if (!el || !el.classList) continue;
+    opt = el.oypSwipeOpt;
+    on = false;
+    if (opt && typeof opt.off === 'function') {
+      try { on = !!opt.off(); } catch (err) { on = false; }
+    }
+    el.classList.toggle('swsel', on);
+  }
 }
 function clipOf(row) {
   if (!row) return null;
@@ -300,7 +403,7 @@ function close(row) {
   if (clip) snap(clip, false);
 }
 
-var api = { intent: intent, shouldOpen: shouldOpen, needsConfirm: needsConfirm, mount: mount, open: open, close: close };
+var api = { intent: intent, shouldOpen: shouldOpen, needsConfirm: needsConfirm, dismissAction: dismissAction, sync: sync, mount: mount, open: open, close: close };
 root.OYPSwipe = api;
 if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
