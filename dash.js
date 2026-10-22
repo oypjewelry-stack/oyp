@@ -59,6 +59,76 @@ function arrangeList(canon, ids, saved) { // saved null = canon order. An id tha
   return out;
 }
 function arrange(ids, saved) { return arrangeList(SEC_ORDER, ids, saved); }
+// A hidden id keeps its own slot. Reordering the visible ones fills the other slots and does not drag the hidden id onto its neighbor.
+function mergeSlots(full, hide, visible) {
+  const hidden = new Set(hide || []);
+  const vis = [];
+  (visible || []).forEach(id => { if (id && !hidden.has(id) && vis.indexOf(id) < 0) vis.push(id); });
+  const slots = [];
+  (full || []).forEach(id => { if (id && slots.indexOf(id) < 0) slots.push(id); });
+  const out = [];
+  let v = 0;
+  slots.forEach(id => {
+    if (hidden.has(id)) out.push(id);
+    else if (v < vis.length) out.push(vis[v++]);
+  });
+  while (v < vis.length) { if (out.indexOf(vis[v]) < 0) out.push(vis[v]); v++; }
+  return out;
+}
+// Hidden ids stay in their own slots. A saved list that dropped them does not park each one on its canon neighbor.
+function orderSecs(ids, saved, hideList) {
+  const present = new Set(ids);
+  const hide = (hideList || []).filter(id => present.has(id));
+  const canon = SEC_ORDER.filter(id => present.has(id));
+  const extras = ids.filter(id => canon.indexOf(id) < 0);
+  if (!saved || !saved.length || !hide.length) return arrange(ids, saved);
+  const savedIn = saved.filter(id => present.has(id));
+  const hideSet = new Set(hide);
+  if (savedIn.some(id => hideSet.has(id))) return arrange(ids, saved);
+  const vis = savedIn.filter(id => !hideSet.has(id));
+  canon.forEach(id => { if (!hideSet.has(id) && vis.indexOf(id) < 0) vis.push(id); });
+  const full = mergeSlots(canon, hide, vis);
+  extras.forEach(id => { if (full.indexOf(id) < 0) full.push(id); });
+  return full;
+}
+function fullSecOrder(u, visible) {
+  const hide = readSecHide(u);
+  return mergeSlots(orderSecs(SEC_ORDER.slice(), readOrder(u), hide), hide, visible);
+}
+function applyLocPref(canon, pref) {
+  if (!pref) return { order: canon.slice(), hide: [] };
+  const hide = [];
+  (pref.hide || []).forEach(k => { if (canon.indexOf(k) >= 0 && hide.indexOf(k) < 0) hide.push(k); });
+  const saved = (pref.order || []).filter(k => canon.indexOf(k) >= 0);
+  const hideSet = new Set(hide);
+  if (!hide.length) return { order: arrangeList(canon, canon, saved), hide };
+  if (saved.some(k => hideSet.has(k))) return { order: arrangeList(canon, canon, saved), hide };
+  const vis = saved.filter(k => !hideSet.has(k));
+  canon.forEach(k => { if (!hideSet.has(k) && vis.indexOf(k) < 0) vis.push(k); });
+  return { order: mergeSlots(canon.slice(), hide, vis), hide };
+}
+const secHideKey = u => 'oypDashSecHide:' + (u && u.username || 'device');
+function readSecHide(u) {
+  try {
+    const a = JSON.parse(localStorage.getItem(secHideKey(u)) || 'null');
+    if (!Array.isArray(a)) return [];
+    const h = [];
+    a.forEach(x => { if (typeof x === 'string' && SEC_ORDER.includes(x) && h.indexOf(x) < 0) h.push(x); });
+    return h;
+  } catch (e) { return []; }
+}
+function writeSecHide(u, ids) {
+  const h = [];
+  (ids || []).forEach(id => { if (SEC_ORDER.includes(id) && h.indexOf(id) < 0) h.push(id); });
+  try { if (!h.length) localStorage.removeItem(secHideKey(u)); else localStorage.setItem(secHideKey(u), JSON.stringify(h)); } catch (e) {}
+  return h;
+}
+function setSecHidden(u, id, hidden) {
+  if (!SEC_ORDER.includes(id)) return readSecHide(u);
+  const h = readSecHide(u).filter(x => x !== id);
+  if (hidden) h.push(id);
+  return writeSecHide(u, h);
+}
 // Location tiles: order and hidden names on this device, per signed-in name. Empty = the row the server sends.
 const locStoreKey = u => 'oypDashLoc:' + (u && u.username || 'device');
 function locCount(l) { const n = Number(l && l.count); return n > 0 ? n : 0; }
@@ -110,12 +180,8 @@ function writeLocPref(u, order, hide, canon) {
 function loadLoc(list, u) {
   const canon = locCanon(list), byKey = {};
   (list || []).forEach(l => { if (l && l.key) byKey[l.key] = l; });
-  let order = canon.slice(); const hide = new Set();
-  if (D.ordOn) {
-    const p = readLocPref(u);
-    if (p) { order = arrangeList(canon, canon, p.order); p.hide.forEach(k => { if (canon.indexOf(k) >= 0) hide.add(k); }); }
-  }
-  D.loc = { canon: canon, order: order, hide: hide, byKey: byKey };
+  const applied = D.ordOn ? applyLocPref(canon, readLocPref(u)) : { order: canon.slice(), hide: [] };
+  D.loc = { canon: canon, order: applied.order, hide: new Set(applied.hide), byKey: byKey };
 }
 function locName(l) { return window.OYP.locLabel(l && l.key, l && l.key === 'unset' ? 'No location yet' : ((l && l.label) || (l && l.key) || '')); }
 function locTileOn(k) { // a hidden "No location yet" must not linger in Show once its count is 0
@@ -186,7 +252,7 @@ function locTile(esc, l, on) {
   }
   const link = `<a class="${cls}" href="${href}"${title}><b>${count}</b><span class="lab">${esc(name)} ›</span>${per}</a>`;
   if (!on) return link;
-  return `<div class="lctile" data-lkey="${esc(l.key)}">${link}<button type="button" class="lx" data-lhide aria-label="Hide ${esc(name)}">✕</button></div>`;
+  return `<div class="lctile" data-lkey="${esc(l.key)}"><span class="laygrip" aria-hidden="true">⋮⋮</span>${link}<button type="button" class="lx layx" data-lhide aria-label="Hide ${esc(name)}">Hide</button></div>`;
 }
 function cycleSoldPeriod(main) {
   const order = SOLD_PERIOD, i = order.indexOf(soldPeriod());
@@ -224,16 +290,17 @@ function paintLoc(main, esc) {
   if (!on) { if (extra) extra.remove(); return; }
   if (!extra) { extra = document.createElement('span'); extra.className = 'layloc'; acts.appendChild(extra); }
   const hidden = D.loc.order.filter(k => D.loc.hide.has(k) && locTileOn(k));
-  extra.innerHTML = hidden.map(k => `<button type="button" class="lnk" data-lshow="${esc(k)}">Show ${esc(locName(D.loc.byKey[k]))}</button>`).join('')
-    + `<button type="button" class="lnk" id="dLocReset"${readLocPref(D.user) ? '' : ' hidden'}>Reset</button>`;
+  extra.innerHTML = hidden.map(k => `<button type="button" class="layshow" data-lshow="${esc(k)}">Show ${esc(locName(D.loc.byKey[k]))}</button>`).join('')
+    + `<button type="button" class="layshow" id="dLocReset"${readLocPref(D.user) ? '' : ' hidden'}>Reset</button>`;
 }
 function saveLoc(u) {
   const prev = readLocPref(u);
-  const base = prev && prev.order.length ? prev.order : D.loc.canon;
-  const ord = arrangeList(base, base.concat(D.loc.order), D.loc.order);
   const hide = new Set(D.loc.hide);
   if (prev) prev.hide.forEach(k => { if (D.loc.canon.indexOf(k) < 0) hide.add(k); });
-  writeLocPref(u, ord, hide, D.loc.canon);
+  const order = D.loc.order.slice();
+  if (prev) prev.order.forEach(k => { if (order.indexOf(k) < 0) order.push(k); });
+  D.loc.canon.forEach(k => { if (order.indexOf(k) < 0) order.push(k); });
+  writeLocPref(u, order, hide, D.loc.canon);
 }
 /* Sales card ranges. Monthly is the chart the dashboard already had (last 6 months of confirmed payments).
    Daily, weekly, and annual use each JO's sale date and full sale amount from dashDrill, so a range's number is the sum of its bars. */
@@ -522,6 +589,7 @@ function paintTodo(main) {
   const focusAdd = !!D.todoFocusAdd;
   D.todoFocusAdd = false;
   sec.outerHTML = todoHtml(window.OYP.esc);
+  decorateSecs(main);
   const next = main.querySelector('[data-dsec="todo"]');
   if (draft && next) {
     const a = next.querySelector('.tdaddin'), b = next.querySelector('.tdadddue'), c = next.querySelector('.tdaddwho');
@@ -714,10 +782,14 @@ function draw(main, u) {
       <td><span class="chip ${p.status === 'pending' ? 'gold' : ''}">${esc(p.status === 'pending' ? 'To confirm' : p.status)}</span></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No payments yet.</p>'}</section>`;
   }
 
-  h += `<div id="dsecs">${arrange(Object.keys(parts), D.ordOn ? readOrder(u) : null).map(id => parts[id]).join('')}</div>`;
+  const secSaved = D.ordOn ? readOrder(u) : null;
+  const secHide = new Set(D.ordOn ? readSecHide(u) : []);
+  const secOrder = orderSecs(Object.keys(parts), secSaved, [...secHide]).filter(id => parts[id] && !secHide.has(id));
+  h += `<div id="dsecs">${secOrder.map(id => parts[id]).join('')}</div>${secShowHtml(esc, u, parts)}`;
   const miss = (r.missing || []).filter(t => !{ Settings: 1, Items: 1, Consignees: 1, Consignments: 1, ConsignmentItems: 1 }[t]); // Settings is optional. Items is inventory. Only a missing Consignment tab is a consignment warning.
   if (miss.length) h += `<p class="muted dmiss">Not set up in the Sheet yet: ${miss.map(esc).join(', ')}</p>`;
   main.innerHTML = h;
+  decorateSecs(main);
   main.querySelector('#dRef').onclick = () => { D.todoForce = true; render(main, u, true); };
   if (r.locations) paintLoc(main, esc);
   wireLayout(main, u);
@@ -807,6 +879,7 @@ function paintMessages(main, esc) {
   const sec = main.querySelector('#dMsgs'); if (!sec) return;
   const open = sec.querySelector('.cmold') && sec.querySelector('.cmold').open;
   sec.outerHTML = messagesCard(esc);
+  decorateSecs(main);
   const next = main.querySelector('#dMsgs .cmold'); if (next && open) next.open = true;
   wireMessages(main, esc);
 }
@@ -827,20 +900,50 @@ function wireMessages(main, esc) {
     paintMessages(main, esc);
   });
 }
+function secShowHtml(esc, u, parts) {
+  const hide = readSecHide(u).filter(id => !parts || parts[id]);
+  if (!hide.length) return '';
+  return `<div class="layshows" id="secShows">${hide.map(id => `<button type="button" class="layshow" data-sshow="${esc(id)}">Show ${esc(SEC_LABEL[id] || id)}</button>`).join('')}</div>`;
+}
+function decorateSecs(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('#dsecs > [data-dsec], [data-dsec]').forEach(sec => {
+    const title = sec.querySelector(':scope > .dtitle');
+    if (!title || title.querySelector('[data-shide]')) return;
+    const id = sec.dataset.dsec;
+    const name = SEC_LABEL[id] || id;
+    const ctl = document.createElement('span');
+    ctl.className = 'layctl';
+    const grip = document.createElement('span');
+    grip.className = 'laygrip';
+    grip.setAttribute('aria-hidden', 'true');
+    grip.textContent = '⋮⋮';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'layx';
+    btn.dataset.shide = id;
+    btn.setAttribute('aria-label', 'Hide ' + name);
+    btn.textContent = 'Hide';
+    ctl.appendChild(grip);
+    ctl.appendChild(btn);
+    title.appendChild(ctl);
+  });
+}
 function wireLayout(main, u) {
   wireSoldPeriod(main);
   if (!main || !u || u.role !== 'admin' || !window.OYPLayoutEdit) return;
   const box = main.querySelector('#dsecs');
   if (box) window.OYPLayoutEdit.drag(box, '[data-dsec]', 'y', () => {
-    writeOrder(u, [...box.children].filter(s => s.dataset && s.dataset.dsec).map(s => s.dataset.dsec));
-  }, '.lctile, .lx, .layloc, .lcper, button, input, select, textarea, summary, a', '.dtitle');
+    const visible = [...box.children].filter(s => s.dataset && s.dataset.dsec).map(s => s.dataset.dsec);
+    writeOrder(u, fullSecOrder(u, visible));
+  }, '.lctile, .lx, .layloc, .lcper, .layx, button, input, select, textarea, summary, a', '.dtitle');
   const row = main.querySelector('#locRow');
   if (row && D.loc) window.OYPLayoutEdit.drag(row, '[data-lkey]', 'x', () => {
     const visible = [...row.querySelectorAll('[data-lkey]')].map(el => el.dataset.lkey);
-    D.loc.order = arrangeList(D.loc.order, D.loc.order, visible);
+    D.loc.order = mergeSlots(D.loc.order, D.loc.hide, visible);
     saveLoc(u);
     paintLoc(main, window.OYP.esc);
-  }, '.lx, .lcper');
+  }, '.lx, .lcper, button');
   const sec = main.querySelector('[data-dsec="loc"]');
   if (sec && !sec.dataset.layhide) {
     sec.dataset.layhide = '1';
@@ -856,6 +959,21 @@ function wireLayout(main, u) {
       if (!hide) return;
       const t = hide.closest('[data-lkey]'); if (!t) return;
       D.loc.hide.add(t.dataset.lkey); saveLoc(u); paintLoc(main, window.OYP.esc);
+    });
+  }
+  if (!main.dataset.sechide) {
+    main.dataset.sechide = '1';
+    main.addEventListener('click', e => {
+      if (!editing()) return;
+      const hide = e.target.closest('[data-shide]');
+      const show = e.target.closest('[data-sshow]');
+      if (!hide && !show) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const id = hide ? hide.dataset.shide : show.dataset.sshow;
+      if (!SEC_ORDER.includes(id)) return;
+      setSecHidden(u, id, !!hide);
+      if (D.r && D.r.ok) draw(main, u);
     });
   }
 }
@@ -1041,19 +1159,33 @@ const SEC_LABEL = { todo: 'To do', msgs: 'Messages', loc: 'Location', sales: 'Sa
 function layoutLocState(list, u) {
   const canon = locCanon(list), byKey = {};
   (list || []).forEach(l => { if (l && l.key) byKey[l.key] = l; });
-  let order = canon.slice(); const hide = [];
   const p = u && u.role === 'admin' ? readLocPref(u) : null;
-  if (p) { order = arrangeList(canon, canon, p.order); p.hide.forEach(k => { if (canon.indexOf(k) >= 0 && hide.indexOf(k) < 0) hide.push(k); }); }
-  return { canon, order, hide, byKey, custom: !!p };
+  const applied = applyLocPref(canon, p);
+  return { canon, order: applied.order, hide: applied.hide, byKey, custom: !!p };
 }
-// Settings › Layout turns editing on. While it is on, sections and tiles drag. The saved order applies either way.
+function commitLayout(u) {
+  const main = document.getElementById('main');
+  if (!main || !u) return;
+  const box = main.querySelector('#dsecs');
+  if (box) {
+    const visible = [...box.children].filter(s => s.dataset && s.dataset.dsec).map(s => s.dataset.dsec);
+    writeOrder(u, fullSecOrder(u, visible));
+  }
+  if (D.loc && main.querySelector('#locRow')) saveLoc(u);
+}
+// The Edit layout pill turns editing on. While it is on, each section header, tile, and menu row moves and hides on its own. Done saves.
 window.OYPDash = { render, relayout, layout: {
+  mergeSlots,
+  sectionOrder: orderSecs,
   sections: {
     labels: SEC_LABEL,
-    list: u => arrange(SEC_ORDER.slice(), u && u.role === 'admin' ? readOrder(u) : null),
+    list: u => arrange(SEC_ORDER.slice(), u && u.role === 'admin' ? readOrder(u) : null).filter(id => readSecHide(u).indexOf(id) < 0),
     save: (u, ids) => writeOrder(u, ids),
-    reset: u => { try { localStorage.removeItem(ordKey(u)); } catch (e) {} },
-    custom: u => !!(u && readOrder(u))
+    reset: u => { try { localStorage.removeItem(ordKey(u)); localStorage.removeItem(secHideKey(u)); } catch (e) {} },
+    custom: u => !!(u && (readOrder(u) || readSecHide(u).length)),
+    hidden: readSecHide,
+    setHidden: setSecHidden,
+    commit: commitLayout
   },
   locations: {
     fromList: layoutLocState,
