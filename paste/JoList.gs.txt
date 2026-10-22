@@ -1,0 +1,29 @@
+PASTE INTO: Code.gs
+
+No new OAuth scopes. Do not add any scopes. Do not deploy this by itself. It belongs in the same morning paste as the other scanner script.
+
+The phone used to ask the server to read the JO number on every scan (readJo). It now reads the number on the phone and checks it against a list of JO numbers kept on the phone. This script is that list. The phone asks for it in the background when the scanner page opens, and again later, and a scan does not wait for the answer.
+
+1. In doPost, on its own line next to the readJo line, add:
+
+    if (req.op === 'joList') return json_(joList_(req));
+
+2. Add this function next to readJo_. Do not change readJo_, findJOs_, or the Drive file save.
+
+function joList_(req) {
+  var jos = [], seen = {}, rows = [], i, j, n;
+  try { if (typeof jobRows_ === 'function') rows = jobRows_('JobOrders') || []; } catch (e) { rows = []; }
+  for (i = 0; i < rows.length && jos.length < 5000; i++) {
+    j = rows[i] || {};
+    n = String(j.jo || j.JO || '').replace(/[\r\n]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!n || seen[n]) continue;
+    seen[n] = true;
+    jos.push(n);
+  }
+  return { ok: true, jos: jos, at: Date.now() };
+}
+
+Paste steps:
+1. Open the Apps Script project that serves the card scanner and open Code.gs.
+2. Add the one doPost line and the joList_ function above. Do not add OAuth scopes. Do not deploy a new version for this file on its own.
+3. Leave it for the single morning paste. Until that paste is live, the phone still accepts a JO number that matches the card pattern, so a scan is not blocked on the network.

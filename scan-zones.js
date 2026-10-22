@@ -1628,26 +1628,35 @@ function handGuess(b64) {
   if (!b64 || !sc || typeof sc.handReadJo !== 'function') return Promise.resolve('');
   return Promise.resolve(sc.handReadJo(b64)).catch(function () { return ''; });
 }
+function readZoneLocal(item) {
+  return cropJo(item.image).then(function (b64) {
+    if (!b64) return '';
+    if (!item.joCrop) item.joCrop = 'data:image/jpeg;base64,' + b64;
+    return handGuess(b64).then(function (g) {
+      var sc = scan();
+      var jo = sc && typeof sc.lookupJo === 'function' ? sc.lookupJo(g) : normJo(g);
+      if (jo && validJo(jo)) { lastFromCard = true; return normJo(jo); }
+      var guess = sc && typeof sc.currentGuess === 'function' ? sc.currentGuess() : '';
+      item.joGuess = (guess && String(guess).trim()) || (g && String(g).trim()) || '';
+      return '';
+    });
+  });
+}
 function resolveJo(item) {
   lastFromCard = false;
   lastImage = item.image || lastImage;
   lastThumb = item.thumb || lastThumb;
-  say('Reading the JO number…');
-  return cropJo(item.image).then(function (b64) {
-    if (!b64) return '';
-    return uprightCrop(b64).then(function (up) {
-      item.joCrop = 'data:image/jpeg;base64,' + (up || b64);
-      return readJo(up || b64).then(function (r) {
-        if (r && r.ok && r.jo && validJo(r.jo) && !r.low) { lastFromCard = true; return normJo(r.jo); }
-        var hinted = r && r.jo ? normJo(r.jo) : '';
-        return handGuess(up || b64).then(function (g) {
-          if (g && validJo(g)) { lastFromCard = true; return normJo(g); }
-          item.joGuess = (g && String(g).trim()) || (!validJo(hinted) ? hinted : '') || '';
-          return '';
-        });
-      });
+  var sc = scan();
+  var pending = sc && sc.earlyRead;
+  if (pending && typeof pending.then === 'function') {
+    return Promise.resolve(pending).then(function (jo) {
+      if (jo && validJo(jo)) { lastFromCard = true; return normJo(jo); }
+      var guess = sc && typeof sc.currentGuess === 'function' ? sc.currentGuess() : '';
+      if (guess) item.joGuess = String(guess).trim();
+      return '';
     });
-  });
+  }
+  return readZoneLocal(item);
 }
 /* One filing for a JO that was just accepted. The toast, the page tile, the gold line,
    and the needs-JO counter are all read from this record, in that same turn. */
@@ -1750,13 +1759,13 @@ function joStatus(snap) {
   var held = pages.some(function (p) { return p.held; });
   var pendingTiles = tiles.filter(function (s) { return s.cls === 'busy' || s.cls === 'queued'; }).length + (saving ? 1 : 0);
   var failedTiles = tiles.filter(function (s) { return s.retry; }).length;
-  var line = held ? (asking ? 'This photo stays here until you tap Save.' : 'Reading the JO number…')
+  var line = held ? (asking ? 'This photo stays here until you tap Save.' : 'Saved, reading JO…')
     : (!pages.length && !saving) ? ''
     : failedTiles ? (failedTiles + (failedTiles > 1 ? ' pages failed' : ' page failed'))
     : pendingTiles ? (pendingTiles === 1 ? '1 page still uploading' : pendingTiles + ' pages still uploading')
     : (pages.length ? 'All saved' : '');
   var lineCls = failedTiles ? ' err' : (pendingTiles || held) ? ' busy' : pages.length ? ' ok' : '';
-  var joLine = asking ? 'Type the JO number' : jo ? ('JO ' + jo) : ((pages.length || saving || reading) ? 'Reading the JO number…' : '');
+  var joLine = asking ? 'Type the JO number' : jo ? ('JO ' + jo) : ((pages.length || saving || reading) ? 'Saved, reading JO…' : '');
   var pending = 0, needs = 0, failed = 0;
   rows.forEach(function (r) {
     if (r.state === 'waiting' || r.state === 'uploading') pending++;

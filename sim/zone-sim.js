@@ -260,7 +260,7 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=18'), 'scan-zones cache bust is v18');
+eq(read('nav.js').includes('scan-zones.js?v=19'), 'scan-zones cache bust is v19');
 eq(zonesSrc.includes('grid-template-columns:1fr auto 1fr') && zonesSrc.includes('.ozbar b{grid-column:2;justify-self:center') && zonesSrc.includes('.ozbar [data-z="close"]{grid-column:1') && zonesSrc.includes('.ozbar [data-z="save"]{grid-column:3'), 'the zone title is centered on the bar');
 eq(zonesSrc.includes('@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}') && zonesSrc.includes('height:calc(34px * var(--sp, 1))') && !/ellipsis/.test(zonesSrc), 'a narrow bar uses an 18px title and 34px buttons, with the full words');
 eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, then draw its box on the sample photo.') && zonesSrc.includes('Swipe on the card to scroll the page.') && zonesSrc.includes('.oznote li{margin:0;padding:0}') && !zonesSrc.includes('Tag each section of the card once'), 'the zone help is a short bulleted list');
@@ -274,8 +274,8 @@ eq(Z.instructWanted() === false, 'a closed instructions list is remembered');
 localStorage.removeItem('oypScanInstruct');
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
-eq(read('staff/index.html').includes('nav.js?v=53') && read('staff/print-test.html').includes('nav.js?v=53'), 'staff pages load nav.js v53');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=53') && read('scan/index.html').includes('app.js?v=20261022o') && read('scan/index.html').includes('detector.js?v=20261022k') && read('scan/index.html').includes('queue.js?v=20261022n'), 'the scanner page keeps the production nav host at v53');
+eq(read('staff/index.html').includes('nav.js?v=54') && read('staff/print-test.html').includes('nav.js?v=54'), 'staff pages load nav.js v54');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=54') && read('scan/index.html').includes('app.js?v=20261022p') && read('scan/index.html').includes('detector.js?v=20261022k') && read('scan/index.html').includes('queue.js?v=20261022n'), 'the scanner page keeps the production nav host at v54');
 
 const heldPage = { clientId: 'c1', jo: 'OCR', held: true, page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' };
 const filing = Z.joFiling(heldPage, '26-287b', true);
@@ -289,7 +289,7 @@ const stale = Z.joStatus({
   rows: [{ clientId: 'c1', jo: 'OCR', state: 'needsjo', page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' }]
 });
 function stillReading(v) {
-  return v.joLine === 'Reading the JO number…' || v.line === 'Reading the JO number…' || /needs JO/.test(v.counter) || v.tiles.some(function (t) { return t.t === 'Reading…' || t.t === 'Type JO'; });
+  return v.joLine === 'Saved, reading JO…' || v.line === 'Saved, reading JO…' || /needs JO/.test(v.counter) || v.tiles.some(function (t) { return t.t === 'Reading…' || t.t === 'Type JO'; });
 }
 eq(stale.toast === 'JO 26-287B, from the card.' && stale.joLine === 'JO 26-287B' && stale.tiles[0].t === 'Waiting' && stale.line === '1 page still uploading' && stale.counter === '1 uploading' && !stale.counterErr, 'the tile, the gold line, and the counter update with the toast');
 eq(!stillReading(stale), 'the toast never sits on a reading or needs-JO state');
@@ -303,13 +303,13 @@ const reading = Z.joStatus({
   jo: 'OCR', toast: 'Reading the JO number…', reading: true, online: true,
   pages: [heldPage], rows: []
 });
-eq(reading.joLine === 'Reading the JO number…' && reading.line === 'Reading the JO number…' && reading.tiles[0].t === 'Reading…' && reading.counter === '', 'before the number is accepted, the line and the tile still say reading');
+eq(reading.joLine === 'Saved, reading JO…' && reading.line === 'Saved, reading JO…' && reading.tiles[0].t === 'Reading…' && reading.counter === '', 'before the number is accepted, the line says the page is saved and the JO is being read');
 const unread = Z.joStatus({
   jo: 'OCR', reading: true, online: true,
   pages: [heldPage],
   rows: [{ clientId: 'c1', jo: 'OCR', state: 'needsjo', page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' }]
 });
-eq(unread.counter === '1 needs JO' && unread.counterErr === true && unread.tiles[0].t === 'Type JO' && unread.line === 'Reading the JO number…', 'an unread queued page still counts as needs JO');
+eq(unread.counter === '1 needs JO' && unread.counterErr === true && unread.tiles[0].t === 'Type JO' && unread.line === 'Saved, reading JO…', 'an unread queued page still counts as needs JO');
 const typedJo = Z.joStatus({
   jo: '26-363', scan: '26-363@abc', prevScan: 'OCR@abc', toast: 'JO 26-363.', fromCard: false, online: true,
   filename: '26-363-p1-102226.jpg', page: 1, clientId: 'c1',
