@@ -22,7 +22,28 @@ function joScan(raw) { // a sticker QR is the whole field: 26-287B stays distinc
   return m ? { base: m[1] + '-' + m[2], letter: m[3] || '', text: m[1] + '-' + m[2] + (m[3] || '') } : null;
 }
 function onThis(jo) { const a = route().arg, p = joScan(a), id = String(jo || '').toUpperCase(); return a === jo || !!(p && p.letter && (p.base === id || p.text === id)); }
-function headJo(c) { const p = joScan(route().arg), jo = String(c && c.jo || ''); return p && p.letter && (jo.toUpperCase() === p.base || jo.toUpperCase() === p.text) ? p.text : jo; }
+function oneLetter(v) { const s = String(v || '').trim().toUpperCase(); return /^[A-Z]$/.test(s) ? s : ''; }
+function clientName(v) { if (!v) return ''; if (typeof v === 'string') return v.trim(); if (typeof v === 'object' && v.name) return String(v.name).trim(); return ''; }
+/* The board stores the base JO. A child or revision is the one letter on the card, the scan, or the route (26-287B). */
+function joShown(c, pagesVersion) {
+  const jo = String(c && c.jo || ''), p = joScan(jo);
+  if (!p) return jo;
+  if (p.letter) return p.text;
+  const letter = oneLetter(c && c.version) || oneLetter(c && c.letter) || oneLetter(pagesVersion) || oneLetter(c && c.photo && c.photo.version);
+  return letter ? p.base + letter : p.text;
+}
+function headJo(c, pagesVersion) {
+  const p = joScan(route().arg), jo = String(c && c.jo || '');
+  if (p && p.letter && (jo.toUpperCase() === p.base || jo.toUpperCase() === p.text)) return p.text;
+  return joShown(c, pagesVersion);
+}
+/* Delayed is only a target date that has passed (this step or the whole JO). Days in the step, and the client's due date, do not count. Pickup is not Delayed. */
+function isDelayed(c) {
+  if (!c || c.col === 'pickup' || (!c.step_target && !c.target)) return false;
+  const today = (S.r && S.r.today) || (S.wkr && S.wkr.today) || '';
+  if (!today) return !!c.delayed;
+  return (c.step_target && c.step_target < today) || (c.target && c.target < today);
+}
 const dShort = d => d ? MN[+d.slice(5, 7) - 1] + ' ' + +d.slice(8, 10) : '';
 const dLong = d => d ? DN[new Date(d + 'T00:00:00Z').getUTCDay()] + ', ' + dShort(d) : '';
 const hrs = m => { m = Math.round(m || 0); const h = Math.floor(m / 60), mm = m % 60; return !m ? '0 h' : !h ? mm + ' min' : h + ' h' + (mm ? ' ' + mm + ' m' : ''); };
@@ -34,7 +55,7 @@ const nowMs = () => Date.now() + S.skew;
 const elapsed = iso => { const s = Math.max(0, Math.floor((nowMs() - Date.parse(iso)) / 1000)); return Math.floor(s / 3600) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); };
 const daysTxt = c => c.days == null ? '' : c.days === 0 ? 'Since today' : c.days + (c.days === 1 ? ' day' : ' days') + ' in step';
 const tgtOf = c => c.step_target && (c.delayed_by === 'step' || !c.target || c.step_target < c.target) ? { d: c.step_target, step: true } : c.target ? { d: c.target, step: false } : null; // the date that matters most
-const tgtChip = c => { const t = tgtOf(c); return t ? `<span class="chip ${c.delayed ? 'pover' : 'ptgt'}" title="${t.step ? 'Target for this step' : 'Target for the whole JO'}: ${dLong(t.d)}">${t.step ? 'Step · ' : 'Target '}${dShort(t.d)}</span>` : ''; }; // short so it fits a narrow column
+const tgtChip = c => { const t = tgtOf(c); return t ? `<span class="chip ${isDelayed(c) ? 'pover' : 'ptgt'}" title="${t.step ? 'Target for this step' : 'Target for the whole JO'}: ${dLong(t.d)}">${t.step ? 'Step · ' : 'Target '}${dShort(t.d)}</span>` : ''; }; // short so it fits a narrow column
 const col = k => S.r.columns.find(c => c.key === k) || { key: k, label: k };
 const nextCol = c => { if (c && c.next !== undefined) return c.next ? col(c.next) : null; const x = col(c.col); return x.next ? col(x.next) : null; }; // c.next = the JO's next step (a repair skips Design / Casting); older server: next column
 const can = () => (S.r && S.r.can) || {};
@@ -90,16 +111,16 @@ async function reload() {
 function shown() {
   const q = S.q.trim().toUpperCase(), me = S.r.me_worker, p = joScan(q);
   return S.r.cards.filter(c => {
-    const jo = String(c.jo).toUpperCase();
-    return (!q || jo.includes(q) || (p && (jo === p.text || jo === p.base)) || String(c.description || '').toUpperCase().includes(q) || String(c.client || '').toUpperCase().includes(q))
-      && (!S.worker || (S.worker === '-' ? !c.assignee_id : c.assignee_id === S.worker)) && (!S.delayed || c.delayed) && (!S.mine || c.assignee_id === me);
+    const jo = String(c.jo).toUpperCase(), full = joShown(c).toUpperCase(), name = clientName(c.client).toUpperCase();
+    return (!q || jo.includes(q) || full.includes(q) || (p && (jo === p.text || jo === p.base || full === p.text || full === p.base)) || String(c.description || '').toUpperCase().includes(q) || name.includes(q))
+      && (!S.worker || (S.worker === '-' ? !c.assignee_id : c.assignee_id === S.worker)) && (!S.delayed || isDelayed(c)) && (!S.mine || c.assignee_id === me);
   });
 }
 function head(tab) {
   return `<div class="phead"><h2>Production</h2><div class="seg prptabs"><a class="${tab === 'board' ? 'on' : ''}" href="#/production">Board</a><a class="${tab === 'workers' ? 'on' : ''}" href="#/production/workers">Workers</a></div></div>`;
 }
 function drawBoard(main) {
-  const r = S.r, list = shown(), nd = r.cards.filter(c => c.delayed).length, phone = narrow();
+  const r = S.r, list = shown(), nd = r.cards.filter(isDelayed).length, phone = narrow();
   const cols = r.columns.filter(c => !S.stage || c.key === S.stage);
   if (phone && (!S.pcol || !r.columns.some(c => c.key === S.pcol))) { const f = r.columns.find(c => list.some(x => x.col === c.key)); S.pcol = f ? f.key : r.columns[0].key; }
   const filt = `<div class="pfilt">
@@ -120,7 +141,7 @@ function drawBoard(main) {
   const sum = `<p class="muted psum">${r.cards.length} JO${r.cards.length === 1 ? '' : 's'} in production${nd ? ` · <b class="gold">${nd} delayed</b>` : ''}${list.length !== r.cards.length ? ` · showing ${list.length}` : ''} · ${phone ? 'Tap a card to see it, or Move when it is done.' : 'Drag a card to the next stage when it is done. Click a card for photos and time.'}</p>`;
   let board;
   if (phone) {
-    board = `<div class="rvchips pcols">${r.columns.map(c => { const n = list.filter(x => x.col === c.key).length, d = list.filter(x => x.col === c.key && x.delayed).length;
+    board = `<div class="rvchips pcols">${r.columns.map(c => { const n = list.filter(x => x.col === c.key).length, d = list.filter(x => x.col === c.key && isDelayed(x)).length;
       return `<button class="fchip ${S.pcol === c.key ? 'on' : ''}" data-pcol="${c.key}">${esc(c.label)} <b>${n}</b>${d ? '<i class="pdot"></i>' : ''}</button>`; }).join('')}</div>
       <div class="prplist" id="pBoard">${list.filter(c => c.col === S.pcol).map(c => cardH(c, true)).join('') || `<div class="kempty pempty">Nothing in ${esc(col(S.pcol).label)}${S.mine ? ' for you' : ''}.</div>`}</div>`;
   } else {
@@ -135,14 +156,16 @@ function drawBoard(main) {
 }
 function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, clamped text, reserved timer line, fixed 2-row footer (production.css "equal cards")
   const nx = nextCol(c), staff = !can().all;
-  const chips = [c.delayed ? '<span class="chip gold">Delayed</span>' : '', tgtChip(c),
+  const id = joShown(c), ver = c.photo && c.photo.version ? String(c.photo.version) : '';
+  const badge = ver && !id.toUpperCase().endsWith(ver.trim().toUpperCase()) ? `<span class="pver" title="Version ${esc(ver)} (latest)">Ver. ${esc(ver)}</span>` : '';
+  const chips = [isDelayed(c) ? '<span class="chip gold">Delayed</span>' : '', tgtChip(c),
     c.due ? `<span class="chip ${c.late ? 'plate' : ''}">${c.late ? 'Past due ' : 'Due '}${dShort(c.due)}</span>` : '', `<span class="chip pdays">${esc(daysTxt(c))}</span>`,
     c.stage_label.toLowerCase() !== col(c.col).label.toLowerCase() ? `<span class="chip" title="${esc(c.stage_label)}">${esc(c.stage_label)}</span>` : '', c.review ? '<span class="chip">To review</span>' : ''].join('');
   const desc = c.description || 'No description yet', who = c.assignee || 'Unassigned';
-  const ck = S.choose ? `<label class="pck"><input type="checkbox" data-pck="${esc(c.jo)}" ${S.sel.has(c.jo) ? 'checked' : ''} aria-label="Select ${esc(c.jo)}"></label>` : '';
-  return `<div class="pcard tap${c.delayed ? ' dl' : ''}${c.late ? ' late' : ''}${S.sel.has(c.jo) ? ' on' : ''}" data-jo="${c.jo}" ${phone ? '' : 'draggable="true"'}>
-    <div class="pcm"><div class="pth" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}>${ck}${c.photo ? '' : '<span>No scan</span>'}</div>
-    <div class="pbd"><div class="kjo">${window.OYP.piece(c.client, c.jo)}${c.photo && c.photo.version ? `<span class="pver" title="Version ${esc(c.photo.version)} (latest)">Ver. ${esc(c.photo.version)}</span>` : ''}</div>
+  const ck = S.choose ? `<label class="pck"><input type="checkbox" data-pck="${esc(c.jo)}" ${S.sel.has(c.jo) ? 'checked' : ''} aria-label="Select ${esc(id)}"></label>` : '';
+  return `<div class="pcard tap${isDelayed(c) ? ' dl' : ''}${c.late ? ' late' : ''}${S.sel.has(c.jo) ? ' on' : ''}" data-jo="${esc(c.jo)}" ${phone ? '' : 'draggable="true"'}>
+    <div class="pcm"><div class="pth" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${esc(c.jo)}"` : ''}>${ck}${c.photo ? '' : '<span>No scan</span>'}</div>
+    <div class="pbd"><div class="kjo">${window.OYP.piece(c.client, id)}${badge}</div>
       <div class="kd" title="${esc(desc)}">${esc(desc)}</div>
       <div class="kc" title="${esc(who)}">${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
       ${c.running.length ? `<div class="prun"><i></i>${esc(c.running[0].worker)} · <span data-since="${c.running[0].since}">${elapsed(c.running[0].since)}</span></div>` : '<div class="prun pslot" aria-hidden="true"></div>'}</div></div>
@@ -168,7 +191,7 @@ function wireBoard(main) {
   if ($('pClr')) $('pClr').onclick = clr; if ($('pClr2')) $('pClr2').onclick = clr;
   if ($('pChoose')) $('pChoose').onclick = () => { S.choose = !S.choose; if (!S.choose) S.sel.clear(); redraw(); };
   if ($('pPrint')) $('pPrint').onclick = () => {
-    const items = [...S.sel].map(jo => ({ jo: jo, kind: 'jo_card' }));
+    const items = [...S.sel].map(jo => { const c = S.r.cards.find(x => x.jo === jo); return { jo: c ? joShown(c) : jo, kind: 'jo_card' }; });
     if (!window.OYPPrint || !window.OYPPrint.printStickers) return toast('Print is not loaded');
     window.OYPPrint.printStickers(items).then(r => { if (!r || r.ok === false) return; S.sel.clear(); S.choose = false; redraw(); });
   };
@@ -180,7 +203,7 @@ function wireBoard(main) {
   });
   main.querySelectorAll('.pck').forEach(el => el.onclick = e => e.stopPropagation());
   main.querySelectorAll('[data-pcol]').forEach(b => b.onclick = () => { S.pcol = b.dataset.pcol; redraw(); });
-  main.querySelectorAll('.pcard').forEach(el => el.onclick = e => { if (e.target.closest('[data-move]')) return; location.hash = '#/production/jo/' + el.dataset.jo; });
+  main.querySelectorAll('.pcard').forEach(el => el.onclick = e => { if (e.target.closest('[data-move]')) return; const c = S.r.cards.find(x => x.jo === el.dataset.jo); location.hash = '#/production/jo/' + encodeURIComponent(c ? joShown(c) : el.dataset.jo); });
   main.querySelectorAll('[data-move]').forEach(b => b.onclick = e => { e.stopPropagation(); const c = S.r.cards.find(x => x.jo === b.dataset.move), nx = nextCol(c); openMove(c, nx.key); });
   // desktop drag and drop: staff may drop only on the NEXT column; admin + PM anywhere
   let drag = null;
@@ -224,7 +247,7 @@ function openMove(c, to) {
   const box = $('pMoveBox'); if (!box) return;
   const codes = can().all ? t.codes.map(k => `<option value="${k}">${esc(S.r.labels[k] || k)}</option>`).join('') : '';
   box.innerHTML = `<div class="pmodal" id="pMove"><div class="pmbox" role="dialog" aria-label="Move JO">
-    <div class="pmtop"><div class="pth sm" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}></div><div><span class="lab">Move JO</span><h3>${esc(c.jo)}</h3><div class="kd">${esc(c.description)}</div></div></div>
+    <div class="pmtop"><div class="pth sm" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${esc(c.jo)}"` : ''}></div><div><span class="lab">Move JO</span><h3>${window.OYP.piece(c.client, joShown(c))}</h3><div class="kd">${esc(c.description)}</div></div></div>
     <div class="pmft"><span class="pst">${esc(from.label)}</span><span class="parr">→</span><span class="pst to">${esc(t.label)}</span></div>
     ${c.running.length ? `<p class="pmnote">${esc(c.running.map(x => x.worker).join(', '))}\u2019s timer is running. It stops when you move the JO.</p>` : ''}
     ${to !== 'pickup' ? `<span class="lab">Who works on it in ${esc(t.label)}?</span><div class="pmwho">${S.r.workers.map(w => `<button class="${S.move.who === w.worker_id ? 'on' : ''}" data-who="${w.worker_id}">${esc(w.name)}<small>${esc(w.skill)}</small></button>`).join('')}<button class="${!S.move.who ? 'on' : ''}" data-who="">Decide later</button></div>` : '<p class="pmnote">The JO goes to “For pickup”.</p>'}
@@ -245,7 +268,7 @@ function openMove(c, to) {
     if (r && r.code === 'MOVED') { box.innerHTML = ''; toast(r.error || 'Someone moved this JO already. The board is updated.'); S.at = 0; await reload(); if (route().view === 'jo') openJob(route().arg, () => true); return; }
     if (!r || !r.ok) { $('pmErr').textContent = (r && r.error) || 'Could not move. Try again.'; b.disabled = false; b.textContent = 'TRY AGAIN'; return; }
     const who = S.r.workers.find(w => w.worker_id === S.move.who);
-    box.querySelector('.pmbox').innerHTML = `<div class="pmdone"><div class="pok">✓</div><h3>Moved to ${esc(r.to_label)}</h3><p>JO ${esc(c.jo)}${who ? ' · now with <b>' + esc(who.name) + '</b>' : ''}${r.step_target ? ' · target ' + esc(dShort(r.step_target)) : ''}</p>
+    box.querySelector('.pmbox').innerHTML = `<div class="pmdone"><div class="pok">✓</div><h3>Moved to ${esc(r.to_label)}</h3><p>${window.OYP.piece(c.client, joShown(c))}${who ? ' · now with <b>' + esc(who.name) + '</b>' : ''}${r.step_target ? ' · target ' + esc(dShort(r.step_target)) : ''}</p>
       <p class="muted">Saved in the log: ${esc(S.u.display_name)}, ${esc(dLong(isoDay(r.at)))} ${esc(clock12(isoHM(r.at)))}${r.stopped && r.stopped.length ? ' · timer stopped for ' + esc(r.stopped.join(', ')) : ''}</p>
       <button class="pill wide" id="pmOk">OK</button></div>`;
     $('pmOk').onclick = () => { box.innerHTML = ''; };
@@ -287,7 +310,7 @@ function drawJob() {
   const myRun = runs.find(s => s.worker_id === timerWho);
   box.innerHTML = `<div class="ivsheet" id="pSheet"><div class="ivsbox pdet">
     <button class="lnk dback" id="pSX">‹ BACK</button>
-    <div class="pdh"><h3>JO ${esc(headJo(c))}</h3>${r.pages_version ? `<span class="chip">Version ${esc(r.pages_version)}</span>` : ''}${c.delayed ? '<span class="chip gold">Delayed</span>' : ''}${c.late ? '<span class="chip plate">Past due</span>' : ''}</div>
+    <div class="pdh"><h3>${window.OYP.piece(c.client, headJo(c, r.pages_version))}</h3>${r.pages_version ? `<span class="chip">Version ${esc(r.pages_version)}</span>` : ''}${isDelayed(c) ? '<span class="chip gold">Delayed</span>' : ''}${c.late ? '<span class="chip plate">Past due</span>' : ''}</div>
     <div class="kd pdesc">${esc(c.description || 'No description yet')}</div>
     <div class="prpbig" id="pBig" ${r.pages[0] ? `data-full="${r.pages[0].file_id}"` : ''}>${r.pages[0] ? '' : '<span class="lab">No scan yet</span>'}</div>
     ${r.pages.length ? `<div class="pthumbs">${r.pages.map((p, i) => `<button class="pth xs ${i ? '' : 'on'}" data-pg="${p.file_id}" data-ph="${p.file_id}" data-jo="${c.jo}" aria-label="Page ${p.page}"></button>`).join('')}<span class="muted pvnote">${r.pages_version ? 'Version ' + esc(r.pages_version) + ' (latest) · ' : ''}${r.pages.length} page${r.pages.length > 1 ? 's' : ''}${r.older_sets ? ' · ' + r.older_sets + ' older scan' + (r.older_sets > 1 ? 's' : '') + ' in To review' : ''}</span></div>` : ''}
@@ -295,7 +318,7 @@ function drawJob() {
       <div class="ivf"><span class="lab">Stage</span><b>${esc(c.stage_label)}</b><small class="muted">${esc(daysTxt(c))}</small></div>
       <div class="ivf"><span class="lab">Due (client)</span><b>${c.due ? esc(dLong(c.due)) : '—'}</b></div>
       ${tgtField('step', 'Target · this step', c.step_target)}${tgtField('job', 'Target · whole JO', c.target)}
-      <div class="ivf"><span class="lab">Client</span><b>${esc(c.client || '—')}</b></div>
+      <div class="ivf"><span class="lab">Client</span><b>${esc(clientName(c.client) || '—')}</b></div>
       <div class="ivf"><span class="lab">Has it now</span>${r.can.all ? wsel('pAsg', c.assignee_id, true) : `<b>${esc(c.assignee || 'Nobody yet')}</b>${!c.assignee && me ? '<button class="lnk" id="pTake">Take it</button>' : ''}`}</div>
     </div>
     <div class="ptimer ${myRun ? 'on' : ''}">
@@ -363,9 +386,9 @@ async function workersPage(main, live) {
   S.wkr = r;
   const thisWeek = !S.wk || S.wk === r.week, addD = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   const max = Math.max(480, ...r.lanes.flatMap(l => l.by_day.map(d => d.minutes)));
-  const mini = (c, i) => `<a class="pmini tap${c.delayed ? ' dl' : ''}" href="#/production/jo/${c.jo}">${i != null ? `<span class="pnum">${i + 1}</span>` : ''}<span class="pth xs" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${c.jo}"` : ''}></span>
-    <span class="pmb"><b>${esc(c.jo)}</b> <span class="muted">${esc(c.stage_label)}</span><span class="kd">${esc(c.description)}</span>
-    <span class="pmf">${c.delayed ? '<span class="chip gold">Delayed</span>' : ''}${tgtChip(c)}<span class="chip pdays">${esc(daysTxt(c))}</span>${c.due ? `<span class="chip ${c.late ? 'plate' : ''}">Due ${dShort(c.due)}</span>` : ''}${c.minutes_stage ? `<span class="chip">${hrs(c.minutes_stage)} so far</span>` : ''}</span></span></a>`;
+  const mini = (c, i) => `<a class="pmini tap${isDelayed(c) ? ' dl' : ''}" href="#/production/jo/${encodeURIComponent(joShown(c))}">${i != null ? `<span class="pnum">${i + 1}</span>` : ''}<span class="pth xs" ${c.photo ? `data-ph="${c.photo.file_id}" data-jo="${esc(c.jo)}"` : ''}></span>
+    <span class="pmb"><b>${window.OYP.piece(c.client, joShown(c))}</b> <span class="muted">${esc(c.stage_label)}</span><span class="kd">${esc(c.description)}</span>
+    <span class="pmf">${isDelayed(c) ? '<span class="chip gold">Delayed</span>' : ''}${tgtChip(c)}<span class="chip pdays">${esc(daysTxt(c))}</span>${c.due ? `<span class="chip ${c.late ? 'plate' : ''}">Due ${dShort(c.due)}</span>` : ''}${c.minutes_stage ? `<span class="chip">${hrs(c.minutes_stage)} so far</span>` : ''}</span></span></a>`;
   const lane = l => `<div class="plane"><div class="prplh"><div><b class="pln">${esc(l.name)}</b><span class="lab">${esc(l.skill)}</span>${r.can.all ? `<button class="lnk pwed" data-wed="${l.worker_id}">Edit</button>` : ''}</div><div class="plhrs"><b>${hrs(l.minutes_week)}</b><span class="lab">${thisWeek ? 'this week' : 'that week'}</span></div></div>
     <div class="pbars">${l.by_day.slice(0, 6).map(d => `<div class="pbar${d.day === r.today ? ' cur' : ''}" title="${esc(dShort(d.day))}: ${hrs(d.minutes)}"><i style="height:${Math.round(d.minutes / max * 100)}%"></i><span>${DN[new Date(d.day + 'T00:00:00Z').getUTCDay()].slice(0, 1)}</span></div>`).join('')}</div>
     ${l.running ? `<div class="prun big"><i></i>Working on JO ${esc(l.running.jo)} · <span data-since="${l.running.since}">${elapsed(l.running.since)}</span></div>` : '<div class="prun off">No timer running</div>'}

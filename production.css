@@ -4,7 +4,9 @@
 .prptabs{border-radius:calc(22px*var(--rad));max-width:260px}.prptabs a{flex:1;text-align:center;padding:calc(9px*var(--sp)) calc(18px*var(--sp));font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#111;text-decoration:none}
 .prptabs a+a{border-left:1px solid #ddd}.prptabs a.on{background:#111;color:#fff}
 .psum{margin:calc(8px*var(--sp)) 0 calc(12px*var(--sp))!important;font-size:calc(15px*var(--fs))}
-.pfilt{display:flex;gap:calc(10px*var(--sp));flex-wrap:wrap;align-items:end;margin-bottom:calc(16px*var(--sp))}.pfilt .rvq{width:220px;margin:0}.pfilt .fchip{height:40px}
+.pfilt{display:flex;gap:calc(10px*var(--sp));flex-wrap:wrap;align-items:end;margin-bottom:calc(16px*var(--sp))}.pfilt .rvq{width:220px;margin:0}
+.prod .pill.sm{box-sizing:border-box;height:var(--d-btnsm-hp,34px);min-height:var(--d-btnsm-hp,34px);padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.pfilt .fchip,.pcols .fchip{box-sizing:border-box;height:34px;min-height:34px;display:inline-flex;align-items:center;padding-top:0;padding-bottom:0}
 .pboard{display:grid;gap:calc(8px*var(--sp));overflow-x:auto;padding-bottom:calc(8px*var(--sp));align-items:start}
 .pcol{background:#fafafa;border-radius:calc(12px*var(--rad));padding:calc(8px*var(--sp));min-height:calc(220px*var(--bh));transition:background .12s,box-shadow .12s}
 .pcol.ok{box-shadow:inset 0 0 0 1.5px #e5d9a8}.pcol.over{background:#fffdf6;box-shadow:inset 0 0 0 2px var(--gold)}
@@ -16,7 +18,7 @@
 .pck input{width:20px;height:20px;margin:0;accent-color:#111;cursor:pointer}
 .pcard.on{border-color:#111}
 .pth.sm{width:72px;height:54px;aspect-ratio:auto;margin:0;flex-shrink:0}.pth.xs{width:46px;height:36px;aspect-ratio:auto;margin:0;flex-shrink:0;border:0;padding:0;cursor:pointer}
-.pcard .kjo{justify-content:space-between;flex-wrap:wrap;gap:calc(2px*var(--sp)) calc(6px*var(--sp))}.pcard .kf .chip{font-size:calc(9.5px*var(--fs));padding:calc(2px*var(--sp)) calc(7px*var(--sp))}.pver{font-family:var(--label);font-size:calc(10px*var(--fs));letter-spacing:.05em;text-transform:uppercase;color:#777;border:1px solid #ddd;border-radius:calc(10px*var(--rad));padding:calc(1px*var(--sp)) calc(6px*var(--sp))}
+.pcard .kjo{justify-content:space-between;flex-wrap:wrap;gap:calc(2px*var(--sp)) calc(6px*var(--sp))}.pcard .kf .chip{font-size:calc(9.5px*var(--fs));padding:calc(2px*var(--sp)) calc(7px*var(--sp))}.pver{font-family:var(--label);font-size:calc(10px*var(--fs));letter-spacing:.05em;text-transform:uppercase;color:#777;border:1px solid #ddd;border-radius:calc(10px*var(--rad));padding:calc(1px*var(--sp)) calc(6px*var(--sp));line-height:1;align-self:center}
 .pcard .kd{font-size:calc(14px*var(--fs))}.pcard .kc b{font-weight:500;color:#111}.pcard .kf{margin-top:calc(6px*var(--sp))}
 .chip.pdays{color:#555}.chip.pdays.over{border-color:var(--gold);color:#8a6d12}.chip.plate{border-color:#b3261e;color:#b3261e}
 .prun{font-family:var(--label);font-size:calc(11px*var(--fs));color:#2d7a3e;margin-top:calc(4px*var(--sp));display:flex;align-items:center;gap:calc(5px*var(--sp))}.prun i{width:7px;height:7px;border-radius:50%;background:#2d7a3e;animation:pblink 1.4s infinite}
@@ -24,7 +26,7 @@
 .pmove{display:block;width:100%;margin-top:calc(10px*var(--sp));background:#111;color:#fff;border:0;border-radius:calc(14px*var(--rad));padding:calc(16px*var(--sp)) calc(12px*var(--sp));font-family:var(--head);font-weight:500;font-size:calc(20px*var(--hs));text-transform:uppercase;cursor:pointer}
 .pmove span{color:var(--gold)}
 /* phone: one stage at a time, big cards */
-.pcols .fchip{padding:calc(10px*var(--sp)) calc(14px*var(--sp));font-size:calc(13px*var(--fs));position:relative}.pdot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--gold)}
+.pcols .fchip{padding:0 calc(14px*var(--sp));font-size:calc(13px*var(--fs));position:relative}.pdot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--gold)}
 .prplist .pcard{padding:calc(12px*var(--sp))}.prplist .pcm{display:flex;gap:calc(12px*var(--sp))}.prplist .pth{width:96px;height:72px;aspect-ratio:auto;margin:0;flex-shrink:0}.prplist .pbd{min-width:0;flex:1}
 .prplist .kjo{font-size:calc(20px*var(--hs))}.prplist .kd{font-size:calc(16px*var(--fs))}.prplist .kc{font-size:calc(14px*var(--fs))}.prplist .kf .chip{font-size:calc(11px*var(--fs));padding:calc(3px*var(--sp)) calc(9px*var(--sp))}
 .pempty{border:1px dashed #ddd;border-radius:calc(12px*var(--rad));padding:calc(30px*var(--sp)) calc(10px*var(--sp))}
