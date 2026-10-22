@@ -12,9 +12,10 @@ REPLACE WITH
     if (req.op === 'printQueue' || req.op === 'printMark' || req.op === 'printEnqueue' || req.op === 'printReprint') return json_(typeof printScanOp_ === 'function' ? printScanOp_(req) : { ok: false, error: 'Print queue is not pasted yet' });
 
 2. After the scan is recorded. Page 1 only (a missing page number counts as page 1, same as the file name).
+   `jo` on this line is normJO_(req.jo), the base number (26-287). `full` is already in doPost: joFull_(req.jo), the same value the file name uses, so a version letter stays (26-287B). A scan with no letter still enqueues the base number.
    FIND the whole line, including its comment at the end:
     var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null; // JobSync.gs
 
 REPLACE WITH
     var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null; // JobSync.gs
-    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') { if (req.printJo !== false) printEnqueue_(jo, 'jo_card', 'scanner', {}); if (req.printTag !== false) printEnqueue_(jo, 'jewelry_tag', 'scanner', {}); } } catch (e) {}
+    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') { if (req.printJo !== false) printEnqueue_(full, 'jo_card', 'scanner', {}); if (req.printTag !== false) printEnqueue_(full, 'jewelry_tag', 'scanner', {}); } } catch (e) {}

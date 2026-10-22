@@ -10,7 +10,29 @@ const TYPES = [['new', 'New job'], ['repair', 'Repair'], ['revision', 'Revision'
 const STATUS = [['', 'Automatic (from location)'], ['draft', 'Draft'], ['active', 'Active'], ['done', 'Done'], ['picked_up', 'Picked up'], ['cancelled', 'Cancelled']];
 const photoCache = {};
 // A JO opened from a dashboard list (dash.js) that is not a draft: shown in the same panel, fetched with dashDrill {what:'job'} (DashboardDrill.gs).
-const cur = () => S.open ? (S.jobs.find(j => j.jo === S.open) || (S.ext && S.ext.jo === S.open ? S.ext : null)) : null;
+function joBits(s) { // sticker QR: 26-287B is this JO, not a search that misses 26-287
+  const m = String(s || '').trim().toUpperCase().replace(/\s+/g, '').match(/^(\d{2})-(\d{3,4})([A-Z])?$/);
+  return m ? { base: m[1] + '-' + m[2], letter: m[3] || '', text: m[1] + '-' + m[2] + (m[3] || '') } : null;
+}
+const cur = () => {
+  if (!S.open) return null;
+  const exact = S.jobs.find(j => j.jo === S.open);
+  if (exact) return exact;
+  const p = joBits(S.open);
+  const base = p && p.letter ? S.jobs.find(j => j.jo === p.base) : null;
+  if (base) return base;
+  return S.ext && (S.ext.jo === S.open || (p && p.letter && S.ext.jo === p.base)) ? S.ext : null;
+};
+function openIs(j) {
+  if (!j || !S.open) return false;
+  if (S.open === j.jo) return true;
+  const p = joBits(S.open);
+  return !!(p && p.letter && j.jo === p.base && !S.jobs.some(x => x.jo === p.text));
+}
+function headJo(j) {
+  const p = joBits(S.open), jo = j ? j.jo : '';
+  return p && p.letter && (jo === p.base || jo === p.text) ? p.text : jo;
+}
 let S = { steps: null, stepsState: 'old', ext: null, back: null, jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {} };
 // Client phone/email live on the client linked to the JO (JobContact.gs). Before that paste, contactList is unknown and the section just explains.
 const noContact = jo => !!(S.contact && S.contact[jo] && !S.contact[jo].has_contact && S.contact[jo].location !== 'archived');
@@ -100,7 +122,10 @@ function searchAll(main) {
       if (pos != null) { const el = main.querySelector('#rvQ'); el.focus(); el.setSelectionRange(pos, pos); } }
   }, 350);
 }
-function shown() { const f = views[S.filter][1], q = S.q.trim().toUpperCase(); return S.jobs.filter(j => f(j) && (!q || j.jo.includes(q) || (j.client && j.client.name.toUpperCase().includes(q)) || j.description.toUpperCase().includes(q))); }
+function shown() {
+  const f = views[S.filter][1], q = S.q.trim().toUpperCase(), p = joBits(q);
+  return S.jobs.filter(j => f(j) && (!q || j.jo.includes(q) || (p && p.letter && j.jo === p.base) || (j.client && j.client.name.toUpperCase().includes(q)) || j.description.toUpperCase().includes(q)));
+}
 
 function draw(main) {
   const { esc } = window.OYP, L = shown();
@@ -119,7 +144,7 @@ function draw(main) {
       <button class="pill sm" id="rvBulk" ${S.sel.size ? '' : 'disabled'}>SET</button>
     </div>
     <div class="rvrows">${L.map(j => `
-      <div class="rvrow ${S.open === j.jo ? 'on' : ''}" data-jo="${esc(j.jo)}">
+      <div class="rvrow ${openIs(j) ? 'on' : ''}" data-jo="${esc(j.jo)}">
         <label class="ck" onclick="event.stopPropagation()"><input type="checkbox" data-sel="${esc(j.jo)}" ${S.sel.has(j.jo) ? 'checked' : ''}></label>
         <div class="th" data-th="${esc(j.jo)}|${esc(j.pages[0] ? j.pages[0].file_id : '')}"></div>
         <div class="rvi"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.version ? `<span class="muted sm">Version ${esc(j.version)}</span>` : ''}</div>
@@ -138,7 +163,7 @@ function draw(main) {
 function backBtn() { return S.back ? '<button class="lnk rvback dback" data-dback>‹ BACK</button>' : '<button class="lnk rvback" data-back>‹ BACK</button>'; } // same target as before (drill list / all cards), one label everywhere
 function stubPanel(j) { // pre-paste: what the dashboard knew, read-only
   const { esc } = window.OYP, r = j.row || {};
-  return `<div class="rvp">${backBtn()}<div class="dhead"><h2>JO ${esc(j.jo)}${j.version ? ` <span class="chip big">Version ${esc(j.version)}</span>` : ''}</h2><span class="lab">From the dashboard</span></div>
+  return `<div class="rvp">${backBtn()}<div class="dhead"><h2>JO ${esc(headJo(j))}${j.version ? ` <span class="chip big">Version ${esc(j.version)}</span>` : ''}</h2><span class="lab">From the dashboard</span></div>
     <p class="kd">${esc(r.description || 'No details')}${r.client ? ' · ' + esc(r.client) : ''}</p>
     <div class="kf">${r.location ? `<span class="chip dark">${esc(locLabel(r.location))}</span>` : ''}${r.stage_label ? `<span class="chip">${esc(r.stage_label)}</span>` : ''}${r.due ? `<span class="chip ${r.late ? 'gold' : ''}">${r.late ? 'Late · ' : 'Due '}${esc(r.due)}</span>` : ''}</div>
     <p class="muted fnote">${esc(j.err === 'Unknown action' || !j.err ? 'The full JO (photos and editing) opens here once DashboardDrill is pasted in Apps Script.' : j.err)}</p></div>`;
@@ -152,7 +177,7 @@ function panel(j) {
   const fld = (k, lab, input) => `<div class="fsec ${fcls(k)}" data-f1="${k}"><div class="flab"><span class="lab">${esc(lab)}</span>${cf[k] ? flag(k) : ''}</div>${input}</div>`;
   return `<div class="rvp">
     ${backBtn()}
-    <div class="dhead"><h2>JO ${esc(j.jo)}${j.version ? ` <span class="chip big" title="Latest version of this JO${(j.versions || []).length > 1 ? ' (' + esc(j.versions.join(', ')) + ')' : ''}">Version ${esc(j.version)}</span>` : ''}${j.location === 'archived' ? ' <span class="chip arch big" title="JO on record, no physical piece">Archived</span>' : ''}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
+    <div class="dhead"><h2>JO ${esc(headJo(j))}${j.version ? ` <span class="chip big" title="Latest version of this JO${(j.versions || []).length > 1 ? ' (' + esc(j.versions.join(', ')) + ')' : ''}">Version ${esc(j.version)}</span>` : ''}${j.location === 'archived' ? ' <span class="chip arch big" title="JO on record, no physical piece">Archived</span>' : ''}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
     ${shotsHtml(j)}
     <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
       <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(locLabel(l[0]))}</button>`).join('')}</div></div>
@@ -201,11 +226,25 @@ function setLabel(x) {
   return v + (x.set ? d : 'Earlier scan' + (d ? ' · ' + d : '')) + nth;
 }
 function shotsHtml(j) {
-  const { esc } = window.OYP, H = j.history || [];
+  const { esc } = window.OYP;
   const row = (jo, pages) => `<div class="shots">${pages.map(p => `<button class="shot" data-big="${esc(p.file_id)}"><span class="ph" data-ph="${esc(jo)}|${esc(p.file_id)}"></span><span class="lab">Page ${p.page}</span></button>`).join('') || '<span class="muted">No photos</span>'}</div>`;
-  const latest = setLabel({ set: j.pages_set || '', date: j.pages_date, version: j.pages_version || '' });
-  if (!H.length) return (j.pages_version ? `<div class="shlab"><span class="lab">${esc(latest)}</span></div>` : '') + row(j.jo, j.pages);
-  return `<div class="shlab"><span class="chip dark">Latest</span><span class="lab">${esc(latest || 'Latest scan')}</span></div>${row(j.jo, j.pages)}
+  let pages = j.pages || [], meta = { set: j.pages_set || '', date: j.pages_date, version: j.pages_version || '' }, H = (j.history || []).slice(), swapped = false;
+  const scan = joBits(S.open);
+  if (scan && scan.letter && scan.letter !== (j.pages_version || '')) { // the scanned letter is an older set: show it, leave j.history alone
+    const i = H.findIndex(x => x.version === scan.letter);
+    if (i >= 0) {
+      const picked = H[i];
+      H = H.slice(0, i).concat(H.slice(i + 1));
+      H.unshift({ set: j.pages_set || '', date: j.pages_date, version: j.pages_version || '', pages: pages, n: pages.length });
+      pages = picked.pages || [];
+      meta = { set: picked.set || '', date: picked.date, version: picked.version || scan.letter };
+      swapped = true;
+    }
+  }
+  const latest = setLabel(meta);
+  if (!H.length) return (meta.version ? `<div class="shlab"><span class="lab">${esc(latest)}</span></div>` : '') + row(j.jo, pages);
+  const chip = swapped ? '' : '<span class="chip dark">Latest</span>';
+  return `<div class="shlab">${chip}<span class="lab">${esc(latest || 'Latest scan')}</span></div>${row(j.jo, pages)}
     <details class="shist"><summary><span class="lab">History · ${H.length} older scan${H.length === 1 ? '' : 's'}</span></summary>
       ${H.map(x => `<div class="hset"><div class="lab sm">${esc(setLabel(x))} · ${x.n || x.pages.length} page${(x.n || x.pages.length) === 1 ? '' : 's'}</div>${row(j.jo, x.pages)}</div>`).join('')}</details>`;
 }
@@ -249,7 +288,7 @@ function costBox(main, jo) {
   if (!window.OYPPrices || !window.OYPPrices.lockedHtml) return;
   if (!costCache[jo]) costCache[jo] = window.OYP.call('priceJobCost', { jo });
   const live = window.OYP.here(); // route token: never draw into a page the user left
-  costCache[jo].then(r => { const el = main.querySelector('#rvCost'); if (!live() || !el || S.open !== jo) return;
+  costCache[jo].then(r => { const el = main.querySelector('#rvCost'); const open = cur(); if (!live() || !el || !open || open.jo !== jo) return;
     el.innerHTML = r && r.ok ? window.OYPPrices.lockedHtml(r, { exec: r.exec }) : ''; });
 }
 function wire(main) {
@@ -257,6 +296,18 @@ function wire(main) {
   const rerender = async () => { if (live()) await render(main, S.u); }; // after a save: redraw only if the user is still here
   main.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; draw(main); });
   $('#rvQ').oninput = e => { S.q = e.target.value; searchAll(main); const pos = e.target.selectionStart; draw(main); const q = main.querySelector('#rvQ'); q.focus(); q.setSelectionRange(pos, pos); };
+  $('#rvQ').onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    const p = joBits(e.target.value); if (!p) return;
+    e.preventDefault();
+    const exact = S.jobs.find(j => j.jo === p.text) || (S.ext && S.ext.jo === p.text ? S.ext : null);
+    const base = S.jobs.find(j => j.jo === p.base) || (S.ext && S.ext.jo === p.base ? S.ext : null);
+    const job = exact || base;
+    if (!job) return toast('JO ' + p.text + ' is not in this list');
+    if (!views[S.filter][1](job)) S.filter = 'all';
+    S.back = null; S.open = exact ? exact.jo : (p.letter ? p.text : job.jo); S.q = ''; S.conflicts = {};
+    draw(main);
+  };
   main.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); draw(main); });
   $('#rvAll').onchange = e => { shown().forEach(j => e.target.checked ? S.sel.add(j.jo) : S.sel.delete(j.jo)); draw(main); };
   $('#rvBulk').onclick = async () => {
