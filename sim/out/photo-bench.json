@@ -1,0 +1,118 @@
+{
+  "note": "Private Apps Script was not called. Each call is 3–9s in app.js. Samples are noisy card JPEGs, not live Drive files.",
+  "samples": {
+    "phone_4032_q90": {
+      "w": 4032,
+      "h": 3024,
+      "q": 90,
+      "bytes": 3267008,
+      "base64": 4356012,
+      "data_url": 4356035
+    },
+    "scanner_1600_q80": {
+      "w": 1600,
+      "h": 1200,
+      "q": 80,
+      "bytes": 277454,
+      "base64": 369940,
+      "data_url": 369963
+    },
+    "drive_s1600_q72": {
+      "w": 1600,
+      "h": 1200,
+      "q": 72,
+      "bytes": 204911,
+      "base64": 273216,
+      "data_url": 273239
+    },
+    "drive_s300_q72": {
+      "w": 300,
+      "h": 225,
+      "q": 72,
+      "bytes": 12622,
+      "base64": 16832,
+      "data_url": 16855
+    },
+    "drive_thumb_s220_q70": {
+      "w": 220,
+      "h": 165,
+      "q": 70,
+      "bytes": 7195,
+      "base64": 9596,
+      "data_url": 9619
+    }
+  },
+  "calls": {
+    "before_inventory_24": {
+      "requests": 2,
+      "batch": 12,
+      "cap": 60,
+      "note": "invThumbs. Server body is not in either repo. Customers.gs thumb_() is getThumbnail() or the full file."
+    },
+    "before_production_24": {
+      "requests": 24,
+      "note": "one prodPhoto per card, size omitted, so the same getThumbnail-or-full-file path as jobPhoto."
+    },
+    "before_review_visible": {
+      "requests": "one jobPhoto per visible row",
+      "size": "thumb (getThumbnail, or the full file if Drive has no thumbnail)"
+    },
+    "before_tap": {
+      "requests": 1,
+      "size": "full",
+      "note": "jobPhoto and prodPhoto size full call getBlob() of the original. Inventory reused the list image and did not fetch again."
+    },
+    "after_list_24": {
+      "requests": 1,
+      "size": 300,
+      "note": "one photoThumbs call for the tiles on screen. Tiles off screen wait."
+    },
+    "after_tap": {
+      "requests": 1,
+      "size": 1600,
+      "note": "300px is already on screen. Original is a separate photoFile and is not cached."
+    }
+  },
+  "payload": {
+    "before_list_if_drive_thumbnail": {
+      "json_bytes": 231166,
+      "parse_ms": 0.25,
+      "images": 24,
+      "each": "drive_thumb_s220_q70"
+    },
+    "before_inventory_one_batch_of_12_full_files": {
+      "json_bytes": 52272586,
+      "parse_ms": 29.5,
+      "images": 12,
+      "each": "phone_4032_q90"
+    },
+    "before_tap_one_original": {
+      "json_bytes": 4356055,
+      "parse_ms": 2.09,
+      "each": "phone_4032_q90"
+    },
+    "after_list_24_s300": {
+      "json_bytes": 405608,
+      "parse_ms": 0.24,
+      "images": 24,
+      "each": "drive_s300_q72"
+    },
+    "after_tap_one_s1600": {
+      "json_bytes": 273259,
+      "parse_ms": 0.14,
+      "each": "drive_s1600_q72"
+    }
+  },
+  "decode_ms": {
+    "full": 18.1,
+    "med": 1,
+    "tile": 0.4,
+    "oldThumb": 0.1
+  },
+  "cache": {
+    "script_cache_value_max_chars": 95000,
+    "s300_chunks": 1,
+    "s1600_chunks": 3,
+    "original_cached": false
+  }
+}
