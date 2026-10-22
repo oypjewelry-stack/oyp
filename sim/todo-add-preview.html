@@ -161,16 +161,34 @@ window.__burst = function (sel, text) {
   if (live && live !== form) live.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   return { before: before, adds: window.__adds.length };
 };
-window.__shotBox = function () {
-  const card = document.querySelector('#main [data-dsec="todo"]');
-  const tools = card.querySelector('.tdtools');
+window.__shotBox = function (sel) {
+  const root = document.querySelector(sel || '#main');
+  const card = root.querySelector('[data-dsec="todo"], [data-tdpage]');
+  const mark = card.querySelector('.tdchips') || card.querySelector('.tdtools') || card;
   const top = card.getBoundingClientRect();
-  const bot = tools.getBoundingClientRect();
-  const x = Math.max(0, Math.floor(top.x - 6));
-  const y = Math.max(0, Math.floor(top.y - 6));
-  const width = Math.min(window.innerWidth - x, Math.ceil(top.width + 12));
-  const height = Math.min(window.innerHeight - y, Math.ceil(bot.bottom - top.y + 18));
-  return { x: x, y: y, width: width, height: height };
+  const bot = mark.getBoundingClientRect();
+  const x = Math.max(0, top.x - 8);
+  const y = Math.max(0, top.y - 8);
+  const right = Math.min(window.innerWidth, top.right + 8);
+  const bottom = Math.min(window.innerHeight, bot.bottom + 14);
+  return { x: x, y: y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+};
+window.__addedFrame = function (text) {
+  const page = document.getElementById('pageOffice');
+  if (page) page.style.display = 'none';
+  const row = [...document.querySelectorAll('#main .tdtxt')].find(el => el.textContent === text);
+  const line = row && row.closest('.tdrow');
+  if (line) line.scrollIntoView({ block: 'center', inline: 'nearest' });
+  const toast = document.getElementById('toast');
+  const box = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+  return {
+    toastText: toast ? toast.textContent : '',
+    toastHidden: !toast || toast.classList.contains('hidden'),
+    toast: toast ? box(toast) : null,
+    row: line ? box(line) : null,
+    vw: window.innerWidth,
+    vh: window.innerHeight
+  };
 };
 </script>
 </body></html>

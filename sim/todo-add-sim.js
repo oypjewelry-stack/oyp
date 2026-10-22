@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const zlib = require('zlib');
 const { spawn } = require('child_process');
 
 const root = path.join(__dirname, '..');
@@ -82,7 +83,15 @@ async function connect(port) {
     catch (err) { await sleep(100); }
   }
   if (!version) throw new Error('chrome did not open a debugging port');
-  const target = await httpJson('http://127.0.0.1:' + port + '/json/new?about:blank', 'PUT');
+  // A target opened with PUT /json/new evaluates scripts, but its capture surface stays white.
+  let list = [];
+  for (let i = 0; i < 20; i++) {
+    list = await httpJson('http://127.0.0.1:' + port + '/json');
+    if (list.some(t => t.type === 'page' && t.webSocketDebuggerUrl)) break;
+    await sleep(100);
+  }
+  const target = list.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
+  if (!target) throw new Error('chrome has no page target');
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { ws.addEventListener('open', resolve); ws.addEventListener('error', reject); });
   let id = 0;
@@ -124,6 +133,136 @@ async function clickSel(send, evalJson, sel) {
   if (box.disabled) throw new Error(sel + ' is disabled');
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 });
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+}
+
+function pngDecode(buf) {
+  if (buf.length < 8 || buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a png');
+  let pos = 8, width = 0, height = 0, bitDepth = 0, colorType = 0, interlace = 0;
+  const idat = [];
+  while (pos + 8 <= buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString('ascii', pos + 4, pos + 8);
+    const data = buf.subarray(pos + 8, pos + 8 + len);
+    pos += 12 + len;
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      interlace = data[12];
+    } else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+  }
+  if (bitDepth !== 8 || interlace) throw new Error('unsupported png');
+  const ch = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+  if (!ch) throw new Error('color type ' + colorType);
+  const stride = width * ch;
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const rows = [];
+  let i = 0;
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[i++];
+    const row = Buffer.from(raw.subarray(i, i + stride));
+    i += stride;
+    if (filter === 1 || filter === 3 || filter === 4) {
+      for (let x = 0; x < stride; x++) {
+        const left = x >= ch ? row[x - ch] : 0;
+        const up = prev[x];
+        const ul = x >= ch ? prev[x - ch] : 0;
+        let pred = 0;
+        if (filter === 1) pred = left;
+        else if (filter === 3) pred = Math.floor((left + up) / 2);
+        else {
+          const p = left + up - ul;
+          const pa = Math.abs(p - left), pb = Math.abs(p - up), pc = Math.abs(p - ul);
+          pred = (pa <= pb && pa <= pc) ? left : (pb <= pc ? up : ul);
+        }
+        row[x] = (row[x] + pred) & 255;
+      }
+    } else if (filter === 2) {
+      for (let x = 0; x < stride; x++) row[x] = (row[x] + prev[x]) & 255;
+    } else if (filter !== 0) throw new Error('filter ' + filter);
+    rows.push(row);
+    prev = row;
+  }
+  return { width: width, height: height, ch: ch, rows: rows };
+}
+
+function pngEncode(img) {
+  const colorType = img.ch === 4 ? 6 : img.ch === 3 ? 2 : img.ch === 2 ? 4 : 0;
+  const stride = img.width * img.ch;
+  const raw = Buffer.alloc((stride + 1) * img.height);
+  for (let y = 0; y < img.height; y++) {
+    raw[(stride + 1) * y] = 0;
+    img.rows[y].copy(raw, (stride + 1) * y + 1, 0, stride);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(img.width, 0);
+  ihdr.writeUInt32BE(img.height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = colorType;
+  const chunk = (type, data) => {
+    const head = Buffer.from(type);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(Buffer.concat([head, data])) >>> 0, 0);
+    return Buffer.concat([len, head, data, crc]);
+  };
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0))
+  ]);
+}
+
+function countNonwhite(img) {
+  let n = 0;
+  for (const row of img.rows) {
+    for (let x = 0; x < img.width; x++) {
+      const i = x * img.ch;
+      const r = row[i], g = img.ch > 1 ? row[i + 1] : r, b = img.ch > 2 ? row[i + 2] : r;
+      if (r < 250 || g < 250 || b < 250) n++;
+    }
+  }
+  return n;
+}
+
+function darkRatio(img, rect) {
+  if (!rect || rect.width < 2 || rect.height < 2) return 0;
+  const x0 = Math.max(0, Math.floor(rect.x + 2));
+  const y0 = Math.max(0, Math.floor(rect.y + 2));
+  const x1 = Math.min(img.width, Math.ceil(rect.x + rect.width - 2));
+  const y1 = Math.min(img.height, Math.ceil(rect.y + rect.height - 2));
+  let dark = 0, total = 0;
+  for (let y = y0; y < y1; y++) {
+    const row = img.rows[y];
+    if (!row) continue;
+    for (let x = x0; x < x1; x++) {
+      const i = x * img.ch;
+      const r = row[i], g = img.ch > 1 ? row[i + 1] : r, b = img.ch > 2 ? row[i + 2] : r;
+      total++;
+      if (r < 45 && g < 45 && b < 45) dark++;
+    }
+  }
+  return total ? dark / total : 0;
+}
+
+function scaleBox(box, sx, sy) {
+  return { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy };
+}
+
+function cropImage(img, box) {
+  const x0 = Math.max(0, Math.round(box.x));
+  const y0 = Math.max(0, Math.round(box.y));
+  const x1 = Math.min(img.width, Math.round(box.x + box.width));
+  const y1 = Math.min(img.height, Math.round(box.y + box.height));
+  if (x1 - x0 < 20 || y1 - y0 < 20) throw new Error('crop is ' + (x1 - x0) + 'x' + (y1 - y0));
+  const rows = [];
+  for (let y = y0; y < y1; y++) rows.push(img.rows[y].subarray(x0 * img.ch, x1 * img.ch));
+  return { width: x1 - x0, height: y1 - y0, ch: img.ch, rows: rows, ox: x0, oy: y0 };
 }
 
 function layoutOk(L, narrow) {
@@ -264,27 +403,96 @@ function layoutOk(L, narrow) {
       check(!wideProblems.length, name + ' keeps Add on the line at 1280', wideProblems.join('; ') || JSON.stringify({ btn: wide.btn, input: wide.input }));
     }
 
-    async function shoot(width, file) {
-      await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 800 });
-      await sleep(150);
-      await evalJson(`window.__fill('#main', 'Message Carlos', 'rosanna')`);
-      await sleep(50);
-      const box = await evalJson('window.__shotBox()');
-      const narrow = width < 800;
-      for (const [sel, name] of surfaces) {
-        const L = await evalJson(`window.__layout(${JSON.stringify(sel)})`);
-        const problems = layoutOk(L, narrow);
-        check(!problems.length, name + ' add line fits at ' + width, problems.join('; ') || ('btn ' + Math.round(L.btn.height) + 'px'));
+    async function metrics(width) {
+      await send('Emulation.setDeviceMetricsOverride', { width: width, height: 900, deviceScaleFactor: 1, mobile: width < 800 });
+      await sleep(180);
+    }
+    async function reloadPreview() {
+      await send('Page.navigate', { url: 'http://127.0.0.1:' + port + '/sim/todo-add-preview.html' });
+      let again = false;
+      for (let i = 0; i < 50; i++) {
+        again = await evalJson('window.__ready ? window.__ready() : false');
+        if (again) break;
+        await sleep(100);
       }
-      const shot = await send('Page.captureScreenshot', { format: 'png', clip: { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 } });
+      if (!again) throw new Error('preview did not render for screenshots');
+      await evalJson('Promise.race([document.fonts ? document.fonts.ready : Promise.resolve(), new Promise(ok => setTimeout(ok, 2500))])');
+      await evalJson('new Promise(ok => requestAnimationFrame(() => requestAnimationFrame(ok)))');
+    }
+    async function bitmap() {
+      // Clip captures of this page come back solid white. Capture the viewport and crop.
+      const shot = await send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+      const img = pngDecode(Buffer.from(shot.data, 'base64'));
+      const nw = countNonwhite(img);
+      if (nw < 1000) throw new Error('viewport screenshot is blank (' + nw + ' nonwhite, ' + img.width + 'x' + img.height + ')');
+      return img;
+    }
+    function rectXY(rect) {
+      return { x: rect.x != null ? rect.x : rect.left, y: rect.y != null ? rect.y : rect.top, width: rect.width, height: rect.height };
+    }
+    function saveShot(file, img, box, dark) {
+      const vw = box && box.vw ? box.vw : img.width;
+      const vh = box && box.vh ? box.vh : img.height;
+      const sx = img.width / vw;
+      const sy = img.height / vh;
+      const cropped = box && box.width ? cropImage(img, scaleBox(box, sx, sy)) : Object.assign({ ox: 0, oy: 0 }, img);
+      const out = pngEncode(cropped);
+      const checkImg = pngDecode(out);
+      const nw = countNonwhite(checkImg);
+      if (nw < 400) throw new Error(path.basename(file) + ' is blank (' + nw + ' nonwhite, ' + checkImg.width + 'x' + checkImg.height + ')');
+      if (dark) {
+        const d = rectXY(dark);
+        const local = { x: d.x * sx - (cropped.ox || 0), y: d.y * sy - (cropped.oy || 0), width: d.width * sx, height: d.height * sy };
+        const ratio = darkRatio(checkImg, local);
+        if (ratio < 0.25) throw new Error(path.basename(file) + ' has no black control (' + ratio.toFixed(2) + ' at ' + Math.round(local.x) + ',' + Math.round(local.y) + ')');
+      }
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
-      console.log('shot', file, box.width + 'x' + box.height);
+      fs.writeFileSync(file, out);
+      console.log('shot', file, checkImg.width + 'x' + checkImg.height, 'nonwhite', nw, 'bytes', out.length);
+    }
+
+    async function shootFilled(width, sel, file) {
+      await metrics(width);
+      await evalJson(`window.__fill(${JSON.stringify(sel)}, 'Message Carlos', 'rosanna')`);
+      await evalJson('new Promise(ok => requestAnimationFrame(() => requestAnimationFrame(ok)))');
+      const narrow = width < 800;
+      const L = await evalJson(`window.__layout(${JSON.stringify(sel)})`);
+      const problems = layoutOk(L, narrow);
+      check(!problems.length, (sel === '#main' ? 'dashboard card' : 'To do page') + ' add line fits at ' + width, problems.join('; '));
+      check(L.text === 'Message Carlos' && L.disabled === false, (sel === '#main' ? 'dashboard card' : 'To do page') + ' shows typed text and an enabled Add at ' + width, JSON.stringify({ text: L.text, disabled: L.disabled }));
+      const box = await evalJson(`Object.assign(window.__shotBox(${JSON.stringify(sel)}), { vw: window.innerWidth, vh: window.innerHeight })`);
+      const img = await bitmap();
+      saveShot(file, img, box, L.btn);
     }
 
     const art = '/opt/cursor/artifacts';
-    await shoot(1280, path.join(art, 'screenshot_todo_add_1280.png'));
-    await shoot(390, path.join(art, 'screenshot_todo_add_390.png'));
+    await reloadPreview();
+    await shootFilled(1280, '#main', path.join(art, 'screenshot_todo_card_1280.png'));
+    await shootFilled(390, '#main', path.join(art, 'screenshot_todo_card_390.png'));
+    await shootFilled(1280, '#page', path.join(art, 'screenshot_todo_page_1280.png'));
+    await shootFilled(390, '#page', path.join(art, 'screenshot_todo_page_390.png'));
+
+    await metrics(1280);
+    await evalJson(`window.__arm('#main', 'ada')`);
+    await typeText(send, 'Message Carlos');
+    await clickSel(send, evalJson, '#main .tdaddgo');
+    let added = null;
+    for (let i = 0; i < 30; i++) {
+      added = await evalJson(`window.__state('#main', 'Message Carlos')`);
+      if (added && added.calls >= 1 && added.rows >= 1 && added.toast === 'Added.') break;
+      await sleep(40);
+    }
+    await sleep(80);
+    added = await evalJson(`window.__state('#main', 'Message Carlos')`);
+    check(added.rows === 1 && added.toast === 'Added.', 'the after-add shot has the new row and the Added toast', JSON.stringify(added));
+    const frame = await evalJson(`window.__addedFrame('Message Carlos')`);
+    check(frame && frame.toastText === 'Added.' && !frame.toastHidden && frame.row && frame.row.height > 10, 'Added. is on screen with the new row', JSON.stringify(frame));
+    const toastImg = await bitmap();
+    saveShot(path.join(art, 'screenshot_todo_added_toast.png'), toastImg, { vw: frame.vw, vh: frame.vh }, frame.toast);
+    const rowBox = scaleBox(frame.row, toastImg.width / frame.vw, toastImg.height / frame.vh);
+    const rowPixels = countNonwhite(cropImage(toastImg, rowBox));
+    check(rowPixels > 20, 'the new row is painted in the after-add shot', 'nonwhite ' + rowPixels);
+    await evalJson(`document.getElementById('pageOffice').style.display = ''`);
     await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
     await sleep(100);
     for (const [sel, name] of surfaces) {
