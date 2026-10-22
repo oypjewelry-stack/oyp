@@ -76,12 +76,14 @@ const page = (jo, p, extra) => Object.assign({ jo, page: p, filename: jo + '-p' 
   const css = fs.readFileSync(path.join(__dirname, '../scan/style.css'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '../scan/index.html'), 'utf8');
   ok(/const sw = \(withJO \|\| \(it\.state !== 'failed' && !needs\)\)/.test(app), 'every Pending uploads row can swipe; the page strip still skips failed and unread rows');
-  ok(/const rm = withJO \? '' :/.test(app) && /data-retry=/.test(app), 'failed rows keep Retry; Pending uploads has no separate Remove button');
+  ok(/const rm = withJO \? '' :/.test(app) && /data-retry=/.test(app), 'failed rows keep Retry; the page strip still has its own Remove');
+  ok(/class="qx" data-discard=/.test(app) && /aria-label="Remove"/.test(app) && /commitDiscard\(it\)/.test(app), 'the desktop × uses the same confirm and discard as a swipe');
   ok(/bindRowSwipe\(\$\('qList'\)\)/.test(app) && /bindRowSwipe\(\$\('pages'\)\)/.test(app), 'Pending uploads uses the same swipe as the page strip');
   ok(/classList\.contains\('editing'\)/.test(app) && /#qList \.jofix input/.test(app), 'swipe stays off while the JO box is being edited');
   ok(/button, input, textarea/.test(app), 'a tap on the JO box or Save does not start a swipe');
   ok(/#qList li\[data-sw\]/.test(css) && /touch-action:manipulation/.test(css), 'Pending uploads rows use the same swipe styling, and the JO box keeps its own touch');
-  ok(/app\.js\?v=20261022j/.test(html) && /queue\.js\?v=20261022h/.test(html) && /style\.css\?v=20261022j/.test(html), 'cache-busts moved past v20261022h for app.js');
-  ok(/nav\.js\?v=43/.test(html) && /detector\.js\?v=20261022i/.test(html), 'nav.js is v43 and the detector matches the measured card');
+  ok(/@media \(hover:hover\) and \(pointer:fine\)/.test(css) && /#qList \.qx\{display:none\}/.test(css) && /width:34px;height:34px/.test(css), 'the × is a 34px corner target, and only on a fine pointer');
+  ok(/app\.js\?v=20261022k/.test(html) && /queue\.js\?v=20261022j/.test(html) && /style\.css\?v=20261022k/.test(html), 'cache-busts are above the main versions');
+  ok(/nav\.js\?v=44/.test(html) && /detector\.js\?v=20261022i/.test(html), 'nav.js is v44 and the detector matches the measured card');
   console.log('queue-discard tests passed:', n);
 })().catch(e => { console.error(e); process.exit(1); });
