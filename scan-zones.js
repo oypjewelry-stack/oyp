@@ -1748,7 +1748,10 @@ function joStatus(snap) {
   var tiles = pages.map(function (pg) {
     var it = matchRow(pg);
     if (!it) return (pg.held && asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === HOLD) ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Waiting' };
-    if (it.state === 'needsjo') return { cls: 'err', t: 'Type JO' };
+    if (it.state === 'needsjo') {
+      if (reading && sameRead(pg.scan)) return { cls: 'busy', t: 'Reading…' };
+      return { cls: 'err', t: 'Type JO' };
+    }
     if (it.state === 'uploading') return { cls: 'busy', t: 'Uploading…' };
     if (it.state === 'waiting') return { cls: 'queued', t: online ? (it.error ? 'Retrying' : 'Waiting') : 'Offline' };
     if (it.state === 'saved') return { cls: 'ok', t: 'Saved' };
@@ -1756,20 +1759,29 @@ function joStatus(snap) {
     if (it.state === 'failed') return { cls: 'err', t: 'Failed', retry: it.id };
     return { cls: 'queued', t: it.state || '' };
   });
+  function sameRead(scanId) {
+    if (!reading) return false;
+    var a = String(scanId || ''), b = String(snap.scan || '');
+    if (a && a === b) return true;
+    var sa = stampOf(a), sb = stampOf(b);
+    return !!(sa && sa === sb);
+  }
   var held = pages.some(function (p) { return p.held; });
   var pendingTiles = tiles.filter(function (s) { return s.cls === 'busy' || s.cls === 'queued'; }).length + (saving ? 1 : 0);
   var failedTiles = tiles.filter(function (s) { return s.retry; }).length;
-  var line = held ? (asking ? 'This photo stays here until you tap Save.' : 'Saved, reading JO…')
+  // The step list is the only "Saved, reading JO…" line. The header keeps the page count and, once known, the JO.
+  var line = (held && asking) ? 'This photo stays here until you tap Save.'
+    : (held && reading) ? ''
     : (!pages.length && !saving) ? ''
     : failedTiles ? (failedTiles + (failedTiles > 1 ? ' pages failed' : ' page failed'))
     : pendingTiles ? (pendingTiles === 1 ? '1 page still uploading' : pendingTiles + ' pages still uploading')
     : (pages.length ? 'All saved' : '');
-  var lineCls = failedTiles ? ' err' : (pendingTiles || held) ? ' busy' : pages.length ? ' ok' : '';
-  var joLine = asking ? 'Type the JO number' : jo ? ('JO ' + jo) : ((pages.length || saving || reading) ? 'Saved, reading JO…' : '');
+  var lineCls = (held && reading) ? '' : failedTiles ? ' err' : (pendingTiles || (held && asking)) ? ' busy' : pages.length ? ' ok' : '';
+  var joLine = asking ? 'Type the JO number' : (jo ? ('JO ' + jo) : '');
   var pending = 0, needs = 0, failed = 0;
   rows.forEach(function (r) {
     if (r.state === 'waiting' || r.state === 'uploading') pending++;
-    else if (r.state === 'needsjo' && !validJo(r.jo)) needs++;
+    else if (r.state === 'needsjo' && !validJo(r.jo)) { if (!sameRead(r.scan)) needs++; }
     else if (r.state === 'failed') failed++;
   });
   var counter = pending ? (pending + ' uploading') : needs ? (needs === 1 ? '1 needs JO' : needs + ' need JO') : failed ? (failed + ' failed') : '';
@@ -1817,7 +1829,8 @@ function fileAs(item, jo, fromCard, announce) {
   return item;
 }
 function addCorrectBtn(box) {
-  if (!box || !lastFiled || !lastFiled.jo || box.querySelector('[data-oyp-correct]')) return;
+  if (!box || !lastFiled || box.querySelector('[data-oyp-correct]')) return;
+  if (!lastFiled.jo && !lastFiled.missed) return;
   var row = box.querySelector('.la') || box;
   var b = document.createElement('button');
   b.type = 'button';
@@ -1832,8 +1845,6 @@ function refile(jo) {
   if (!q || !lastImage) { say('Scan the page again under JO ' + jo + '.'); return Promise.resolve(null); }
   var prev = lastFiled || {};
   var it = prev.id && q.get ? q.get(prev.id) : null;
-  if (it && (it.state === 'waiting' || it.state === 'failed' || !it.state) && q.remove) q.remove(it.id);
-  else if (it && q.discard) q.discard(it.id);
   var page = (it && it.page) || prev.page || 1;
   var tagM = String(prev.filename || '').match(/-(\d{6}[a-z]?)\.jpe?g$/i);
   var tag = tagM ? tagM[1] : dateTag();
@@ -1841,17 +1852,29 @@ function refile(jo) {
   var item = { jo: jo, page: page, filename: jo + '-p' + page + '-' + tag + '.jpg', scan: jo + '@' + stamp, image: lastImage, thumb: lastThumb || '' };
   lastFiled = { id: '', jo: jo, page: page, filename: item.filename, scan: item.scan };
   if (sc.state) { sc.state.jo = jo; sc.state.scan = item.scan; }
+  if (sc.cap) { sc.cap.asking = false; sc.cap.reading = false; }
+  var pages = (sc.cap && sc.cap.pages) || [];
+  for (var i = 0; i < pages.length; i++) {
+    var p = pages[i];
+    if (!(p.held || p.jo === HOLD || p.scan === prev.scan)) continue;
+    p.jo = jo; p.held = false; p.scan = item.scan; p.filename = item.filename;
+  }
   fillJo(jo);
+  if (typeof sc.capStep === 'function') sc.capStep({ id: 'scan', text: 'JO ' + jo + ' read', state: 'ok' });
+  // Both sticker posts go out before the page is rewritten. The upload can take as long as it takes.
+  if (typeof sc.stickersSoon === 'function') sc.stickersSoon(jo, item.scan);
+  if (it && (it.state === 'waiting' || it.state === 'failed' || it.state === 'needsjo' || !it.state) && q.remove) q.remove(it.id);
+  else if (it && q.discard) q.discard(it.id);
   return Promise.resolve(q.add(item)).then(function (saved) {
     lastFiled.id = (saved && saved.id) || (jo + '|' + item.filename + '|' + item.scan);
-    say('JO ' + jo + '.');
     addCorrectBtn(document.getElementById('lastScan'));
+    if (typeof sc.renderCapture === 'function') sc.renderCapture();
     return saved;
   });
 }
 function correct() {
-  if (!lastFiled || !lastFiled.jo) return;
-  askJo({ title: 'Correct the JO number', msg: 'This page will be filed as the number you type.', jo: lastFiled.jo, cancel: 'Cancel' }).then(function (jo) {
+  if (!lastFiled || (!lastFiled.jo && !lastFiled.missed)) return;
+  askJo({ title: 'Correct the JO number', msg: 'This page will be filed as the number you type.', jo: lastFiled.jo || '', cancel: 'Cancel' }).then(function (jo) {
     if (!jo || jo === lastFiled.jo) return;
     refile(jo);
   });
@@ -1874,7 +1897,13 @@ function installQueue(sc) {
         }
         item.held = true;
         item.jo = HOLD;
-        return orig(item);
+        return orig(item).then(function (saved) {
+          lastImage = item.image || lastImage;
+          lastThumb = item.thumb || lastThumb;
+          lastFiled = { id: (saved && saved.id) || '', jo: '', page: item.page, filename: item.filename, scan: item.scan, missed: true };
+          addCorrectBtn(document.getElementById('lastScan'));
+          return saved;
+        });
       }
       fileAs(item, jo, page === 1 && lastFromCard, page === 1);
       return Promise.resolve(orig(item)).then(function (saved) {

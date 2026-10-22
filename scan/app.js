@@ -1447,21 +1447,24 @@ function askForJo() { // the photo is already on the capture screen; she types t
   if (input) setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 30);
 }
 async function readHeldJo() {
-  if (cap.reading || cap.asking) return;
+  // showShotNow sets cap.reading so the step list can say the read has started. That flag must not skip the read.
+  if (cap.readBusy || cap.asking) return;
   const stillHeld = () => cap.pages.some(p => p.held || p.jo === 'OCR');
-  if (realJO(state.jo)) { if (stillHeld()) fileHeld(realJO(state.jo)); return; }
+  if (realJO(state.jo)) { cap.reading = false; if (stillHeld()) fileHeld(realJO(state.jo)); return; }
   const page = cap.pages.find(p => p.held && p.image && (parseInt(p.page, 10) || 1) === 1);
-  if (!page && !earlyRead) return;
-  cap.reading = true; renderCapture();
+  if (!page && !earlyRead) { cap.reading = false; return; }
+  cap.readBusy = true;
+  cap.reading = true;
   let jo = '';
-  if (earlyRead) { try { jo = await earlyRead; } catch (e) { console.warn('readJo', e); } earlyRead = null; }
-  else if (page) {
-    try { jo = await ocrJoNumber(page.image); } catch (e) { console.warn('readJo', e); }
-    if (jo) stickersSoon(jo);
-  }
-  cap.reading = false;
+  try {
+    if (earlyRead) { try { jo = await earlyRead; } catch (e) { console.warn('readJo', e); } earlyRead = null; }
+    else if (page) {
+      try { jo = await ocrJoNumber(page.image); } catch (e) { console.warn('readJo', e); }
+      if (jo) stickersSoon(jo);
+    }
+  } finally { cap.reading = false; cap.readBusy = false; }
   if (realJO(state.jo)) { if (stillHeld()) fileHeld(realJO(state.jo)); return; }
-  if (jo) fileHeld(jo); else askForJo();
+  if (jo) fileHeld(jo); else if (stillHeld()) askForJo();
 }
 function dropPreview(preview) {
   const i = cap.pages.indexOf(preview);
@@ -1583,7 +1586,7 @@ function renderCapture() {
     if (view) $('capJo').textContent = view.joLine;
     else {
       const known = realJO(state.jo);
-      $('capJo').textContent = cap.asking ? 'Type the JO number' : known ? 'JO ' + known : ((cap.pages.length || cap.saving || cap.reading) ? 'Saved, reading JO…' : '');
+      $('capJo').textContent = cap.asking ? 'Type the JO number' : known ? 'JO ' + known : '';
     }
   }
   const askForm = $('capJoForm'); if (askForm) askForm.classList.toggle('hidden', !cap.asking);
@@ -1604,9 +1607,11 @@ function renderCapture() {
     if (view) { prog.className = 'capprog' + (view.lineCls || ''); prog.textContent = view.line; }
     else {
       const held = cap.pages.some(p => p.held);
-      prog.className = 'capprog' + (failed ? ' err' : (pending || held) ? ' busy' : cap.pages.length ? ' ok' : '');
-      prog.textContent = held ? (cap.asking ? 'This photo stays here until you tap Save.' : 'Saved, reading JO…') : !cap.pages.length && !cap.saving ? '' : failed ? (failed + (failed > 1 ? ' pages failed' : ' page failed')) : pending ? (pending === 1 ? '1 page still uploading' : pending + ' pages still uploading') : 'All saved';
+      const readingLine = held && cap.reading && !cap.asking;
+      prog.className = 'capprog' + (readingLine ? '' : failed ? ' err' : (pending || (held && cap.asking)) ? ' busy' : cap.pages.length ? ' ok' : '');
+      prog.textContent = readingLine ? '' : held ? (cap.asking ? 'This photo stays here until you tap Save.' : '') : !cap.pages.length && !cap.saving ? '' : failed ? (failed + (failed > 1 ? ' pages failed' : ' page failed')) : pending ? (pending === 1 ? '1 page still uploading' : pending + ' pages still uploading') : 'All saved';
     }
+    prog.classList.toggle('hidden', !prog.textContent);
   }
   paintSteps();
   const retryAll = $('btnCapRetry'); if (retryAll) retryAll.classList.toggle('hidden', !failed);
@@ -2071,7 +2076,7 @@ loadCV().then(cv => { if (cv && cv.Mat) reprocessPlain(); }).catch(() => {});
 warmOcr().catch(() => {});
 warmPageWorker();
 refreshJoList();
-window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, acceptCardJo, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS, capStep, uprightCrop, handReadJo, openJoView, lookupJo, currentGuess, lastTiming, get earlyRead() { return earlyRead; }, get ocrWarm() { return ocrIsWarm; } };
+window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, stickersSoon, acceptCardJo, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS, capStep, uprightCrop, handReadJo, openJoView, lookupJo, currentGuess, lastTiming, get earlyRead() { return earlyRead; }, get ocrWarm() { return ocrIsWarm; } };
 })();
 
 // owner: stone background only while the start screen is shown
