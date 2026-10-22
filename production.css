@@ -108,10 +108,22 @@
 .pcard .pjn{overflow:hidden;text-overflow:ellipsis;min-width:0}.pcard .pver{flex-shrink:0}
 .pcard .kd{font-size:calc(14px*var(--fs));line-height:calc(18px*var(--fs));height:calc(36px*var(--fs));margin:calc(3px*var(--sp)) 0 calc(2px*var(--sp));overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;word-break:break-word}
 .pcard .kc{line-height:calc(16px*var(--fs));height:calc(32px*var(--fs));overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;word-break:break-word}
-.pcard .prun{height:calc(16px*var(--fs));line-height:calc(16px*var(--fs));margin-top:calc(4px*var(--sp));white-space:nowrap;overflow:hidden}
+.pcard .prun{height:calc(16px*var(--fs));line-height:calc(16px*var(--fs));margin-top:calc(4px*var(--sp));white-space:nowrap;overflow:hidden;min-width:0}
+.pcard .prun .prunln{display:flex;min-width:0;flex:1;align-items:center;gap:4px;overflow:hidden}
+.pcard .prun .prunln b{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:inherit}
+.pcard .prun .prunln .prunsep,.pcard .prun .prunln [data-since]{flex:none}
 .pcard .kf{flex:0 0 auto;height:calc(65px*var(--fs));margin-top:max(calc(6px*var(--sp)),calc(6px*var(--sp) + (var(--bh) - 1)*120px));overflow:hidden;display:flex;flex-wrap:wrap;align-content:flex-start;gap:calc(4px*var(--sp))}
 .pcard .kf .chip{white-space:nowrap;height:calc(19px*var(--fs));line-height:calc(13px*var(--fs));padding:calc(2px*var(--sp)) calc(7px*var(--sp));margin:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
 .pmove.pmnone{background:#f4f2ec;color:#b9b2a0;text-align:center;cursor:default;box-sizing:border-box}
+/* The kanban photo is the JO scan. The 34px × from the desktop swipe control was
+   sitting on that corner and covering the number written on the scan. Keep the
+   hit target, and park it in the white corner beside the scan. Select hides the
+   × and the scan goes full width again. Phones do not show the ×. */
+@media (hover:hover) and (pointer:fine){
+  .pcard .pth.hasx{width:calc(100% - 30px)}
+  .pcard .pth.hasx>.swx{right:-30px}
+  .swsel .pcard .pth.hasx{width:100%}
+}
 /* phone list: photo 96×72 (4:3) beside the text */
 .prplist .pcm{display:flex;gap:calc(12px*var(--sp));align-items:flex-start}.prplist .pth{width:96px;height:72px;aspect-ratio:4/3;margin:0}
 .prplist .kjo{height:calc(26px*var(--hs));line-height:calc(26px*var(--hs));font-size:calc(20px*var(--hs))}
