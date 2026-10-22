@@ -1031,12 +1031,13 @@ function counterText(c) {
 function rowHtml(it, withJO) {
   const needs = it.state === 'needsjo';
   const st = it.state === 'saved' ? 'ok' : it.state === 'mismatch' ? 'mm' : (it.state === 'failed' || needs) ? 'err' : 'queued';
-  const btns = it.state === 'failed' ? `<div class="acts"><button class="retry" data-retry="${esc(it.id)}">Retry</button><button class="rm" data-rm="${esc(it.id)}">Remove</button></div>`
+  const rm = withJO ? '' : `<button class="rm" data-rm="${esc(it.id)}">Remove</button>`; // page strip failed rows have no swipe; Pending uploads removes by swipe
+  const btns = it.state === 'failed' ? `<div class="acts"><button class="retry" data-retry="${esc(it.id)}">Retry</button>${rm}</div>`
     : it.state === 'uploading' ? '<span class="spin" aria-hidden="true"></span>' : '';
   const fix = needs && withJO && (parseInt(it.page, 10) || 1) === 1
     ? `<form class="jofix" data-jo-for="${esc(it.id)}"><div class="jofixrow"><input aria-label="JO number" placeholder="26-001" autocapitalize="characters" autocomplete="off" inputmode="text"><button class="jofixgo" type="submit">Save</button></div></form>`
     : '';
-  const sw = !withJO && it.state !== 'failed' && !needs ? ` data-sw="${esc(it.id)}"` : ''; // page strip: swipe left to delete (failed rows keep Remove)
+  const sw = (withJO || (it.state !== 'failed' && !needs)) ? ` data-sw="${esc(it.id)}"` : ''; // Pending uploads: every row. Page strip: not failed, not unread.
   const name = withJO ? ((needs ? 'JO not read' : 'JO ' + it.jo) + ' · page ' + it.page) : it.filename;
   const label = needs && (parseInt(it.page, 10) || 1) !== 1 ? 'Waiting for the JO number on page 1.' : OYPQueue.label(it, isOn());
   return `<li class="${it.state}"${sw}><img alt="" src="${esc(it.thumb)}"><div class="tx"><div class="nm">${esc(name)}</div>`
@@ -1065,7 +1066,8 @@ function renderQueue() {
   $('qSummary').className = 'qsum' + ((c.failed || c.needsjo) ? ' err' : c.pending ? ' busy' : ' ok');
   watchStorage();
   $('btnRetryFailed').classList.toggle('hidden', !c.failed);
-  $('qList').innerHTML = grp('Needs a look', bad) + grp('Uploading', busy) + grp('Saved recently', done);
+  if (swHold || qEditing()) swDirty = true; // keep the JO box (and a row mid-swipe) in place; the counter above already moved
+  else $('qList').innerHTML = grp('Needs a look', bad) + grp('Uploading', busy) + grp('Saved recently', done);
 }
 function applyQueueJo(it, jo) {
   jo = realJO(jo); if (!jo || !it) return false;
@@ -1079,6 +1081,7 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const input = f.querySelector('input'), jo = realJO(input && input.value);
   if (!jo) { if (input) input.focus(); return; }
+  if (input) input.blur(); // Enter submits while the box is focused; blur so the list can show the number
   applyQueueJo(queue.get(f.getAttribute('data-jo-for')), jo);
 });
 document.addEventListener('click', e => {
@@ -1088,9 +1091,14 @@ document.addEventListener('click', e => {
   if (m && confirm('Remove this page from the phone? It is NOT saved in Drive, so scan it again later.')) queue.remove(m.dataset.rm);
 });
 
-/* ---------- swipe left to delete (page strip under the camera) ----------
-   Pointer events (iOS + Android). Only a mostly-sideways drag counts; up/down stays a normal scroll (touch-action: pan-y). */
+/* ---------- swipe left to delete (page strip and every Pending uploads row) ----------
+   Pointer events (iOS + Android). Only a mostly-sideways drag counts; up/down stays a normal scroll (touch-action: pan-y).
+   The JO box on an unread page 1 is left alone: a tap or typing there is not a swipe, and swipe stays off while that box is focused. */
 var swHold = false, swDirty = false; // var: renderQueue may run before this line
+function qEditing() {
+  const a = document.activeElement;
+  return !!(a && a.closest && a.closest('#qList .jofix input, #qList .jofix textarea'));
+}
 function swRelease() { swHold = false; if (swDirty) { swDirty = false; renderQueue(); } }
 const SWIPE = { START: 10, RATIO: 1.5, MIN: 80, FRAC: 0.35 };
 function swipeAxis(dx, dy) { // null = not decided yet
@@ -1102,11 +1110,16 @@ function swipePast(dx, width) { return -dx >= Math.max(SWIPE.MIN, (width || 0) *
 const sw = { li: null, id: '', x0: 0, y0: 0, dx: 0, axis: null, pid: null, bg: null };
 function swBack(li, bg) { if (!li) return; li.style.transition = 'transform .18s ease'; li.style.transform = '';
   setTimeout(() => { li.classList.remove('swiping'); li.style.transition = ''; if (bg) bg.remove(); swRelease(); }, 200); }
-$('pages').addEventListener('pointerdown', e => {
-  const li = e.target.closest('li[data-sw]'); if (!li || e.target.closest('button') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+function swBlocked(e, li) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return true;
+  if (li.classList.contains('editing')) return true; // JO number is being typed
+  return !!e.target.closest('button, input, textarea, select, a, form, .jofix');
+}
+function swDown(e) {
+  const li = e.target.closest('li[data-sw]'); if (!li || swBlocked(e, li)) return;
   Object.assign(sw, { li, id: li.dataset.sw, x0: e.clientX, y0: e.clientY, dx: 0, axis: null, pid: e.pointerId, bg: null });
-});
-$('pages').addEventListener('pointermove', e => {
+}
+function swMove(e) {
   if (!sw.li || e.pointerId !== sw.pid) return;
   const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
   if (!sw.axis) { sw.axis = swipeAxis(dx, dy); if (!sw.axis) return;
@@ -1119,20 +1132,56 @@ $('pages').addEventListener('pointermove', e => {
   e.preventDefault();
   sw.dx = Math.min(0, Math.max(dx, -sw.li.offsetWidth * 0.9)); sw.li.style.transform = `translateX(${sw.dx}px)`;
   sw.bg.classList.toggle('go', swipePast(sw.dx, sw.li.offsetWidth));
-});
+}
+function removedNote(it, also) {
+  const who = (it.state === 'needsjo' || !realJO(it.jo)) ? 'JO not read' : ('JO ' + realJO(it.jo));
+  const more = also === 1 ? ' Its other page was removed too.' : also > 1 ? (' Its ' + also + ' other pages were removed too.') : '';
+  return 'Page ' + it.page + ' of ' + who + ' removed. It was not uploaded yet.' + more;
+}
 function swEnd(e) {
   if (!sw.li || (e && e.pointerId !== sw.pid)) return;
   const { li, id, bg, dx, axis } = sw; sw.li = null; if (axis !== 'h') return;
   if (!swipePast(dx, li.offsetWidth) || (e && e.type === 'pointercancel')) return swBack(li, bg);
   li.style.transition = 'transform .15s ease'; li.style.transform = `translateX(${-Math.max(SWIPE.MIN, li.offsetWidth * SWIPE.FRAC)}px)`;
   const it = queue.get(id); if (!it) return swBack(li, bg);
-  askDelete(it).then(yes => { if (!yes) return swBack(li, bg); if (bg) bg.remove(); li.remove(); swDirty = true; swRelease(); queue.discard(id).then(r => { if (r.phase === 'removed') note('Page ' + it.page + ' of JO ' + it.jo + ' removed. It was not uploaded yet.'); }); });
+  askDelete(it).then(yes => {
+    if (!yes) return swBack(li, bg);
+    if (bg) bg.remove(); li.remove(); swDirty = true;
+    queue.discard(id).then(r => {
+      swRelease(); // list rebuilds from the queue; the counter and badge already moved inside discard
+      if (r && r.phase === 'removed') note(removedNote(it, r.also));
+    });
+  });
 }
-$('pages').addEventListener('pointerup', swEnd); $('pages').addEventListener('pointercancel', swEnd);
+function bindRowSwipe(root) {
+  if (!root) return;
+  root.addEventListener('pointerdown', swDown);
+  root.addEventListener('pointermove', swMove);
+  root.addEventListener('pointerup', swEnd);
+  root.addEventListener('pointercancel', swEnd);
+}
+bindRowSwipe($('pages'));
+bindRowSwipe($('qList'));
+document.addEventListener('focusin', e => {
+  const li = e.target.closest && e.target.closest('#qList li[data-sw]');
+  if (li && e.target.closest('input, textarea')) li.classList.add('editing');
+});
+document.addEventListener('focusout', e => {
+  const li = e.target.closest && e.target.closest('#qList li');
+  if (li) li.classList.remove('editing');
+  if (!e.target.closest || !e.target.closest('#qList .jofix')) return;
+  setTimeout(() => { // after Save's click, so the form is not rebuilt under the tap
+    if (swHold || qEditing()) return;
+    const a = document.activeElement;
+    if (a && a.closest && a.closest('#qList .jofix')) return;
+    if (swDirty) { swDirty = false; renderQueue(); }
+  }, 0);
+});
 function askDelete(it) {
   return new Promise(done => {
-    const sent = it.state !== 'waiting', d = document.createElement('div'); d.className = 'swconf'; d.setAttribute('role', 'dialog');
-    d.innerHTML = `<div class="box"><p>Delete page ${esc(it.page)} of JO ${esc(it.jo)}?${sent ? ' It goes to Drive Trash (30 days).' : ' It was not uploaded yet.'}</p>`
+    const extra = OYPQueue.extraNeedsjo(it, queue.list()).length;
+    const d = document.createElement('div'); d.className = 'swconf'; d.setAttribute('role', 'dialog');
+    d.innerHTML = `<div class="box"><p>${esc(OYPQueue.removePrompt(it, extra))}</p>`
       + '<div class="row"><button type="button" class="ghost" data-no>Cancel</button><button type="button" class="del" data-yes>Delete</button></div></div>';
     const close = v => { d.remove(); done(v); };
     d.addEventListener('click', e => { if (e.target.closest('[data-yes]')) close(true); else if (e.target.closest('[data-no]') || e.target === d) close(false); });
