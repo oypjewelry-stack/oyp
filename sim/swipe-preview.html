@@ -7,7 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../app.css?v=48">
 <link rel="stylesheet" href="../todo.css?v=6">
-<link rel="stylesheet" href="../production.css?v=11">
+<link rel="stylesheet" href="../production.css?v=12">
 <link rel="stylesheet" href="../consign.css?v=10">
 <link rel="stylesheet" href="../print.css?v=15">
 </head><body>
@@ -350,7 +350,13 @@
         if (clip.classList.contains('swphoto')) {
           var photoBox = photo.getBoundingClientRect();
           check(photo.classList.contains('ivph') || photo.classList.contains('pth'), name + ' corner control is on the photo');
-          check(Math.abs(box.top - photoBox.top) <= 1 && Math.abs(box.right - photoBox.right) <= 1, name + ' corner control sits on the photo top-right');
+          if (name === 'prod') {
+            var cover = Math.min(box.right, photoBox.right) - Math.max(box.left, photoBox.left);
+            var cardBox = faceRow.getBoundingClientRect();
+            check(Math.abs(box.top - photoBox.top) <= 1, 'production corner control stays level with the scan');
+            check(cover <= 6, 'production corner control does not sit on the scan (overlap ' + cover + ')');
+            check(box.left + 1 >= photoBox.right - 6 && box.right <= cardBox.right + 1, 'production corner control sits beside the scan, inside the card');
+          } else check(Math.abs(box.top - photoBox.top) <= 1 && Math.abs(box.right - photoBox.right) <= 1, name + ' corner control sits on the photo top-right');
           check(Math.abs(padR - base) <= 1, name + ' does not reserve a strip beside the photo (pad ' + padR + ', base ' + base + ')');
           var chip = getComputedStyle(el, '::before');
           check(parseFloat(chip.width) >= 18 && parseFloat(chip.width) <= 26 && chip.borderTopLeftRadius !== '0px' && chip.backgroundColor !== 'rgba(0, 0, 0, 0)', name + ' corner control has a round backdrop');
