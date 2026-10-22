@@ -1,0 +1,11 @@
+DashCache.gs — one short edit. countLoad is listed as a read so opening the count does not start a new dashboard generation.
+Do not add it to dcacheSpec_ or any list of answers that are saved. The countLoad route in Auth.gs does not call dcacheRead_.
+Do not add linkEpc or countFinish.
+
+The FIND text sits in the middle of the READS line (copy it without leading spaces). The print patch may already have printQueue after listUsers. This FIND still matches that line.
+
+FIND
+listUsers: 1,
+
+REPLACE WITH
+listUsers: 1, countLoad: 1,

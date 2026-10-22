@@ -33,7 +33,7 @@ async function net(action, data) {
 const CACHED = { dashboard: 1, todoList: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1,
   pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1, consignList: 1 };
 const READS = Object.assign({ me: 1, admCustAudit: 1, apptClients: 1, costQuotes: 1, dashDrill: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1,
-  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, photoThumbs: 1, photoFile: 1, portalSteps: 1, consignSearch: 1, printQueue: 1 }, CACHED); // printQueue, photoThumbs, and photoFile are fresh (not in CACHED). printMark, printEnqueue, and printReprint stay writes.
+  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, photoThumbs: 1, photoFile: 1, portalSteps: 1, consignSearch: 1, printQueue: 1, countLoad: 1 }, CACHED); // countLoad, printQueue, photoThumbs, and photoFile are fresh (not in CACHED). linkEpc and countFinish stay writes. printMark, printEnqueue, and printReprint stay writes.
 const C = { mem: new Map(), fly: new Map(), gen: 0, servedStale: 0, touched: 0, redraw: 0, busy: 0 };
 const FRESH = 20e3, MAX_AGE = 12 * 36e5, CP = 'oypC1:';
 const ns = () => { const t = localStorage.getItem(K.s) || ''; let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return CP + (h >>> 0).toString(36) + ':'; };
@@ -160,17 +160,40 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.OFFICE_NAV || window.OYPNav.NAV; // nav.js: same menu in the scanner, minus back-office-only pages (Production)
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
-const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true,
-  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do
+const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, count: true,
+  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do; count.js: inventory count
 // Menu order on this device, per signed-in name. Empty = today's menu. The scanner keeps the shared list in nav.js.
 const navKey = u => 'oypNavOrder:' + (u && u.username || 'device');
 function readNavOrder(u) {
   try { const a = JSON.parse(localStorage.getItem(navKey(u)) || 'null'); return Array.isArray(a) ? a.filter(x => typeof x === 'string') : null; }
   catch (e) { return null; }
 }
+const navHideKey = u => 'oypNavHide:' + (u && u.username || 'device');
+function readNavHide(u) {
+  try {
+    const a = JSON.parse(localStorage.getItem(navHideKey(u)) || 'null');
+    return Array.isArray(a) ? a.filter(x => typeof x === 'string') : [];
+  } catch (e) { return []; }
+}
+function writeNavHide(u, keys) {
+  const canon = (NAV[u.role] || []).map(n => n[0]);
+  const h = [];
+  (keys || []).forEach(k => { if (canon.indexOf(k) >= 0 && h.indexOf(k) < 0) h.push(k); });
+  try { if (!h.length) localStorage.removeItem(navHideKey(u)); else localStorage.setItem(navHideKey(u), JSON.stringify(h)); } catch (e) {}
+  return h;
+}
+function mergeSlots(full, hide, visible) {
+  const fn = window.OYPDash && window.OYPDash.layout && window.OYPDash.layout.mergeSlots;
+  if (fn) return fn(full, hide, visible);
+  return (visible || []).slice();
+}
 function writeNavOrder(u, keys, canon) {
-  const present = keys.filter(k => canon.indexOf(k) >= 0);
-  const def = canon.filter(k => present.indexOf(k) >= 0);
+  const prev = readNavOrder(u);
+  const full = prev && prev.length ? prev.slice() : canon.slice();
+  canon.forEach(k => { if (full.indexOf(k) < 0) full.push(k); });
+  const merged = mergeSlots(full, readNavHide(u), keys);
+  const present = merged.filter(k => canon.indexOf(k) >= 0);
+  const def = canon.slice();
   try { if (!present.length || present.join() === def.join()) localStorage.removeItem(navKey(u)); else localStorage.setItem(navKey(u), JSON.stringify(present)); } catch (e) {}
 }
 function orderedNav(u) { return window.OYPNav.ordered(u); }
@@ -197,24 +220,93 @@ function renderNav(u, page) {
   curPage = page;
   const rows = navRows(u, page);
   $('side').innerHTML = '<div class="sidenav" id="sideNav">' + rows + '</div>' + whoBlock(u);
-  wireMenuDrag($('sideNav'), u);
+  finishNav($('sideNav'), u);
   const m = $('menu');
-  if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); wireMenuDrag(m, u); }
+  if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); finishNav(m, u); }
+}
+function finishNav(box, u) {
+  if (!box || !u) return;
+  decorateNav(box, u);
+  wireNavHide(box, u);
+  wireMenuDrag(box, u);
+}
+function decorateNav(box, u) {
+  const hide = new Set(u.role === 'admin' ? readNavHide(u) : []);
+  box.querySelectorAll('a[data-nkey]').forEach(a => {
+    if (a.closest('.nrow')) return;
+    const row = document.createElement('div');
+    row.className = 'nrow';
+    row.dataset.nkey = a.dataset.nkey;
+    const name = (a.textContent || '').replace(/\s*soon\s*$/i, '').trim();
+    a.parentNode.insertBefore(row, a);
+    row.appendChild(a);
+    const grip = document.createElement('span');
+    grip.className = 'laygrip';
+    grip.setAttribute('aria-hidden', 'true');
+    grip.textContent = '⋮⋮';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'layx';
+    btn.dataset.nhide = a.dataset.nkey;
+    btn.setAttribute('aria-label', 'Hide ' + name);
+    btn.textContent = 'Hide';
+    row.insertBefore(grip, a);
+    row.appendChild(btn);
+  });
+  box.querySelectorAll('.nrow').forEach(row => { if (hide.has(row.dataset.nkey)) row.remove(); });
+  if (!hide.size) return;
+  const labels = {};
+  (NAV[u.role] || []).forEach(([k, t]) => { labels[k] = t; });
+  const bar = document.createElement('div');
+  bar.className = 'layshows';
+  [...hide].filter(k => labels[k]).forEach(k => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'layshow';
+    b.dataset.nshow = k;
+    b.textContent = 'Show ' + labels[k];
+    bar.appendChild(b);
+  });
+  const logout = box.querySelector('[data-logout]');
+  if (logout) box.insertBefore(bar, logout);
+  else box.appendChild(bar);
+}
+function wireNavHide(box, u) {
+  if (!box || box.dataset.nhidewire || u.role !== 'admin') return;
+  box.dataset.nhidewire = '1';
+  box.addEventListener('click', e => {
+    const hide = e.target.closest('[data-nhide]');
+    const show = e.target.closest('[data-nshow]');
+    if (!hide && !show) return;
+    if (!window.OYPLayoutEdit || !window.OYPLayoutEdit.editing()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const keys = readNavHide(u);
+    const k = hide ? hide.dataset.nhide : show.dataset.nshow;
+    if (hide) { if (keys.indexOf(k) < 0) keys.push(k); }
+    else { const i = keys.indexOf(k); if (i >= 0) keys.splice(i, 1); }
+    writeNavHide(u, keys);
+    renderNav(u, curPage);
+  });
 }
 function wireMenuDrag(box, u) {
   if (!box || !u || u.role !== 'admin' || box.dataset.ndrag || !window.OYPLayoutEdit) return;
   box.dataset.ndrag = '1';
-  window.OYPLayoutEdit.drag(box, 'a[data-nkey]', 'y', () => {
-    writeNavOrder(u, [...box.querySelectorAll('a[data-nkey]')].map(a => a.dataset.nkey), (NAV[u.role] || []).map(n => n[0]));
-  });
+  window.OYPLayoutEdit.drag(box, '.nrow', 'y', () => {
+    writeNavOrder(u, [...box.querySelectorAll(':scope > .nrow')].map(n => n.dataset.nkey), (NAV[u.role] || []).map(n => n[0]));
+    if (box.id === 'sideNav') {
+      const m = $('menu');
+      if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); finishNav(m, u); }
+    } else renderNav(u, curPage);
+  }, 'button, .layx, .layshow');
 }
 function phoneInner(u) { return window.OYPNav.menuHtml(u, curPage, ''); }
-// Settings › Layout turns editing on. While it is on, these rows drag. Nothing extra shows when it is off.
+// The Edit layout pill turns these rows on. Nothing extra shows when it is off. Log out stays last.
 window.OYPLayoutMenu = {
   list: u => orderedNav(u).map(([k, t]) => ({ key: k, label: t })),
   save(u, keys) { writeNavOrder(u, keys, (NAV[u.role] || []).map(n => n[0])); const me = user(); if (me && me.username === u.username) renderNav(me, curPage); },
   reset(u) { try { localStorage.removeItem(navKey(u)); } catch (e) {} const me = user(); if (me && me.username === u.username) renderNav(me, curPage); },
-  custom: u => !!readNavOrder(u)
+  custom: u => !!(readNavOrder(u) || readNavHide(u).length)
 };
 
 // Route token: every route() bumps routeSeq. A page takes here() before an await and checks it after, so a slow
@@ -232,7 +324,7 @@ function route() {
   const u = user();
   if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; warm(); return; }
   const cur0 = (location.hash.match(/^#\/(\w+)/) || [])[1];
-  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'todo'))) { // staff: simple home; Appointments and To do open in the back office (Production: Susan + admins only)
+  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'todo' || cur0 === 'count'))) { // staff: simple home; Appointments, To do, and Inventory count open in the back office (Production: Susan + admins only)
     show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
   }
   show('vOffice'); $('title').textContent = 'Back office';
@@ -242,7 +334,7 @@ function route() {
   const want = canon.some(n => n[0] === cur) ? cur : ALIAS[cur] && canon.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
   const page = want || canon[0][0]; // opening a page still starts at today's first item when the link is not a menu item
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  $('title').textContent = page === 'todo' ? 'TO DO' : 'Back office';
+  $('title').textContent = page === 'todo' ? 'TO DO' : page === 'count' ? 'INVENTORY COUNT' : 'Back office';
   renderNav(u, page); // desktop sidebar: items scroll; the name block stays at the bottom
   const title = canon.find(n => n[0] === page)[1];
   schedulePrefetch(canon, page);
@@ -259,6 +351,7 @@ function route() {
   if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
   if (page === 'jos' && window.OYPInv) return window.OYPInv.renderJos($('main'), u); // inv.js: Inventory (all JOs / pieces)
   if (page === 'inventory' && window.OYPInv) return window.OYPInv.renderMats($('main'), u); // inv.js: Materials (raw stock)
+  if (page === 'count' && window.OYPCount) return window.OYPCount.render($('main'), u); // count.js: RFID inventory count
   if (window.OYPPay && window.OYPPay.pages.includes(page)) return window.OYPPay.render($('main'), u, page); // pay.js
   if (page === 'users') return usersPage();
   if (page === 'customers') return customersPage();
@@ -304,7 +397,7 @@ $('btnMenu').onclick = () => {
   const u = user(), m = $('menu');
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
   m.innerHTML = phoneInner(u);
-  wireMenuDrag(m, u);
+  finishNav(m, u);
   m.classList.remove('hidden');
 };
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu')) $('menu').classList.add('hidden'); });
@@ -546,29 +639,26 @@ async function archiveJos(jos, location, opts) {
   return r;
 }
 window.OYP = { call, esc, toast, toastUndo, archiveJos, swipe: (window.OYPSwipe && window.OYPSwipe.mount) || function () {}, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
-// Edit layout is off on every load. Settings turns it on; Done turns it off. Order stays in localStorage either way.
+// Edit layout is off on every load. The pill on each back-office page turns it on. Done saves and turns it off.
 const LE = {
   on: false, fns: [],
   editing() { const u = user(); return this.on && !!(u && u.role === 'admin'); },
   set(v) {
     const u = user();
     v = !!v && !!(u && u.role === 'admin');
-    if (v === this.on) return;
+    if (v === this.on) { placeLayPill(); return; }
     this.on = v;
     document.documentElement.classList.toggle('layedit', v);
-    this.bar();
+    placeLayPill();
     this.fns.slice().forEach(fn => { try { fn(v); } catch (e) {} });
   },
   listen(fn) { this.fns.push(fn); },
-  bar() {
-    let el = document.getElementById('layBar');
-    if (!this.on) { if (el) el.remove(); return; }
-    if (el) return;
-    el = document.createElement('div');
-    el.id = 'layBar'; el.className = 'laybar';
-    el.innerHTML = '<span>Drag into place</span><button type="button" id="layDone">Done</button>';
-    document.body.appendChild(el);
-    el.querySelector('#layDone').onclick = () => this.set(false);
+  commit() {
+    const u = user();
+    if (!u) return;
+    const side = $('sideNav');
+    if (side) writeNavOrder(u, [...side.querySelectorAll(':scope > .nrow')].map(n => n.dataset.nkey).filter(Boolean), (NAV[u.role] || []).map(n => n[0]));
+    if (window.OYPDash && window.OYPDash.layout && window.OYPDash.layout.sections.commit) window.OYPDash.layout.sections.commit(u);
   },
   // A section moves by its own header. The neighbor's header stays put until the pointer crosses that header.
   place(itemFirst, pos, mid) {
@@ -584,8 +674,12 @@ const LE = {
       if (e.button != null && e.button !== 0) return;
       if (skipSel && e.target.closest(skipSel)) return;
       const item = e.target.closest(itemSel);
-      if (!item || !container.contains(item)) return;
-      if (handleSel && !e.target.closest(handleSel)) return;
+      if (!item || item.parentElement !== container) return;
+      if (handleSel) {
+        const handle = e.target.closest(handleSel);
+        // The header that was grabbed has to be this item's own header, not a neighbor's.
+        if (!handle || handle.parentElement !== item) return;
+      }
       const pid = e.pointerId, sx = e.clientX, sy = e.clientY;
       let dragging = false;
       const move = ev => {
@@ -623,7 +717,7 @@ const LE = {
         LE.kill = e2 => {
           document.removeEventListener('click', LE.kill, true);
           LE.kill = null;
-          if (e2.target.closest && e2.target.closest('#layBar')) return;
+          if (e2.target.closest && e2.target.closest('#layEditBtn, .layx, .layshow, [data-lhide], [data-lshow], [data-nhide], [data-nshow], [data-shide], [data-sshow], #dLocReset')) return;
           e2.preventDefault();
           e2.stopPropagation();
         };
@@ -637,11 +731,41 @@ const LE = {
   }
 };
 window.OYPLayoutEdit = LE;
+function placeLayPill() {
+  const main = $('main');
+  const office = $('vOffice') && !$('vOffice').classList.contains('hidden');
+  const u = user();
+  const show = !!(main && office && u && u.role === 'admin');
+  let row = document.getElementById('layRow');
+  if (!show) { if (row) row.remove(); return; }
+  if (!row || row.parentNode !== main) {
+    if (row) row.remove();
+    row = document.createElement('div');
+    row.id = 'layRow';
+    row.className = 'layrow';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pill sm outline laypill';
+    btn.id = 'layEditBtn';
+    btn.onclick = () => {
+      if (LE.editing()) { LE.commit(); toast('Layout saved'); LE.set(false); }
+      else LE.set(true);
+    };
+    row.appendChild(btn);
+  }
+  if (main.firstChild !== row) main.insertBefore(row, main.firstChild);
+  const btn = row.querySelector('#layEditBtn');
+  const on = LE.editing();
+  btn.textContent = on ? 'Done' : 'Edit layout';
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
 LE.listen(() => {
   const u = user();
   if (u && u.role === 'admin' && !$('vOffice').classList.contains('hidden')) renderNav(u, curPage);
   if (window.OYPDash && window.OYPDash.relayout) window.OYPDash.relayout();
+  placeLayPill();
 });
+if ($('main')) new MutationObserver(() => placeLayPill()).observe($('main'), { childList: true });
 drawDots(); route();
 // re-check the session with the server on load (catches resets / deactivation)
 // redraw only if the role or name changed, so a page opened meanwhile (e.g. the estimator mid-typing) is not reset
