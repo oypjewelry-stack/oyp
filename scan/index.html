@@ -9,7 +9,7 @@
 <title>OYP Card Scanner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600&family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261022k">
+<link rel="stylesheet" href="style.css?v=20261022m">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 </head><body>
@@ -58,6 +58,7 @@
   <p class="nostick hidden" data-nostick="jo">No JO sticker</p>
   <p class="nostick hidden" data-nostick="tag">No jewelry tag</p>
   <ul id="capStrip" class="strip"></ul>
+  <ol id="capSteps" class="capsteps hidden" aria-live="polite"></ol>
   <p id="capProg" class="capprog"></p>
   <button id="upCountCap" class="upcount hidden" type="button">0 uploading</button>
   <button id="btnCapRetry" class="ghost hidden" type="button">Retry failed</button>
@@ -117,11 +118,19 @@
   <div class="rvbar"><button id="rvRetake" class="ghost">Retake</button><button id="rvNoCrop" class="ghost">Skip crop</button><button id="rvUse" class="primary">Use</button></div>
 </div>
 <canvas id="work" class="hidden"></canvas>
+<div id="joView" class="joview hidden" role="dialog" aria-label="Scanned page">
+  <button id="jovClose" class="jovclose" type="button">Close</button>
+  <div id="jovStage" class="jovstage"><img id="jovImg" alt="Scanned page"></div>
+  <form id="jovBar" class="jovbar" data-jo-for="" autocomplete="off">
+    <input id="jovJo" aria-label="JO number" placeholder="26-001" autocapitalize="characters" autocomplete="off" inputmode="text">
+    <button class="jofixgo" type="submit">Save</button>
+  </form>
+</div>
 <div id="toast" class="toast hidden"><img id="toastImg" alt=""><span>Saved</span><button id="toastAdjust" class="ghost">Adjust</button></div>
 <script>window.__oypNativeFetch = window.fetch.bind(window);</script>
-<script src="queue.js?v=20261022m"></script>
-<script src="https://oypjewelry.com/nav.js?v=47" async></script>
-<script src="detector.js?v=20261022i"></script>
-<script src="app.js?v=20261022m"></script>
+<script src="queue.js?v=20261022n"></script>
+<script src="https://oypjewelry.com/nav.js?v=56" async></script>
+<script src="detector.js?v=20261022k"></script>
+<script src="app.js?v=20261022s"></script>
 <script src="voice.js?v=20261021c"></script>
 </body></html>

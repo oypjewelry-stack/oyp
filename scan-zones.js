@@ -427,9 +427,9 @@ function detectorUrl() {
   var tags = document.getElementsByTagName('script'), i, src;
   for (i = tags.length - 1; i >= 0; i--) {
     src = tags[i].src || '';
-    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022i');
+    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022k');
   }
-  return 'scan/detector.js?v=20261022i';
+  return 'scan/detector.js?v=20261022k';
 }
 function loadDetector() {
   if (root.CardDetector && root.CardDetector.standardPage && root.CardDetector.warpQuad && root.CardDetector.fitStandard) return Promise.resolve(root.CardDetector);
@@ -532,9 +532,17 @@ function cropFrom(img, zone) {
     return i >= 0 ? url.slice(i + 1) : '';
   } catch (e) { return ''; }
 }
+function zoneOnScan(zone) {
+  var extra = root.__oypZoneExtra || 0;
+  if (!zone || !extra) return zone;
+  return turnZone(zone, extra);
+}
 function crops(b64, zones) {
   var jo = null, fields = [];
-  zones.forEach(function (z) { if (z.id === 'jo') jo = z; else fields.push(z); });
+  (zones || []).forEach(function (z) {
+    var u = zoneOnScan(z);
+    if (u.id === 'jo') jo = u; else fields.push(u);
+  });
   if (!jo) return Promise.resolve(null);
   return loadImage(b64).then(function (img) {
     if (!img) return null;
@@ -1469,7 +1477,8 @@ var lastThumb = '';
 
 function normJo(s) {
   if (typeof root.normJO === 'function') return root.normJO(s);
-  var m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
+  var t = String(s || '').toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-').replace(/O/g, '0');
+  var m = t.match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
   return m ? m[1] + '-' + m[2] + (m[3] || '') : String(s || '').trim().toUpperCase().replace(/^J\.?O\.?\s*#?\s*/, '');
 }
 function validJo(s) { return /^\d{2}-\d{3,4}[A-Z]?$/.test(normJo(s)); }
@@ -1554,7 +1563,7 @@ function rollback(item) {
 }
 function cropJo(dataUrl) {
   var jo = null;
-  state.zones.forEach(function (z) { if (z.id === 'jo') jo = z; });
+  state.zones.forEach(function (z) { if (z.id === 'jo') jo = zoneOnScan(z); });
   if (!jo) return Promise.resolve('');
   var src = String(dataUrl || '');
   if (src.indexOf('data:') !== 0) src = 'data:image/jpeg;base64,' + src;
@@ -1605,18 +1614,49 @@ function reasonMsg(r) {
   if (!r.jo) return 'No JO number was read from the box. Type it to save this page.';
   return 'The number in the box is unclear. Type it to save this page.';
 }
+function uprightCrop(b64) {
+  var sc = scan();
+  if (!b64 || !sc || typeof sc.uprightCrop !== 'function') return Promise.resolve(b64);
+  return Promise.resolve(sc.uprightCrop(b64)).then(function (url) {
+    if (!url) return b64;
+    var i = String(url).indexOf(',');
+    return i >= 0 ? String(url).slice(i + 1) : url;
+  }).catch(function () { return b64; });
+}
+function handGuess(b64) {
+  var sc = scan();
+  if (!b64 || !sc || typeof sc.handReadJo !== 'function') return Promise.resolve('');
+  return Promise.resolve(sc.handReadJo(b64)).catch(function () { return ''; });
+}
+function readZoneLocal(item) {
+  return cropJo(item.image).then(function (b64) {
+    if (!b64) return '';
+    if (!item.joCrop) item.joCrop = 'data:image/jpeg;base64,' + b64;
+    return handGuess(b64).then(function (g) {
+      var sc = scan();
+      var jo = sc && typeof sc.lookupJo === 'function' ? sc.lookupJo(g) : normJo(g);
+      if (jo && validJo(jo)) { lastFromCard = true; return normJo(jo); }
+      var guess = sc && typeof sc.currentGuess === 'function' ? sc.currentGuess() : '';
+      item.joGuess = (guess && String(guess).trim()) || (g && String(g).trim()) || '';
+      return '';
+    });
+  });
+}
 function resolveJo(item) {
   lastFromCard = false;
   lastImage = item.image || lastImage;
   lastThumb = item.thumb || lastThumb;
-  say('Reading the JO number…');
-  return cropJo(item.image).then(function (b64) {
-    if (!b64) return askJo({ msg: 'No JO number box on this photo. Type the JO number to save this page.' });
-    return readJo(b64).then(function (r) {
-      if (r && r.ok && r.jo && validJo(r.jo) && !r.low) { lastFromCard = true; return normJo(r.jo); }
-      return askJo({ jo: r && r.jo, msg: reasonMsg(r) });
+  var sc = scan();
+  var pending = sc && sc.earlyRead;
+  if (pending && typeof pending.then === 'function') {
+    return Promise.resolve(pending).then(function (jo) {
+      if (jo && validJo(jo)) { lastFromCard = true; return normJo(jo); }
+      var guess = sc && typeof sc.currentGuess === 'function' ? sc.currentGuess() : '';
+      if (guess) item.joGuess = String(guess).trim();
+      return '';
     });
-  });
+  }
+  return readZoneLocal(item);
 }
 /* One filing for a JO that was just accepted. The toast, the page tile, the gold line,
    and the needs-JO counter are all read from this record, in that same turn. */
@@ -1639,6 +1679,10 @@ function joFiling(item, jo, fromCard) {
     toast: ok ? (fromCard ? ('JO ' + jo + ', from the card.') : ('JO ' + jo + '.')) : ''
   };
 }
+function stampOf(scan) {
+  var s = String(scan || ''), i = s.indexOf('@');
+  return i >= 0 ? s.slice(i + 1) : '';
+}
 function cardAccepted(snap) {
   var toast = String(snap && snap.toast || '');
   var m = toast.match(/^JO (\d{2}-\d{3,4}[A-Z]?), from the card\.$/);
@@ -1646,14 +1690,20 @@ function cardAccepted(snap) {
   if (!(jo && (snap.fromCard || m))) return '';
   return jo;
 }
+function knownJo(snap) {
+  var from = cardAccepted(snap);
+  if (from) return from;
+  if (validJo(snap && snap.jo)) return normJo(snap.jo);
+  var typed = String(snap && snap.toast || '').match(/^JO (\d{2}-\d{3,4}[A-Z]?)\.$/);
+  return typed ? typed[1] : '';
+}
 /* Tile, gold line, and counter for the capture screen. A from-the-card toast is part of
    the same record, so the readout cannot still say reading or needs-JO. */
 function joStatus(snap) {
   snap = snap || {};
   var toast = String(snap.toast || '');
-  var jo = cardAccepted(snap);
+  var jo = knownJo(snap);
   var accepted = !!jo;
-  if (!accepted && validJo(snap.jo)) jo = normJo(snap.jo);
   var pages = (snap.pages || []).map(function (p) { return Object.assign({}, p); });
   var rows = (snap.rows || []).map(function (r) { return Object.assign({}, r); });
   if (accepted) {
@@ -1667,8 +1717,9 @@ function joStatus(snap) {
         if (snap.filename) p.filename = snap.filename;
       } else if (snap.scan && (p.scan === snap.prevScan || p.jo === jo)) p.scan = snap.scan;
     });
+    var stamp = stampOf(snap.scan) || stampOf(snap.prevScan);
     rows.forEach(function (r) {
-      var mine = r.state === 'needsjo' && ((snap.clientId && r.clientId === snap.clientId) || r.scan === snap.prevScan || (r.scan === snap.scan && (r.jo === HOLD || r.jo === jo)));
+      var mine = r.state === 'needsjo' && ((snap.clientId && r.clientId === snap.clientId) || r.scan === snap.prevScan || (stamp && stampOf(r.scan) === stamp) || (r.scan === snap.scan && (r.jo === HOLD || r.jo === jo)));
       if (!mine) return;
       r.state = 'waiting'; r.jo = jo; r.held = false;
       if (snap.scan) r.scan = snap.scan;
@@ -1696,29 +1747,41 @@ function joStatus(snap) {
   }
   var tiles = pages.map(function (pg) {
     var it = matchRow(pg);
-    if (!it) return (pg.held && asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === HOLD) ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Waiting' };
-    if (it.state === 'needsjo') return { cls: 'err', t: 'Type JO' };
+    if (!it) return (pg.held && asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === HOLD) ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Uploading…' };
+    if (it.state === 'needsjo') {
+      if (reading && sameRead(pg.scan)) return { cls: 'busy', t: 'Reading…' };
+      return { cls: 'err', t: 'Type JO' };
+    }
     if (it.state === 'uploading') return { cls: 'busy', t: 'Uploading…' };
-    if (it.state === 'waiting') return { cls: 'queued', t: online ? (it.error ? 'Retrying' : 'Waiting') : 'Offline' };
+    if (it.state === 'waiting') return { cls: 'queued', t: online ? (it.error ? 'Retrying' : 'Uploading…') : 'Offline' };
     if (it.state === 'saved') return { cls: 'ok', t: 'Saved' };
     if (it.state === 'mismatch') return { cls: 'mm', t: 'Check JO' };
     if (it.state === 'failed') return { cls: 'err', t: 'Failed', retry: it.id };
     return { cls: 'queued', t: it.state || '' };
   });
+  function sameRead(scanId) {
+    if (!reading) return false;
+    var a = String(scanId || ''), b = String(snap.scan || '');
+    if (a && a === b) return true;
+    var sa = stampOf(a), sb = stampOf(b);
+    return !!(sa && sa === sb);
+  }
   var held = pages.some(function (p) { return p.held; });
   var pendingTiles = tiles.filter(function (s) { return s.cls === 'busy' || s.cls === 'queued'; }).length + (saving ? 1 : 0);
   var failedTiles = tiles.filter(function (s) { return s.retry; }).length;
-  var line = held ? (asking ? 'This photo stays here until you tap Save.' : 'Reading the JO number…')
+  // The step list is the only "Saved, reading JO…" line. The header keeps the page count and, once known, the JO.
+  var line = (held && asking) ? 'This photo stays here until you tap Save.'
+    : (held && reading) ? ''
     : (!pages.length && !saving) ? ''
     : failedTiles ? (failedTiles + (failedTiles > 1 ? ' pages failed' : ' page failed'))
     : pendingTiles ? (pendingTiles === 1 ? '1 page still uploading' : pendingTiles + ' pages still uploading')
     : (pages.length ? 'All saved' : '');
-  var lineCls = failedTiles ? ' err' : (pendingTiles || held) ? ' busy' : pages.length ? ' ok' : '';
-  var joLine = asking ? 'Type the JO number' : jo ? ('JO ' + jo) : ((pages.length || saving || reading) ? 'Reading the JO number…' : '');
+  var lineCls = (held && reading) ? '' : failedTiles ? ' err' : (pendingTiles || (held && asking)) ? ' busy' : pages.length ? ' ok' : '';
+  var joLine = asking ? 'Type the JO number' : (jo ? ('JO ' + jo) : '');
   var pending = 0, needs = 0, failed = 0;
   rows.forEach(function (r) {
     if (r.state === 'waiting' || r.state === 'uploading') pending++;
-    else if (r.state === 'needsjo') needs++;
+    else if (r.state === 'needsjo' && !validJo(r.jo)) { if (!sameRead(r.scan)) needs++; }
     else if (r.state === 'failed') failed++;
   });
   var counter = pending ? (pending + ' uploading') : needs ? (needs === 1 ? '1 needs JO' : needs + ' need JO') : failed ? (failed + ' failed') : '';
@@ -1766,7 +1829,8 @@ function fileAs(item, jo, fromCard, announce) {
   return item;
 }
 function addCorrectBtn(box) {
-  if (!box || !lastFiled || !lastFiled.jo || box.querySelector('[data-oyp-correct]')) return;
+  if (!box || !lastFiled || box.querySelector('[data-oyp-correct]')) return;
+  if (!lastFiled.jo && !lastFiled.missed) return;
   var row = box.querySelector('.la') || box;
   var b = document.createElement('button');
   b.type = 'button';
@@ -1781,8 +1845,6 @@ function refile(jo) {
   if (!q || !lastImage) { say('Scan the page again under JO ' + jo + '.'); return Promise.resolve(null); }
   var prev = lastFiled || {};
   var it = prev.id && q.get ? q.get(prev.id) : null;
-  if (it && (it.state === 'waiting' || it.state === 'failed' || !it.state) && q.remove) q.remove(it.id);
-  else if (it && q.discard) q.discard(it.id);
   var page = (it && it.page) || prev.page || 1;
   var tagM = String(prev.filename || '').match(/-(\d{6}[a-z]?)\.jpe?g$/i);
   var tag = tagM ? tagM[1] : dateTag();
@@ -1790,17 +1852,29 @@ function refile(jo) {
   var item = { jo: jo, page: page, filename: jo + '-p' + page + '-' + tag + '.jpg', scan: jo + '@' + stamp, image: lastImage, thumb: lastThumb || '' };
   lastFiled = { id: '', jo: jo, page: page, filename: item.filename, scan: item.scan };
   if (sc.state) { sc.state.jo = jo; sc.state.scan = item.scan; }
+  if (sc.cap) { sc.cap.asking = false; sc.cap.reading = false; }
+  var pages = (sc.cap && sc.cap.pages) || [];
+  for (var i = 0; i < pages.length; i++) {
+    var p = pages[i];
+    if (!(p.held || p.jo === HOLD || p.scan === prev.scan)) continue;
+    p.jo = jo; p.held = false; p.scan = item.scan; p.filename = item.filename;
+  }
   fillJo(jo);
+  if (typeof sc.capStep === 'function') sc.capStep({ id: 'scan', text: 'JO ' + jo + ' read', state: 'ok' });
+  // Both sticker posts go out before the page is rewritten. The upload can take as long as it takes.
+  if (typeof sc.stickersSoon === 'function') sc.stickersSoon(jo, item.scan);
+  if (it && (it.state === 'waiting' || it.state === 'failed' || it.state === 'needsjo' || !it.state) && q.remove) q.remove(it.id);
+  else if (it && q.discard) q.discard(it.id);
   return Promise.resolve(q.add(item)).then(function (saved) {
     lastFiled.id = (saved && saved.id) || (jo + '|' + item.filename + '|' + item.scan);
-    say('JO ' + jo + '.');
     addCorrectBtn(document.getElementById('lastScan'));
+    if (typeof sc.renderCapture === 'function') sc.renderCapture();
     return saved;
   });
 }
 function correct() {
-  if (!lastFiled || !lastFiled.jo) return;
-  askJo({ title: 'Correct the JO number', msg: 'This page will be filed as the number you type.', jo: lastFiled.jo, cancel: 'Cancel' }).then(function (jo) {
+  if (!lastFiled || (!lastFiled.jo && !lastFiled.missed)) return;
+  askJo({ title: 'Correct the JO number', msg: 'This page will be filed as the number you type.', jo: lastFiled.jo || '', cancel: 'Cancel' }).then(function (jo) {
     if (!jo || jo === lastFiled.jo) return;
     refile(jo);
   });
@@ -1815,7 +1889,22 @@ function installQueue(sc) {
     if (page === 1) ocrChain = resolveJo(item);
     else ocrChain = ocrChain.then(function (jo) { return jo || ''; });
     return ocrChain.then(function (jo) {
-      if (!jo || !validJo(jo)) { rollback(item); if (page === 1) say('Page not saved.'); return null; }
+      if (!jo || !validJo(jo)) {
+        if (page === 1) {
+          say('JO not read, tap Correct number');
+          var scMiss = scan();
+          if (scMiss && typeof scMiss.capStep === 'function') scMiss.capStep({ id: 'scan', text: 'JO not read, tap Correct number', state: 'err' });
+        }
+        item.held = true;
+        item.jo = HOLD;
+        return orig(item).then(function (saved) {
+          lastImage = item.image || lastImage;
+          lastThumb = item.thumb || lastThumb;
+          lastFiled = { id: (saved && saved.id) || '', jo: '', page: item.page, filename: item.filename, scan: item.scan, missed: true };
+          addCorrectBtn(document.getElementById('lastScan'));
+          return saved;
+        });
+      }
       fileAs(item, jo, page === 1 && lastFromCard, page === 1);
       return Promise.resolve(orig(item)).then(function (saved) {
         lastFiled.id = (saved && saved.id) || (item.jo + '|' + item.filename + '|' + item.scan);

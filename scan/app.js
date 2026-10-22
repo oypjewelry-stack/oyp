@@ -38,11 +38,14 @@ const state = { jo: '', page: 0, scan: '', stream: null, loop: null, lastQuad: n
 const MAX_PX = 1600, QUALITY = 0.8, THUMB_PX = 160, STEADY_MS = 900, COOLDOWN_MS = 2500;
 const PHOTO = { maxPx: MAX_PX, quality: QUALITY }, PHOTO_SRC_PX = MAX_PX;
 const JPEG_WORKER = 'jpeg-worker.js?v=20261021b';
+const PAGE_WORKER = 'page-worker.js?v=20261022b';
 
 /* ---------- JO normalisation (shared logic with Code.gs) ---------- */
 function normJO(s) {
   // keeps a revision letter: '26-005B', '26-005 b' -> '26-005B'
-  const m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
+  // an en dash is a hyphen, and O inside the number is a zero: '26–36O' -> '26-360'
+  const t = String(s || '').toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-').replace(/O/g, '0');
+  const m = t.match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})(?:\s?([A-Z])(?![A-Z0-9]))?/);
   return m ? m[1] + '-' + m[2] + (m[3] || '') : String(s || '').trim().toUpperCase().replace(/^J\.?O\.?\s*#?\s*/, '');
 }
 window.normJO = normJO;
@@ -477,10 +480,38 @@ function renderOut(src, quad, enh, maxPx) {
   const cv = window.cv;
   if (quad && cv && cv.Mat) { try { const m = cv.imread(out), d = CardDetector.deskew(cv, m); cv.imshow(out, d.mat); m.delete(); d.mat.delete(); } catch (err) { console.warn(err); } }
   if (enh && cv && cv.Mat) { try { const m = cv.imread(out), e = CardDetector.enhance(cv, m); cv.imshow(out, e); m.delete(); e.delete(); } catch (err) { console.warn(err); } }
-  out = rotateCanvas(out, rotFor(out)); // upright before compression, thumbnail, queue and upload
+  out = orientPage(out, !!quad); // text upright before compression, thumbnail, queue and upload
   // Every warped page is the same pixel size, so a zone box lands on the same part of the card.
+  const extra = out.__oypExtra || 0;
   if (quad && window.CardDetector && CardDetector.fitStandard) out = CardDetector.fitStandard(out, maxPx || MAX_PX);
+  out.__oypExtra = extra;
+  if (quad) window.__oypZoneExtra = extra;
   return out;
+}
+function quarterKey(q) {
+  q = ((q % 4) + 4) % 4;
+  return q === 1 ? 'cw' : q === 2 ? '180' : q === 3 ? 'ccw' : 'none';
+}
+function legacyQuarters(c) {
+  const k = rotFor(c);
+  return k === 'ccw' ? 3 : k === '180' ? 2 : k === 'none' ? 0 : 1;
+}
+// A warped card follows the text, not only the photo's shape. The zone boxes were drawn on the
+// old shape-based frame, so __oypExtra is how many extra clockwise quarters this page turned.
+function orientPage(out, warped) {
+  const cv = window.cv;
+  let turns = legacyQuarters(out), extra = 0;
+  if (warped && cv && cv.Mat && window.CardDetector && CardDetector.uprightTurns) {
+    try {
+      const m = cv.imread(out);
+      const up = CardDetector.uprightTurns(cv, m, turns);
+      m.delete();
+      if (up >= 0 && up < 4) { extra = (up - turns + 4) % 4; turns = up; }
+    } catch (err) { console.warn(err); }
+  }
+  const page = rotateCanvas(out, quarterKey(turns));
+  page.__oypExtra = extra;
+  return page;
 }
 function pageCanvas(src) { // the frame cropFrom sees: detect, warp, deskew, turn, standard size. No upload.
   let quad = null;
@@ -503,6 +534,20 @@ function dateTag(d) {
   return m.slice(5, 7) + m.slice(8, 10) + m.slice(2, 4);
 }
 function pageName(jo, page, d) { return `${jo}-p${page}-${dateTag(d)}.jpg`; }
+function pageThumb(out) { // a pixel copy of the whole card, taken before the zone crop runs
+  const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1);
+  const th = document.createElement('canvas');
+  th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
+  const g = th.getContext('2d');
+  g.drawImage(out, 0, 0, th.width, th.height);
+  const snap = g.getImageData(0, 0, th.width, th.height);
+  const copy = document.createElement('canvas');
+  copy.width = th.width; copy.height = th.height;
+  copy.getContext('2d').putImageData(snap, 0, 0);
+  const url = copy.toDataURL('image/jpeg', 0.6);
+  th.width = th.height = copy.width = copy.height = 0;
+  return url;
+}
 function newClientId() {
   try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
   return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
@@ -518,15 +563,23 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
   const cvOk = !!(window.cv && window.cv.Mat);
   const plain = opt.plain != null ? !!opt.plain : (wantDetector && !cvOk && !opt.prepared);
   const enh = enhanceOn(), out = opt.prepared || renderOut(src, quad, enh, opt.maxPx || MAX_PX);
-  const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1), th = document.createElement('canvas');
-  th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
-  th.getContext('2d').drawImage(out, 0, 0, th.width, th.height);
-  const thumb = th.toDataURL('image/jpeg', 0.6);
+  const thumb = pageThumb(out);
   const image = await canvasJpeg(out, opt.quality || QUALITY); out.width = out.height = 0;
   let p;
   const shot = replace && replace.shot ? replace.shot : new Date();
+  const preview = !replace && cap.pages.find(x => x.preview);
   if (replace) p = { jo: replace.jo, page: replace.page, filename: replace.filename, scan: replace.scan, shot, held: !!replace.held }; // re-crop: same file name, replaces it
-  else {
+  else if (preview) {
+    state.page++; updatePageLabel();
+    p = preview;
+    p.jo = state.jo; p.page = state.page; p.scan = state.scan;
+    p.shot = preview.shot || shot;
+    p.filename = pageName(state.jo, state.page, p.shot);
+    p.held = state.jo === 'OCR';
+    delete p.preview;
+    if (p.objectUrl) { try { URL.revokeObjectURL(p.objectUrl); } catch (e) {} delete p.objectUrl; }
+    cap.saving = false;
+  } else {
     state.page++; updatePageLabel();
     p = { jo: state.jo, page: state.page, filename: pageName(state.jo, state.page, shot), scan: state.scan, shot };
     if (state.jo === 'OCR') p.held = true; // number still unknown: keep the photo on this screen
@@ -537,6 +590,10 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
   p.clientId = newClientId(); // a new photo, including a re-crop. Retries keep the id already stored on the queue item.
   Object.assign(p, shotContext());
   if (p.held) p.image = image; // the capture screen still reads the number from this copy
+  if (p.held && image && !p.joCrop) {
+    if (opt.zoneUrl) p.joCrop = opt.zoneUrl;
+    else { try { p.joCrop = await joCropUrl(image); } catch (e) { console.warn(e); } }
+  }
   if (replace && photo.last && photo.last.pg === replace) { // Adjust crop on a Scan JO photo
     photo.last.pg = Object.assign({ quad }, p);
     const i = cap.pages.findIndex(x => x === replace || (x.scan === replace.scan && x.filename === replace.filename && x.page === replace.page));
@@ -586,7 +643,7 @@ function warpJS(src, q, maxPx) {
    The photo goes through the same detector, crop, enhance, rotation and savePage() as a live shot. It saves straight away
    (live shots save straight away when the outline is clean); the result card offers Adjust crop afterwards. */
 const photo = { busy: false, cont: false, last: null };
-const cap = { pages: [], saving: false, asking: false, reading: false, filing: null }; // pages of the capture currently on screen
+const cap = { pages: [], saving: false, asking: false, reading: false, filing: null, steps: [] }; // pages of the capture currently on screen
 let captureView = null; // one joStatus() result for the render that paints the tile, the line, and the counter
 
 /* JO sticker and Jewelry tag: both on by default, each remembered on this phone.
@@ -621,6 +678,31 @@ function jpegWorkerRef() {
   };
   jpegWorker.onerror = () => { jpegWorkerBroken = true; jpegJobs.forEach(j => { clearTimeout(j.timer); j.reject(new Error('worker failed')); }); jpegJobs.clear(); jpegWorker = null; };
   return jpegWorker;
+}
+let pageWorker = null, pageJobs = new Map(), pageJob = 0, pageWorkerBroken = false;
+function pageWorkerRef() {
+  if (pageWorkerBroken) return null;
+  if (pageWorker) return pageWorker;
+  if (typeof Worker !== 'function' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap !== 'function') return null;
+  try { pageWorker = new Worker(PAGE_WORKER); } catch (e) { pageWorkerBroken = true; pageWorker = null; return null; }
+  pageWorker.onmessage = e => {
+    const j = pageJobs.get(e.data && e.data.id); if (!j) return; pageJobs.delete(e.data.id); clearTimeout(j.timer);
+    if (e.data.error) j.reject(new Error(e.data.error)); else j.resolve(e.data);
+  };
+  pageWorker.onerror = () => { pageWorkerBroken = true; pageJobs.forEach(j => { clearTimeout(j.timer); j.reject(new Error('page worker failed')); }); pageJobs.clear(); pageWorker = null; };
+  return pageWorker;
+}
+function pageCall(msg, transfers) {
+  const w = pageWorkerRef(); if (!w) return Promise.reject(new Error('no page worker'));
+  const id = ++pageJob;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { pageJobs.delete(id); reject(new Error('page worker timeout')); }, 60000);
+    pageJobs.set(id, { resolve, reject, timer });
+    try { w.postMessage(Object.assign({ id }, msg), transfers || []); } catch (e) { clearTimeout(timer); pageJobs.delete(id); reject(e); }
+  });
+}
+function warmPageWorker() {
+  pageCall({ op: 'ping', cvUrls: CV_URLS, detUrl: 'detector.js?v=20261022k' }).then(() => { lastTiming.pageReady = 1; }, () => { lastTiming.pageReady = -1; });
 }
 function workerCall(msg, transfers) {
   const w = jpegWorkerRef(); if (!w) return Promise.reject(new Error('no worker'));
@@ -795,6 +877,8 @@ function applyJpegOrient(c, orient, raw) {
   return orientedCanvas(c, c.width, c.height, tag);
 }
 function loadPhoto(file) { // EXIF exactly once, then the caller runs rotFor. HEIC irot is libheif's display, not a JPEG tag.
+  const t0 = performance.now();
+  const done = p => Promise.resolve(p).then(c => { lastTiming.decode = Math.round(performance.now() - t0); return c; });
   if (isHeic(file)) return heicToCanvas(file);
   const read = file.arrayBuffer ? file.arrayBuffer().catch(() => null) : Promise.resolve(null);
   return read.then(buf => {
@@ -810,8 +894,8 @@ function loadPhoto(file) { // EXIF exactly once, then the caller runs rotFor. HE
       return applyJpegOrient(c, orient, raw);
     });
     const main = () => loadPhotoMain(file).then(c => applyJpegOrient(c, orient, raw));
-    if (!buf || !jpegWorkerRef()) return main();
-    return viaWorker().catch(e => { console.warn('scale worker', e); return main(); });
+    if (!buf || !jpegWorkerRef()) return done(main());
+    return done(viaWorker().catch(e => { console.warn('scale worker', e); return main(); }));
   });
 }
 function loadPhotoMain(file) {
@@ -832,26 +916,96 @@ function captureStamp(scan) {
   const i = s.indexOf('@');
   return i >= 0 ? s.slice(i + 1) : '';
 }
-function stickersSoon(jo) { // page 1 only. Fire-and-forget: printEnqueue uses the JO number, and a later upload does not duplicate it.
+function stickersSoon(jo, scan) { // the JO is known. printEnqueue uses the number, and a later upload does not duplicate it.
   jo = realJO(jo);
   if (!jo) return;
-  const pages = cap.pages || [];
-  const later = pages.some(p => (parseInt(p.page, 10) || 1) > 1);
-  const filed = pages.some(p => (parseInt(p.page, 10) || 1) === 1 && !p.held && p.jo !== 'OCR');
-  if (later || filed || state.page > 1) return;
-  const key = (captureStamp(state.scan) || state.scan || '') + '|' + jo; // the stamp stays put when OCR@stamp is renamed to the JO
+  const src = scan || state.scan;
+  const key = (captureStamp(src) || src || '') + '|' + jo; // the stamp stays put when OCR@stamp is renamed to the JO
   if (stickerSentFor === key) return;
   stickerSentFor = key;
+  const kinds = [];
+  if (stickerOn('jo')) kinds.push('jo_card'); // B31
+  if (stickerOn('tag')) kinds.push('jewelry_tag'); // B1
+  if (!kinds.length) return;
   const token = localStorage.getItem(LS.token) || '';
   const go = window.__oypNativeFetch || fetch;
-  const post = kind => {
+  capStep({ id: 'send', text: 'Sending to printer…', state: 'run' });
+  let left = kinds.length, bad = false;
+  kinds.forEach(kind => {
     const body = JSON.stringify({ op: 'printEnqueue', token, jo, kind });
-    go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body }).catch(() => {});
+    go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body })
+      .then(r => r.json())
+      .then(j => { if (!j || j.ok === false) bad = true; })
+      .catch(() => { bad = true; })
+      .then(() => {
+        if (--left) return;
+        if (bad) capStep({ id: 'send', text: 'Stickers did not queue. Check the printers on the staff page.', state: 'err' });
+        else {
+          capStep({ id: 'send', text: 'Stickers queued for ' + jo, state: 'ok' });
+          setTimeout(() => note('Stickers queued for ' + jo), 0);
+          watchPrinted(jo, kinds);
+        }
+      });
+  });
+}
+function watchPrinted(jo, kinds) {
+  let n = 0;
+  const token = localStorage.getItem(LS.token) || '';
+  const go = window.__oypNativeFetch || fetch;
+  const tick = () => {
+    n++;
+    go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ op: 'printQueue', token, jo }) })
+      .then(r => r.json())
+      .then(j => {
+        const got = (j && j.printedKinds) || [];
+        if (kinds.every(k => got.indexOf(k) >= 0)) capStep({ id: 'printed', text: 'Printed', state: 'ok' });
+        else if (n < 8) setTimeout(tick, 3000);
+      })
+      .catch(() => { if (n < 8) setTimeout(tick, 3000); });
   };
-  if (stickerOn('jo')) post('jo_card');
-  if (stickerOn('tag')) post('jewelry_tag');
+  setTimeout(tick, 3000);
 }
 let earlyRead = null;
+let lastGuess = '';
+const lastTiming = { t0: 0, paint: 0, shown: 0, decode: 0, pageWall: 0, mainGap: 0, phases: null, ocr: 0, lookup: 0, jo: '', pageReady: 0 };
+const JO_LIST_KEY = 'oypJoList';
+function joListCache() {
+  try {
+    const j = JSON.parse(localStorage.getItem(JO_LIST_KEY) || 'null');
+    return j && Array.isArray(j.jos) ? j : { jos: [], at: 0 };
+  } catch (e) { return { jos: [], at: 0 }; }
+}
+function strictJO(text) { // the whole OCR line is one JO. A longer digit run is a guess, not a nearby number.
+  const t = String(text || '').toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-').replace(/O/g, '0').replace(/[^0-9A-Z-]/g, '');
+  return /^\d{2}-\d{3,4}[A-Z]?$/.test(t) ? t : '';
+}
+function lookupJo(text) { // exact list hit when the phone has one. A new JO still files. No network, and no nearby-number swap.
+  const t0 = performance.now();
+  const jo = strictJO(text);
+  let out = jo;
+  if (jo) {
+    const hit = joListCache().jos.map(realJO).find(n => n === jo);
+    if (hit) out = hit;
+  }
+  lastTiming.lookup = Math.round(performance.now() - t0);
+  return out || '';
+}
+function refreshJoList() { // background. A scan never waits on this.
+  const go = window.__oypNativeFetch || fetch;
+  const token = localStorage.getItem(LS.token) || '';
+  go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ op: 'joList', token }) })
+    .then(r => r.json())
+    .then(j => {
+      if (!j || j.ok === false || !Array.isArray(j.jos)) return;
+      const jos = [];
+      j.jos.forEach(x => { const n = realJO(x); if (n && jos.indexOf(n) < 0) jos.push(n); });
+      try { localStorage.setItem(JO_LIST_KEY, JSON.stringify({ jos, at: j.at || Date.now() })); } catch (e) {}
+    })
+    .catch(() => {});
+}
+function currentGuess() { return lastGuess; }
 function acceptCardJo(jo) { // the card read won. File every held page of this scan, or remember the number before the page is stored.
   jo = realJO(jo);
   if (!jo) return false;
@@ -865,13 +1019,12 @@ function acceptCardJo(jo) { // the card read won. File every held page of this s
   }
   return true;
 }
-function startEarlyRead(dataUrl) { // the JO crop does not need enhance, so the sticker can be queued while enhance runs
+function startEarlyRead(dataUrl, alreadyCrop) { // zone crop only. The sticker can be queued while the page JPEG is still encoding.
   const scan = state.scan;
   const stamp = captureStamp(scan);
   earlyRead = (async () => {
     let jo = '';
-    try { jo = await ocrJoNumber(dataUrl); } catch (e) { console.warn('readJo', e); }
-    if (!jo) { try { jo = await ocrJoPage(dataUrl); } catch (e) { console.warn('readJo page', e); } }
+    try { jo = await ocrJoNumber(dataUrl, !!alreadyCrop); } catch (e) { console.warn('readJo', e); }
     if (jo && (state.scan === scan || (stamp && captureStamp(state.scan) === stamp))) acceptCardJo(jo);
     return jo;
   })();
@@ -884,27 +1037,84 @@ function enhanceCanvas(canvas) {
     cv.imshow(canvas, e); m.delete(); e.delete();
   } catch (e) { console.warn('enhance', e); }
 }
+async function prepareOffThread(src) {
+  const w = pageWorkerRef();
+  if (!w) return null;
+  let bmp;
+  try { bmp = await createImageBitmap(src); }
+  catch (e) { return null; }
+  const zone = zonesNow().find(z => z && z.id === 'jo') || null;
+  let maxGap = 0, last = performance.now(), on = true;
+  const loop = t => { const g = t - last; if (g > maxGap) maxGap = g; last = t; if (on) requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+  const t0 = performance.now();
+  let res;
+  try {
+    res = await pageCall({
+      op: 'page', bitmap: bmp, maxPx: MAX_PX, rotateKey: rotation(), crop: $('doCrop').checked,
+      enhance: enhanceOn(), zone, cvUrls: CV_URLS, detUrl: 'detector.js?v=20261022k'
+    }, [bmp]);
+  } catch (e) { on = false; console.warn('page worker', e); return null; }
+  on = false;
+  lastTiming.pageWall = Math.round(performance.now() - t0);
+  lastTiming.mainGap = Math.round(maxGap);
+  lastTiming.phases = res && res.ms || null;
+  if (!res || !res.bitmap) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = res.width; canvas.height = res.height;
+  canvas.getContext('2d').drawImage(res.bitmap, 0, 0);
+  if (res.bitmap.close) res.bitmap.close();
+  canvas.__oypExtra = res.extra || 0;
+  window.__oypZoneExtra = res.extra || 0;
+  let zoneUrl = '';
+  if (res.zoneBitmap) {
+    const zc = document.createElement('canvas');
+    zc.width = res.zoneBitmap.width; zc.height = res.zoneBitmap.height;
+    zc.getContext('2d').drawImage(res.zoneBitmap, 0, 0);
+    zoneUrl = zc.toDataURL('image/jpeg', 0.85);
+    if (res.zoneBitmap.close) res.zoneBitmap.close();
+    zc.width = zc.height = 0;
+  }
+  return { canvas, quad: res.quad || null, zoneUrl, hold: !!res.hold };
+}
+async function enhanceOffThread(canvas) {
+  let res;
+  try { res = await pageCall({ op: 'enhance', cvUrls: CV_URLS, detUrl: 'detector.js?v=20261022k' }); }
+  catch (e) { console.warn('enhance', e); return; }
+  if (!res || !res.bitmap) return;
+  canvas.getContext('2d').drawImage(res.bitmap, 0, 0, canvas.width, canvas.height);
+  if (res.bitmap.close) res.bitmap.close();
+}
 async function autoSave(src) {
   stickersSoon(state.jo);
   const crop = $('doCrop').checked;
-  const cv = (crop || enhanceOn()) ? await detectorReady() : (window.cv && window.cv.Mat ? window.cv : null);
-  let q = null;
-  if (crop && cv && cv.Mat) {
-    try { q = detect(cv, src); } catch (e) { console.warn('detect', e); }
-    if (q) {
-      try { const m = cv.imread(src); q = CardDetector.refineQuad(cv, m, CardDetector.order(q)); m.delete(); }
-      catch (e) { console.warn('refine', e); }
+  let prepared = null, quad = null, plain = false, zoneUrl = '';
+  const off = (crop || enhanceOn()) ? await prepareOffThread(src) : null;
+  if (off) {
+    prepared = off.canvas; quad = off.quad; zoneUrl = off.zoneUrl || '';
+  } else if (crop || enhanceOn()) {
+    const cv = await detectorReady();
+    let q = null;
+    if (crop && cv && cv.Mat) {
+      try { q = detect(cv, src); } catch (e) { console.warn('detect', e); }
+      if (q) {
+        try { const m = cv.imread(src); q = CardDetector.refineQuad(cv, m, CardDetector.order(q)); m.delete(); }
+        catch (e) { console.warn('refine', e); }
+      }
     }
+    quad = q && CardDetector.order(q);
+    plain = !(cv && cv.Mat);
+    if (!plain && state.page === 0 && !realJO(state.jo)) prepared = renderOut(src, quad, false, MAX_PX);
   }
-  const quad = q && CardDetector.order(q);
-  const plain = (crop || enhanceOn()) && !(cv && cv.Mat);
-  let prepared = null;
-  if (!plain && state.page === 0 && !realJO(state.jo)) {
-    prepared = renderOut(src, quad, false, MAX_PX);
-    try { startEarlyRead(await canvasJpeg(prepared, QUALITY)); } catch (e) { console.warn(e); }
-    enhanceCanvas(prepared);
+  if (prepared && state.page === 0 && !realJO(state.jo)) {
+    try {
+      if (zoneUrl) startEarlyRead(zoneUrl, true);
+      else startEarlyRead(await canvasJpeg(prepared, QUALITY));
+    } catch (e) { console.warn(e); }
   }
-  const pg = await savePage(src, quad, null, Object.assign({}, PHOTO, { prepared, plain }));
+  if (off && off.hold) await enhanceOffThread(prepared);
+  else if (!off && prepared) enhanceCanvas(prepared);
+  const pg = await savePage(src, quad, null, Object.assign({}, PHOTO, { prepared, plain, zoneUrl }));
   if (pg) { pg.quad = quad; if (plain) pg.plain = true; }
   return pg;
 }
@@ -931,11 +1141,8 @@ async function reprocessPlain() { // a page saved before OpenCV arrived. Replace
         }
       }
       const out = renderOut(src, quad, enhanceOn(), MAX_PX);
+      const thumb = pageThumb(out);
       const image = await canvasJpeg(out, QUALITY);
-      const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1), th = document.createElement('canvas');
-      th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
-      th.getContext('2d').drawImage(out, 0, 0, th.width, th.height);
-      const thumb = th.toDataURL('image/jpeg', 0.6);
       out.width = out.height = 0; src.width = src.height = 0;
       const plan = OYPQueue.reprocessPlan(it, realJO(state.jo));
       await queue.add(Object.assign({}, it, { image, thumb, plain: false, held: plan.held, boundJo: plan.bind ? plan.jo : '' }));
@@ -1052,13 +1259,165 @@ async function postReadJo(b64) {
     body: JSON.stringify({ op: 'readJo', token: localStorage.getItem(LS.token) || '', ocrBase64: b64 }) });
   try { return await res.json(); } catch (e) { return null; }
 }
-async function ocrJoNumber(dataUrl) { // readJo on the JO-number zone only. A typed number never comes through here.
-  await waitZones();
-  const zone = zonesNow().find(z => z && z.id === 'jo');
-  if (!zone) return '';
-  const b64 = await cropZoneB64(dataUrl, zone);
+async function ocrJoNumber(dataUrl, alreadyCrop) { // the JO-number zone only, already upright. A typed number never comes through here.
+  let b64 = '';
+  if (alreadyCrop) b64 = jpegPayload(dataUrl);
+  else {
+    await waitZones();
+    const zone = zoneForScan(zonesNow().find(z => z && z.id === 'jo'));
+    if (!zone) return '';
+    b64 = await cropZoneB64(dataUrl, zone);
+  }
   if (!b64) return '';
-  return joFromRead(await postReadJo(b64));
+  const t0 = performance.now();
+  const hand = await handReadJo(b64);
+  lastTiming.ocr = Math.round(performance.now() - t0);
+  lastGuess = hand && !realJO(hand) ? String(hand).trim() : '';
+  const jo = lookupJo(hand);
+  lastTiming.jo = jo || '';
+  return jo || '';
+}
+function zoneForScan(zone) {
+  const extra = window.__oypZoneExtra || 0;
+  if (!zone || !extra || !window.OYPZones || typeof OYPZones.turnZone !== 'function') return zone;
+  return OYPZones.turnZone(zone, extra);
+}
+async function uprightB64(b64) {
+  const url = await uprightCrop(b64);
+  const i = String(url || '').indexOf(',');
+  return i >= 0 ? String(url).slice(i + 1) : (url || b64);
+}
+async function uprightCrop(b64) {
+  const src = String(b64 || '');
+  const url = src.indexOf('data:') === 0 ? src : 'data:image/jpeg;base64,' + src;
+  const img = await loadDataUrl(url);
+  if (!img) return url;
+  const cv = window.cv;
+  if (!(cv && cv.Mat && window.CardDetector && CardDetector.uprightTurns)) return url;
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+  if (!c.width) return url;
+  c.getContext('2d').drawImage(img, 0, 0);
+  try {
+    const m = cv.imread(c);
+    const q = CardDetector.uprightTurns(cv, m, 0);
+    m.delete();
+    const o = rotateCanvas(c, quarterKey(q));
+    const out = o.toDataURL('image/jpeg', 0.85);
+    if (o !== c) o.width = o.height = 0;
+    return out;
+  } catch (e) { console.warn(e); return url; }
+}
+let tessP = null;
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (tessP) return tessP;
+  tessP = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('tesseract'));
+    s.onerror = () => reject(new Error('tesseract'));
+    document.head.appendChild(s);
+  });
+  return tessP;
+}
+async function prepDigitUrl(b64) {
+  const img = await loadDataUrl(String(b64 || '').indexOf('data:') === 0 ? b64 : 'data:image/jpeg;base64,' + b64);
+  if (!img) return '';
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  if (!w0 || !h0) return '';
+  const c = document.createElement('canvas');
+  c.width = w0; c.height = h0;
+  c.getContext('2d').drawImage(img, 0, 0);
+  const cv = window.cv;
+  if (cv && cv.Mat && window.CardDetector && CardDetector.prepDigits) {
+    try {
+      const m = cv.imread(c);
+      const bin = CardDetector.prepDigits(cv, m);
+      const out = document.createElement('canvas');
+      cv.imshow(out, bin);
+      m.delete(); bin.delete();
+      const url = out.toDataURL('image/png');
+      out.width = out.height = 0; c.width = c.height = 0;
+      return url;
+    } catch (e) { console.warn(e); }
+  }
+  const o = document.createElement('canvas');
+  o.width = w0 * 3; o.height = h0 * 3;
+  const g = o.getContext('2d');
+  g.drawImage(c, 0, 0, o.width, o.height);
+  const id = g.getImageData(0, 0, o.width, o.height), d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const y = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+    const v = y > 160 ? 255 : 0;
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  g.putImageData(id, 0, 0);
+  c.width = c.height = 0;
+  return o.toDataURL('image/png');
+}
+let tessWorker = null, tessWarm = null, ocrIsWarm = false;
+function warmOcr() { // one worker, language loaded, a tiny recognize so the first shutter is not the first compile
+  if (tessWarm) return tessWarm;
+  tessWarm = (async () => {
+    const T = await loadTesseract();
+    const worker = tessWorker || await T.createWorker('eng');
+    tessWorker = worker;
+    await worker.setParameters({ tessedit_char_whitelist: '0123456789-', tessedit_pageseg_mode: '7' });
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 24;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 24);
+    g.fillStyle = '#000'; g.font = '20px sans-serif'; g.fillText('26-363', 2, 18);
+    try { await worker.recognize(c); } catch (e) {}
+    c.width = c.height = 0;
+    ocrIsWarm = true;
+    return worker;
+  })().catch(e => { tessWarm = null; throw e; });
+  return tessWarm;
+}
+async function handReadJo(b64) {
+  try {
+    const url = await prepDigitUrl(b64);
+    if (!url) return '';
+    const worker = await warmOcr();
+    const img = await loadDataUrl(url);
+    const base = document.createElement('canvas');
+    base.width = img ? (img.naturalWidth || img.width) : 0;
+    base.height = img ? (img.naturalHeight || img.height) : 0;
+    if (!base.width) return '';
+    base.getContext('2d').drawImage(img, 0, 0);
+    const res = await worker.recognize(base);
+    base.width = base.height = 0;
+    const text = (res && res.data && res.data.text) || '';
+    const conf = res && res.data ? Number(res.data.confidence) || 0 : 0;
+    const jo = strictJO(text);
+    // handwriting that only almost matches stays a guess. A clear line is 90 and up.
+    if (jo && conf >= 70) return jo;
+    return String(text).toUpperCase().replace(/[^0-9-]/g, '').slice(0, 12);
+  } catch (e) { console.warn('hand', e); tessWorker = null; tessWarm = null; return ''; }
+}
+async function joCropUrl(dataUrl) {
+  await waitZones();
+  const img = await loadDataUrl(dataUrl);
+  if (!img) return '';
+  const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+  if (!sw || !sh) return '';
+  const zone = zoneForScan(zonesNow().find(z => z && z.id === 'jo'));
+  let x = 0, y = 0, w = sw, h = Math.max(8, Math.round(sh * 0.18));
+  if (zone) {
+    x = Math.round(zone.x * sw); y = Math.round(zone.y * sh);
+    w = Math.round(zone.w * sw); h = Math.round(zone.h * sh);
+  }
+  if (x < 0) x = 0; if (y < 0) y = 0;
+  if (x + w > sw) w = sw - x; if (y + h > sh) h = sh - y;
+  if (w < 8 || h < 8) return '';
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, x, y, w, h, 0, 0, w, h);
+  const raw = c.toDataURL('image/jpeg', 0.85);
+  c.width = c.height = 0;
+  return uprightCrop(raw);
 }
 async function ocrJoPage(dataUrl) { // one readJo of the whole first page when the zone crop named nothing
   const b64 = await pageReadB64(dataUrl);
@@ -1067,7 +1426,8 @@ async function ocrJoPage(dataUrl) { // one readJo of the whole first page when t
 }
 function fileHeld(jo) { // the number is known: rename the kept pages and upload them as that JO
   jo = realJO(jo); if (!jo) return false;
-  stickersSoon(jo); // while the page is still held, so the filed guard does not skip the one print
+  capStep({ id: 'scan', text: 'JO ' + jo + ' read', state: 'ok' });
+  stickersSoon(jo); // while the page is still held, so the sticker is not skipped
   const oldScan = state.scan;
   const stamp = captureStamp(oldScan) || Date.now().toString(36);
   state.jo = jo; state.scan = jo + '@' + stamp;
@@ -1088,27 +1448,57 @@ function fileHeld(jo) { // the number is known: rename the kept pages and upload
   return true;
 }
 function askForJo() { // the photo is already on the capture screen; she types the number once
-  cap.asking = true; cap.reading = false; renderCapture();
+  cap.asking = true; cap.reading = false;
+  capStep({ id: 'scan', text: 'JO not read, tap Correct number', state: 'err' });
+  renderCapture();
   const input = $('capJoInput');
   if (input) setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 30);
 }
 async function readHeldJo() {
-  if (cap.reading || cap.asking) return;
+  // showShotNow sets cap.reading so the step list can say the read has started. That flag must not skip the read.
+  if (cap.readBusy || cap.asking) return;
   const stillHeld = () => cap.pages.some(p => p.held || p.jo === 'OCR');
-  if (realJO(state.jo)) { if (stillHeld()) fileHeld(realJO(state.jo)); return; }
+  if (realJO(state.jo)) { cap.reading = false; if (stillHeld()) fileHeld(realJO(state.jo)); return; }
   const page = cap.pages.find(p => p.held && p.image && (parseInt(p.page, 10) || 1) === 1);
-  if (!page && !earlyRead) return;
-  cap.reading = true; renderCapture();
+  if (!page && !earlyRead) { cap.reading = false; return; }
+  cap.readBusy = true;
+  cap.reading = true;
   let jo = '';
-  if (earlyRead) { try { jo = await earlyRead; } catch (e) { console.warn('readJo', e); } earlyRead = null; }
-  else if (page) {
-    try { jo = await ocrJoNumber(page.image); } catch (e) { console.warn('readJo', e); }
-    if (!jo && !realJO(state.jo)) { try { jo = await ocrJoPage(page.image); } catch (e) { console.warn('readJo page', e); } }
-    if (jo) stickersSoon(jo);
-  }
-  cap.reading = false;
+  try {
+    if (earlyRead) { try { jo = await earlyRead; } catch (e) { console.warn('readJo', e); } earlyRead = null; }
+    else if (page) {
+      try { jo = await ocrJoNumber(page.image); } catch (e) { console.warn('readJo', e); }
+      if (jo) stickersSoon(jo);
+    }
+  } finally { cap.reading = false; cap.readBusy = false; }
   if (realJO(state.jo)) { if (stillHeld()) fileHeld(realJO(state.jo)); return; }
-  if (jo) fileHeld(jo); else askForJo();
+  if (jo) fileHeld(jo); else if (stillHeld()) askForJo();
+}
+function dropPreview(preview) {
+  const i = cap.pages.indexOf(preview);
+  if (i >= 0) cap.pages.splice(i, 1);
+  if (preview && preview.objectUrl) { try { URL.revokeObjectURL(preview.objectUrl); } catch (e) {} }
+}
+function showShotNow(file) { // the photo and the reading line, before decode, trim, or OCR
+  const url = URL.createObjectURL(file);
+  const known = realJO(state.jo);
+  const preview = {
+    preview: true, objectUrl: url, thumb: url,
+    page: state.page + 1 + cap.pages.filter(p => p.preview).length,
+    jo: state.jo, held: !known, scan: state.scan, shot: new Date()
+  };
+  cap.pages.push(preview);
+  cap.saving = false;
+  cap.reading = !known;
+  capStep(known ? { id: 'scan', text: 'JO ' + known + ' read', state: 'ok' } : { id: 'scan', text: 'Saved, reading JO…', state: 'run' });
+  showView('capView');
+  renderCapture();
+  lastTiming.paint = Math.round(performance.now() - lastTiming.t0);
+  if (typeof location !== 'undefined' && /[?&]profile=/.test(location.search || '')) document.title = 'SHOWN';
+  return preview;
+}
+function paintFrames() {
+  return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
 async function handlePhotos(files, fromCamera) {
   files = Array.from(files || []).filter(f => /^image\//.test(f.type) || /\.(hei[cf]|jpe?g|png|webp)$/i.test(f.name));
@@ -1118,20 +1508,24 @@ async function handlePhotos(files, fromCamera) {
   const fresh = !sameCard;
   if (fresh) {
     state.jo = typed || 'OCR'; state.page = 0; state.scan = state.jo + '@' + Date.now().toString(36); cap.pages = [];
-    cap.asking = false; cap.reading = false;
+    cap.asking = false; cap.reading = false; cap.steps = [];
+    capStep({ id: 'scan', text: 'Scanning JO number…', state: 'run' });
     const ask = $('capJoInput'); if (ask) ask.value = '';
   } else if (typed && state.jo === 'OCR') fileHeld(typed);
   photo.cont = false; // consumed; Next page sets it again on the tap that opens the camera
   showView('capView'); photoBusy(true);
+  lastTiming.t0 = performance.now();
   let saved = 0;
   try {
     for (const f of files) {
-      cap.saving = true; renderCapture();
-      let src; try { src = await loadPhoto(f); } catch (e) { cap.saving = false; note('Photo not saved: ' + (e.message || e)); continue; }
-      await new Promise(r => setTimeout(r, 30)); // let "Saving…" paint before the heavy work
+      const preview = showShotNow(f);
+      await paintFrames();
+      lastTiming.shown = Math.round(performance.now() - lastTiming.t0);
+      if (typeof location !== 'undefined' && /[?&]profile=after(?:&|$)/.test(location.search || '')) document.title = 'WORKING';
+      let src; try { src = await loadPhoto(f); } catch (e) { dropPreview(preview); note('Photo not saved: ' + (e.message || e)); continue; }
       const pg = await autoSave(src);
       cap.saving = false;
-      if (!pg) continue;
+      if (!pg) { dropPreview(preview); continue; }
       saved++;
       if (photo.last && photo.last.src !== src) { photo.last.src.width = photo.last.src.height = 0; } // keep only the latest photo for Adjust
       photo.last = { src, pg }; if (navigator.vibrate) navigator.vibrate(40);
@@ -1163,23 +1557,44 @@ function capMatch(pg) {
 }
 function capState(pg) {
   const it = capMatch(pg);
-  if (!it) return (pg.held && cap.asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === 'OCR') ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Waiting' };
+  if (!it) return (pg.held && cap.asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === 'OCR') ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Uploading…' };
   if (it.state === 'needsjo') return { cls: 'err', t: 'Type JO' };
   if (it.state === 'uploading') return { cls: 'busy', t: 'Uploading…' };
-  if (it.state === 'waiting') return { cls: 'queued', t: isOn() ? (it.error ? 'Retrying' : 'Waiting') : 'Offline' };
+  if (it.state === 'waiting') return { cls: 'queued', t: isOn() ? (it.error ? 'Retrying' : 'Uploading…') : 'Offline' };
   if (it.state === 'saved') return { cls: 'ok', t: 'Saved' };
   if (it.state === 'mismatch') return { cls: 'mm', t: 'Check JO' };
   if (it.state === 'failed') return { cls: 'err', t: 'Failed', retry: it.id };
   return { cls: 'queued', t: it.state };
 }
+function capStep(step) {
+  cap.steps = OYPQueue.capSteps(cap.steps, step);
+  paintSteps();
+}
+function paintSteps() {
+  const ol = $('capSteps');
+  if (!ol) return;
+  ol.classList.toggle('hidden', !cap.steps.length);
+  ol.innerHTML = cap.steps.map(s => `<li class="${esc(s.state)}"><i aria-hidden="true"></i><span>${esc(s.text)}</span></li>`).join('');
+}
+function syncUploadStep() {
+  const pg = (cap.pages || []).find(p => (parseInt(p.page, 10) || 1) === 1);
+  if (!pg) return;
+  const it = capMatch(pg);
+  if (!it) return;
+  const page = parseInt(pg.page, 10) || 1;
+  if (it.state === 'uploading' || it.state === 'waiting') cap.steps = OYPQueue.capSteps(cap.steps, { id: 'up', text: 'Uploading page ' + page + '…', state: 'run' });
+  else if (it.state === 'saved' || it.state === 'mismatch') cap.steps = OYPQueue.capSteps(cap.steps, { id: 'up', text: 'Uploaded', state: 'ok' });
+  else if (it.state === 'failed') cap.steps = OYPQueue.capSteps(cap.steps, { id: 'up', text: 'Upload failed. Open Pending uploads to retry.', state: 'err' });
+}
 function renderCapture() {
+  syncUploadStep();
   const view = readCapture();
   const strip = $('capStrip'), box = $('lastScan');
   if ($('capJo')) {
     if (view) $('capJo').textContent = view.joLine;
     else {
       const known = realJO(state.jo);
-      $('capJo').textContent = cap.asking ? 'Type the JO number' : known ? 'JO ' + known : ((cap.pages.length || cap.saving || cap.reading) ? 'Reading the JO number…' : '');
+      $('capJo').textContent = cap.asking ? 'Type the JO number' : known ? 'JO ' + known : '';
     }
   }
   const askForm = $('capJoForm'); if (askForm) askForm.classList.toggle('hidden', !cap.asking);
@@ -1200,10 +1615,13 @@ function renderCapture() {
     if (view) { prog.className = 'capprog' + (view.lineCls || ''); prog.textContent = view.line; }
     else {
       const held = cap.pages.some(p => p.held);
-      prog.className = 'capprog' + (failed ? ' err' : (pending || held) ? ' busy' : cap.pages.length ? ' ok' : '');
-      prog.textContent = held ? (cap.asking ? 'This photo stays here until you tap Save.' : 'Reading the JO number…') : !cap.pages.length && !cap.saving ? '' : failed ? (failed + (failed > 1 ? ' pages failed' : ' page failed')) : pending ? (pending === 1 ? '1 page still uploading' : pending + ' pages still uploading') : 'All saved';
+      const readingLine = held && cap.reading && !cap.asking;
+      prog.className = 'capprog' + (readingLine ? '' : failed ? ' err' : (pending || (held && cap.asking)) ? ' busy' : cap.pages.length ? ' ok' : '');
+      prog.textContent = readingLine ? '' : held ? (cap.asking ? 'This photo stays here until you tap Save.' : '') : !cap.pages.length && !cap.saving ? '' : failed ? (failed + (failed > 1 ? ' pages failed' : ' page failed')) : pending ? (pending === 1 ? '1 page still uploading' : pending + ' pages still uploading') : 'All saved';
     }
+    prog.classList.toggle('hidden', !prog.textContent);
   }
+  paintSteps();
   const retryAll = $('btnCapRetry'); if (retryAll) retryAll.classList.toggle('hidden', !failed);
   if (box) {
     const L = photo.last;
@@ -1216,7 +1634,7 @@ function finishCapture() {
   if (photo.busy) return; // the page being saved still goes into the queue when it finishes
   photo.cont = false;
   const c = queue.counts();
-  cap.pages = []; cap.saving = false; photo.last = null;
+  cap.pages = []; cap.saving = false; cap.steps = []; photo.last = null;
   $('joInput').value = '';
   showView('startView'); renderCapture();
   if (c.needsjo) note('Type the JO number in Pending uploads. The photo stays on this phone, and the sticker queues once the number is in.');
@@ -1233,6 +1651,14 @@ $('btnNextPage').addEventListener('click', e => {
 });
 $('btnNextPage').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('btnNextPage').click(); } });
 $('btnCapDone').onclick = finishCapture;
+function armScanStep(e) { // synchronous: the first step is on screen before the camera opens
+  if (photo.busy) return;
+  const next = e && e.currentTarget && e.currentTarget.id === 'btnNextPage';
+  showView('capView');
+  capStep(next ? { id: 'page', text: 'Scanning page…', state: 'run' } : { id: 'scan', text: 'Scanning JO number…', state: 'run' });
+}
+$('btnScanJO').addEventListener('pointerdown', armScanStep);
+$('btnNextPage').addEventListener('pointerdown', armScanStep);
 $('capJoForm').addEventListener('submit', e => {
   e.preventDefault();
   const jo = realJO($('capJoInput').value);
@@ -1247,6 +1673,14 @@ $('btnScanJO').addEventListener('click', e => {
 });
 $('btnScanJO').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('btnScanJO').click(); } });
 $('lnkGallery').addEventListener('click', e => { photo.cont = false; if (photo.busy) e.preventDefault(); });
+$('filePhoto').addEventListener('cancel', () => {
+  if (photo.busy || cap.pages.length) return;
+  const only = cap.steps.length === 1 && cap.steps[0].state === 'run' && (cap.steps[0].id === 'scan' || cap.steps[0].id === 'page');
+  if (!only) return;
+  cap.steps = [];
+  showView('startView');
+  renderCapture();
+});
 ['filePhoto', 'fileGallery'].forEach(id => $(id).addEventListener('change', e => {
   const fs = e.target.files, fromCamera = id === 'filePhoto';
   handlePhotos(fs, fromCamera).finally(() => {
@@ -1340,14 +1774,27 @@ function rowHtml(it, withJO) {
   const btns = it.state === 'failed' ? `<div class="acts"><button class="retry" data-retry="${esc(it.id)}">Retry</button>${rm}</div>`
     : it.state === 'uploading' ? '<span class="spin" aria-hidden="true"></span>' : '';
   const x = withJO ? `<button type="button" class="qx" data-discard="${esc(it.id)}" aria-label="Remove">×</button>` : '';
-  const fix = needs && withJO && (parseInt(it.page, 10) || 1) === 1
-    ? `<form class="jofix" data-jo-for="${esc(it.id)}"><div class="jofixrow"><input aria-label="JO number" placeholder="26-001" autocapitalize="characters" autocomplete="off" inputmode="text"><button class="jofixgo" type="submit">Save</button></div></form>`
+  const page1 = (parseInt(it.page, 10) || 1) === 1;
+  const crop = needs && withJO && page1 && it.joCrop
+    ? `<button type="button" class="jocrop" data-view="${esc(it.id)}" aria-label="JO number on the card"><img alt="JO number on the card" src="${esc(it.joCrop)}"></button>`
+    : '';
+  const pad = needs && withJO && page1 ? joPadHtml(it.id) : '';
+  const guess = esc(it.joGuess || '');
+  const fix = needs && withJO && page1
+    ? `${crop}${pad}<form class="jofix" data-jo-for="${esc(it.id)}"><div class="jofixrow"><input aria-label="JO number" placeholder="26-001" value="${guess}" autocapitalize="characters" autocomplete="off" inputmode="text"><button class="jofixgo" type="submit">Save</button></div></form>`
     : '';
   const sw = (withJO || (it.state !== 'failed' && !needs)) ? ` data-sw="${esc(it.id)}"` : ''; // Pending uploads: every row. Page strip: not failed, not unread.
   const name = withJO ? ((needs ? 'JO not read' : 'JO ' + it.jo) + ' · page ' + it.page) : it.filename;
-  const label = needs && (parseInt(it.page, 10) || 1) !== 1 ? 'Waiting for the JO number on page 1.' : OYPQueue.label(it, isOn());
-  return `<li class="${it.state}"${sw}><img alt="" src="${esc(it.thumb)}"><div class="tx"><div class="nm">${esc(name)}</div>`
+  const label = needs && !page1 ? 'Waiting for the JO number on page 1.' : OYPQueue.label(it, isOn());
+  const thumb = withJO && needs
+    ? `<button type="button" class="qthumb" data-view="${esc(it.id)}" aria-label="View this page"><img alt="" src="${esc(it.thumb)}"></button>`
+    : `<img alt="" src="${esc(it.thumb)}">`;
+  return `<li class="${it.state}"${sw}>${thumb}<div class="tx"><div class="nm">${esc(name)}</div>`
     + `<div class="st ${st}">${esc(label)}</div>${fix}</div>${btns}${x}</li>`;
+}
+function joPadHtml(id) {
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '-', '0', 'del'];
+  return `<div class="jopad">${keys.map(k => `<button type="button" data-pad="${k}"${k === 'del' ? ' aria-label="Delete"' : ''}>${k === 'del' ? '⌫' : esc(k)}</button>`).join('')}</div>`;
 }
 function renderQueue() {
   const c = queue.counts(), n = c.pending + c.failed + (c.needsjo || 0), txt = statusText(c);
@@ -1382,10 +1829,27 @@ function renderQueueBody(c, n, txt) {
 }
 function applyQueueJo(it, jo) {
   jo = realJO(jo); if (!jo || !it) return false;
-  if (it.scan && it.scan === state.scan) return fileHeld(jo);
-  const stamp = String(it.scan || '').split('@')[1] || Date.now().toString(36);
-  queue.bindJo(it.scan, jo, jo + '@' + stamp, page => pageName(jo, page.page, page.shot));
+  const scan = it.scan;
+  const stamp = String(scan || '').split('@')[1] || Date.now().toString(36);
+  stickersSoon(jo, scan);
+  const bound = (scan && scan === state.scan) ? fileHeld(jo) : queue.bindJo(scan, jo, jo + '@' + stamp, page => pageName(jo, page.page, page.shot));
+  Promise.resolve(bound).then(() => markTyped(scan, jo)).then(() => {
+    note('Saved to ' + jo);
+    const next = document.querySelector('#qList li.needsjo .jofix input');
+    if (next) { try { next.focus(); next.select(); } catch (e) {} }
+    const view = $('joView');
+    if (view && !view.classList.contains('hidden')) {
+      const id = next && next.closest('[data-jo-for]') && next.closest('[data-jo-for]').getAttribute('data-jo-for');
+      const row = id && queue.get(id);
+      if (row) openJoView(row); else view.classList.add('hidden');
+    }
+  });
   return true;
+}
+function markTyped(scan, jo) {
+  const stamp = String(scan || '').split('@')[1] || '';
+  const rows = queue.list().filter(row => row.jo === jo && (row.scan === scan || (stamp && String(row.scan || '').split('@')[1] === stamp)));
+  return rows.reduce((p, row) => p.then(() => queue.patch(row.id, { joTyped: true })), Promise.resolve());
 }
 document.addEventListener('submit', e => {
   const f = e.target && e.target.closest && e.target.closest('[data-jo-for]'); if (!f) return;
@@ -1395,7 +1859,95 @@ document.addEventListener('submit', e => {
   if (input) input.blur(); // Enter submits while the box is focused; blur so the list can show the number
   applyQueueJo(queue.get(f.getAttribute('data-jo-for')), jo);
 });
+function openJoView(it) {
+  if (!it) return;
+  const v = $('joView'); if (!v) return;
+  v.classList.remove('hidden');
+  v.dataset.id = it.id;
+  const img = $('jovImg');
+  const src = it.image || it.thumb || it.joCrop || '';
+  if (img) img.src = src.indexOf('data:') === 0 || src.indexOf('blob:') === 0 || src.indexOf('http') === 0 ? src : (src ? 'data:image/jpeg;base64,' + src : '');
+  const input = $('jovJo');
+  if (input) input.value = (it.state === 'needsjo' && it.joGuess) || '';
+  const bar = $('jovBar');
+  if (bar) bar.setAttribute('data-jo-for', it.id);
+  joZoom.reset();
+}
+const joZoom = { scale: 1, x: 0, y: 0, pts: new Map(), lastTap: 0, pinch: 0 };
+joZoom.reset = function () { joZoom.scale = 1; joZoom.x = 0; joZoom.y = 0; joZoom.pinch = 0; joZoom.apply(); };
+joZoom.apply = function () {
+  const img = $('jovImg'); if (!img) return;
+  if (joZoom.scale === 1 && !joZoom.x && !joZoom.y) { img.style.transform = ''; return; }
+  img.style.transform = 'translate(calc(-50% + ' + joZoom.x + 'px), calc(-50% + ' + joZoom.y + 'px)) scale(' + joZoom.scale + ')';
+};
+function bindJoView() {
+  const stage = $('jovStage'); if (!stage) return;
+  const close = $('jovClose');
+  if (close) close.addEventListener('click', () => $('joView').classList.add('hidden'));
+  stage.addEventListener('dblclick', () => {
+    if (joZoom.scale > 1) joZoom.reset();
+    else { joZoom.scale = 2.5; joZoom.apply(); }
+  });
+  stage.addEventListener('touchstart', e => {
+    for (const t of e.changedTouches) joZoom.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+    if (e.touches.length === 1) {
+      const now = Date.now();
+      if (now - joZoom.lastTap < 280) {
+        if (joZoom.scale > 1) joZoom.reset();
+        else { joZoom.scale = 2.5; joZoom.apply(); }
+        joZoom.lastTap = 0;
+      } else joZoom.lastTap = now;
+    }
+    if (e.touches.length === 2) {
+      const a = e.touches[0], b = e.touches[1];
+      joZoom.pinch = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+    }
+  }, { passive: true });
+  stage.addEventListener('touchmove', e => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const a = e.touches[0], b = e.touches[1];
+      const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+      joZoom.scale = Math.min(5, Math.max(1, joZoom.scale * (dist / (joZoom.pinch || dist))));
+      joZoom.pinch = dist;
+      if (joZoom.scale === 1) { joZoom.x = 0; joZoom.y = 0; }
+      joZoom.pts.set(a.identifier, { x: a.clientX, y: a.clientY });
+      joZoom.pts.set(b.identifier, { x: b.clientX, y: b.clientY });
+      joZoom.apply();
+      return;
+    }
+    if (e.touches.length === 1 && joZoom.scale > 1) {
+      e.preventDefault();
+      const t = e.touches[0], prev = joZoom.pts.get(t.identifier);
+      if (prev) { joZoom.x += t.clientX - prev.x; joZoom.y += t.clientY - prev.y; }
+      joZoom.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+      joZoom.apply();
+    } else {
+      for (const t of e.changedTouches) joZoom.pts.set(t.identifier, { x: t.clientX, y: t.clientY });
+    }
+  }, { passive: false });
+  const end = e => { for (const t of e.changedTouches) joZoom.pts.delete(t.identifier); if (e.touches.length < 2) joZoom.pinch = 0; };
+  stage.addEventListener('touchend', end);
+  stage.addEventListener('touchcancel', end);
+}
+bindJoView();
 document.addEventListener('click', e => {
+  const pad = e.target.closest && e.target.closest('[data-pad]');
+  if (pad) {
+    const root = pad.closest('li, #joView');
+    const input = root && root.querySelector('input');
+    if (!input) return;
+    const k = pad.getAttribute('data-pad');
+    input.value = k === 'del' ? input.value.slice(0, -1) : input.value + k;
+    try { input.focus(); } catch (err) {}
+    return;
+  }
+  const viewBtn = e.target.closest && e.target.closest('[data-view]');
+  if (viewBtn) {
+    const it = queue.get(viewBtn.getAttribute('data-view'));
+    if (it) openJoView(it);
+    return;
+  }
   if (e.target.closest && e.target.closest('.upcount')) return showQueue();
   const r = e.target.closest('[data-retry]'); if (r) return queue.retry(r.dataset.retry);
   const m = e.target.closest('[data-rm]');
@@ -1410,7 +1962,7 @@ document.addEventListener('click', e => {
 var swHold = false, swDirty = false; // var: renderQueue may run before this line
 function qEditing() {
   const a = document.activeElement;
-  return !!(a && a.closest && a.closest('#qList .jofix input, #qList .jofix textarea'));
+  return !!(a && a.closest && a.closest('#qList .jofix input, #qList .jofix textarea, #joView input'));
 }
 function swRelease() { swHold = false; if (swDirty) { swDirty = false; renderQueue(); } }
 const SWIPE = { START: 10, RATIO: 1.5, MIN: 80, FRAC: 0.35 };
@@ -1529,7 +2081,10 @@ function scanHelp() { const h = document.querySelector('#startView .help'); if (
 scanHelp();
 window.addEventListener('oyp-zones-ready', () => setTimeout(scanHelp, 50));
 loadCV().then(cv => { if (cv && cv.Mat) reprocessPlain(); }).catch(() => {});
-window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, acceptCardJo, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS };
+warmOcr().catch(() => {});
+warmPageWorker();
+refreshJoList();
+window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, stickersSoon, acceptCardJo, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS, capStep, uprightCrop, handReadJo, openJoView, lookupJo, currentGuess, lastTiming, get earlyRead() { return earlyRead; }, get ocrWarm() { return ocrIsWarm; } };
 })();
 
 // owner: stone background only while the start screen is shown

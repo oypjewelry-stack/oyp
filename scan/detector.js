@@ -433,6 +433,129 @@ function warpQuad(cv, rgba, q, maxPx) {
   cv.warpPerspective(rgba, out, M, new cv.Size(w, h), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
   src.delete(); dst.delete(); M.delete(); return out;
 }
-const api = { cardSize, standardPage, fitStandard, CARD_RATIO, trimBackground, refineQuad, measureSkew, deskew, confidence, enhance, lineFamilies, rectangularity, aspectScore, detectQuad, warpQuad, order, area, maxDist };
+function variance(vals) {
+  if (!vals.length) return 0;
+  let m = 0;
+  for (let i = 0; i < vals.length; i++) m += vals[i];
+  m /= vals.length;
+  let v = 0;
+  for (let i = 0; i < vals.length; i++) { const d = vals[i] - m; v += d * d; }
+  return v / vals.length;
+}
+function rotateCW(cv, src, quarters) {
+  quarters = ((quarters % 4) + 4) % 4;
+  if (!quarters) return src.clone();
+  const out = new cv.Mat();
+  const code = quarters === 1 ? cv.ROTATE_90_CLOCKWISE : quarters === 2 ? cv.ROTATE_180 : cv.ROTATE_90_COUNTERCLOCKWISE;
+  cv.rotate(src, out, code);
+  return out;
+}
+// How much this page looks like horizontal lines of upright text.
+// line is high when ink sits in horizontal bands. base is high when the bottoms of
+// those characters line up and the tops do not (upright letters, not upside down).
+function poseScore(cv, rgba) {
+  const long = Math.max(rgba.cols, rgba.rows);
+  const sc = Math.min(1, 420 / long);
+  const sm = new cv.Mat();
+  cv.resize(rgba, sm, new cv.Size(Math.max(8, Math.round(rgba.cols * sc)), Math.max(8, Math.round(rgba.rows * sc))), 0, 0, cv.INTER_AREA);
+  const g = new cv.Mat(), bin = new cv.Mat();
+  cv.cvtColor(sm, g, cv.COLOR_RGBA2GRAY);
+  cv.threshold(g, bin, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
+  const W = bin.cols, H = bin.rows;
+  const labels = new cv.Mat(), stats = new cv.Mat(), cents = new cv.Mat();
+  let base = 0, lines = 0, line = 0;
+  try {
+    const n = cv.connectedComponentsWithStats(bin, labels, stats, cents, 8, cv.CV_32S);
+    const sd = stats.data32S, cols = stats.cols || 5, drop = new Uint8Array(n);
+    for (let i = 1; i < n; i++) {
+      const w = sd[i * cols + 2], h = sd[i * cols + 3], a = sd[i * cols + 4];
+      // a jewelry photo or a long rule is not a line of type
+      if (h > 48 || w > W * 0.45 || h > H * 0.25 || a > W * H * 0.02) drop[i] = 1;
+    }
+    const ld = labels.data32S, bd = bin.data;
+    if (ld && bd) for (let p = 0; p < ld.length; p++) if (drop[ld[p]]) bd[p] = 0;
+    const d = bin.data, row = new Float64Array(H);
+    let mean = 0;
+    for (let y = 0; y < H; y++) {
+      let s = 0, i = y * W;
+      for (let x = 0; x < W; x++) if (d[i + x]) s++;
+      row[y] = s; mean += s;
+    }
+    mean /= H || 1;
+    let vr = 0;
+    for (let y = 0; y < H; y++) { const z = row[y] - mean; vr += z * z; }
+    vr /= H || 1;
+    line = vr / ((mean * mean) + 1);
+    const blobs = [];
+    for (let i = 1; i < n; i++) {
+      if (drop[i]) continue;
+      const y = sd[i * cols + 1], w = sd[i * cols + 2], h = sd[i * cols + 3], a = sd[i * cols + 4];
+      if (a < 8 || h < 4 || w < 2) continue;
+      blobs.push({ y: y, bot: y + h, mid: y + h / 2, h: h });
+    }
+    blobs.sort((p, q) => p.mid - q.mid);
+    const groups = [];
+    for (let i = 0; i < blobs.length; i++) {
+      const b = blobs[i], last = groups[groups.length - 1];
+      if (!last || b.mid - last.mid > Math.max(5, b.h * 0.8)) groups.push({ items: [b], mid: b.mid });
+      else {
+        last.items.push(b);
+        let m = 0;
+        for (let k = 0; k < last.items.length; k++) m += last.items[k].mid;
+        last.mid = m / last.items.length;
+      }
+    }
+    for (let i = 0; i < groups.length; i++) {
+      const items = groups[i].items;
+      if (items.length < 5) continue;
+      const tops = [], bots = [];
+      for (let k = 0; k < items.length; k++) { tops.push(items[k].y); bots.push(items[k].bot); }
+      const vt = variance(tops), vb = variance(bots);
+      base += (vt - vb) / (vt + vb + 1);
+      lines++;
+    }
+    if (lines) base /= lines;
+  } catch (e) { base = 0; }
+  sm.delete(); g.delete(); bin.delete(); labels.delete(); stats.delete(); cents.delete();
+  return { line: line, base: base, lines: lines };
+}
+// Clockwise quarter-turns that put printed text upright.
+// `legacy` is the quarter the shape turn already chose (0 to judge this image as it stands).
+// Another quarter wins only when it is clearly more upright, so a photo does not flip a readable page.
+function uprightTurns(cv, rgba, legacy) {
+  const stick = legacy == null ? 0 : ((legacy % 4) + 4) % 4;
+  const scores = [0, 0, 0, 0];
+  let best = stick, bestScore = -1e9;
+  for (let q = 0; q < 4; q++) {
+    const r = q ? rotateCW(cv, rgba, q) : rgba;
+    let s = { line: 0, base: 0 };
+    try { s = poseScore(cv, r); } catch (e) {}
+    if (q) r.delete();
+    const land = (q % 2 === 0) === (rgba.cols >= rgba.rows);
+    scores[q] = s.line * 5 + s.base + (land ? 0.02 : 0);
+    if (scores[q] > bestScore) { bestScore = scores[q]; best = q; }
+  }
+  if (scores[best] < scores[stick] + 0.5) return stick;
+  return best;
+}
+// Grayscale, 3x, black digits on white. The handwritten JO fallback reads this.
+function prepDigits(cv, rgba) {
+  const g = new cv.Mat();
+  const ch = rgba.channels ? rgba.channels() : 4;
+  if (ch === 1) rgba.copyTo(g);
+  else cv.cvtColor(rgba, g, ch === 3 ? cv.COLOR_RGB2GRAY : cv.COLOR_RGBA2GRAY);
+  const up = new cv.Mat();
+  cv.resize(g, up, new cv.Size(Math.max(1, g.cols * 3), Math.max(1, g.rows * 3)), 0, 0, cv.INTER_CUBIC);
+  const bin = new cv.Mat();
+  let block = 31;
+  const short = Math.min(up.cols, up.rows);
+  if (short <= block) block = Math.max(3, (short - 1) | 1);
+  if (block % 2 === 0) block += 1;
+  if (block >= short) block = short > 3 ? ((short - 1) | 1) : 3;
+  cv.adaptiveThreshold(up, bin, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, block, 12);
+  g.delete(); up.delete();
+  return bin;
+}
+const api = { cardSize, standardPage, fitStandard, CARD_RATIO, trimBackground, refineQuad, measureSkew, deskew, confidence, enhance, lineFamilies, rectangularity, aspectScore, detectQuad, warpQuad, order, area, maxDist, uprightTurns, prepDigits, poseScore, rotateCW };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CardDetector = api;
 })(typeof self !== 'undefined' ? self : this);
