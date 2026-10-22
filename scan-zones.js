@@ -371,6 +371,140 @@ function fileToOrientedImage(file) {
     });
   });
 }
+/* The scanner crops to the card before cropFrom. PAGE_PX is scan/app.js MAX_PX. Crop off
+   (oypScanCrop === '0') leaves the whole photo, which is also what a scan does then. */
+var PAGE_PX = 1600;
+var FINDING = 'Finding card edges…';
+var NO_EDGES = 'Card edges not found. Boxes will be placed on the whole photo. Try a photo with all 4 card edges visible.';
+var CV_URLS = ['https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js', 'https://docs.opencv.org/4.9.0/opencv.js'];
+var cvReady = null;
+var detectorP = null;
+function cropWanted() {
+  try { return localStorage.getItem('oypScanCrop') !== '0'; } catch (e) { return true; }
+}
+function loadCV() {
+  if (root.cv && root.cv.Mat) return Promise.resolve(root.cv);
+  if (cvReady) return cvReady;
+  cvReady = new Promise(function (resolve, reject) {
+    var i = 0;
+    function tryNext() {
+      if (i >= CV_URLS.length) { cvReady = null; reject(new Error('detector failed to load')); return; }
+      var sc = document.createElement('script');
+      sc.async = true;
+      sc.src = CV_URLS[i++];
+      function done(m) {
+        try { delete m.then; } catch (e) {}
+        if (typeof m.then === 'function') m.then = undefined;
+        root.cv = m;
+        resolve(m);
+      }
+      sc.onload = function () {
+        var c = root.cv;
+        if (!c) return tryNext();
+        if (c.Mat) return done(c);
+        if (typeof c.then === 'function') return c.then(done);
+        c.onRuntimeInitialized = function () { done(root.cv); };
+      };
+      sc.onerror = function () { sc.remove(); tryNext(); };
+      (document.head || document.documentElement).appendChild(sc);
+    }
+    tryNext();
+  });
+  return cvReady;
+}
+function detectorUrl() {
+  var tags = document.getElementsByTagName('script'), i, src;
+  for (i = tags.length - 1; i >= 0; i--) {
+    src = tags[i].src || '';
+    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022h');
+  }
+  return 'scan/detector.js?v=20261022h';
+}
+function loadDetector() {
+  if (root.CardDetector && root.CardDetector.standardPage && root.CardDetector.warpQuad && root.CardDetector.fitStandard) return Promise.resolve(root.CardDetector);
+  if (detectorP) return detectorP;
+  detectorP = new Promise(function (resolve, reject) {
+    var s = document.createElement('script');
+    s.src = detectorUrl();
+    s.onload = function () {
+      if (root.CardDetector && root.CardDetector.standardPage) resolve(root.CardDetector);
+      else { detectorP = null; reject(new Error('detector')); }
+    };
+    s.onerror = function () { detectorP = null; reject(new Error('detector')); };
+    (document.head || document.documentElement).appendChild(s);
+  });
+  return detectorP;
+}
+function scaleToMax(source, maxPx) {
+  var w = source.naturalWidth || source.width, h = source.naturalHeight || source.height;
+  var s = Math.min(1, maxPx / Math.max(w, h));
+  var c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * s));
+  c.height = Math.max(1, Math.round(h * s));
+  c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+  return c;
+}
+function detectQuadOn(cv, canvas) {
+  var DW = 480, vw = canvas.width, vh = canvas.height;
+  if (!vw || !vh) return null;
+  var sc = DW / Math.max(vw, vh);
+  var work = document.createElement('canvas');
+  work.width = Math.max(1, Math.round(vw * sc));
+  work.height = Math.max(1, Math.round(vh * sc));
+  work.getContext('2d', { willReadFrequently: true }).drawImage(canvas, 0, 0, work.width, work.height);
+  var m = cv.imread(work);
+  try {
+    var r = root.CardDetector.detectQuad(cv, m, { size: DW });
+    return r ? r.quad : null;
+  } finally { m.delete(); }
+}
+function rotateTurns(c, turns) {
+  turns = ((Number(turns) || 0) % 4 + 4) % 4;
+  if (!turns) return c;
+  var o = document.createElement('canvas');
+  var side = turns % 2 === 1;
+  o.width = side ? c.height : c.width;
+  o.height = side ? c.width : c.height;
+  var g = o.getContext('2d');
+  g.translate(o.width / 2, o.height / 2);
+  g.rotate(turns * Math.PI / 2);
+  g.drawImage(c, -c.width / 2, -c.height / 2);
+  return o;
+}
+/* EXIF image in, scanner frame out: detect, refine, warp, deskew, the scanner turn, then the
+   fixed page size. Null when the card edges are not found. */
+function cardPage(im) {
+  return Promise.all([loadCV(), loadDetector()]).then(function () {
+    var cv = root.cv;
+    if (!cv || !cv.Mat || !root.CardDetector) return null;
+    var src = scaleToMax(im, PAGE_PX);
+    var q = null;
+    try { q = detectQuadOn(cv, src); } catch (e) { return null; }
+    if (!q) return null;
+    try {
+      var rm = cv.imread(src);
+      q = root.CardDetector.refineQuad(cv, rm, root.CardDetector.order(q));
+      rm.delete();
+    } catch (e) { q = root.CardDetector.order(q); }
+    q = root.CardDetector.order(q);
+    var warped;
+    try {
+      var srcMat = cv.imread(src);
+      var warpedMat = root.CardDetector.warpQuad(cv, srcMat, q, PAGE_PX);
+      warped = document.createElement('canvas');
+      cv.imshow(warped, warpedMat);
+      srcMat.delete(); warpedMat.delete();
+    } catch (e2) { return null; }
+    try {
+      var dm = cv.imread(warped);
+      var d = root.CardDetector.deskew(cv, dm);
+      cv.imshow(warped, d.mat);
+      dm.delete(); d.mat.delete();
+    } catch (e3) {}
+    var turned = rotateTurns(warped, scannerTurns(warped.width, warped.height));
+    return canvasToImage(root.CardDetector.fitStandard(turned, PAGE_PX));
+  }).catch(function () { return null; });
+}
 function cropFrom(img, zone) {
   try {
     var sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
@@ -616,7 +750,7 @@ function Editor(host, pop) {
     : '<div class="ozbar"><b>JO card zones</b><button type="button" class="ozsave" data-z="save">Save zones</button></div>')
     + '<p class="ozstatus" data-tone="dirty" aria-live="polite"><i class="ozdot" aria-hidden="true"></i><span class="ozmsg"></span></p>'
     + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
-    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box. A vertical phone photo is turned once so the card reads upright. A photo that is already horizontal is left as it is. Rotate turns it again. Draw box, or a press-and-hold, adds a box. A one-finger drag on the empty card scrolls the page.</p>'
+    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box. A vertical phone photo is turned once so the card reads upright. A photo that is already horizontal is left as it is. Rotate turns it again. When the card edges are found, the sample is straightened to one fixed card size, the same frame a scan is cropped from. Draw box, or a press-and-hold, adds a box. A one-finger drag on the empty card scrolls the page.</p>'
     + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
     + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
     + '<button type="button" class="ozfile" data-z="rot" hidden aria-label="Rotate 90 degrees clockwise">Rotate</button>'
@@ -1046,17 +1180,47 @@ function Editor(host, pop) {
     var heic = isHeic(f);
     var keepText = msgEl ? msgEl.textContent : '';
     var keepTone = status ? (status.getAttribute('data-tone') || 'dirty') : 'dirty';
-    if (keepText === 'Opening photo…' || keepText === 'Could not open that photo.') keepText = '';
+    if (keepText === 'Opening photo…' || keepText === 'Could not open that photo.' || keepText === FINDING || keepText === NO_EDGES) keepText = '';
     if (heic) setStatus('Opening photo…', 'dirty');
-    fileToOrientedImage(f).then(function (im) {
-      if (seq !== photoSeq) return;
-      if (!im) { setStatus('Could not open that photo.', 'bad'); return; }
+    else if (cropWanted()) setStatus(FINDING, 'dirty');
+    function showOriented(im) {
       img = im;
       viewTurns = scannerTurns(im.naturalWidth || im.width, im.naturalHeight || im.height);
       scanT = viewTurns;
       paint();
-      if (heic && msgEl && msgEl.textContent === 'Opening photo…') setStatus(keepText, keepTone);
+    }
+    function finishPreview() {
       host.dispatchEvent(new CustomEvent('oyp-zones-preview', { bubbles: true }));
+    }
+    fileToOrientedImage(f).then(function (im) {
+      if (seq !== photoSeq) return;
+      if (!im) { setStatus('Could not open that photo.', 'bad'); return; }
+      if (!cropWanted()) {
+        showOriented(im);
+        if (keepText) setStatus(keepText, keepTone);
+        finishPreview();
+        return;
+      }
+      setStatus(FINDING, 'dirty');
+      cardPage(im).then(function (page) {
+        if (seq !== photoSeq) return;
+        if (!page) {
+          showOriented(im);
+          setStatus(NO_EDGES, 'local');
+        } else {
+          img = page;
+          viewTurns = 0;
+          scanT = 0;
+          paint();
+          if (keepText) setStatus(keepText, keepTone);
+        }
+        finishPreview();
+      }, function () {
+        if (seq !== photoSeq) return;
+        showOriented(im);
+        setStatus(NO_EDGES, 'local');
+        finishPreview();
+      });
     }, function () {
       if (seq !== photoSeq) return;
       setStatus('Could not open that photo.', 'bad');
@@ -1506,6 +1670,7 @@ root.OYPZones = {
   mount: mount, open: open, prepare: prepare, zones: function () { return state.zones.slice(); }, summary: summary, saveMessage: saveMessage,
   scannerTurns: scannerTurns, turnZone: turnZone, viewToStored: viewToStored, storedToView: storedToView,
   exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, jpegSize: jpegSize, exifTagForPixels: exifTagForPixels, readToken: readToken, presentSave: presentSave,
+  cardPage: cardPage, cropWanted: cropWanted, PAGE_PX: PAGE_PX, FINDING: FINDING, NO_EDGES: NO_EDGES,
   gestureBegin: gestureBegin, gestureAdvance: gestureAdvance, HOLD_MS: HOLD_MS
 };
 boot();

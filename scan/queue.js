@@ -91,7 +91,7 @@ function create(opts) {
     const it = { id, jo: p.jo, page: p.page, filename: p.filename, scan: p.scan || '', image: p.image, thumb: p.thumb || '',
       state: held ? 'needsjo' : 'waiting', tries: 0, nextAt: 0, error: '', found: [], createdAt: now(), seq: ++seq, rev: ((old && old.rev) || 0) + 1, savedAt: 0,
       clientId: p.clientId || makeClientId(), printJo: p.printJo !== false, printTag: p.printTag !== false,
-      token: p.token != null ? String(p.token) : '', api: p.api || '', shot: p.shot || 0 };
+      plain: !!p.plain, token: p.token != null ? String(p.token) : '', api: p.api || '', shot: p.shot || 0 };
     await save(it); emit(); if (!held) kick(); return it;
   }
   // The JO number was typed or read later. Every page of that capture starts uploading, page 1 first.
@@ -258,6 +258,9 @@ function removePrompt(it, extra) {
 }
 // one line of status text per item, shared by every list
 function label(it, isOnline) {
+  if (it && it.plain && (it.state === 'waiting' || it.state === 'needsjo' || it.state === 'uploading' || it.state === 'failed')) {
+    return 'Saved plain. The detector was not ready, so this page will be enhanced when it loads.';
+  }
   switch (it.state) {
     case 'needsjo': return 'JO number not read. Type it here. The photo stays on this phone.';
     case 'waiting': return it.error ? (isOnline === false ? 'Waiting for internet' : 'Waiting, will retry (' + it.error + ')') : (isOnline === false ? 'Waiting for internet' : 'Waiting to upload');

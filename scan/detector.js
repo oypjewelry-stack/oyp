@@ -396,11 +396,30 @@ function trimBackground(cv, rgba, opts) {
 }
 function maxDist(a, b) { return Math.max(...a.map((p, i) => Math.hypot(p[0] - b[i][0], p[1] - b[i][1]))); }
 // warp full-res rgba Mat by normalised quad -> new Mat oriented to card aspect, long side <= maxPx
+/* JO card width / height. The one number every warped page uses.
+   1.55 is the current warp output. Set this when the measured card size arrives. */
 const CARD_RATIO = 1.55;
+/* One page size for every warped card. Long side is the scan's max edge (1600). A portrait
+   quad uses the same pixels on their side; the scanner turn then lands on this landscape page. */
+function standardPage(maxPx) {
+  const L = maxPx || 1600, S = Math.round(L / CARD_RATIO);
+  return [L, S];
+}
 function cardSize(P, maxPx) {
-  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]), L = maxPx || 2000, S = Math.round(L / CARD_RATIO);
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const [L, S] = standardPage(maxPx || 2000);
   const w = d(P[0], P[1]) + d(P[3], P[2]), h = d(P[0], P[3]) + d(P[1], P[2]);
   return w >= h ? [L, S] : [S, L];
+}
+function fitStandard(canvas, maxPx) {
+  const pair = standardPage(maxPx || 1600);
+  const land = canvas.width >= canvas.height;
+  const W = land ? pair[0] : pair[1], H = land ? pair[1] : pair[0];
+  if (canvas.width === W && canvas.height === H) return canvas;
+  const o = document.createElement('canvas');
+  o.width = W; o.height = H;
+  o.getContext('2d').drawImage(canvas, 0, 0, W, H);
+  return o;
 }
 function warpQuad(cv, rgba, q, maxPx) {
   const P = q.map(([x, y]) => [x * rgba.cols, y * rgba.rows]);
@@ -413,6 +432,6 @@ function warpQuad(cv, rgba, q, maxPx) {
   cv.warpPerspective(rgba, out, M, new cv.Size(w, h), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
   src.delete(); dst.delete(); M.delete(); return out;
 }
-const api = { cardSize, CARD_RATIO, trimBackground, refineQuad, measureSkew, deskew, confidence, enhance, lineFamilies, rectangularity, aspectScore, detectQuad, warpQuad, order, area, maxDist };
+const api = { cardSize, standardPage, fitStandard, CARD_RATIO, trimBackground, refineQuad, measureSkew, deskew, confidence, enhance, lineFamilies, rectangularity, aspectScore, detectQuad, warpQuad, order, area, maxDist };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CardDetector = api;
 })(typeof self !== 'undefined' ? self : this);

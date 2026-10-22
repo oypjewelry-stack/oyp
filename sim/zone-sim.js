@@ -228,14 +228,32 @@ const build = app.slice(app.indexOf('function buildMenu'), app.indexOf('const me
 eq(build.indexOf('Open the scanner from the back-office') < build.indexOf('scannerTailHtml'), 'the unsigned note stays above the scanner rows');
 eq(build.indexOf('>Print test</a>') < build.indexOf('>Log out</a>'), 'the offline menu still prints before Log out');
 eq(zonesSrc.includes('viewTurns = scannerTurns('), 'the opening turn follows the scanner');
+eq(zonesSrc.includes('viewTurns = 0') && zonesSrc.includes('scanT = 0'), 'a found card is already the scanner frame');
 eq(zonesSrc.includes('function exifTagForPixels'), 'EXIF is applied only when the pixels are still the stored samples');
 eq(zonesSrc.includes('isHeic(file)) return heicToJpegUrl'), 'a HEIC is oriented by libheif, not by a second JPEG tag');
 eq(/function rotFor\(c\) \{ const k = rotation\(\); return \(k === 'cw' \|\| k === 'ccw'\) && c\.width > c\.height \? 'none' : k; \}/.test(app), 'rotFor still skips only cw and ccw on a landscape page');
 eq(app.includes('function applyJpegOrient') && app.includes('return applyJpegOrient(c, orient, raw)'), 'the scanner draws a missed EXIF tag once before rotFor');
 eq(app.includes('if (isHeic(file)) return heicToCanvas(file)'), 'a HEIC scan is not given a JPEG orientation on top of irot');
-eq(read('nav.js').includes('scan-zones.js?v=7'), 'scan-zones cache bust is v7');
-eq(read('staff/index.html').includes('nav.js?v=36') && read('staff/print-test.html').includes('nav.js?v=36'), 'staff pages load nav.js v36');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=36') && read('scan/index.html').includes('app.js?v=20261022f'), 'the scanner page keeps the production nav host at v36');
+eq(app.includes('CardDetector.fitStandard'), 'a warped scan is resized to the standard page');
+eq(app.includes('cvSoon(') && app.includes('CV_WAIT_MS = 6000') && app.includes('function detectorReady') && !app.includes('do not wait on the detector'), 'a scan waits for OpenCV before it saves, up to 6s');
+eq(app.includes('function stickersSoon') && app.includes("op: 'printEnqueue'"), 'the page-1 sticker is queued from the JO number and does not wait on enhance');
+eq(app.includes('p.plain = true') && app.includes('function reprocessPlain'), 'a page saved with no detector is marked and reprocessed later');
+const detSrc = read('scan/detector.js');
+eq((detSrc.match(/const CARD_RATIO = 1\.55/g) || []).length === 1 && !/cardSize[\s\S]{0,400}1\.55/.test(detSrc), 'the card aspect is the one CARD_RATIO constant');
+const det = require(path.join(root, 'scan/detector.js'));
+const std = det.standardPage(1600);
+eq(std[0] === 1600 && std[1] === 1032, 'every warped page is 1600 by 1032');
+const wide = det.cardSize([[0, 0], [200, 0], [200, 100], [0, 100]], 1600);
+const tall = det.cardSize([[0, 0], [100, 0], [100, 200], [0, 200]], 1600);
+eq(wide[0] === std[0] && wide[1] === std[1] && tall[0] === std[1] && tall[1] === std[0], 'a sideways quad uses the same page on its side');
+eq(Z.PAGE_PX === 1600 && Z.cropWanted() === true, 'the editor crops to the card unless this phone turned crop off');
+localStorage.setItem('oypScanCrop', '0');
+eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
+localStorage.removeItem('oypScanCrop');
+eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
+eq(read('nav.js').includes('scan-zones.js?v=8'), 'scan-zones cache bust is v8');
+eq(read('staff/index.html').includes('nav.js?v=37') && read('staff/print-test.html').includes('nav.js?v=37'), 'staff pages load nav.js v37');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=37') && read('scan/index.html').includes('app.js?v=20261022h') && read('scan/index.html').includes('detector.js?v=20261022h') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v37');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');
