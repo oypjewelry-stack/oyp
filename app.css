@@ -26,7 +26,7 @@ body{font-size:calc(1rem*var(--fs));font-family:var(--body);background:#fff;colo
 .dots i{width:16px;height:16px;border-radius:50%;border:1.5px solid #111}.dots i.on{background:#111}
 .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:calc(12px*var(--sp));margin:0 calc(32px*var(--sp))}
 .pad button{border:1px solid #ddd;border-radius:50%;width:66px;height:66px;margin:auto;background:#fff;font-family:var(--label);font-weight:500;font-size:calc(26px*var(--fs));color:#111;cursor:pointer}
-.pad button:active{background:#f3f3f3}.pad button.del{border:0;color:var(--icon)}.pad .sp{visibility:hidden}
+.pad button.del{border:0;color:var(--icon)}.pad .sp{visibility:hidden}
 .err{min-height:22px;color:#b3261e;font-family:var(--label);font-size:calc(14px*var(--fs));margin:calc(14px*var(--sp)) 0 calc(4px*var(--sp))}
 .wide{width:100%;font-size:calc(20px*var(--hs));padding:calc(15px*var(--sp))}
 /* staff home */
@@ -46,7 +46,7 @@ body{font-size:calc(1rem*var(--fs));font-family:var(--body);background:#fff;colo
 .whobtn:hover,.whobtn.open{background:#faf8f1}.whobtn.open{box-shadow:inset 3px 0 0 var(--gold)}.whobtn.open .chev{transform:rotate(180deg);color:var(--gold)}
 .whomenu{position:absolute;left:8px;right:8px;bottom:calc(100% - 2px);background:#fff;border:1px solid #eee;border-radius:calc(12px*var(--rad));box-shadow:0 8px 24px rgba(0,0,0,.08);padding:calc(6px*var(--sp)) 0;z-index:15}
 .whomenu button{display:block;width:100%;text-align:left;background:none;border:0;padding:calc(12px*var(--sp)) calc(18px*var(--sp));font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.08em;text-transform:uppercase;color:#111;cursor:pointer}
-.whomenu button:hover{background:#faf8f1}.whomenu button:active{background:#f3efe2}
+.whomenu button:hover{background:#faf8f1}
 .nitem{display:flex;align-items:center;min-width:0}.nitem.on{background:#faf8f1;box-shadow:inset 3px 0 0 var(--gold)}.nitem.dragging{opacity:.45}
 .nord{display:flex;align-items:center;gap:2px;flex:none;padding-left:6px}
 .nord .dmove,.nord .dgrip{width:22px;height:22px;border:1px solid #ddd;background:#fff;border-radius:6px;padding:0;font-size:12px;letter-spacing:0;text-transform:none}
@@ -217,7 +217,13 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;width:26px;height:2
 .kpilink{color:inherit;text-decoration:none;display:block}
 /* dashboard drill-downs (#/dashboard/<kind>/<key>) */
 a.bar,a.khead,a.fchip,.dgrp a{color:inherit;text-decoration:none}a.khead{cursor:pointer}.kcard.tap{cursor:pointer}
-.tap{transition:transform .08s,background-color .12s,box-shadow .12s;-webkit-tap-highlight-color:transparent}.tap:active{transform:scale(.97)}
+/* Press is a 50ms GPU scale on pointerdown (:active and .is-down). Hover colors stay on :hover.
+   will-change only on the few large pills. Reduced motion skips the scale and snaps opacity. */
+button,[role="button"],a.pill,a.fchip,a.lnk,.tap{touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 50ms}
+button:active,button.is-down,[role="button"]:active,[role="button"].is-down,a.pill:active,a.pill.is-down,a.fchip:active,a.fchip.is-down,a.lnk:active,a.lnk.is-down,.tap:active,.tap.is-down{transform:scale(.97)}
+.pill.big{will-change:transform}
+.rvbig .rot:active,.rvbig .rot.is-down{transform:translateX(-50%) scale(.97)}
+@media (prefers-reduced-motion:reduce){button,[role="button"],a.pill,a.fchip,a.lnk,.tap{transition:none}button:active,button.is-down,[role="button"]:active,[role="button"].is-down,a.pill:active,a.pill.is-down,a.fchip:active,a.fchip.is-down,a.lnk:active,a.lnk.is-down{transform:none;opacity:.72}.tap:active,.tap.is-down{transform:none}.rvbig .rot:active,.rvbig .rot.is-down{transform:translateX(-50%);opacity:.72}.pill.big{will-change:auto}}
 a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hover i{opacity:.8}a.khead.tap:hover .lab{text-decoration:underline}
 .dhint{font-size:calc(12px*var(--fs));margin:calc(10px*var(--sp)) 0 0!important;text-align:center}
 .drill{max-width:calc(760px*var(--cw))}.drill .dback{display:inline-block;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#111;text-decoration:none;margin-bottom:calc(12px*var(--sp))}
@@ -406,15 +412,20 @@ button.swbtn.pill.sm.outline{background:#fff;color:#111;border:1.5px solid #111}
 button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
 /* Corner × for the row's removing action. 34px hit area, small grey glyph.
    Phones (no hover, or a coarse pointer) keep swipe only. Select hides it.
-   The extra right padding is the hit area, so the glyph sits inside the card
-   and does not cover text or a photo. It is not part of the swipe tray. */
+   Text rows reserve 34px so the glyph clears the words. That gap is not part
+   of the swipe tray. A full-width photo stays full width: the × sits on the
+   photo, on a small round white chip, and the inventory ⋯ moves left of it. */
 .swx{display:none;position:absolute;top:0;right:0;z-index:3;width:34px;height:34px;min-width:34px;min-height:34px;box-sizing:border-box;margin:0;padding:0;border:0;background:transparent;color:#777;cursor:pointer;align-items:center;justify-content:center;line-height:0}
 .swx svg{display:block;width:14px;height:14px}
+.swclip.swphoto .swx::before{content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 1px 3px rgba(0,0,0,.28)}
+.swclip.swphoto .swx svg{position:relative;z-index:1}
 @media (hover:hover) and (pointer:fine){
-  .swclip.hasx>.swface>.swx{display:flex}
-  .swclip.hasx>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}
-  .swsel .swclip.hasx>.swface>.swx{display:none}
-  .swsel .swclip.hasx>.swface>:first-child{padding-right:var(--swx-base, 0px)}
+  .swclip.hasx .swx{display:flex}
+  .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}
+  .swsel .swclip.hasx .swx{display:none}
+  .swsel .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:var(--swx-base, 0px)}
+  .ivph.hasx>.ivmore{right:42px}
+  .swsel .ivph.hasx>.ivmore{right:8px}
   .swx:hover,.swx:focus-visible{color:#111}
 }
 /* Inventory tiles are grid items. A flex clip sized to the tray's max-content

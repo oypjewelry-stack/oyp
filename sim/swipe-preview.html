@@ -5,7 +5,7 @@
 <title>Swipe preview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../app.css?v=46">
+<link rel="stylesheet" href="../app.css?v=48">
 <link rel="stylesheet" href="../todo.css?v=6">
 <link rel="stylesheet" href="../production.css?v=11">
 <link rel="stylesheet" href="../consign.css?v=10">
@@ -146,8 +146,7 @@
   var failed = main.querySelector('[data-st="failed"]');
   check(queued.closest('.swclip') && queued.parentNode.classList.contains('swface'), 'a print row sits in the shared clip');
   check(main.querySelector('[data-st="queued"]').parentNode.parentNode.querySelector('.swbtn').textContent === 'Cancel', 'a queued row reveals Cancel');
-  check(queued.parentNode.querySelector('.swx') && queued.parentNode.querySelector('.swx').getAttribute('aria-label') === 'Cancel' && queued.parentNode.querySelector('.swx').getAttribute('title') === 'Cancel', 'a queued row’s corner control is named Cancel');
-  check(failed.parentNode.querySelector('.swx') && failed.parentNode.querySelector('.swx').getAttribute('aria-label') === 'Cancel', 'a failed row’s corner control is Cancel, not Reprint');
+  check(!queued.closest('.swclip').querySelector('.swx') && !failed.closest('.swclip').querySelector('.swx'), 'print rows already show Cancel, so they have no corner control');
   var failedBtns = failed.closest('.swclip').querySelectorAll('.swbtn');
   check(failedBtns.length === 2 && failedBtns[0].textContent === 'Reprint' && failedBtns[1].textContent === 'Cancel', 'a failed row reveals Reprint and Cancel');
   check(main.querySelector('.oyp-qbtns .pill') && main.querySelector('[data-q="cancel"]'), 'the existing print buttons stay');
@@ -323,18 +322,20 @@
         check(a.fontFamily === b.fontFamily && a.fontSize === b.fontSize && a.fontWeight === b.fontWeight, name + ' buttons match the Select pill face');
       }
       OYPSwipe.close(row);
-      if (name === 'todo') {
-        check(!main.querySelector('.swx'), 'to do has no corner control');
+      if (name === 'todo' || name === 'print' || name === 'consign') {
+        check(!main.querySelector('.swx'), name + ' has no corner control');
         return;
       }
       var marks = main.querySelectorAll('.swx');
       check(marks.length >= 2, name + ' puts a corner control on every row');
+      if (name === 'inv' || name === 'prod') check(!!main.querySelector('.swclip.swphoto') === fine, name + (fine ? ' overlays the corner control on the photo' : ' does not treat the phone thumb as a full photo'));
       [].forEach.call(marks, function (el) {
         check(el.getAttribute('aria-label') === expect[name] && el.getAttribute('title') === expect[name], name + ' corner control is named ' + expect[name]);
         var box = el.getBoundingClientRect();
         var glyph = el.querySelector('svg').getBoundingClientRect();
-        var faceRow = el.parentNode.firstElementChild;
+        var faceRow = el.closest('.swface').firstElementChild;
         var rowBox = faceRow.getBoundingClientRect();
+        var clip = el.closest('.swclip');
         if (!fine) {
           check(getComputedStyle(el).display === 'none' && box.width === 0, name + ' shows no corner control on a phone');
           return;
@@ -343,16 +344,38 @@
         check(glyph.width <= 16 && glyph.height <= 16 && glyph.width > 0, name + ' glyph is small');
         var ink = getComputedStyle(el).color;
         check(ink === 'rgb(119, 119, 119)', name + ' glyph is grey (' + ink + ')');
+        var base = parseFloat(faceRow.style.getPropertyValue('--swx-base')) || 0;
+        var padR = parseFloat(getComputedStyle(faceRow).paddingRight) || 0;
+        var photo = el.parentNode;
+        if (clip.classList.contains('swphoto')) {
+          var photoBox = photo.getBoundingClientRect();
+          check(photo.classList.contains('ivph') || photo.classList.contains('pth'), name + ' corner control is on the photo');
+          check(Math.abs(box.top - photoBox.top) <= 1 && Math.abs(box.right - photoBox.right) <= 1, name + ' corner control sits on the photo top-right');
+          check(Math.abs(padR - base) <= 1, name + ' does not reserve a strip beside the photo (pad ' + padR + ', base ' + base + ')');
+          var chip = getComputedStyle(el, '::before');
+          check(parseFloat(chip.width) >= 18 && parseFloat(chip.width) <= 26 && chip.borderTopLeftRadius !== '0px' && chip.backgroundColor !== 'rgba(0, 0, 0, 0)', name + ' corner control has a round backdrop');
+          var bits = faceRow.querySelectorAll('.kjo, .kd, .kc, .ivb, .pbd, .kf, .ivmore');
+          var hit = '';
+          [].forEach.call(bits, function (n) {
+            if (hit || n === el || el.contains(n)) return;
+            var br = n.getBoundingClientRect();
+            if (br.width < 2 || br.height < 2) return;
+            if (overlaps(el, n)) hit = n.className || n.tagName;
+          });
+          check(!hit, name + ' corner control does not cover the words or the menu' + (hit ? ' (' + hit + ')' : ''));
+          return;
+        }
+        check(Math.abs(padR - (base + 34)) <= 1, name + ' reserves 34px beside the text');
         check(box.top <= rowBox.top + 1 && box.right <= rowBox.right + 1 && box.left >= rowBox.right - 36 && box.bottom <= rowBox.bottom + 1, name + ' corner control sits in the top-right of the row');
-        var bits = faceRow.querySelectorAll('.kjo, .kd, .kc, .cn, .ivph, .pth, .th, canvas, img, .mq, .csval, .csitemmain, .oyp-qbtns, .ivmore, .chev, .kf, .rvi, .chip, .lnk');
-        var hit = '';
-        [].forEach.call(bits, function (n) {
-          if (hit || n === el || el.contains(n)) return;
+        var textBits = faceRow.querySelectorAll('.kjo, .kd, .kc, .cn, .ivph, .pth, .th, canvas, img, .mq, .csval, .csitemmain, .oyp-qbtns, .ivmore, .chev, .kf, .rvi, .chip, .lnk');
+        var textHit = '';
+        [].forEach.call(textBits, function (n) {
+          if (textHit || n === el || el.contains(n)) return;
           var br = n.getBoundingClientRect();
           if (br.width < 2 || br.height < 2) return;
-          if (overlaps(el, n)) hit = n.className || n.tagName;
+          if (overlaps(el, n)) textHit = n.className || n.tagName;
         });
-        check(!hit, name + ' corner control does not cover text, photos, or row buttons' + (hit ? ' (' + hit + ')' : ''));
+        check(!textHit, name + ' corner control does not cover text, photos, or row buttons' + (textHit ? ' (' + textHit + ')' : ''));
       });
     });
     report();

@@ -29,7 +29,7 @@ h1,h2,.serif,.title,input.big,button.primary,.jobar strong,.pages .nm,.price{
 .title{font-size:17px}
 .icon{
   background:none;border:0;color:var(--muted-icon);width:48px;height:48px;min-width:48px;min-height:48px;
-  display:inline-flex;align-items:center;justify-content:center;padding:0;opacity:1;transition:none;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;padding:0;opacity:1;transition:transform 50ms;cursor:pointer;
 }
 .icon:hover,.icon:focus,.icon:active{color:var(--muted-icon);background:none;outline:none}
 .icon svg{display:block;pointer-events:none}
@@ -55,7 +55,6 @@ button.ghost{min-height:52px;padding:0 20px;background:#fff;border:1px solid #11
 .toggle{font-size:14px;display:flex;align-items:center;gap:6px;min-height:48px;color:#555}
 .toggle input{width:22px;height:22px;accent-color:#111}
 .shutter{width:78px;height:78px;border-radius:50%;border:5px solid var(--gold);background:#111;box-shadow:inset 0 0 0 4px #fff}
-.shutter:active{transform:scale(.94)}
 
 .pages{list-style:none;display:flex;flex-direction:column;gap:10px;margin-top:4px}
 .pages li{display:flex;align-items:center;gap:12px;border:1px solid #eee;border-radius:12px;padding:8px}
@@ -75,7 +74,6 @@ dialog .row button{flex:1;margin-top:0}
 .jorow{display:flex;gap:10px;align-items:stretch}
 .jorow input.big{flex:1;min-width:0}
 .mic{flex:0 0 84px;min-height:84px;border:2px solid var(--gold);border-radius:14px;background:#111;color:var(--gold);display:flex;align-items:center;justify-content:center}
-.mic:active{transform:scale(.95)}
 .mic.listening{background:var(--gold);color:#111;animation:micpulse 1.1s ease-in-out infinite}
 @keyframes micpulse{0%{box-shadow:0 0 0 0 rgba(212,175,55,.7)}70%{box-shadow:0 0 0 16px rgba(212,175,55,0)}100%{box-shadow:0 0 0 0 rgba(212,175,55,0)}}
 #startView .toggle{margin-top:10px}
@@ -117,7 +115,7 @@ header.top .title, h1{font-size:22px}
 .jorow input.big{width:100%;padding-left:64px;padding-right:64px}
 .jorow .mic{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:48px;height:48px;min-height:48px;flex:none;border:0;border-radius:50%;background:transparent;color:#9a9a9a;padding:0;animation:none}
 .jorow .mic svg{width:26px;height:26px}
-.jorow .mic:active{transform:translateY(-50%) scale(.92)}
+.jorow .mic:active,.jorow .mic.is-down{transform:translateY(-50%) scale(.97)}
 .jorow .mic.listening{background:rgba(214,48,49,.12);color:#d63031;animation:micdot 1s ease-in-out infinite}
 @keyframes micdot{50%{box-shadow:0 0 0 7px rgba(214,48,49,.18)}}
 /* owner: SCAN button auto-width, centered */
@@ -242,6 +240,11 @@ select.mid{width:100%;font-size:16px;padding:14px;border:1px solid #ccc;border-r
 /* swipe left to delete (page strip and Pending uploads) */
 #pages,#qList{position:relative}#pages li[data-sw],#qList li[data-sw]{touch-action:pan-y;position:relative;z-index:1}#pages li.swiping,#qList li.swiping{background:#fff;user-select:none;-webkit-user-select:none}
 #qList .jofix,#qList .jofix input,#qList .jofixgo{touch-action:manipulation}
+#qList .qx{display:none}
+@media (hover:hover) and (pointer:fine){
+  #qList li[data-sw]{padding-right:34px}
+  #qList .qx{display:flex;align-items:center;justify-content:center;position:absolute;top:0;right:0;z-index:2;width:34px;height:34px;box-sizing:border-box;margin:0;padding:0;border:0;background:none;color:#999;font-size:22px;line-height:1;cursor:pointer}
+}
 .swbg{position:absolute;left:0;right:0;z-index:0;border-radius:12px;background:#f3c6c3;color:#fff;display:flex;align-items:center;justify-content:flex-end;padding-right:18px;font-family:var(--body);font-size:14px;letter-spacing:.06em;text-transform:uppercase;transition:background .12s}
 .swbg.go{background:#c62828}
 .swconf{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:16px}
@@ -253,7 +256,6 @@ select.mid{width:100%;font-size:16px;padding:14px;border:1px solid #ccc;border-r
 .vh{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;opacity:0}
 .scanjo{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;width:100%;min-height:max(220px,34vh);min-height:max(220px,34dvh);margin-top:22px;background:#000;color:#fff;border-radius:22px;cursor:pointer;user-select:none;-webkit-user-select:none;font-family:'Libre Bodoni',serif;font-weight:500;font-size:30px;letter-spacing:.04em;box-shadow:0 10px 30px rgba(0,0,0,.18)}
 .scanjo svg{color:var(--gold)}
-.scanjo:active{transform:scale(.985)}
 .scanjo .sjbusy{display:none;align-items:center;gap:10px;font-size:22px}
 .scanjo.busy{pointer-events:none;opacity:.88}.scanjo.busy .sj,.scanjo.busy svg{display:none}.scanjo.busy .sjbusy{display:flex}
 .scanjo .spin{margin:0;border-color:#444;border-top-color:var(--gold)}
@@ -319,3 +321,9 @@ header.top #printChip,header.top .oyp-pr-slot{display:none!important}
 .oyp-pr-dot{display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:50%;background:#b3261e;vertical-align:1px;flex:none}
 .oyp-pr-dot.on{background:#1b7f3a}
 .oyp-pr-dot.busy{background:#a37b12}
+/* Press is a 50ms GPU scale. Hover colors stay on :hover. will-change only on the shutter, Scan JO, and the one primary. */
+button,[role="button"],a.pill,a.fchip,a.lnk,.tap{touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 50ms}
+button:active,button.is-down,[role="button"]:active,[role="button"].is-down,a.pill:active,a.pill.is-down,a.fchip:active,a.fchip.is-down,a.lnk:active,a.lnk.is-down,.tap:active,.tap.is-down{transform:scale(.97)}
+.jorow .mic:active,.jorow .mic.is-down{transform:translateY(-50%) scale(.97)}
+.scanjo,.shutter,button.primary{will-change:transform}
+@media (prefers-reduced-motion:reduce){button,[role="button"],a.pill,a.fchip,a.lnk,.tap{transition:none}button:active,button.is-down,[role="button"]:active,[role="button"].is-down,a.pill:active,a.pill.is-down,a.fchip:active,a.fchip.is-down,a.lnk:active,a.lnk.is-down{transform:none;opacity:.72}.tap:active,.tap.is-down{transform:none}.jorow .mic:active,.jorow .mic.is-down{transform:translateY(-50%);opacity:.72}.scanjo,.shutter,button.primary{will-change:auto}}

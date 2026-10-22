@@ -1,8 +1,10 @@
 /* Shared swipe-left for staff lists. Same pointer idea as Edit layout drag in app.js:
    an 8px move picks an axis, a tap still clicks, and touch and mouse both use pointer events.
    One row open at a time. The buttons behind the row are only actions the list already had.
-   On a fine pointer, a row whose swipe removes it also gets a corner ×. That × runs the
-   same action as the swipe (the same confirm, the same Undo). Phones keep the swipe only. */
+   On a fine pointer, a row whose swipe removes it also gets a corner ×, unless the row
+   already shows a button for that same action. The × runs the same action as the swipe
+   (the same confirm, the same Undo). A full-width photo keeps its width and the × sits
+   on the photo. Text rows keep a gap for it. Phones keep the swipe only. */
 (function (root) {
 'use strict';
 var THRESH = 8;
@@ -238,7 +240,46 @@ function wrap(row, actions) {
   if (gone) addCorner(clip, face, row, gone);
   return clip;
 }
+function actionText(el) {
+  return String(el && el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+/* Print already shows CANCEL, and a consignment row already shows Remove.
+   Those stay the only control. A hidden button does not count. */
+function actionAlreadyShown(row, action) {
+  var name = String(action && action.label || '').trim().toLowerCase();
+  if (!name || !row || !row.querySelectorAll) return false;
+  var nodes = row.querySelectorAll('button, a'), i, el, cs;
+  for (i = 0; i < nodes.length; i++) {
+    el = nodes[i];
+    if (!el.classList || el.classList.contains('swbtn') || el.classList.contains('swx')) continue;
+    if (actionText(el) !== name) continue;
+    if (root.getComputedStyle) {
+      cs = root.getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+    }
+    return true;
+  }
+  return false;
+}
+/* Inventory tiles and production cards are a photo across the top. A small
+   thumb (review, the phone inventory row, a production list) is not. */
+function photoHost(row) {
+  if (!row || !row.querySelectorAll || !row.getBoundingClientRect) return null;
+  var rowBox = row.getBoundingClientRect();
+  if (!(rowBox.width >= 40)) return null;
+  var nodes = row.querySelectorAll('.ivph, .pth'), i, el, box;
+  for (i = 0; i < nodes.length; i++) {
+    el = nodes[i];
+    if (!el.classList || el.classList.contains('sm') || el.classList.contains('xs') || el.classList.contains('big')) continue;
+    box = el.getBoundingClientRect();
+    if (box.width < rowBox.width * 0.7 || box.height < 40) continue;
+    if (box.top > rowBox.top + 16) continue;
+    return el;
+  }
+  return null;
+}
 function addCorner(clip, face, row, action) {
+  if (actionAlreadyShown(row, action)) return;
   var base = root.getComputedStyle ? px(root.getComputedStyle(row).paddingRight) : 0;
   row.style.setProperty('--swx-base', base + 'px');
   var b = root.document.createElement('button');
@@ -256,7 +297,12 @@ function addCorner(clip, face, row, action) {
     e.stopPropagation();
   });
   b.addEventListener('click', function (e) { onAction(e, action, row); });
-  face.appendChild(b);
+  var photo = photoHost(row);
+  if (photo) {
+    photo.appendChild(b);
+    photo.classList.add('hasx');
+    clip.classList.add('swphoto');
+  } else face.appendChild(b);
   clip.classList.add('hasx');
 }
 function decorate(container, opt) {
