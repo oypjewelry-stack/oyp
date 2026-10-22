@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OYP · To do add</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/todo.css">
+</head><body>
+<header class="top">
+  <button class="icon" aria-label="Menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
+  <span class="title">Dashboard</span>
+  <span class="topend"></span>
+</header>
+<section class="office">
+  <nav class="side"><div class="sidenav"><a href="#/dashboard">Dashboard</a><a class="on" href="#/todo">To do</a><a href="#/appts">Appointments</a></div></nav>
+  <main id="main" class="main"></main>
+</section>
+<section class="office" id="pageOffice">
+  <nav class="side"><div class="sidenav"><a href="#/dashboard">Dashboard</a><a class="on" href="#/todo">To do</a></div></nav>
+  <main id="page" class="main"></main>
+</section>
+<div id="toast" class="toast hidden"></div>
+<script>
+window.__adds = [];
+window.__toasts = [];
+window.__submits = 0;
+window.__enters = 0;
+document.addEventListener('submit', () => { window.__submits++; }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Done') window.__enters++; }, true);
+const PEOPLE = [{ username: 'ada', name: 'Ada' }, { username: 'rosanna', name: 'Rosanna' }, { username: 'carlos', name: 'Carlos' }];
+const USER = { username: 'ada', role: 'admin', display_name: 'Ada' };
+const LIST = {
+  ok: true,
+  total: 1,
+  people: PEOPLE,
+  done: [],
+  items: [{ id: 'tdm-1', manual: 1, area: 'manual', text: 'Call the caster', due: '2026-10-23', assignee: 'ada', created_by: 'ada', created_name: 'Ada', bucket: 'week', late: 0, sug: 0, status: 'open', tag: '', flag: '', href: '#/todo', jo: '', open: '' }]
+};
+window.OYP = {
+  esc: s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]),
+  here: () => () => true,
+  toast: m => { window.__toasts.push(String(m)); const t = document.getElementById('toast'); t.textContent = m; t.classList.remove('hidden'); },
+  piece: (name, jo) => {
+    const n = name && typeof name === 'object' ? (name.name || '') : (name || '');
+    const id = String(jo || '');
+    if (!n && !id) return '';
+    return '<span class="piece">' + window.OYP.esc(n && id ? n + ' · ' + id : (n || id)) + '</span>';
+  },
+  call: async (action, fields) => {
+    if (action === 'dashboard') return { ok: true, generated_at: '2026-10-22T10:00:00+08:00', counts: { active_jobs: 2, pending_work: 0, pending_breakdown: {} }, board: [], can: {}, sales: { month: '2026-10', months: [] }, overdue_days: 30, consignments: [], payments: [], missing: [] };
+    if (action === 'contactList') return { ok: true, missing: 0, total: 0, missing_jos: [] };
+    if (action === 'portalSteps') return { ok: true, inbox: { items: [] } };
+    if (action === 'todoList') return JSON.parse(JSON.stringify(LIST));
+    if (action === 'todoAdd') {
+      window.__adds.push({ text: fields.text, due: fields.due || '', assignee: fields.assignee || '' });
+      await new Promise(ok => setTimeout(ok, 30));
+      return { ok: true, item: { id: 'srv-' + window.__adds.length, manual: 1, text: fields.text, due: fields.due || '', assignee: fields.assignee || '', status: 'open', created_by: 'ada', created_name: 'Ada' } };
+    }
+    if (action === 'dashDrill') return { ok: true, jobs: [] };
+    return { ok: true };
+  }
+};
+try { localStorage.removeItem('oypTodoWho'); } catch (e) {}
+location.hash = '#/dashboard';
+</script>
+<script src="/todo.js"></script>
+<script src="/dash.js"></script>
+<script>
+window.OYPDash.render(document.getElementById('main'), USER);
+window.OYPTodo.render(document.getElementById('page'), USER);
+window.__ready = function () {
+  return !!(document.querySelector('#main .tdaddgo') && document.querySelector('#page .tdaddgo'));
+};
+window.__layout = function (sel) {
+  const root = document.querySelector(sel);
+  const form = root.querySelector('.tdadd');
+  const input = root.querySelector('.tdaddin');
+  const due = root.querySelector('.tdadddue');
+  const who = root.querySelector('.tdaddwho');
+  const btn = root.querySelector('.tdaddgo');
+  const box = el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height }; };
+  return {
+    vw: window.innerWidth,
+    form: box(form),
+    input: box(input),
+    due: box(due),
+    who: box(who),
+    btn: box(btn),
+    scrollW: form.scrollWidth,
+    clientW: form.clientWidth,
+    disabled: btn.disabled,
+    label: btn.textContent,
+    type: btn.type,
+    hint: input.getAttribute('enterkeyhint'),
+    text: input.value
+  };
+};
+window.__arm = function (sel, assignee) {
+  const root = document.querySelector(sel);
+  const input = root.querySelector('.tdaddin');
+  const due = root.querySelector('.tdadddue');
+  const who = root.querySelector('.tdaddwho');
+  const form = root.querySelector('.tdadd');
+  form.scrollIntoView({ block: 'center', inline: 'nearest' });
+  input.focus();
+  input.value = '';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (due) due.value = '2026-10-29';
+  if (who && assignee) who.value = assignee;
+  return document.activeElement === input;
+};
+window.__fill = function (sel, text, assignee) {
+  const root = document.querySelector(sel);
+  const input = root.querySelector('.tdaddin');
+  const due = root.querySelector('.tdadddue');
+  const who = root.querySelector('.tdaddwho');
+  const card = root.querySelector('[data-dsec="todo"], [data-tdpage]');
+  if (card) {
+    const y = card.getBoundingClientRect().top + window.scrollY - 16;
+    window.scrollTo(0, Math.max(0, y));
+  }
+  input.focus();
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  if (due) due.value = '2026-10-29';
+  if (who && assignee) who.value = assignee;
+  input.focus();
+};
+window.__state = function (sel, text) {
+  const root = document.querySelector(sel);
+  const input = root.querySelector('.tdaddin');
+  const btn = root.querySelector('.tdaddgo');
+  const rows = [...root.querySelectorAll('.tdrow.manual .tdtxt')].filter(el => el.textContent === text).length;
+  const calls = window.__adds.filter(a => a.text === text);
+  return {
+    rows: rows,
+    calls: calls.length,
+    payloads: calls,
+    value: input ? input.value : null,
+    focused: !!(input && document.activeElement === input),
+    disabled: !!(btn && btn.disabled),
+    toast: window.__toasts.length ? window.__toasts[window.__toasts.length - 1] : '',
+    submits: window.__submits,
+    enters: window.__enters
+  };
+};
+window.__burst = function (sel, text) {
+  const root = document.querySelector(sel);
+  const input = root.querySelector('.tdaddin');
+  const form = root.querySelector('form.tdadd');
+  const who = root.querySelector('.tdaddwho');
+  if (who) who.value = 'ada';
+  input.focus();
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  const before = window.__adds.length;
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  if (form && form.isConnected) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  const live = root.querySelector('form.tdadd');
+  if (live && live !== form) live.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  return { before: before, adds: window.__adds.length };
+};
+window.__shotBox = function () {
+  const card = document.querySelector('#main [data-dsec="todo"]');
+  const tools = card.querySelector('.tdtools');
+  const top = card.getBoundingClientRect();
+  const bot = tools.getBoundingClientRect();
+  const x = Math.max(0, Math.floor(top.x - 6));
+  const y = Math.max(0, Math.floor(top.y - 6));
+  const width = Math.min(window.innerWidth - x, Math.ceil(top.width + 12));
+  const height = Math.min(window.innerHeight - y, Math.ceil(bot.bottom - top.y + 18));
+  return { x: x, y: y, width: width, height: height };
+};
+</script>
+</body></html>

@@ -105,7 +105,44 @@ function whoOpts(esc, people, value) {
   return html;
 }
 function addBar(esc, people) {
-  return `<form class="tdadd" autocomplete="off"><input class="tdaddin" placeholder="Add a to-do" aria-label="Add a to-do" maxlength="240" enterkeyhint="done"><input type="date" class="tdadddue" aria-label="Due date"><select class="tdaddwho" aria-label="Assignee">${whoOpts(esc, people, '')}</select></form>`;
+  return `<form class="tdadd" autocomplete="off"><input class="tdaddin" placeholder="Add a to-do" aria-label="Add a to-do" maxlength="240" enterkeyhint="done"><input type="date" class="tdadddue" aria-label="Due date"><select class="tdaddwho" aria-label="Assignee">${whoOpts(esc, people, '')}</select><button type="submit" class="pill sm tdaddgo" disabled>Add</button></form>`;
+}
+function syncAdd(root) {
+  if (!root || !root.querySelector) return;
+  const box = root.querySelector('.tdaddin');
+  const btn = root.querySelector('.tdaddgo');
+  if (!btn) return;
+  btn.disabled = !box || !String(box.value || '').trim();
+}
+function isAddEnter(e) {
+  if (!e || e.repeat || e.isComposing || e.keyCode === 229) return false;
+  if (!e.target || !e.target.classList || !e.target.classList.contains('tdaddin')) return false;
+  return e.key === 'Enter' || e.key === 'Done' || e.keyCode === 13;
+}
+function focusAdd(main) {
+  const box = main && main.querySelector && main.querySelector('.tdaddin');
+  if (box) box.focus();
+}
+function snapshotAdd(main) {
+  const box = main.querySelector('.tdaddin');
+  if (!box) return null;
+  return {
+    text: box.value,
+    due: (main.querySelector('.tdadddue') || {}).value || '',
+    who: (main.querySelector('.tdaddwho') || {}).value || ''
+  };
+}
+function restoreAdd(main, draft) {
+  const box = main.querySelector('.tdaddin');
+  if (!box) return;
+  if (draft) {
+    box.value = draft.text || '';
+    const due = main.querySelector('.tdadddue');
+    const who = main.querySelector('.tdaddwho');
+    if (due) due.value = draft.due || '';
+    if (who) who.value = draft.who || '';
+  }
+  syncAdd(main);
 }
 function autoActs(esc, it) {
   const go = it.open || (it.jo ? 'Open ' + it.jo : 'Open');
@@ -204,8 +241,11 @@ function readAdd(main) {
   return { text: String(text).trim(), due: due, assignee: assignee };
 }
 async function submitAdd(main) {
+  if (S.addGate) return;
   const fields = readAdd(main);
-  if (!fields.text) { const inp = main.querySelector('.tdaddin'); if (inp) inp.focus(); return; }
+  if (!fields.text) { focusAdd(main); return; }
+  S.addGate = true;
+  queueMicrotask(() => { S.addGate = false; });
   const { call, toast } = root.OYP;
   const temp = 'tmp-' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36);
   const item = fresh(S.user, Object.assign({ id: temp }, fields));
@@ -213,22 +253,25 @@ async function submitAdd(main) {
   S.data.items.push(item);
   S.data.items.sort(compare);
   if (S.data.total != null) S.data.total++;
-  const box = main.querySelector('.tdaddin'), due = main.querySelector('.tdadddue'), who = main.querySelector('.tdaddwho');
-  if (box) box.value = ''; if (due) due.value = ''; if (who) who.value = '';
   draw(main);
+  focusAdd(main);
   const r = await call('todoAdd', fields);
   const cur = (S.data.items || []).find(x => x.id === temp);
   if (!r || !r.ok) {
     S.data.items = (S.data.items || []).filter(x => x.id !== temp);
     if (S.data.total > 0) S.data.total--;
     draw(main);
-    const again = main.querySelector('.tdaddin');
-    if (again) { again.value = fields.text; again.focus(); }
+    restoreAdd(main, { text: fields.text, due: fields.due, who: fields.assignee });
+    focusAdd(main);
     return toast((r && r.error) || 'Could not save');
   }
   if (cur && r.item) Object.assign(cur, r.item);
+  const draft = snapshotAdd(main);
   draw(main);
+  restoreAdd(main, draft);
+  focusAdd(main);
   if (S.who !== 'everyone' && cur && !isMine(cur, S.user)) toast('Added. It is under Everyone.');
+  else toast('Added.');
 }
 async function saveEdit(main, row) {
   if (!row || S.skip) return;
@@ -309,6 +352,14 @@ function wire(main) {
   sec.addEventListener('submit', e => {
     if (e.target.classList.contains('tdadd')) { e.preventDefault(); submitAdd(main); return; }
     if (e.target.classList.contains('tdedit')) { e.preventDefault(); saveEdit(main, e.target.closest('.tdrow')); }
+  });
+  sec.addEventListener('keydown', e => {
+    if (!isAddEnter(e)) return;
+    e.preventDefault();
+    submitAdd(main);
+  });
+  sec.addEventListener('input', e => {
+    if (e.target.classList.contains('tdaddin')) syncAdd(sec);
   });
   sec.addEventListener('change', e => {
     if (e.target.classList.contains('tddue') || e.target.classList.contains('tdwho')) saveEdit(main, e.target.closest('.tdrow'));
@@ -399,6 +450,6 @@ function render(main, u) {
     draw(main);
   }).catch(() => { if (!live()) return; S.data = { ok: false, items: [], done: [], people: [], error: 'Could not load' }; draw(main); });
 }
-root.OYPTodo = { today: today, chipLabel: chipLabel, dueBit: dueBit, isMine: isMine, visible: visible, bucketOf: bucketOf, compare: compare, fresh: fresh, areas: AREAS, addBar: addBar, listHtml: listHtml, rowHtml: rowHtml, readWho: readWho, writeWho: writeWho, whoBar: whoBar, render: render, bindSwipe: bindSwipe };
+root.OYPTodo = { today: today, chipLabel: chipLabel, dueBit: dueBit, isMine: isMine, visible: visible, bucketOf: bucketOf, compare: compare, fresh: fresh, areas: AREAS, addBar: addBar, syncAdd: syncAdd, isAddEnter: isAddEnter, listHtml: listHtml, rowHtml: rowHtml, readWho: readWho, writeWho: writeWho, whoBar: whoBar, render: render, bindSwipe: bindSwipe };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPTodo;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -453,6 +453,7 @@ const TODO_CHIPS = [['all', 'All'], ['appt', 'Appointments'], ['prod', 'Producti
 const TODO_BUCKET = { today: 'Today', week: 'This week', idea: 'Suggestions' };
 const TODO_VIS = 8;
 let todoGen = 0;
+let todoAddGate = false;
 function todoRows() {
   const t = D.todo;
   return t && t.ok && Array.isArray(t.items) ? t.items : null;
@@ -490,7 +491,7 @@ function todoHtml(esc) {
     <div class="rvchips tdchips" role="tablist" aria-label="To do areas">${chips.map(([k, lab]) => `<button type="button" class="fchip${filt === k ? ' on' : ''}" data-tdf="${k}">${lab}<b>${k === 'all' ? open.length : counts[k]}</b></button>`).join('')}</div>
     ${body}
     ${more}
-    <p class="muted tdfoot">Enter adds a to-do. Tick finishes one you typed. Tap any other line to open it. ⋯ gives Done or Snooze.</p></section>`;
+    <p class="muted tdfoot">Add or Enter saves a to-do. Tick finishes one you typed. Tap any other line to open it. ⋯ gives Done or Snooze.</p></section>`;
 }
 function loadTodo(main, u) {
   const force = !!D.todoForce;
@@ -518,6 +519,8 @@ function paintTodo(main) {
   if (!sec) return;
   const inp = sec.querySelector('.tdaddin'), due = sec.querySelector('.tdadddue'), who = sec.querySelector('.tdaddwho');
   const draft = inp ? { text: inp.value, due: due ? due.value : '', who: who ? who.value : '', focus: document.activeElement === inp } : null;
+  const focusAdd = !!D.todoFocusAdd;
+  D.todoFocusAdd = false;
   sec.outerHTML = todoHtml(window.OYP.esc);
   const next = main.querySelector('[data-dsec="todo"]');
   if (draft && next) {
@@ -525,17 +528,24 @@ function paintTodo(main) {
     if (a) a.value = draft.text;
     if (b && draft.due) b.value = draft.due;
     if (c && draft.who) c.value = draft.who;
-    if (draft.focus && a) a.focus();
+    if ((draft.focus || focusAdd) && a) a.focus();
+  } else if (focusAdd && next) {
+    const a = next.querySelector('.tdaddin');
+    if (a) a.focus();
   }
+  if (next && window.OYPTodo && window.OYPTodo.syncAdd) window.OYPTodo.syncAdd(next);
   wireTodo(main);
 }
 async function todoSubmitAdd(main, u) {
   const sec = main.querySelector('[data-dsec="todo"]');
   if (!sec || !D.todo || !D.todo.ok || !window.OYPTodo) return;
+  if (todoAddGate) return;
   const text = (sec.querySelector('.tdaddin') || {}).value.trim();
   const due = (sec.querySelector('.tdadddue') || {}).value || '';
   const assignee = (sec.querySelector('.tdaddwho') || {}).value || '';
-  if (!text) return;
+  if (!text) { const inp = sec.querySelector('.tdaddin'); if (inp) inp.focus(); return; }
+  todoAddGate = true;
+  queueMicrotask(() => { todoAddGate = false; });
   const temp = 'tmp-' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36);
   const item = window.OYPTodo.fresh(u || D.user, { id: temp, text, due, assignee });
   D.todo.items = D.todo.items || [];
@@ -544,19 +554,30 @@ async function todoSubmitAdd(main, u) {
   if (D.todo.total != null) D.todo.total++;
   const box = sec.querySelector('.tdaddin'), dueEl = sec.querySelector('.tdadddue'), whoEl = sec.querySelector('.tdaddwho');
   if (box) box.value = ''; if (dueEl) dueEl.value = ''; if (whoEl) whoEl.value = '';
+  D.todoFocusAdd = true;
   paintTodo(main);
   const r = await window.OYP.call('todoAdd', { text, due, assignee });
   const cur = (D.todo.items || []).find(x => x.id === temp);
   if (!r || !r.ok) {
     D.todo.items = (D.todo.items || []).filter(x => x.id !== temp);
     if (D.todo.total > 0) D.todo.total--;
+    D.todoFocusAdd = true;
     paintTodo(main);
-    const again = main.querySelector('.tdaddin');
+    const again = main.querySelector('[data-dsec="todo"] .tdaddin') || main.querySelector('.tdaddin');
+    const againDue = main.querySelector('[data-dsec="todo"] .tdadddue');
+    const againWho = main.querySelector('[data-dsec="todo"] .tdaddwho');
     if (again) { again.value = text; again.focus(); }
+    if (againDue) againDue.value = due;
+    if (againWho) againWho.value = assignee;
+    if (window.OYPTodo.syncAdd) window.OYPTodo.syncAdd(main.querySelector('[data-dsec="todo"]') || main);
     return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save');
   }
   if (cur && r.item) Object.assign(cur, r.item);
-  if (window.OYPTodo && window.OYPTodo.readWho && window.OYPTodo.readWho() !== 'everyone' && !window.OYPTodo.isMine(cur || item, u || D.user) && window.OYP.toast) window.OYP.toast('Added. It is under Everyone.');
+  if (window.OYP.toast) {
+    const outside = window.OYPTodo.readWho() !== 'everyone' && !window.OYPTodo.isMine(cur || item, u || D.user);
+    if (outside) window.OYP.toast('Added. It is under Everyone.');
+    else window.OYP.toast('Added.');
+  }
   if (cur && cur._done && r.item) {
     const d = await window.OYP.call('todoDone', { id: r.item.id });
     if (d && d.ok) {
@@ -564,6 +585,7 @@ async function todoSubmitAdd(main, u) {
       if (D.todo.total > 0) D.todo.total--;
     }
   }
+  D.todoFocusAdd = true;
   paintTodo(main);
 }
 function todoGo(it) {
@@ -581,6 +603,14 @@ function wireTodo(main) {
   if (!sec || sec.dataset.tdwire) return;
   sec.dataset.tdwire = '1';
   sec.addEventListener('submit', e => { if (e.target.closest('.tdadd')) { e.preventDefault(); todoSubmitAdd(main, D.user); } });
+  sec.addEventListener('keydown', e => {
+    if (!window.OYPTodo || !window.OYPTodo.isAddEnter || !window.OYPTodo.isAddEnter(e)) return;
+    e.preventDefault();
+    todoSubmitAdd(main, D.user);
+  });
+  sec.addEventListener('input', e => {
+    if (e.target.classList.contains('tdaddin') && window.OYPTodo && window.OYPTodo.syncAdd) window.OYPTodo.syncAdd(sec);
+  });
   sec.addEventListener('click', async e => {
     const whoBtn = e.target.closest('[data-tdwho]');
     if (whoBtn && window.OYPTodo && window.OYPTodo.writeWho) { e.preventDefault(); window.OYPTodo.writeWho(whoBtn.dataset.tdwho); D.todoOpen = ''; paintTodo(main); return; }
