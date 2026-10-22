@@ -410,6 +410,24 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.
 button.swbtn.pill.sm{height:34px;min-height:34px;box-sizing:border-box;font-family:var(--head);font-size:var(--d-btnout-fp,calc(18px*var(--hs)));font-weight:var(--d-btnout-g,500);letter-spacing:0;line-height:1;padding:0 calc(18px*var(--sp,1));display:inline-flex;align-items:center;justify-content:center;text-transform:none;white-space:nowrap;flex:0 0 auto;width:auto;min-width:max-content}
 button.swbtn.pill.sm.outline{background:#fff;color:#111;border:1.5px solid #111}
 button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
+/* Corner × for the row's removing action. 34px hit area, small grey glyph.
+   Phones (no hover, or a coarse pointer) keep swipe only. Select hides it.
+   Text rows reserve 34px so the glyph clears the words. That gap is not part
+   of the swipe tray. A full-width photo stays full width: the × sits on the
+   photo, on a small round white chip, and the inventory ⋯ moves left of it. */
+.swx{display:none;position:absolute;top:0;right:0;z-index:3;width:34px;height:34px;min-width:34px;min-height:34px;box-sizing:border-box;margin:0;padding:0;border:0;background:transparent;color:#777;cursor:pointer;align-items:center;justify-content:center;line-height:0}
+.swx svg{display:block;width:14px;height:14px}
+.swclip.swphoto .swx::before{content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 1px 3px rgba(0,0,0,.28)}
+.swclip.swphoto .swx svg{position:relative;z-index:1}
+@media (hover:hover) and (pointer:fine){
+  .swclip.hasx .swx{display:flex}
+  .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}
+  .swsel .swclip.hasx .swx{display:none}
+  .swsel .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:var(--swx-base, 0px)}
+  .ivph.hasx>.ivmore{right:42px}
+  .swsel .ivph.hasx>.ivmore{right:8px}
+  .swx:hover,.swx:focus-visible{color:#111}
+}
 /* Inventory tiles are grid items. A flex clip sized to the tray's max-content
    and let Archive sit past the card. The clip is the cell, and it clips the tray. */
 .ivgrid{min-width:0}

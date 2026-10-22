@@ -266,7 +266,7 @@ eq(zonesSrc.includes('@media (max-width:480px){.ozbar b{font-size:calc(18px * va
 eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, then draw its box on the sample photo.') && zonesSrc.includes('Swipe on the card to scroll the page.') && zonesSrc.includes('.oznote li{margin:0;padding:0}') && !zonesSrc.includes('Tag each section of the card once'), 'the zone help is a short bulleted list');
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
-eq(read('staff/index.html').includes('nav.js?v=44') && read('staff/print-test.html').includes('nav.js?v=44'), 'staff pages load nav.js v44');
+eq(read('staff/index.html').includes('nav.js?v=45') && read('staff/print-test.html').includes('nav.js?v=45'), 'staff pages load nav.js v45');
 eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=44') && read('scan/index.html').includes('app.js?v=20261022k') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022j'), 'the scanner page keeps the production nav host at v44');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
