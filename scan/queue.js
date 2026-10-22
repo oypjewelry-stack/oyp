@@ -199,11 +199,19 @@ function create(opts) {
   async function remove(id) { await load(); items.delete(id); await store.del(id); emit(); }
   // swipe-delete: gone from every list at once. Never uploaded -> just removed. Saved -> its Drive file is trashed (del).
   // Uploading -> the upload can't be called back once sent, so it is marked and its file is trashed as soon as the upload answers.
+  // Page 1 is the only unread row with the JO box. Later pages of that scan wait on it, so they go with page 1.
+  // Moving the box onto the next page would leave photos that still have no number. Clearing that unread scan is the smaller change.
   async function discard(id) {
-    await load(); const it = items.get(id); if (!it || it.state === 'deleting') return { phase: 'none' };
-    if (it.state === 'waiting' || it.state === 'failed' || it.state === 'needsjo') { await remove(id); return { phase: 'removed' }; }
+    await load(); const it = items.get(id); if (!it || it.state === 'deleting') return { phase: 'none', also: 0 };
+    if (it.state === 'waiting' || it.state === 'failed' || it.state === 'needsjo') {
+      const extra = extraNeedsjo(it, all());
+      const ids = [it.id].concat(extra.map(x => x.id));
+      for (const i of ids) { items.delete(i); await store.del(i); }
+      emit();
+      return { phase: 'removed', also: extra.length };
+    }
     const t = Object.assign({}, it, { state: 'deleting', inflight: it.state === 'uploading', image: '', delTries: 0, delAt: 0 });
-    await save(t); emit(); reap(); return { phase: t.inflight ? 'after-upload' : 'deleting' };
+    await save(t); emit(); reap(); return { phase: t.inflight ? 'after-upload' : 'deleting', also: 0 };
   }
   async function reap() {
     if (!del || reaping) return; reaping = true; clearT(reapTimer); reapTimer = null;
@@ -232,6 +240,22 @@ function create(opts) {
   const api = { load, add, bindJo, pump, kick, wake, retry, retryFailed, remove, discard, reap, counts, list, get: id => items.get(id), prune, deleting: () => all().filter(x => x.state === 'deleting') };
   return api;
 }
+// Later unread pages of the same scan. Only page 1 has the JO box, so removing it takes these with it.
+function extraNeedsjo(it, rows) {
+  if (!it || it.state !== 'needsjo' || (parseInt(it.page, 10) || 1) !== 1 || !it.scan) return [];
+  return (rows || []).filter(x => x && x.id !== it.id && x.scan === it.scan && x.state === 'needsjo');
+}
+function removePrompt(it, extra) {
+  const page = parseInt(it && it.page, 10) || 1;
+  const jo = String(it && it.jo || '');
+  const named = !!(it && it.state !== 'needsjo' && /^\d{2}-\d{3,4}[A-Za-z]?$/.test(jo));
+  const head = 'Remove page ' + page + ' of ' + (named ? ('JO ' + jo) : 'JO not read') + '?';
+  if (it && (it.state === 'saved' || it.state === 'mismatch')) return head + ' Its copy in Drive goes to the trash.';
+  if (it && it.state === 'uploading') return head + ' It is uploading. If a copy lands in Drive, that copy goes to the trash.';
+  const n = extra || 0;
+  const more = n === 1 ? ', and its other page' : n > 1 ? (', and its ' + n + ' other pages') : '';
+  return head + " It hasn't uploaded, so the photo will be gone from this phone" + more + '.';
+}
 // one line of status text per item, shared by every list
 function label(it, isOnline) {
   switch (it.state) {
@@ -244,6 +268,6 @@ function label(it, isOnline) {
   }
   return it.state;
 }
-const api = { create, memoryStore, idbStore, label, keyOf, STATES, MAX_TRIES, MAX_PARALLEL, BACKOFF };
+const api = { create, memoryStore, idbStore, label, removePrompt, extraNeedsjo, keyOf, STATES, MAX_TRIES, MAX_PARALLEL, BACKOFF };
 if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.OYPQueue = api;
 })(typeof window !== 'undefined' ? window : globalThis);
