@@ -11,6 +11,7 @@
 .setcard .chev{position:absolute;right:16px;top:50%;transform:translateY(-50%);color:var(--icon);font-size:calc(22px*var(--fs))}
 .seth{margin:calc(22px*var(--sp)) 0 calc(8px*var(--sp))}
 .setbox{border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:calc(4px*var(--sp)) calc(18px*var(--sp));max-width:var(--d-box-wp,calc(760px*var(--cw)))}
+.setbox + .setbox{margin-top:calc(14px*var(--sp))}
 .setrow{display:flex;justify-content:space-between;align-items:center;gap:calc(16px*var(--sp));padding:calc(14px*var(--sp)) 0;border-bottom:1px solid #f1f1f1}
 .setrow:last-child{border-bottom:0}.setrow.col{flex-direction:column;align-items:stretch}
 .setrow.off{opacity:.55}
