@@ -31,3 +31,6 @@ button.iccard:hover{border-color:#111}
   .icph{width:100%;height:auto;aspect-ratio:4/3;border-radius:0}
   .icb{padding:calc(10px*var(--sp)) calc(12px*var(--sp)) calc(12px*var(--sp))}
 }
+/* One line on the handheld too: "Elena Tan · 26-287B". The phone rule stacks .piece and hides the dot. */
+.ic .piece{flex-direction:row;align-items:baseline;line-height:1.2;height:auto}
+.ic .piece .psep{display:inline-block;white-space:pre}

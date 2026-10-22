@@ -121,9 +121,21 @@ function esc(s) {
   if (root.OYP && root.OYP.esc) return root.OYP.esc(s);
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
+function clientName(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'object' && v.name) return String(v.name).trim();
+  return '';
+}
+/* Spaces are non-breaking so a flex line cannot trim them to "Elena Tan·26-287B". */
 function pieceHtml(client, jo) {
+  const id = normJo(jo) || String(jo || '').trim();
+  const name = clientName(client);
+  if (name && id) {
+    const label = name + ' \u00b7 ' + id;
+    return '<span class="piece" title="' + esc(label) + '"><span class="pname">' + esc(name) + '</span><span class="psep">\u00a0\u00b7\u00a0</span><span class="pjo">' + esc(id) + '</span></span>';
+  }
   if (root.OYP && root.OYP.piece) return root.OYP.piece(client, jo);
-  const id = jo || '';
   return id ? '<b class="cn">' + esc(id) + '</b>' : '';
 }
 function onCount() { return /^#\/count(?:$|[/?])/.test(location.hash); }
