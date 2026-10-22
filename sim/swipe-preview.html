@@ -5,7 +5,7 @@
 <title>Swipe preview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../app.css?v=44">
+<link rel="stylesheet" href="../app.css?v=45">
 <link rel="stylesheet" href="../todo.css?v=5">
 <link rel="stylesheet" href="../production.css?v=9">
 <link rel="stylesheet" href="../consign.css?v=10">
@@ -22,7 +22,7 @@
 </section>
 <div id="toast" class="toast hidden"></div>
 <pre id="out" style="display:none"></pre>
-<script src="../swipe.js?v=2"></script>
+<script src="../swipe.js?v=3"></script>
 <script>
 (function () {
   var q = new URLSearchParams(location.search);
@@ -227,36 +227,61 @@
   check(del.querySelector('.swbtn').classList.contains('swdanger'), 'Delete is the danger button');
 
   function rect(el) { return el.getBoundingClientRect(); }
+  function translateX(el) {
+    var m = getComputedStyle(el).transform;
+    var parts = m && m.match(/matrix\(([^)]+)\)/);
+    return parts ? parseFloat(parts[1].split(',')[4]) : 0;
+  }
   function trayFits(clip) {
     var face = clip.querySelector('.swface');
+    var bar = clip.querySelector('.swacts');
     var buttons = [].slice.call(clip.querySelectorAll('.swbtn'));
-    if (!face || !buttons.length) return false;
-    var c = rect(clip), fr = rect(face), left = Infinity, ok = true;
-    buttons.forEach(function (b) {
+    if (!face || !bar || !buttons.length) return false;
+    var c = rect(clip);
+    var mainBox = rect(document.querySelector('.main'));
+    if (c.width < 8 || c.left < mainBox.left - 1 || c.right > mainBox.right + 1) return false;
+    var bcs = getComputedStyle(bar);
+    var lead = parseFloat(bcs.paddingLeft) || 0;
+    var colGap = parseFloat(bcs.columnGap || bcs.gap) || 0;
+    var inset = parseFloat(clip.style.getPropertyValue('--sw-inset')) || 0;
+    var tray = 0;
+    var ok = true;
+    buttons.forEach(function (b, i) {
       var r = rect(b);
-      left = Math.min(left, r.left);
-      if (r.width < 8 || r.left < c.left - 1 || r.right > c.right + 1 || r.top < c.top - 1 || r.bottom > c.bottom + 1) ok = false;
+      tray += r.width;
+      if (i) tray += colGap;
+      if (r.width < 8 || r.left < c.left - 1 || r.right > c.right - inset + 1 || r.top < c.top - 1 || r.bottom > c.bottom + 1) ok = false;
       if (b.scrollWidth > b.clientWidth + 1) ok = false;
       if (Math.abs(r.height - 34) > 1) ok = false;
     });
-    return ok && fr.right <= left + 1;
+    var expect = -(tray + lead + inset);
+    if (Math.abs(translateX(face) - expect) > 1.5) ok = false;
+    return ok && rect(face).right <= rect(buttons[0]).left + 1;
   }
-  ['print', 'todo', 'inv', 'prod', 'review', 'mats', 'consign'].forEach(function (name) {
-    mountList(name);
-    var row = main.querySelector('[data-st="failed"]') || main.querySelector('.tdrow:not(.manual)') || main.querySelector('.swface > *');
-    OYPSwipe.open(row);
-    var clip = row.closest('.swclip');
-    check(clip && trayFits(clip), name + ' reveals every button inside the card, clear of the row, at 34px');
-    var sample = main.querySelector('.pill.sm.outline:not(.swbtn)');
-    var btn = clip && clip.querySelector('.swbtn');
-    if (sample && btn) {
-      var a = getComputedStyle(sample), b = getComputedStyle(btn);
-      check(a.fontFamily === b.fontFamily && a.fontSize === b.fontSize && a.fontWeight === b.fontWeight, name + ' buttons match the Select pill face');
-    }
-  });
-
-  document.getElementById('out').textContent = lines.join('\n') + (window.__fail ? '' : '\nSWIPE_OK');
-  document.getElementById('out').style.display = 'block';
+  function report() {
+    document.getElementById('out').textContent = lines.join('\n') + (window.__fail ? '' : '\nSWIPE_OK');
+    document.getElementById('out').style.display = 'block';
+    document.body.dataset.ready = '1';
+  }
+  function geometry() {
+    if (q.get('vw')) check(window.innerWidth === Number(q.get('vw')), 'layout viewport is ' + q.get('vw') + ' (was ' + window.innerWidth + ')');
+    ['print', 'todo', 'inv', 'prod', 'review', 'mats', 'consign'].forEach(function (name) {
+      mountList(name);
+      var row = main.querySelector('[data-st="failed"]') || main.querySelector('.tdrow:not(.manual)') || main.querySelector('.swface > *');
+      OYPSwipe.open(row);
+      var clip = row.closest('.swclip');
+      check(clip && trayFits(clip), name + ' slides by the tray plus the gap, and every button is inside the card at 34px');
+      var sample = main.querySelector('.pill.sm.outline:not(.swbtn)');
+      var btn = clip && clip.querySelector('.swbtn');
+      if (sample && btn) {
+        var a = getComputedStyle(sample), b = getComputedStyle(btn);
+        check(a.fontFamily === b.fontFamily && a.fontSize === b.fontSize && a.fontWeight === b.fontWeight, name + ' buttons match the Select pill face');
+      }
+    });
+    report();
+  }
+  var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  fonts.then(geometry);
 })();
 </script>
 </body></html>

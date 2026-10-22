@@ -4,7 +4,6 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const root = path.join(__dirname, '..');
 const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 let failed = 0;
@@ -34,15 +33,88 @@ eq(read('consign.js').includes('Remove this piece from the sheet?') && read('con
 eq(!read('appts.js').includes('OYP.swipe') && !read('pay.js').includes('OYP.swipe'), 'appointments and quotes have no row-level archive, cancel, or delete, so they are unchanged');
 eq(read('app.js').includes('function toastUndo') && read('app.js').includes('async function archiveJos') && read('app.js').includes('swipe: (window.OYPSwipe && window.OYPSwipe.mount)'), 'undo and archive live on the shared OYP helper');
 eq(read('app.css').includes('button.swbtn.pill.sm') && read('app.css').includes('font-family:var(--head)') && read('app.css').includes('height:34px') && read('app.css').includes('#b3261e') && read('app.css').includes('touch-action:pan-y') && read('app.css').includes('--sw-inset'), 'revealed buttons are 34px pills in the site face, inset by the row padding');
-eq(index.includes('swipe.js?v=2') && index.includes('app.js?v=34') && index.includes('app.css?v=44'), 'swipe.js is loaded and cache-busted');
-eq(index.indexOf('swipe.js?v=2') < index.indexOf('app.js?v=34'), 'swipe.js loads before app.js');
+eq(index.includes('swipe.js?v=3') && index.includes('app.js?v=34') && index.includes('app.css?v=45'), 'swipe.js is loaded and cache-busted');
+eq(index.indexOf('swipe.js?v=3') < index.indexOf('app.js?v=34'), 'swipe.js loads before app.js');
 
-[390, 1280].forEach(function (width) {
-  const chromeRun = spawnSync('google-chrome', ['--headless=new', '--disable-gpu', '--no-sandbox', '--user-data-dir=/tmp/chrome-swipe-sim-' + width, '--window-size=' + width + ',980', '--dump-dom', 'file://' + path.join(root, 'sim/swipe-preview.html') + '?test=1'], { encoding: 'utf8', timeout: 30000 });
-  const text = (chromeRun.stdout || '').replace(/<[^>]+>/g, ' ');
-  if (!chromeRun.stdout) eq(false, 'headless gesture page produced no page at ' + width, (chromeRun.stderr || chromeRun.error || '').toString().slice(0, 400));
-  else eq(chromeRun.stdout.includes('SWIPE_OK'), 'at ' + width + 'px the tray is fully visible and the gestures still behave', text.slice(text.indexOf('ok '), 900));
-});
+const http = require('http');
+const { spawn } = require('child_process');
 
-if (failed) { console.error(failed + ' failed'); process.exit(1); }
-console.log('swipe-sim passed');
+function getJson(url) {
+  return new Promise(function (resolve, reject) {
+    const req = http.get(url, function (res) {
+      let data = '';
+      res.on('data', function (c) { data += c; });
+      res.on('end', function () { try { resolve(JSON.parse(data)); } catch (err) { reject(err); } });
+    });
+    req.on('error', reject);
+  });
+}
+
+function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
+
+async function chromePage(width) {
+  const port = 9300 + width;
+  const chrome = spawn('google-chrome', [
+    '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
+    '--remote-debugging-port=' + port,
+    '--user-data-dir=/tmp/chrome-swipe-sim-' + width,
+    '--window-size=1280,980',
+    'about:blank'
+  ], { stdio: 'ignore' });
+  let ws;
+  try {
+    let version;
+    for (let i = 0; i < 40; i++) {
+      try { version = await getJson('http://127.0.0.1:' + port + '/json/version'); break; }
+      catch (err) { await sleep(100); }
+    }
+    if (!version) throw new Error('chrome did not open a debugging port');
+    const target = await getJson('http://127.0.0.1:' + port + '/json/new?about:blank');
+    ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise(function (resolve, reject) { ws.addEventListener('open', resolve); ws.addEventListener('error', reject); });
+    let id = 0;
+    const pending = new Map();
+    ws.addEventListener('message', function (ev) {
+      const msg = JSON.parse(ev.data);
+      if (!msg.id || !pending.has(msg.id)) return;
+      const waiter = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) waiter.reject(new Error(JSON.stringify(msg.error)));
+      else waiter.resolve(msg.result);
+    });
+    function send(method, params) {
+      const msgId = ++id;
+      return new Promise(function (resolve, reject) {
+        pending.set(msgId, { resolve: resolve, reject: reject });
+        ws.send(JSON.stringify({ id: msgId, method: method, params: params || {} }));
+      });
+    }
+    await send('Emulation.setDeviceMetricsOverride', { width: width, height: 980, deviceScaleFactor: 1, mobile: width < 800 });
+    await send('Page.enable');
+    await send('Page.navigate', { url: 'file://' + path.join(root, 'sim/swipe-preview.html') + '?test=1&vw=' + width });
+    let text = '';
+    for (let i = 0; i < 50; i++) {
+      const result = await send('Runtime.evaluate', { expression: 'document.getElementById("out") ? document.getElementById("out").textContent : ""', returnByValue: true });
+      text = (result.result && result.result.value) || '';
+      if (text.indexOf('SWIPE_OK') >= 0 || text.indexOf('FAIL') >= 0) break;
+      await sleep(200);
+    }
+    return text;
+  } finally {
+    if (ws) ws.close();
+    chrome.kill('SIGKILL');
+  }
+}
+
+(async function () {
+  for (const width of [390, 1280]) {
+    try {
+      const text = await chromePage(width);
+      eq(text.indexOf('SWIPE_OK') >= 0, 'at ' + width + 'px the row slides by the tray and every button sits inside the card', text.replace(/\s+/g, ' ').slice(0, 900));
+    } catch (err) {
+      eq(false, 'headless gesture page ran at ' + width, String(err && err.stack || err).slice(0, 400));
+    }
+  }
+  if (failed) { console.error(failed + ' failed'); process.exit(1); }
+  console.log('swipe-sim passed');
+})();

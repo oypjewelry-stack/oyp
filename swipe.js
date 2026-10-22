@@ -48,8 +48,9 @@ function px(v) {
   var n = parseFloat(v);
   return n > 0 ? n : 0;
 }
-/* The row slides by every button, the gaps, and the row's own right padding.
-   Capping that distance is what left buttons half-covered. */
+/* The row slides by every button, the gaps between them, the gap before the
+   tray, and the row's own right padding so the tray can sit inside that padding.
+   A fixed bar width from a zero offsetWidth is what left the row 10px open. */
 function measure(clip) {
   var bar = clip.querySelector('.swacts');
   if (!bar) return 0;
@@ -58,28 +59,37 @@ function measure(clip) {
   var inset = 0;
   if (row && root.getComputedStyle) inset = px(root.getComputedStyle(row).paddingRight);
   clip.style.setProperty('--sw-inset', inset + 'px');
+  bar.style.width = '';
   var buttons = bar.querySelectorAll('.swbtn');
   var cs = root.getComputedStyle ? root.getComputedStyle(bar) : null;
   var gap = cs ? px(cs.columnGap || cs.gap) : 6;
   var w = (cs ? px(cs.paddingLeft) + px(cs.paddingRight) : 8);
   for (var i = 0; i < buttons.length; i++) {
-    w += buttons[i].offsetWidth || 0;
+    var bw = buttons[i].getBoundingClientRect ? buttons[i].getBoundingClientRect().width : 0;
+    if (!(bw > 0)) bw = buttons[i].offsetWidth || buttons[i].scrollWidth || 0;
+    w += bw;
     if (i) w += gap;
   }
-  if (!(w > 0)) w = bar.scrollWidth || bar.offsetWidth || 0;
+  if (!(w > 8)) w = bar.scrollWidth || bar.getBoundingClientRect().width || 0;
   w = Math.ceil(w);
   var dist = Math.ceil(w + inset);
   clip.style.setProperty('--sw', dist + 'px');
-  if (w) bar.style.width = w + 'px';
   return dist;
 }
 function snap(clip, open) {
   if (!clip) return;
   clip.classList.remove('swdrag');
-  if (open) measure(clip);
-  clip.classList.toggle('open', !!open);
   var face = clip.querySelector('.swface');
-  if (face) face.style.transform = '';
+  var dist = open ? measure(clip) : 0;
+  clip.classList.toggle('open', !!open);
+  if (face) {
+    /* Apply the end position before the next paint. A CSS transition here is
+       what screenshots caught as a 10px slide with only the pill's curve showing. */
+    face.style.transition = 'none';
+    face.style.transform = open ? 'translateX(' + (-dist) + 'px)' : '';
+    void face.offsetWidth;
+    face.style.transition = '';
+  }
 }
 function closeAll(except) {
   var doc = root.document;
