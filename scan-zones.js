@@ -670,6 +670,8 @@ function ensureCss() {
     '.ozstage:not(.ozhas) canvas{cursor:pointer}',
     '.ozstage.ozhot{box-shadow:inset 0 0 0 2px #d4af37}',
     '.ozupload{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1}',
+    '.ozupload:active,.ozupload.is-down{transform:translate(-50%,-50%) scale(.97)}',
+    '@media (prefers-reduced-motion:reduce){.ozupload:active,.ozupload.is-down{transform:translate(-50%,-50%);opacity:.72}}',
     '.ozstage.ozhas .ozupload{display:none}',
     '.ozhits{position:absolute;inset:0;z-index:2;pointer-events:none}',
     '.ozboxhit,.ozhandlehit{position:absolute;pointer-events:auto;touch-action:none;background:transparent}',
