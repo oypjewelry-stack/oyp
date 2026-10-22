@@ -180,10 +180,15 @@
 
   mountList('prod');
   var pcard = main.querySelector('.pcard');
-  check(pcard.getAttribute('draggable') === 'true', 'a production card stays draggable');
+  var phoneProd = window.innerWidth <= 760;
+  if (phoneProd) {
+    check(pcard.getAttribute('draggable') !== 'true' && !!pcard.querySelector('[data-move]'), 'a phone production card keeps Move and is not a kanban drag');
+  } else {
+    check(pcard.getAttribute('draggable') === 'true', 'a production card stays draggable');
+  }
   pointer(pcard.querySelector('.kd'), -130, 2);
   check(pcard.closest('.swclip').classList.contains('open'), 'a left drag on a production card opens Archive');
-  check(pcard.draggable === true || pcard.getAttribute('draggable') === 'true', 'the kanban drag is restored after the swipe');
+  if (!phoneProd) check(pcard.draggable === true || pcard.getAttribute('draggable') === 'true', 'the kanban drag is restored after the swipe');
   OYPSwipe.close(pcard);
   document.body.dataset.sel = '1';
   pointer(pcard.querySelector('.kd'), -130, 0);

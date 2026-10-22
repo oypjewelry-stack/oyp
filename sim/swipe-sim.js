@@ -39,14 +39,19 @@ eq(index.indexOf('swipe.js?v=3') < index.indexOf('app.js?v=34'), 'swipe.js loads
 const http = require('http');
 const { spawn } = require('child_process');
 
-function getJson(url) {
+function httpJson(url, method) {
   return new Promise(function (resolve, reject) {
-    const req = http.get(url, function (res) {
+    const u = new URL(url);
+    const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname + u.search, method: method || 'GET' }, function (res) {
       let data = '';
       res.on('data', function (c) { data += c; });
-      res.on('end', function () { try { resolve(JSON.parse(data)); } catch (err) { reject(err); } });
+      res.on('end', function () {
+        if (res.statusCode >= 400) reject(new Error(res.statusCode + ' ' + data.slice(0, 180)));
+        else { try { resolve(JSON.parse(data)); } catch (err) { reject(err); } }
+      });
     });
     req.on('error', reject);
+    req.end();
   });
 }
 
@@ -65,11 +70,11 @@ async function chromePage(width) {
   try {
     let version;
     for (let i = 0; i < 40; i++) {
-      try { version = await getJson('http://127.0.0.1:' + port + '/json/version'); break; }
+      try { version = await httpJson('http://127.0.0.1:' + port + '/json/version'); break; }
       catch (err) { await sleep(100); }
     }
     if (!version) throw new Error('chrome did not open a debugging port');
-    const target = await getJson('http://127.0.0.1:' + port + '/json/new?about:blank');
+    const target = await httpJson('http://127.0.0.1:' + port + '/json/new?about:blank', 'PUT');
     ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise(function (resolve, reject) { ws.addEventListener('open', resolve); ws.addEventListener('error', reject); });
     let id = 0;
@@ -110,9 +115,10 @@ async function chromePage(width) {
   for (const width of [390, 1280]) {
     try {
       const text = await chromePage(width);
-      eq(text.indexOf('SWIPE_OK') >= 0, 'at ' + width + 'px the row slides by the tray and every button sits inside the card', text.replace(/\s+/g, ' ').slice(0, 900));
+      const fails = text.split('\n').filter(function (line) { return line.indexOf('FAIL') === 0; }).join(' | ');
+      eq(text.indexOf('SWIPE_OK') >= 0, 'at ' + width + 'px the row slides by the tray and every button sits inside the card' + (fails ? ' — ' + fails : ''));
     } catch (err) {
-      eq(false, 'headless gesture page ran at ' + width, String(err && err.stack || err).slice(0, 400));
+      eq(false, 'headless gesture page ran at ' + width + ': ' + String(err && err.stack || err).slice(0, 600));
     }
   }
   if (failed) { console.error(failed + ' failed'); process.exit(1); }
