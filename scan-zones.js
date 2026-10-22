@@ -347,7 +347,8 @@ function isScanner() {
   var el = document.documentElement;
   if (el && el.getAttribute('data-oyp-scanner') === '1') return true;
   if (el && el.getAttribute('data-oyp-scanner') === '0') return false;
-  if (/jo-scanner/.test(location.pathname || '')) return true;
+  var path = location.pathname || '';
+  if (/jo-scanner/.test(path) || /(^|\/)scan(\/|$)/.test(path)) return true;
   return !!(document.getElementById('btnMenu') && document.getElementById('menu') && !document.getElementById('vOffice'));
 }
 function hookMenu() {

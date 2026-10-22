@@ -1,0 +1,313 @@
+/* OYP Card Scanner — brand: Libre Bodoni 500 titles, Bodoni Moda 400 body, Inter 500 labels, icons #9a9a9a */
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --head:'Libre Bodoni','Berthold Bodoni','Bodoni 72',Didot,serif;
+  --body:'Bodoni Moda','Bodoni 72',Didot,serif;
+  --label:Inter,Helvetica,sans-serif;
+  --muted-icon:#9a9a9a;
+  --gold:#d4af37;
+}
+body{
+  font-family:var(--body);font-weight:400;font-optical-sizing:auto;
+  background:#fff;color:#111;-webkit-tap-highlight-color:transparent;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+h1,h2,.serif,.title,input.big,button.primary,.jobar strong,.pages .nm,.price{
+  font-family:var(--head);font-weight:500;letter-spacing:-.005em;
+}
+.muted,.toggle,.hint,.warn,.pages .st,dialog,dialog p,button.ghost,input.mid{
+  font-family:var(--body);font-weight:400;
+}
+.lbl{
+  font-family:var(--label);font-weight:500;font-size:12px;
+  letter-spacing:.14em;text-transform:uppercase;color:#777;
+  display:block;margin:26px 0 8px;
+}
+
+.top{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:5}
+.logo{height:30px;width:auto;display:block}
+.title{font-size:17px}
+.icon{
+  background:none;border:0;color:var(--muted-icon);width:48px;height:48px;min-width:48px;min-height:48px;
+  display:inline-flex;align-items:center;justify-content:center;padding:0;opacity:1;transition:none;cursor:pointer;
+}
+.icon:hover,.icon:focus,.icon:active{color:var(--muted-icon);background:none;outline:none}
+.icon svg{display:block;pointer-events:none}
+
+.view{padding:28px 20px}.hidden{display:none!important}
+h1{font-size:30px;margin-bottom:8px}
+.muted{color:#777}
+input.big{width:100%;font-size:34px;padding:18px;border:2px solid #111;border-radius:14px;text-align:center;letter-spacing:.05em}
+input.mid{width:100%;font-size:16px;padding:14px;border:1px solid #ccc;border-radius:10px}
+button.primary{width:100%;min-height:60px;margin-top:22px;background:#111;color:#fff;border:0;border-radius:14px;font-size:20px;letter-spacing:.06em}
+button.ghost{min-height:52px;padding:0 20px;background:#fff;border:1px solid #111;border-radius:12px;font-size:16px;color:#111}
+.warn{margin-top:18px;color:#a06b00;font-size:14px}
+
+#scanView{padding:12px 14px}
+.jobar{display:flex;justify-content:space-between;align-items:baseline;font-size:18px;margin-bottom:10px;font-family:var(--body)}
+.jobar strong{font-size:20px}
+.stage{position:relative;width:100%;max-width:100%;box-sizing:border-box;aspect-ratio:3/4;max-height:62vh;margin:0 auto;background:#000;border-radius:16px;overflow:hidden}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.guide{position:absolute;inset:7% 8%;border:2px dashed rgba(212,175,55,.9);border-radius:10px;pointer-events:none}
+.hint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);background:rgba(0,0,0,.65);color:#fff;padding:8px 14px;border-radius:20px;font-size:14px;white-space:nowrap}
+.hint.ok{background:var(--gold);color:#111}
+.controls{display:flex;align-items:center;justify-content:space-between;padding:16px 4px}
+.toggle{font-size:14px;display:flex;align-items:center;gap:6px;min-height:48px;color:#555}
+.toggle input{width:22px;height:22px;accent-color:#111}
+.shutter{width:78px;height:78px;border-radius:50%;border:5px solid var(--gold);background:#111;box-shadow:inset 0 0 0 4px #fff}
+.shutter:active{transform:scale(.94)}
+
+.pages{list-style:none;display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.pages li{display:flex;align-items:center;gap:12px;border:1px solid #eee;border-radius:12px;padding:8px}
+.pages img{width:56px;height:72px;object-fit:cover;border-radius:6px;background:#f4f4f4}
+.pages .nm{font-size:15px}
+.pages .st{font-size:13px;color:#777}
+.st.ok{color:#2a7a2a}.st.err{color:#b00020}.st.mm{color:#a06b00}.st.queued{color:#777}
+.pages .retry{margin-left:auto;min-height:44px;padding:0 14px;border:1px solid #111;background:#fff;border-radius:10px;font-family:var(--body);font-size:14px}
+
+dialog{border:0;border-radius:18px;padding:22px;width:min(92vw,460px);margin:auto;font-family:var(--body)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h2{margin-bottom:4px;font-size:24px}
+dialog .lbl{margin-top:18px}
+dialog .row{display:flex;gap:10px;margin-top:16px}
+dialog .row button{flex:1;margin-top:0}
+
+.jorow{display:flex;gap:10px;align-items:stretch}
+.jorow input.big{flex:1;min-width:0}
+.mic{flex:0 0 84px;min-height:84px;border:2px solid var(--gold);border-radius:14px;background:#111;color:var(--gold);display:flex;align-items:center;justify-content:center}
+.mic:active{transform:scale(.95)}
+.mic.listening{background:var(--gold);color:#111;animation:micpulse 1.1s ease-in-out infinite}
+@keyframes micpulse{0%{box-shadow:0 0 0 0 rgba(212,175,55,.7)}70%{box-shadow:0 0 0 16px rgba(212,175,55,0)}100%{box-shadow:0 0 0 0 rgba(212,175,55,0)}}
+#startView .toggle{margin-top:10px}
+
+/* review / corner editor */
+.review{position:fixed;inset:0;z-index:20;background:#111;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.rvhead{padding:14px 18px 8px;color:#fff;display:flex;flex-direction:column;gap:2px}
+.rvhead .serif{font-family:var(--head);font-weight:500;font-size:22px}
+.rvsub{font-size:14px;color:#aaa}
+.rvstage{position:relative;flex:1;margin:6px 26px;touch-action:none}
+.rvstage canvas{position:absolute}
+.rvlines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.handle{position:absolute;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;border:3px solid var(--gold);background:rgba(212,175,55,.25);touch-action:none;box-shadow:0 0 0 2px rgba(0,0,0,.4)}
+.handle::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:var(--gold)}
+.handle.drag{background:rgba(212,175,55,.45);transform:scale(1.15)}
+.rvbar{display:flex;gap:10px;padding:12px 16px 16px}
+.rvbar button{flex:1;margin-top:0;min-height:58px}
+.rvbar button.ghost{background:transparent;color:#fff;border-color:#666}
+.rvbar button.primary{background:var(--gold);color:#111}
+
+.rvopts{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 16px}
+.rvopts .enh{font-size:15px;display:flex;align-items:center;gap:8px}
+.rvpreview{height:72px;max-width:45%;object-fit:contain;border:1px solid rgba(255,255,255,.25);background:#111}
+.toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:12px;background:rgba(20,20,20,.92);color:#fff;padding:8px 10px 8px 8px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.toast img{height:56px;border-radius:4px}
+.toast button{padding:6px 12px}
+.rvopts{color:#eee}
+/* owner: instructions + auto-start label in Inter 500 16px */
+#startView .help{font-family:Inter,Helvetica,sans-serif;font-weight:500;font-size:16px;text-transform:uppercase;letter-spacing:normal}
+
+#btnStart.pulse{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{box-shadow:0 0 0 8px rgba(212,175,55,.45)}}
+/* owner: header title + main heading 22px on all screens */
+header.top .title, h1{font-size:22px}
+/* owner: JO number label (start) + JO label (scan view) 16px */
+#startView .lbl, .jobar, .jobar strong{font-size:16px}
+#btnMenu,#btnMenu:hover,#btnMenu:focus,#btnMenu:active{color:#000}
+/* owner: mic as trailing icon inside the JO input (iOS search-field style) */
+.jorow{position:relative;display:block}
+.jorow input.big{width:100%;padding-left:64px;padding-right:64px}
+.jorow .mic{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:48px;height:48px;min-height:48px;flex:none;border:0;border-radius:50%;background:transparent;color:#9a9a9a;padding:0;animation:none}
+.jorow .mic svg{width:26px;height:26px}
+.jorow .mic:active{transform:translateY(-50%) scale(.92)}
+.jorow .mic.listening{background:rgba(214,48,49,.12);color:#d63031;animation:micdot 1s ease-in-out infinite}
+@keyframes micdot{50%{box-shadow:0 0 0 7px rgba(214,48,49,.18)}}
+/* owner: SCAN button auto-width, centered */
+#btnStart{display:block;width:fit-content;width:-webkit-fit-content;margin-left:auto;margin-right:auto;padding:14px 36px;min-height:44px}
+/* owner mockup: black pill SCAN; hamburger left, logo right */
+#btnStart{background:#000;color:#fff;border:0;border-radius:16px;font-family:'Libre Bodoni',serif;font-weight:500;font-size:22px;letter-spacing:.04em;padding:14px 40px;text-transform:none}
+header.top #btnMenu{order:0}
+header.top .title{order:1}
+header.top .logo{order:2}
+header.top .title{text-transform:uppercase;font-size:22px}
+header.top .title{font-size:20px}
+/* owner: JO input 60px tall */
+.jorow input.big{height:60px;box-sizing:border-box;padding-top:0;padding-bottom:0;font-size:26px;line-height:60px}
+/* owner: leading JO label inside input; JO label, number and mic share one grey */
+:root{--field-gray:#9a9a9a}
+.jorow .jopre{position:absolute;left:18px;top:50%;transform:translateY(-50%);font-family:Inter,Helvetica,sans-serif;font-weight:500;font-size:16px;text-transform:uppercase;color:var(--field-gray);letter-spacing:.06em;cursor:text;user-select:none;-webkit-user-select:none}
+.jorow input.big{color:var(--field-gray);padding-left:64px}
+.jorow input.big::placeholder{color:var(--field-gray);opacity:.55}
+.jorow .mic{color:var(--field-gray)}
+.jorow .mic.listening{color:#d63031}
+/* owner: listening state in brand gold */
+.jorow .mic.listening{color:var(--gold);background:rgba(212,175,55,.16);animation:micgold 1s ease-in-out infinite}
+@keyframes micgold{50%{box-shadow:0 0 0 7px rgba(212,175,55,.22)}}
+
+/* fixed-ratio pages: uniform thumbnails, no gaps */
+.pages img{width:50px;height:78px;object-fit:cover;background:none}
+.rvpreview{object-fit:cover;aspect-ratio:1/1.55;height:72px;width:auto;background:none}
+.toast img{height:56px;aspect-ratio:1/1.55;object-fit:cover}
+/* owner: more space above JO box; listening = gold icon only */
+#startView .help{margin-bottom:calc(16px * var(--sp, 1))}
+.jorow .mic.listening{color:#d4af37;background:transparent;animation:none;box-shadow:none;transform:translateY(-50%)}
+/* owner: JO cap height = mic icon visual height (~20.6px); Inter cap-height 0.75em */
+.jorow .jopre{font-size:22px;line-height:1;letter-spacing:.02em}
+.jorow input.big{padding-left:76px}
+/* owner: JO number uses same font as JO label (size/colour unchanged) */
+.jorow input.big{font-family:Inter,Helvetica,sans-serif;font-weight:500}
+/* owner step1: vertically centre start block below header */
+#startView{display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;min-height:calc(100vh - 77px);min-height:calc(100dvh - 77px)}
+#startView .help{text-transform:none}
+/* owner: title cap-centre aligned with logo centre */
+header.top .title{line-height:1;position:relative;top:2.5px}
+#startView h1,#startView .help{text-align:center}
+/* help stays 15px. The sentence wraps on a narrow phone instead of running off the edge. */
+#startView .help{white-space:normal;font-size:15px}
+/* owner: stone background below white header, fixed (iOS-safe pseudo-element) */
+html.on-start body::before{content:"";position:fixed;inset:0;z-index:-1;background:#fff url(bg-stone.jpg?v=1792162220) center/cover no-repeat;pointer-events:none}
+header.top{background:#fff}
+/* owner: readability on stone */
+#startView .help{color:#444}
+.jorow input.big{background:#fff}
+/* owner: continuous stone everywhere incl. overscroll */
+html.on-start{background:#d8d3c8 url(bg-stone.jpg?v=1792162220) center top/cover no-repeat fixed;min-height:100%}
+html.on-start body{background:transparent;min-height:100%}
+html:not(.on-start),html:not(.on-start) body{background:#fff}
+html.on-start body::before{top:-120px;left:0;right:0;bottom:auto;inset:auto;top:-120px;left:0;right:0;height:calc(120vh + 240px);height:calc(100lvh + 240px);background-color:#d8d3c8;background-position:center}
+header.top{background:#fff}
+/* owner: scan screen refresh */
+#scanView .jobar{position:relative;justify-content:center;text-align:center}
+#scanView .jobar > span:first-child{font-weight:700}
+#scanView .jobar strong{font-weight:700}
+#scanView #pageLabel{position:absolute;right:0;top:50%;transform:translateY(-50%);font-family:Inter,Helvetica,sans-serif;font-weight:500;letter-spacing:0;text-transform:none}
+#scanView .controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+#scanView .controls .toggle{font-family:Inter,Helvetica,sans-serif;font-weight:500;font-size:12px;gap:5px}
+#scanView .controls .toggle input{width:18px;height:18px}
+#scanView .controls .toggle:first-child{justify-self:start}
+#scanView .controls .toggle:last-child{justify-self:end}
+#btnDone{display:block;width:fit-content;width:-webkit-fit-content;margin-left:auto;margin-right:auto;min-height:44px;background:#000;color:#fff;border:0;border-radius:16px;font-family:'Libre Bodoni',serif;font-weight:500;font-size:22px;letter-spacing:.04em;padding:14px 40px}
+#btnCapture.shutter{background:#d4af37}
+
+/* toggles aligned to viewfinder edges */
+#scanView .controls{box-sizing:border-box;max-width:100%;margin-left:auto;margin-right:auto;padding-left:0;padding-right:0}
+#scanView .jobar{box-sizing:border-box;max-width:100%;margin-left:auto;margin-right:auto}
+header.top #btnMenu{position:relative;top:2.5px}
+
+/* v2: back-office menu (same look as oypjewelry.com) */
+.menu{position:fixed;top:77px;left:0;background:#fff;border:1px solid #eee;border-radius:0 0 14px 0;box-shadow:0 8px 24px rgba(0,0,0,.08);z-index:30;min-width:240px;max-height:calc(100dvh - 90px);overflow:auto;padding:6px 0}
+.menu a{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;padding:13px 20px;font-family:var(--label);font-weight:500;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#111;text-decoration:none}
+.menu a.on{box-shadow:inset 3px 0 0 var(--gold);background:#faf8f1}
+.menu hr{border:0;border-top:1px solid #eee;margin:6px 0}
+.menu .mnote{padding:8px 20px 12px;font-size:13px;color:#777;max-width:260px}
+.badge,.qbadge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:11px;background:#111;color:#fff;font-family:var(--label);font-size:12px;font-weight:500;letter-spacing:0;font-style:normal}
+.qbadge.bad,.menu .badge{background:var(--gold);color:#111}
+/* start screen: pending uploads + status */
+.qbtn{display:flex;align-items:center;gap:10px;margin:22px auto 0;background:#fff;border:1px solid #111;border-radius:14px;padding:10px 18px;font-family:var(--label);font-weight:500;font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:#111}
+.qstatus{text-align:center;margin-top:10px;font-family:var(--label);font-weight:500;font-size:14px}
+.qstatus.ok,.sstat.ok span,.qsum.ok{color:#2a7a2a}.qstatus.busy,.sstat.busy span,.qsum.busy{color:#a06b00}.qstatus.err,.sstat.err span,.qsum.err{color:#b00020}
+.qstatus:not(:empty){background:rgba(255,255,255,.92);border-radius:10px;padding:6px 12px;width:fit-content;margin-left:auto;margin-right:auto}
+/* scan screen: saved status bar */
+.sstat{display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px;background:#fafafa;border:1px solid #eee;border-radius:12px;padding:10px 12px;margin:0 0 10px;font-family:var(--label);font-weight:500;font-size:15px;text-align:left}
+.sstat em{font-style:normal;color:#555;font-size:12px;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+#scanView .shutter{width:88px;height:88px}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+.flash.go{animation:snapflash .35s ease-out}@keyframes snapflash{0%{opacity:.85}100%{opacity:0}}
+/* lists */
+.pages li .tx{flex:1;min-width:0}.pages .st{overflow-wrap:anywhere}
+.pages .acts{display:flex;flex-direction:column;gap:6px;margin-left:auto}
+.pages .acts button{min-height:40px;padding:0 14px;border:1px solid #111;background:#fff;border-radius:10px;font-family:var(--body);font-size:14px}
+.pages .acts .rm{border-color:#ccc;color:#b00020}
+.pages li.failed{border-color:#f0c4c4;background:#fff8f8}.pages li.mismatch{border-color:#ecd9a6;background:#fffdf6}
+.pages li.grp{border:0;padding:12px 2px 0;font-family:var(--label);font-weight:500;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#777;background:none}
+.spin{margin-left:auto;width:22px;height:22px;border:3px solid #eee;border-top-color:var(--gold);border-radius:50%;animation:spin 0.9s linear infinite;flex:none}@keyframes spin{to{transform:rotate(360deg)}}
+/* pending uploads view */
+#queueView{padding:16px 16px 40px}
+.qhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}.qhead h1{margin:0}
+.back{background:none;border:0;font-family:var(--label);font-weight:500;font-size:15px;color:#111;min-height:44px;padding:0 8px 0 0}
+.qsum{font-family:var(--label);font-weight:500;font-size:16px;margin:6px 0}
+.qhelp{font-size:14px;margin-bottom:12px}
+#btnRetryFailed{width:100%;margin-bottom:8px}
+.note{position:fixed;left:12px;right:12px;top:86px;z-index:40;background:#111;color:#fff;border-radius:12px;padding:12px 14px;font-family:var(--label);font-weight:500;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+select.mid{width:100%;font-size:16px;padding:14px;border:1px solid #ccc;border-radius:10px;background:#fff;font-family:var(--body)}
+/* rotated (landscape) pages: thumbnails follow the image's own shape */
+.pages img{width:64px;height:64px;object-fit:contain;background:#f4f4f4;border-radius:6px}
+.toast img{height:56px;width:auto;aspect-ratio:auto;object-fit:contain}
+.rvpreview{aspect-ratio:auto;width:auto;height:72px;object-fit:contain}
+/* swipe left to delete (page strip) */
+#pages{position:relative}#pages li[data-sw]{touch-action:pan-y;position:relative;z-index:1}#pages li.swiping{background:#fff;user-select:none;-webkit-user-select:none}
+.swbg{position:absolute;left:0;right:0;z-index:0;border-radius:12px;background:#f3c6c3;color:#fff;display:flex;align-items:center;justify-content:flex-end;padding-right:18px;font-family:var(--body);font-size:14px;letter-spacing:.06em;text-transform:uppercase;transition:background .12s}
+.swbg.go{background:#c62828}
+.swconf{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:16px}
+.swconf .box{background:#fff;border-radius:16px;padding:18px;width:100%;max-width:420px;box-shadow:0 8px 30px rgba(0,0,0,.2)}
+.swconf p{margin:0 0 14px;font-size:16px;line-height:1.4}.swconf .row{display:flex;gap:10px}
+.swconf button{flex:1;min-height:48px;border-radius:12px;font-family:var(--body);font-size:15px;border:1px solid #111;background:#fff}
+.swconf button.del{background:#c62828;border-color:#c62828;color:#fff}
+/* Scan JO: native camera first (one big button), gallery + live scan as small links */
+.vh{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;opacity:0}
+.scanjo{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;width:100%;min-height:max(220px,34vh);min-height:max(220px,34dvh);margin-top:22px;background:#000;color:#fff;border-radius:22px;cursor:pointer;user-select:none;-webkit-user-select:none;font-family:'Libre Bodoni',serif;font-weight:500;font-size:30px;letter-spacing:.04em;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.scanjo svg{color:var(--gold)}
+.scanjo:active{transform:scale(.985)}
+.scanjo .sjbusy{display:none;align-items:center;gap:10px;font-size:22px}
+.scanjo.busy{pointer-events:none;opacity:.88}.scanjo.busy .sj,.scanjo.busy svg{display:none}.scanjo.busy .sjbusy{display:flex}
+.scanjo .spin{margin:0;border-color:#444;border-top-color:var(--gold)}
+.scanjo.pulse{animation:pulse 1.2s ease-in-out infinite}
+.altrow{display:flex;align-items:center;justify-content:center;gap:6px;margin:14px auto 0;width:fit-content;background:rgba(255,255,255,.92);border-radius:12px;padding:0 10px;color:#999}
+.alt,#btnStart.alt{display:inline-flex;align-items:center;min-height:44px;width:auto;margin:0;padding:0 8px;background:none;border:0;border-radius:0;box-shadow:none;animation:none;font-family:var(--label);font-weight:500;font-size:14px;letter-spacing:.02em;text-transform:none;color:#111;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.alt.dis{pointer-events:none;opacity:.4}
+.lastscan{display:flex;align-items:center;gap:12px;margin-top:14px;background:#fff;border:1px solid #eee;border-radius:14px;padding:8px 10px;box-shadow:0 4px 16px rgba(0,0,0,.06)}
+.lastscan img{width:64px;height:64px;object-fit:contain;background:#f4f4f4;border-radius:6px;flex:none}
+.lastscan .tx{flex:1;min-width:0}
+.lastscan .nm{font-family:var(--head);font-weight:500;font-size:16px}.lastscan .nm em{font-family:var(--body);font-style:normal;font-size:13px;color:#a06b00}
+.lastscan .st{font-family:var(--label);font-weight:500;font-size:13px;margin-top:2px}.lastscan .st.busy{color:#a06b00}
+.lastscan .la{display:flex;gap:4px;margin:2px 0 0 -8px;align-items:center;flex-wrap:wrap}.lastscan .la .alt{min-height:36px;font-size:13px}
+/* JO sticker / Jewelry tag: same settog as the back office (settings.css) */
+.stickrow{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 10px;margin:0 auto 2px}
+#startView .scanjo{margin-top:0;margin-bottom:calc(16px * var(--sp, 1))}
+#startView .stickrow{margin-bottom:calc(16px * var(--sp, 1))}
+#startView .jorow{margin-bottom:calc(16px * var(--sp, 1))}
+#startView .altrow{margin-top:0}
+.settog{display:inline-flex;align-items:center;gap:8px;font-family:var(--label);font-weight:400;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#111;cursor:pointer}
+.settog input{width:20px;height:20px;accent-color:#111;margin:0}
+.settog b{font-weight:500}
+#startView .starttog{background:rgba(255,255,255,.92);border-radius:12px;padding:0 14px}
+#capView{padding:16px 16px 28px;max-width:560px;margin:0 auto}
+#capView .jobar{position:relative;justify-content:center;text-align:center;margin-bottom:2px}
+#capView .jobar strong{font-weight:700}
+#capView #capCount{position:absolute;right:0;top:50%;transform:translateY(-50%);font-family:var(--label);font-weight:500;font-size:13px}
+#capView .stickrow{margin-bottom:0}
+.nostick{font-family:var(--label);font-weight:500;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#a06b00;margin:0 0 8px;text-align:center}
+.strip{list-style:none;display:flex;gap:10px;overflow-x:auto;padding:8px 2px 4px;-webkit-overflow-scrolling:touch}
+.strip li{flex:0 0 auto;width:92px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.strip img,.strip .ph{width:84px;height:108px;object-fit:contain;background:#f4f4f4;border:1px solid #eee;border-radius:10px}
+.strip .ph{display:block;background:repeating-linear-gradient(-45deg,#f7f7f7,#f7f7f7 6px,#f1f1f1 6px,#f1f1f1 12px)}
+.strip .pn{font-family:var(--label);font-weight:500;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#555}
+.strip .st{font-family:var(--label);font-weight:500;font-size:12px;text-align:center}
+.strip .retry{min-height:32px;margin-top:2px;padding:0 10px;border:1px solid #111;background:#fff;border-radius:8px;font-family:var(--label);font-weight:500;font-size:12px}
+.capprog{text-align:center;min-height:1.2em;margin:8px 0 0;font-family:var(--label);font-weight:500;font-size:14px}
+.capprog.ok{color:#2a7a2a}.capprog.busy{color:#a06b00}.capprog.err{color:#b00020}
+#btnCapRetry{width:auto;min-height:34px;margin:8px auto 0;padding:0 18px;font-size:14px}
+.capacts{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px;margin-top:16px}
+.capjo{margin:8px 0 4px}
+.capjo .capjorow{display:flex;align-items:center;gap:10px}
+.capjo .jorow{flex:1;min-width:0}
+#btnNextPage,#btnCapDone,#btnCapJoSave{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:auto;min-height:0;height:34px;margin:0;padding:0 18px;border-radius:26px;border:1px solid #111;font-family:'Libre Bodoni',Georgia,serif;font-weight:500;font-size:14px;letter-spacing:0;line-height:1;cursor:pointer;text-decoration:none;user-select:none;-webkit-user-select:none}
+#btnNextPage,#btnCapJoSave{background:#111;color:#fff}
+#btnCapDone{background:#fff;color:#111}
+#btnCapDone:disabled{opacity:.45}
+#btnNextPage .sjbusy{display:none}
+#btnNextPage.busy{pointer-events:none;opacity:.7}
+#btnNextPage.busy .sj{display:none}
+#btnNextPage.busy .sjbusy{display:inline-flex}
+#btnNextPage .spin{width:12px;height:12px;margin:0;border-width:2px;border-color:#555;border-top-color:#fff}
+#capView .lastscan{margin-top:8px}
+@media (min-width:700px){#startView{max-width:560px;margin-left:auto;margin-right:auto}}
+/* Staff header: menu left, title centred, logo right. print.js still inserts a printer pill into the header on scanner pages; the printer control is the nav.js menu row, so that pill stays out of the header. */
+header.top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;justify-content:stretch;padding:10px 14px}
+header.top #btnMenu{order:0;justify-self:start;position:relative;top:0;width:44px;height:44px;min-width:44px;min-height:44px}
+header.top .title{order:0;justify-self:center;text-align:center;position:relative;top:0;transform:translateY(2px);font-size:20px;line-height:1}
+header.top .topend{order:0;justify-self:end;display:flex;align-items:center;gap:8px}
+header.top .logo{order:0;height:30px}
+header.top #printChip,header.top .oyp-pr-slot{display:none!important}
+.menu a[data-oyp-printer]{font-family:var(--label);font-weight:500;letter-spacing:.06em;text-transform:uppercase}
+.oyp-pr-dot{display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:50%;background:#b3261e;vertical-align:1px;flex:none}
+.oyp-pr-dot.on{background:#1b7f3a}
+.oyp-pr-dot.busy{background:#a37b12}
