@@ -23,8 +23,8 @@
 .chip.pdays{color:#555}.chip.pdays.over{border-color:var(--gold);color:#8a6d12}.chip.plate{border-color:#b3261e;color:#b3261e}
 .prun{font-family:var(--label);font-size:calc(11px*var(--fs));color:#2d7a3e;margin-top:calc(4px*var(--sp));display:flex;align-items:center;gap:calc(5px*var(--sp))}.prun i{width:7px;height:7px;border-radius:50%;background:#2d7a3e;animation:pblink 1.4s infinite}
 .prun.off{color:#aaa}.prun.big{font-size:calc(13px*var(--fs));margin:calc(8px*var(--sp)) 0}@keyframes pblink{50%{opacity:.25}}
-.pmove{display:block;width:100%;margin-top:calc(10px*var(--sp));background:#111;color:#fff;border:0;border-radius:calc(14px*var(--rad));padding:calc(16px*var(--sp)) calc(12px*var(--sp));font-family:var(--head);font-weight:500;font-size:calc(20px*var(--hs));text-transform:uppercase;cursor:pointer}
-.pmove span{color:var(--gold)}
+/* Same face as Select (34px, Libre Bodoni, 18px, weight 500), full width, black with white text. */
+.pmove{box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:100%;height:var(--d-btnsm-hp,34px);min-height:var(--d-btnsm-hp,34px);margin-top:calc(10px*var(--Gsp,var(--sp)));padding:0 calc(18px*var(--sp));border:0;background:#111;color:#fff;cursor:pointer;text-transform:none;letter-spacing:normal;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;--hs:calc(var(--Ghs,1)*var(--d-btnsm-t,1));--sp:calc(var(--Gsp,1)*var(--d-btnsm-h,1));--rad:calc(var(--Grad,1)*var(--d-btnsm-r,1));--head:var(--d-btnsm-f,var(--Ghead,var(--head)));font-family:var(--head);font-weight:var(--d-btnout-g,var(--d-btnsm-g,500));font-size:var(--d-btnout-fp,calc(18px*var(--hs)));border-radius:var(--d-btnsm-rp,calc(26px*var(--rad)))}
 /* phone: one stage at a time, big cards */
 .pcols .fchip{padding:0 calc(14px*var(--sp));font-size:calc(13px*var(--fs));position:relative}.pdot{position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:var(--gold)}
 .prplist .pcard{padding:calc(12px*var(--sp))}.prplist .pcm{display:flex;gap:calc(12px*var(--sp))}.prplist .pth{width:96px;height:72px;aspect-ratio:auto;margin:0;flex-shrink:0}.prplist .pbd{min-width:0;flex:1}
@@ -99,7 +99,13 @@
 .pcard{display:flex;flex-direction:column;min-width:0;overflow:hidden;box-sizing:border-box}
 .pcard .pcm,.pcard .pbd{min-width:0}
 .pcard .pth{aspect-ratio:4/3;flex:0 0 auto;margin:0 0 calc(8px*var(--sp))}
-.pcard .kjo{flex-wrap:nowrap;height:calc(20px*var(--hs));line-height:calc(20px*var(--hs));overflow:hidden;white-space:nowrap}.pcard .pjn{overflow:hidden;text-overflow:ellipsis;min-width:0}.pcard .pver{flex-shrink:0}
+.pcard .kjo{flex-direction:column;align-items:flex-start;justify-content:flex-start;flex-wrap:nowrap;height:calc(66px*var(--hs));line-height:calc(22px*var(--hs));overflow:hidden;white-space:normal}
+.pcard .piece{flex-direction:column;align-items:flex-start;justify-content:flex-start;width:100%;max-width:100%;min-height:0;line-height:calc(22px*var(--hs));gap:0;overflow:hidden}
+.pcard .piece .psep{display:none}
+.pcard .piece .pname,.pcard .piece .pjo{max-width:100%;width:100%;min-width:0}
+.pcard .piece .pname{flex:0 1 auto;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;word-break:break-word;max-height:calc(44px*var(--hs))}
+.pcard .piece .pjo{flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:calc(22px*var(--hs));line-height:calc(22px*var(--hs))}
+.pcard .pjn{overflow:hidden;text-overflow:ellipsis;min-width:0}.pcard .pver{flex-shrink:0}
 .pcard .kd{font-size:calc(14px*var(--fs));line-height:calc(18px*var(--fs));height:calc(36px*var(--fs));margin:calc(3px*var(--sp)) 0 calc(2px*var(--sp));overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;word-break:break-word}
 .pcard .kc{line-height:calc(16px*var(--fs));height:calc(32px*var(--fs));overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;word-break:break-word}
 .pcard .prun{height:calc(16px*var(--fs));line-height:calc(16px*var(--fs));margin-top:calc(4px*var(--sp));white-space:nowrap;overflow:hidden}
@@ -112,13 +118,13 @@
 .prplist .kd{font-size:calc(16px*var(--fs));line-height:calc(20px*var(--fs));height:calc(40px*var(--fs))}
 .prplist .kc{font-size:calc(14px*var(--fs));line-height:calc(18px*var(--fs));height:calc(18px*var(--fs));-webkit-line-clamp:1}
 .prplist .kf{height:calc(50px*var(--fs));margin-top:max(calc(6px*var(--sp)),calc(6px*var(--sp) + (var(--bh) - 1)*90px))}.prplist .kf .chip{font-size:calc(11px*var(--fs));height:calc(23px*var(--fs));line-height:calc(15px*var(--fs));padding:calc(3px*var(--sp)) calc(9px*var(--sp))}
-.prplist .pmove{height:calc(56px*var(--hs));padding:0 calc(12px*var(--sp));line-height:calc(56px*var(--hs));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* empty + error states (Oct 19) */
 .pnojo{text-align:center;padding:calc(40px*var(--sp)) calc(16px*var(--sp));margin-top:calc(12px*var(--sp))}.pnojo b{font-family:var(--head);font-weight:500;font-size:calc(20px*var(--hs));display:block;margin-bottom:calc(6px*var(--sp))}.pnojo p{margin:0 auto!important;max-width:420px;font-size:calc(14px*var(--fs))}
 .perr{text-align:center;padding:calc(30px*var(--sp)) calc(16px*var(--sp))}.perr p{margin:0 0 calc(12px*var(--sp))!important;font-size:calc(15px*var(--fs))}
 .pnomatch{display:flex;align-items:center;gap:calc(10px*var(--sp));flex-wrap:wrap;border:1px dashed #ddd;border-radius:calc(12px*var(--rad));padding:calc(10px*var(--sp)) calc(14px*var(--sp));margin-bottom:calc(12px*var(--sp));font-size:calc(14px*var(--fs))}
 .pnojo b{color:#111}.pnojo p,.perr p{color:#555}
-/* phone board: the name sits above the JO, and every card reserves that second line */
+/* phone board: the name sits above the JO, and every card reserves that second line. A long name ellipsizes on one line so the JO stays visible. */
 @media (max-width:760px){
   .prplist .kjo,.pcard .kjo{height:calc(46px*var(--hs));line-height:calc(22px*var(--hs));white-space:normal;align-items:flex-start}
+  .pcard .piece .pname{white-space:nowrap;display:block;-webkit-line-clamp:1;max-height:calc(22px*var(--hs));text-overflow:ellipsis}
 }

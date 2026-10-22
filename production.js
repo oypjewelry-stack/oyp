@@ -2,7 +2,7 @@
    Server: Production.gs (prodBoard, prodJob, prodWorkers, prodPhoto, prodMove, prodAssign, prodSetTarget, prodTimer, prodSessionAdd, prodSessionVoid, prodWorkerSave).
    Delayed = past a target date Susan or an admin set (whole JO or this step). No target = never Delayed. Workers are names; Susan logs their time.
    Routes: #/production (board) · #/production/jo/<JO> (board + card detail) · #/production/workers (who has what, hours this week).
-   Desktop: drag a card to the next column. Phone: one stage at a time, a big "Move to ..." button on every card (the JO's next step: a repair skips Design / Casting).
+   Desktop: drag a card to the next column. Phone: one stage at a time, a Move to … button on every card (the JO's next step: a repair skips Design / Casting).
    No money on the board for anyone. Labor cost shows only in the card detail, only when the server sends it (admin + production manager). */
 (() => {
 'use strict';
@@ -170,7 +170,7 @@ function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, cl
       <div class="kc" title="${esc(who)}">${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
       ${c.running.length ? `<div class="prun"><i></i>${esc(c.running[0].worker)} · <span data-since="${c.running[0].since}">${elapsed(c.running[0].since)}</span></div>` : '<div class="prun pslot" aria-hidden="true"></div>'}</div></div>
     <div class="kf">${chips}</div>
-    ${phone ? (nx && !(staff && c.col === 'pickup') ? `<button class="pmove" data-move="${c.jo}">Move to ${esc(nx.label)} <span>▸</span></button>` : '<div class="pmove pmnone" aria-hidden="true">Last stage</div>') : ''}</div>`;
+    ${phone ? (nx && !(staff && c.col === 'pickup') ? `<button class="pmove" data-move="${c.jo}">Move to ${esc(nx.label)}</button>` : '<div class="pmove pmnone" aria-hidden="true">Last stage</div>') : ''}</div>`;
 }
 function wireBoard(main) {
   const redraw = () => drawBoard(main);
