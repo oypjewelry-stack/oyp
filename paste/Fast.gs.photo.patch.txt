@@ -1,0 +1,10 @@
+Fast.gs — one short edit. photoThumbs and photoFile are reads, and they must stay fresh, so they are NOT added to FAST.CACHE.
+Do not add them to FAST.CACHE. A list of thumbnails must not clear the remembered pages, and it must not be stored as a page answer.
+
+The FIND text is in the middle of the READS line (copy it without leading spaces). It is still there after the To do patch (jobPhoto) and the print patch (that patch does not touch jobPhoto). It is not the CACHE line.
+
+FIND
+jobPhoto: 1, jobSearch: 1,
+
+REPLACE WITH
+jobPhoto: 1, photoThumbs: 1, photoFile: 1, jobSearch: 1,

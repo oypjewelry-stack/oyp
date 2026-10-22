@@ -39,8 +39,11 @@ function turn(src, extra) {
   });
 }
 function photo(jo, fid, size) {
-  const r = fid + '|' + (size || 'thumb'), e = extraTurn(fid), k = r + '|' + e;
-  if (!rawCache[r]) rawCache[r] = window.OYP.call('jobPhoto', { jo, file_id: fid, size }).then(x => (x && x.ok && x.src) || '');
+  const sz = size === 'original' ? 'original' : (size === 'full' ? 1600 : 300);
+  const r = fid + '|' + sz, e = extraTurn(fid), k = r + '|' + e;
+  if (!rawCache[r]) rawCache[r] = window.OYPPhotos
+    ? window.OYPPhotos.load({ jo, id: fid, kind: 'scan', size: sz, legacy: 'job' })
+    : window.OYP.call('jobPhoto', { jo, file_id: fid, size: sz === 1600 ? 'full' : 'thumb' }).then(x => (x && x.ok && x.src) || '');
   if (!photoCache[k]) photoCache[k] = rawCache[r].then(src => turn(src, e));
   return photoCache[k];
 }
@@ -276,6 +279,7 @@ function wire(main) {
   main.querySelectorAll('[data-th],[data-ph]').forEach(el => io.observe(el));
   const db = $('[data-dback]'); if (db) db.onclick = () => { const h = S.back.hash; S.back = null; S.ext = null; S.open = null; location.hash = h; };
   const j = cur(); if (!j || j.stub) return;
+  if (window.OYPPhotos && j.pages && j.pages.length) window.OYPPhotos.prefetch(j.jo, j.pages.map(p => p.file_id), 'scan', 'job');
   costBox(main, j.jo);
   const isExt = S.ext && S.ext.jo === j.jo;
   const st = { location: j.location, type: j.type, client_id: j.client_id, item_type: j.item_type, newClient: null };
@@ -313,14 +317,21 @@ function wire(main) {
   const filled = el => { const f = el.closest('.fsec'); if (f) { f.classList.remove('miss'); const fl = f.querySelector('.flag:not(.c)'); if (fl) fl.remove(); } };
   main.querySelectorAll('.rvp input, .rvp textarea').forEach(el => el.addEventListener('input', () => { if (el.value.trim() && !['fCq'].includes(el.id)) filled(el); }));
   const back = $('[data-back]'); if (back) back.onclick = () => { S.open = null; draw(main); };
-  main.querySelectorAll('[data-big]').forEach(b => b.onclick = async () => {
-    const big = main.querySelector('#rvBig'); big.innerHTML = '<span class="lab">Loading photo…</span>'; big.classList.remove('hidden');
-    const fid = b.dataset.big, src = await photo(j.jo, fid, 'full'); big.innerHTML = src ? `<img src="${src}" alt=""><button class="pill sm rot">ROTATE</button>` : '<span class="lab">Photo not found</span>';
-    let turned = false; const rot = big.querySelector('.rot');
-    if (rot) rot.onclick = async e => { e.stopPropagation(); setExtraTurn(fid, extraTurn(fid) + 90); turned = true; // remembered on this device
-      const s2 = await photo(j.jo, fid, 'full'), im = big.querySelector('img'); if (im && s2) im.src = s2; };
-    big.onclick = () => { big.classList.add('hidden'); if (turned) { const ph = main.querySelector(`.shot [data-ph$="|${CSS.escape(fid)}"]`), th = document.querySelector(`.rvrow [data-th$="|${CSS.escape(fid)}"]`);
-      [ph, th].forEach(el => el && photo(j.jo, fid).then(s3 => { if (s3) el.style.backgroundImage = `url("${s3}")`; })); } };
+  main.querySelectorAll('[data-big]').forEach(b => b.onclick = () => {
+    const big = main.querySelector('#rvBig'), fid = b.dataset.big;
+    big.classList.remove('hidden');
+    const wire = box => {
+      let turned = false;
+      const rot = box.querySelector('.rot');
+      if (rot) rot.onclick = async e => { e.stopPropagation(); setExtraTurn(fid, extraTurn(fid) + 90); turned = true; // remembered on this device
+        delete photoCache[fid + '|1600|' + extraTurn(fid)]; delete photoCache[fid + '|300|' + extraTurn(fid)];
+        const s2 = await photo(j.jo, fid, 'full'), im = box.querySelector('img'); if (im && s2) { im.src = s2; im.classList.remove('phblur'); } };
+      box.onclick = e => { if (e.target.closest('.rot, .phorig')) return; box.classList.add('hidden'); if (turned) {
+        const ph = main.querySelector(`.shot [data-ph$="|${CSS.escape(fid)}"]`), th = document.querySelector(`.rvrow [data-th$="|${CSS.escape(fid)}"]`);
+        [ph, th].forEach(el => el && photo(j.jo, fid).then(s3 => { if (s3) el.style.backgroundImage = `url("${s3}")`; })); } };
+    };
+    if (window.OYPPhotos) window.OYPPhotos.stage(big, { jo: j.jo, id: fid, kind: 'scan', legacy: 'job', alt: '', empty: 'Photo not found', turn: src => turn(src, extraTurn(fid)), tools: '<button type="button" class="pill sm rot">ROTATE</button>', wire });
+    else photo(j.jo, fid, 'full').then(src => { big.innerHTML = src ? `<img src="${src}" alt=""><button class="pill sm rot">ROTATE</button>` : '<span class="lab">Photo not found</span>'; wire(big); });
   });
   main.querySelectorAll('[data-loc]').forEach(b => b.onclick = () => { st.location = b.dataset.loc; main.querySelectorAll('[data-loc]').forEach(x => x.classList.toggle('on', x === b)); filled(b); });
   main.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { st.type = st.type === b.dataset.type ? '' : b.dataset.type; main.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x.dataset.type === st.type)); if (st.type) filled(b);

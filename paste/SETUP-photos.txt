@@ -1,0 +1,42 @@
+PASTE_STEPS
+
+Staff photos (Inventory tiles, Production board, To review, and the photo you open).
+The page stays the same size. Lists load a small thumbnail. Opening a photo shows that thumbnail at once, then a sharper medium image. Open original is the only control that fetches the full Drive file.
+
+No new OAuth scopes. Do not edit appsscript.json. Drive and "connect to an external service" are already granted. The Drive advanced service (Drive API v3) is already on for card OCR.
+
+1. New file (code only)
+   Apps Script: + Script, name it PhotoFast, paste paste/PhotoFast.gs (the whole file, no extra header).
+   Save.
+
+2. Auth.gs — one line in handleAction_, immediately BEFORE the JobSync hook
+   if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user); // JobSync.gs
+
+   Add this line above it:
+
+   if (typeof isPhotoFastAction_ === 'function' && isPhotoFastAction_(a)) return handlePhotoFast_(req, s.user); // PhotoFast.gs
+
+   Use the same names as that hook (a, req, s.user). Do not paste a new Auth.gs over the live file.
+
+3. Fast.gs — paste/Fast.gs.photo.patch.txt
+   photoThumbs and photoFile are reads. Add them to FAST.READS only.
+   Do not add them to FAST.CACHE. A thumbnail must not be stored with the page answers, and it must not clear those answers.
+
+4. DashCache.gs
+   If DCACHE.READS (the reads list) already contains jobPhoto or invThumbs, add photoThumbs: 1, photoFile: 1 beside them.
+   Do not add them to a list that saves the answer.
+   If that file does not list jobPhoto or invThumbs, leave DashCache.gs alone.
+
+5. Deploy
+   Deploy > Manage deployments > pencil > New version > Deploy.
+   Do not use New deployment.
+
+The staff site (photos.js, inv.js, production.js, review.js, app.js) ships on GitHub Pages.
+Until this paste is deployed, the pages keep using invThumbs, prodPhoto, and jobPhoto.
+
+What the new actions return
+  photoThumbs { size: 300 or 1600, piece: [JO, ...], scan: [{ jo, id }, ...] }
+    piece photos are the product photo on the JO (never a card scan).
+    scan photos are an OcrLog file for that JO.
+  photoFile { jo, id, kind: 'piece' or 'scan', size: 300, 1600, or 'original' }
+    size original is the full Drive file. Nothing else asks for it.

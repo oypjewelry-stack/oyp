@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Photo preview</title>
+<link rel="stylesheet" href="../app.css?v=39">
+<link rel="stylesheet" href="../production.css?v=7">
+<style>
+  body{margin:0;background:#fff}
+  .wrap{padding:20px;max-width:1100px}
+  h2{font-family:var(--head);font-weight:500;font-size:28px;margin:0 0 8px}
+  .note{font-family:var(--label);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#888;margin:0 0 14px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:22px}
+  .ivgrid{max-width:720px}
+  @media(max-width:700px){.row{grid-template-columns:1fr}}
+</style>
+</head><body>
+<div class="wrap">
+  <h2>Inventory</h2>
+  <p class="note">300px thumbnails, as the tiles scroll in</p>
+  <div class="ivgrid" id="grid"></div>
+  <div class="row">
+    <div>
+      <h2>JO detail</h2>
+      <p class="note" id="state">Thumbnail first</p>
+      <div class="prpbig phstage" id="big"></div>
+    </div>
+    <div>
+      <h2>To review</h2>
+      <p class="note">Same photo, opened</p>
+      <div class="rvbig" id="big2" style="position:relative;inset:auto;height:280px;border-radius:12px"></div>
+    </div>
+  </div>
+</div>
+<script>
+function jpeg(w, h, label, q) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f4f2ec'; x.fillRect(0, 0, w, h);
+  const m = Math.round(w * 0.06);
+  x.fillStyle = '#fff'; x.strokeStyle = '#111'; x.lineWidth = Math.max(2, w / 200);
+  x.fillRect(m, m, w - m * 2, h - m * 2); x.strokeRect(m, m, w - m * 2, h - m * 2);
+  x.fillStyle = '#111'; x.font = 'bold ' + Math.round(h / 14) + 'px sans-serif';
+  x.fillText(label, m + 16, m + Math.round(h / 8));
+  x.strokeStyle = '#ddd';
+  for (let i = 0; i < 8; i++) { const y = m + Math.round(h * (0.22 + i * 0.08)); x.beginPath(); x.moveTo(m + 12, y); x.lineTo(w - m - 12, y); x.stroke(); }
+  return c.toDataURL('image/jpeg', q);
+}
+const TH = jpeg(300, 225, 'JO 26-287', 0.72);
+const MED = jpeg(1600, 1200, 'JO 26-287', 0.8);
+const ORIG = jpeg(800, 600, 'ORIGINAL', 0.9);
+window.OYP = {
+  call(action, data) {
+    return new Promise(res => {
+      const wait = data && data.size === 1600 ? 700 : data && data.size === 'original' ? 400 : 40;
+      setTimeout(() => {
+        if (action === 'photoThumbs') {
+          const piece = {}, scan = {};
+          (data.piece || []).forEach(jo => { piece[jo] = { id: 'f-' + jo, src: TH, found: true }; });
+          (data.scan || []).forEach(s => { scan[s.id] = data.size >= 1000 ? MED : TH; });
+          res({ ok: true, size: data.size, piece, scan });
+        } else res({ ok: true, src: ORIG });
+      }, wait);
+    });
+  }
+};
+</script>
+<script src="../photos.js?v=2"></script>
+<script>
+const grid = document.getElementById('grid');
+const jos = ['26-281', '26-287', '26-290', '26-304', '26-311', '26-318'];
+grid.innerHTML = jos.map(jo => `<div class="ivcard"><div class="ivph" data-th="${jo}"><span></span></div><div class="ivb"><div class="kjo">${jo}</div><div class="kd">Coin necklace</div></div></div>`).join('');
+OYPPhotos.watch(grid, {
+  sel: '[data-th]',
+  item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+  paint(el, src) {
+    const cap = el.querySelector('span');
+    if (src) { el.style.backgroundImage = "url('" + src + "')"; el.classList.add('has'); if (cap) cap.remove(); }
+  }
+});
+const big = document.getElementById('big');
+OYPPhotos.stage(big, { jo: '26-287', id: 'scan1', kind: 'scan', legacy: 'prod', alt: 'JO card', empty: 'Photo not found' });
+const st = document.getElementById('state');
+const watch = new MutationObserver(() => {
+  const img = big.querySelector('img');
+  if (!img) return;
+  st.textContent = img.classList.contains('phblur') ? 'Thumbnail first' : 'Medium image';
+});
+watch.observe(big, { subtree: true, attributes: true, childList: true });
+OYPPhotos.stage(document.getElementById('big2'), { jo: '26-287', id: 'scan1', kind: 'scan', legacy: 'job', alt: 'JO card' });
+if (location.search.indexOf('orig=1') >= 0) setTimeout(() => { const b = document.querySelector('#big .phorig'); if (b) b.click(); }, 1500);
+</script>
+</body></html>
