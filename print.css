@@ -8,6 +8,8 @@
 .oyp-pr .pill{white-space:nowrap}
 .oyp-pr .whomenu{left:auto;right:0;top:calc(100% + 6px);bottom:auto;min-width:280px;max-width:calc(100vw - 16px);z-index:40}
 .side a[data-oyp-printer],.menu a[data-oyp-printer]{display:flex;align-items:center;flex-wrap:wrap;column-gap:10px}
+.side a[data-oyp-printer] .oyp-pr-status,.menu a[data-oyp-printer] .oyp-pr-status{display:inline-flex;align-items:center;column-gap:10px;position:relative;padding-left:10px}
+.side a[data-oyp-printer] .oyp-pr-status::before,.menu a[data-oyp-printer] .oyp-pr-status::before{content:"";position:absolute;left:0;top:50%;width:1px;height:14px;transform:translateY(-50%);background:#ccc}
 .oyp-pr-pair{display:inline-flex;align-items:center;gap:6px}
 .side a[data-oyp-printer] .oyp-pr-name,.menu a[data-oyp-printer] .oyp-pr-name{font:inherit;letter-spacing:inherit;text-transform:inherit}
 .pr-link .oyp-pr-name{font-family:var(--label,Inter,Helvetica,sans-serif);font-weight:500;font-size:calc(12px * var(--fs,1));letter-spacing:.08em;text-transform:uppercase;color:#111}

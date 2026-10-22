@@ -274,7 +274,7 @@ eq(Z.instructWanted() === false, 'a closed instructions list is remembered');
 localStorage.removeItem('oypScanInstruct');
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
-eq(read('staff/index.html').includes('nav.js?v=50') && read('staff/print-test.html').includes('nav.js?v=50'), 'staff pages load nav.js v50');
+eq(read('staff/index.html').includes('nav.js?v=52') && read('staff/print-test.html').includes('nav.js?v=52'), 'staff pages load nav.js v52');
 eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=47') && read('scan/index.html').includes('app.js?v=20261022m') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022m'), 'the scanner page keeps the production nav host at v47');
 
 const heldPage = { clientId: 'c1', jo: 'OCR', held: true, page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' };

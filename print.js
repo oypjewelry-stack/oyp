@@ -9,8 +9,8 @@ var DEFAULT_API = 'https://script.google.com/macros/s/AKfycbzUmacbdvb0V2nw9ekhar
 var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
-var POLL = 5000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, prepared: {}, preparing: {}, toldDown: false };
+var POLL = 1000;
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, hot: {}, prepared: {}, preparing: {}, toldDown: false };
 /* Slot 0 is state. Slot 1 is the second printer on the same page. Each has its own link, chain, and device id. */
 var peer = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, chain: Promise.resolve() };
 var PAGE_MS = 20000;
@@ -740,16 +740,108 @@ function claimAndPrint(item, link) {
   });
   return done;
 }
+function stickerKey(kind, jo) { return String(kind || '') + '\n' + String(jo || ''); }
+function newPrintId() {
+  return 'pq-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
+}
+function localItem(kind, jo, id, extra) {
+  extra = extra || {};
+  return {
+    print_id: id, jo: jo, kind: kind, status: 'queued',
+    due_date: extra.due_date || extra.due || '',
+    date: extra.date || extra.given || '',
+    current_stage: extra.current_stage || extra.stage || '',
+    metal: extra.metal || '', karat: extra.karat || '',
+    weight_g: extra.weight_g, weight: extra.weight,
+    stone_type: extra.stone_type || extra.stone || '',
+    stone_size: extra.stone_size || '', size: extra.size || '',
+    description: extra.description || ''
+  };
+}
+/* A tap prints from the fields already on the page. The queue write is a log, with this print_id, and it does not hold the printer. */
 function printJo(kind, jo, opts) {
   opts = opts || {};
   var reprint = opts.reprint !== false;
-  return callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint }).then(function (r) {
-    if (!r || r.ok === false) { toast((r && r.error) || 'Sticker did not print'); return r; }
-    var item = r.item || { jo: jo, kind: kind };
-    if (!linkFor(item.kind || kind)) { toast(holdText(item.kind || kind)); refresh(); return r; }
-    if (item.status && item.status !== 'queued') { toast('That sticker is already ' + item.status); refresh(); return r; }
-    return claimAndPrint(item).then(function () { return r; });
-  }).catch(function () { toast('Sticker did not print'); });
+  var link = linkFor(kind);
+  if (!link || !link.connected) {
+    return callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint }).then(function (r) {
+      if (!r || r.ok === false) { toast((r && r.error) || 'Sticker did not print'); return r; }
+      toast(holdText(kind));
+      refresh();
+      return r;
+    }).catch(function () { toast('Sticker did not print'); });
+  }
+  var key = stickerKey(kind, jo);
+  if (state.hot[key]) { toast('That sticker is already printing'); return Promise.resolve(); }
+  var id = newPrintId();
+  var item = localItem(kind, jo, id, opts.item);
+  var tracked = [id];
+  state.hot[key] = id;
+  state.inflight[id] = 1;
+  state.busy[id] = 1;
+  var prep = prepareItem(item, link);
+  var tEnq = clock();
+  var logged = callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint, print_id: id, device_id: devId(link) }).then(function (r) {
+    logMs('enqueue', clock() - tEnq);
+    var idOut = r && r.item && r.item.print_id;
+    if (idOut && tracked.indexOf(idOut) < 0) {
+      tracked.push(idOut);
+      state.inflight[idOut] = 1;
+      state.busy[idOut] = 1;
+    }
+    return r || { ok: false, error: 'Sticker did not print' };
+  }, function () {
+    logMs('enqueue', clock() - tEnq);
+    return { ok: false, error: 'No connection' };
+  });
+  logMs('claim', 0, 'local');
+  var printedOk = false, failWhy = '';
+  var job = work(link, function () {
+    if (!link.connected) { toast(holdText(kind)); return logged; }
+    markPrinting(link, true);
+    toast('Printing…');
+    return sendToPrinter(item, prep, link).then(function () {
+      printedOk = true;
+      toast('Printed');
+    }, function (err) {
+      failWhy = failRow(err);
+      toast(failToast(err));
+    }).then(function () {
+      return logged.then(function (r) {
+        var idOut = (r && r.item && r.item.print_id) || id;
+        if (!r || r.ok === false) {
+          if (printedOk) toast('Printed, but the queue did not update');
+          return r;
+        }
+        if (printedOk) {
+          state.done[idOut] = 1;
+          if (r.item && r.item.status && r.item.status !== 'queued' && r.item.status !== 'failed') return r;
+          markLocal(idOut, 'printed');
+          markLater(idOut, 'printed', '', link);
+          return r;
+        }
+        if (!failWhy) return r;
+        markLocal(idOut, 'failed', failWhy);
+        return callPrint('printMark', { print_id: idOut, mark: 'failed', device_id: devId(link), error: failWhy }).then(function (done) {
+          markFailed(done, 'The sticker failed, and the queue did not update');
+          refresh();
+          return r;
+        });
+      });
+    }).then(function (v) { markPrinting(link, false); return v; }, function (err) { markPrinting(link, false); throw err; });
+  });
+  return Promise.resolve(job).then(function (v) { return v; }, function (err) {
+    markPrinting(link, false);
+    toast(failToast(err));
+  }).finally(function () {
+    delete state.hot[key];
+    tracked.forEach(function (pid) {
+      delete state.inflight[pid];
+      delete state.busy[pid];
+    });
+    if (wantsQueue()) kick();
+    pump();
+  });
 }
 function printAgain(item) {
   if (!item) return;
@@ -827,7 +919,7 @@ function cancel(id) {
   });
 }
 function reprint(item) {
-  return printJo(item.kind, item.jo, { reprint: true });
+  return printJo(item.kind, item.jo, { reprint: true, item: item });
 }
 
 function screenLabel(item) {
@@ -987,7 +1079,7 @@ function onQueueClick(e) {
   if (q === 'cancel') cancel(it.print_id);
   else if (q === 'again') printAgain(it);
   else if (q === 'reprint') reprint(it);
-  else printJo(it.kind, it.jo, { reprint: false });
+  else claimAndPrint(it);
 }
 
 function isFinal(req, res) {
@@ -1040,7 +1132,7 @@ function nextLocal(link) {
     it = items[i];
     if (!it || it.status !== 'queued' || linkFor(it.kind) !== link) continue;
     if (!state.printQueued && !serverAuto(it.kind)) continue;
-    if (state.inflight[it.print_id] || state.done[it.print_id] || state.busy[it.print_id]) continue;
+    if (state.hot[stickerKey(it.kind, it.jo)] || state.inflight[it.print_id] || state.done[it.print_id] || state.busy[it.print_id]) continue;
     if (state.cool[it.print_id] && state.cool[it.print_id] > now) continue;
     if (!claimFresh(it, now, link)) continue;
     return it;
@@ -1072,10 +1164,11 @@ function pump() {
     kick();
   }).finally(function () { state.pumping = false; });
 }
-/* Every 5s asks only for the rev. A server without that cheap answer falls back to a full read every 15s. */
+/* On screen, every 1s asks only for the rev. A hidden tab checks every 5th tick. A server without that cheap answer falls back to a full read every 3rd tick that actually runs. */
 function pollTick() {
   if (!anyUp() || state.pumping) return;
   state.ticks = (state.ticks || 0) + 1;
+  if (!pageVisible() && state.ticks % 5 !== 0) return;
   if (state.briefOk === false) {
     if (state.ticks % 3 !== 0) return;
     pump();
@@ -1170,7 +1263,10 @@ function watchLink(link, client) {
 }
 function onConnected(link, transport) {
   var announce = !!link.opening;
+  var quiet = !!link.auto;
   link.opening = false;
+  link.auto = false;
+  link.away = false;
   var meta = (link.client && link.client.getModelMetadata && link.client.getModelMetadata()) || {};
   var named = modelFromName(link.deviceName);
   var reported = knownModel(meta.model);
@@ -1196,7 +1292,10 @@ function onConnected(link, transport) {
   beat(link);
   rememberBle(link);
   drawChip();
-  if (announce) toast((link.model || 'Printer') + ' connected.');
+  if (link.btId && state.autoTries) delete state.autoTries[link.btId];
+  refreshAutoNote();
+  if (quiet) toast((link.model || 'Printer') + ' reconnected');
+  else if (announce) toast((link.model || 'Printer') + ' connected.');
   startPoll();
   pump();
 }
@@ -1258,7 +1357,12 @@ function disconnect(link) {
   link.connected = false;
   link.expected = false;
   link.printing = false;
+  link.away = false;
+  clearAutoTimer(link.btId);
+  if (state.autoTries) delete state.autoTries[link.btId];
+  if (state.autoModel) delete state.autoModel[link.btId];
   link.btId = '';
+  refreshAutoNote();
   saveLinks();
   if (!anyUp()) stopPoll();
   drawChip();
@@ -1296,6 +1400,13 @@ function onLinkDown(link) {
   var now = Date.now();
   link.linkBurst = link.linkDownAt && (now - link.linkDownAt) < 8000 ? link.linkBurst + 1 : 1;
   link.linkDownAt = now;
+  if (grantedName(link.deviceName) && canGetDevices()) {
+    link.client = null;
+    link.reconnecting = false;
+    grantReconnect();
+    drawChip();
+    return;
+  }
   if (link.linkBurst > 3) {
     link.client = null;
     link.reconnecting = false;
@@ -1366,6 +1477,155 @@ function quietSerial(link) {
     drawChip();
   });
 }
+/* Granted Bluetooth devices are named B1-… or B31-…. The Chrome flag is what makes getDevices return them. */
+function grantedName(name) {
+  var s = String(name || '').toUpperCase();
+  if (/(?:^|[^A-Z0-9])B31-/.test(s)) return 'B31';
+  if (/(?:^|[^A-Z0-9])B1-/.test(s)) return 'B1';
+  return '';
+}
+function canGetDevices() {
+  var bt = root.navigator && navigator.bluetooth;
+  return !!(bt && typeof bt.getDevices === 'function');
+}
+function pageVisible() {
+  return !document.visibilityState || document.visibilityState === 'visible';
+}
+function autoMaps() {
+  if (!state.autoTries) state.autoTries = {};
+  if (!state.autoTimers) state.autoTimers = {};
+  if (!state.autoModel) state.autoModel = {};
+  if (!state.autoBusy) state.autoBusy = {};
+}
+function autoDelay(fails) {
+  if (fails <= 1) return 3000;
+  if (fails === 2) return 10000;
+  if (fails === 3) return 30000;
+  return 60000;
+}
+function refreshAutoNote() {
+  autoMaps();
+  var names = [], id, model;
+  for (id in state.autoTries) if (state.autoTries[id]) {
+    model = state.autoModel[id] || '';
+    if (model && names.indexOf(model) < 0) names.push(model);
+  }
+  state.autoNote = names.length ? names.join(' and ') + (names.length > 1 ? ' are' : ' is') + ' off or out of range' : '';
+  drawChip();
+}
+function deviceBusy(device) {
+  var id = device && device.id || '';
+  var list = [state, peer], i, link;
+  if (!id) return false;
+  if (state.autoBusy && state.autoBusy[id]) return true;
+  for (i = 0; i < list.length; i++) {
+    link = list[i];
+    if (link.btId === id && (link.connected || link.reconnecting || link.opening)) return true;
+  }
+  return false;
+}
+function slotFor(device) {
+  var id = device && device.id || '';
+  var list = [state, peer], i, link;
+  for (i = 0; i < list.length; i++) {
+    link = list[i];
+    if (id && link.btId === id) {
+      if (link.connected || link.reconnecting || link.opening) return null;
+      return link;
+    }
+  }
+  for (i = 0; i < list.length; i++) {
+    link = list[i];
+    if (link.connected || link.reconnecting || link.opening || link.btId) continue;
+    return link;
+  }
+  return null;
+}
+function clearAutoTimer(id) {
+  autoMaps();
+  if (!id || !state.autoTimers[id]) return;
+  clearTimeout(state.autoTimers[id]);
+  delete state.autoTimers[id];
+}
+function scheduleAuto(id) {
+  autoMaps();
+  if (!id || state.autoTimers[id]) return;
+  if (!pageVisible()) { state.autoHold = true; return; }
+  var wait = autoDelay(state.autoTries[id] || 1);
+  state.autoTimers[id] = setTimeout(function () {
+    delete state.autoTimers[id];
+    if (!pageVisible()) { state.autoHold = true; return; }
+    grantReconnect(true);
+  }, wait);
+}
+function reachDevice(device) {
+  var watch = (device && typeof device.watchAdvertisements === 'function') ? Promise.resolve(device.watchAdvertisements()).catch(function () {}) : Promise.resolve();
+  return watch.then(function () {
+    if (!device.gatt || typeof device.gatt.connect !== 'function') throw new Error('no gatt');
+    return device.gatt.connect();
+  });
+}
+function attachGranted(device) {
+  var id = device && device.id || '';
+  var link = slotFor(device);
+  var model = grantedName(device && device.name);
+  if (!link || !model) return Promise.resolve();
+  autoMaps();
+  state.autoBusy[id] = 1;
+  clearAutoTimer(id);
+  link.reconnecting = true;
+  link.opening = false;
+  link.auto = true;
+  link.away = false;
+  link.expected = true;
+  link.transport = 'bluetooth';
+  link.btId = id || link.btId;
+  link.deviceName = device.name || link.deviceName || '';
+  link.model = model;
+  drawChip();
+  return reachDevice(device).then(function () {
+    return begin(link, 'bluetooth', device);
+  }).then(function () {
+    delete state.autoBusy[id];
+    link.away = false;
+  }, function () {
+    delete state.autoBusy[id];
+    link.auto = false;
+    link.reconnecting = false;
+    link.opening = false;
+    link.connected = false;
+    link.away = true;
+    if (link.client && !link.connected) link.client = null;
+    state.autoTries[id] = (state.autoTries[id] || 0) + 1;
+    state.autoModel[id] = model;
+    refreshAutoNote();
+    scheduleAuto(id);
+  });
+}
+/* Previously approved printers, without the pairing chooser. One try on load, then 3s, 10s, 30s, and every 60s while the page is visible. */
+function grantReconnect(fromTimer) {
+  if (!canGetDevices()) return;
+  if (fromTimer && !pageVisible()) { state.autoHold = true; return; }
+  if (state.granting) { state.grantAgain = true; return; }
+  state.granting = true;
+  state.autoHold = false;
+  Promise.resolve(navigator.bluetooth.getDevices()).then(function (list) {
+    var jobs = [], seen = {}, i, dev, id;
+    list = list || [];
+    for (i = 0; i < list.length; i++) {
+      dev = list[i];
+      if (!dev || !grantedName(dev.name)) continue;
+      id = dev.id || dev.name;
+      if (seen[id] || deviceBusy(dev)) continue;
+      seen[id] = 1;
+      jobs.push(attachGranted(dev));
+    }
+    return Promise.all(jobs);
+  }).catch(function () {}).then(function () {
+    state.granting = false;
+    if (state.grantAgain) { state.grantAgain = false; grantReconnect(fromTimer); }
+  });
+}
 function restoreLinks() {
   var cfg = load(), i, saved, link;
   for (i = 0; i < 2; i++) {
@@ -1397,10 +1657,10 @@ function knownLinks() {
 function printerMarks() {
   var links = knownLinks();
   if (!links.length) return '<span class="oyp-pr-dot" aria-hidden="true"></span>';
-  return links.map(function (link) {
+  return '<span class="oyp-pr-status">' + links.map(function (link) {
     var on = link.connected && !link.reconnecting;
     return '<span class="oyp-pr-pair"><span class="oyp-pr-name">' + esc(link.model) + '</span><span class="oyp-pr-dot' + (on ? ' on' : '') + '" aria-hidden="true"></span></span>';
-  }).join('');
+  }).join('') + '</span>';
 }
 function paintDots() {
   if (paintDots.busy) return;
@@ -1412,6 +1672,7 @@ function paintDots() {
     var title = 'Printer not connected';
     if (anyPrinting()) title = 'Printing';
     else if (state.reconnecting || peer.reconnecting) title = 'Reconnecting';
+    else if (state.autoNote) title = state.autoNote;
     else if (links.length && up === links.length) title = 'Printer connected';
     else if (up) title = 'A printer is not connected';
     var html = 'Printer' + printerMarks();
@@ -1597,7 +1858,7 @@ function linkRow(link, i, label) {
   var which = [];
   if (named && k.jo_card) which.push('JO card');
   if (named && k.jewelry_tag) which.push('Jewelry tag');
-  var note = named ? (which.join(' · ') || 'No stickers') : 'Not connected';
+  var note = link.away && !on ? 'Off or out of range' : (named ? (which.join(' · ') || 'No stickers') : 'Not connected');
   var controls;
   if (!label && link.connected) controls = '<button type="button" class="pill sm outline" data-slot="' + i + '" data-slot-act="disconnect">Disconnect</button>';
   else if (!label && link.reconnecting) controls = '<span class="muted">Reconnecting</span>';
@@ -1618,6 +1879,7 @@ function paintLinks() {
     if (slotOpen(other)) html += linkRow(other, slotIndex(other), 'Second printer');
   }
   html += slotDebugHtml();
+  if (state.autoNote) html += '<p class="muted" id="prAutoNote">' + esc(state.autoNote) + '</p>';
   if (host.getAttribute('data-paint') === html) return;
   host.setAttribute('data-paint', html);
   host.innerHTML = html;
@@ -1635,7 +1897,12 @@ function mountSettings(el) {
     var on = serverAuto(kind);
     return '<label class="settog"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '><span>' + (on ? 'On' : 'Off') + '</span></label>';
   }
+  var flagUrl = 'chrome://flags/#enable-web-bluetooth-new-permissions-backend';
+  var flagRow = (!canGetDevices() && !ios() && root.navigator && navigator.bluetooth)
+    ? '<div class="setrow" id="prFlag"><div class="setl"><span class="muted">To reconnect automatically, turn on ' + esc(flagUrl) + ' and relaunch Chrome</span></div><div class="setv"><button type="button" class="pill sm outline" id="prFlagCopy">Copy</button></div></div>'
+    : '';
   el.innerHTML = '<div class="set"><div class="setbox">'
+    + flagRow
     + '<div id="prLinks"></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">JO sticker</span><span class="muted">On queues and prints a new JO card. Off does not queue it.</span></div><div class="setv">' + tog('prAutoJo', 'jo_card') + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Jewelry tag</span><span class="muted">On queues and prints a jewelry tag. Off does not queue it. A manual batch still queues.</span></div><div class="setv">' + tog('prAutoTag', 'jewelry_tag') + '</div></div>'
@@ -1692,6 +1959,21 @@ function mountSettings(el) {
     };
   });
   paintLinks();
+  var copyBtn = el.querySelector && el.querySelector('#prFlagCopy');
+  if (copyBtn) copyBtn.onclick = function () { copyFlag(flagUrl); };
+}
+function copyFlag(url) {
+  var clip = root.navigator && navigator.clipboard;
+  function fallback() {
+    var input = document.createElement('input');
+    input.value = url;
+    document.body.appendChild(input);
+    if (input.select) input.select();
+    try { document.execCommand('copy'); toast('Copied'); } catch (e) { toast(url); }
+    if (input.remove) input.remove();
+  }
+  if (clip && clip.writeText) Promise.resolve(clip.writeText(url)).then(function () { toast('Copied'); }, fallback);
+  else fallback();
 }
 function mountQueue(el) {
   if (!el) return;
@@ -1733,7 +2015,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=15';
+  link.href = (base || '') + 'print.css?v=16';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -1799,9 +2081,13 @@ function start() {
     toggleMenu(false);
     closePanel();
   });
-  document.addEventListener('visibilitychange', function () { if (anyUp()) pump(); });
+  document.addEventListener('visibilitychange', function () {
+    if (pageVisible()) grantReconnect();
+    if (anyUp()) pump();
+  });
   if (root.addEventListener) root.addEventListener('focus', function () { if (anyUp()) pump(); });
   restoreLinks();
+  grantReconnect();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();
