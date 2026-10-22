@@ -76,6 +76,16 @@ function navParts(user, page, home) {
   var list = user.role === 'staff' ? OFFICE_NAV.staff : ordered(user);
   return withPrinter(list.map(function (n) { return [n[0], link(n[0], n[1])]; }));
 }
+/* Scanner phone menu, after the staff rows. Log out is last. JO card zones is inserted before Scanner settings. */
+function scannerTailHtml(opts) {
+  opts = opts || {};
+  var n = (Number(opts.pending) || 0) + (Number(opts.failed) || 0);
+  var badge = n ? ' <span class="badge">' + n + '</span>' : '';
+  var print = escNav(opts.printTest || 'https://oypjewelry.com/staff/print-test.html');
+  var h = '<hr><a href="#" data-m="queue">Pending uploads' + badge + '</a><a href="#" data-m="settings">Scanner settings</a><a href="' + print + '">Print test</a>';
+  if (opts.logoutHref) h += '<a href="' + escNav(opts.logoutHref) + '" data-m="logout">Log out</a>';
+  return h;
+}
 function menuHtml(user, page, home) {
   var rows = navParts(user, page, home);
   if (!user) return rows;
@@ -90,7 +100,7 @@ function sideHtml(user, page, home) {
   }
   return '<div class="sidenav" id="sideNav">' + navParts(user, page, home) + '</div>' + who;
 }
-root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, scannerLink, readUser: readUser, ordered: ordered, menuHtml: menuHtml, sideHtml: sideHtml, printerItemHtml: printerItemHtml };
+root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, scannerLink, readUser: readUser, ordered: ordered, menuHtml: menuHtml, sideHtml: sideHtml, printerItemHtml: printerItemHtml, scannerTailHtml: scannerTailHtml };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPNav;
 // The scanner cannot take a repo change from this site, but it already loads this file.
 // JO card zones (scan-zones.js) ride along so a phone can label every section of the card without a scanner release.
@@ -116,7 +126,7 @@ if (typeof document !== 'undefined' && document.createElement) {
   }
   if (base && !document.querySelector('script[src*="scan-zones.js"]')) {
     var zs = document.createElement('script');
-    zs.src = base + 'scan-zones.js?v=5';
+    zs.src = base + 'scan-zones.js?v=6';
     (document.head || document.documentElement).appendChild(zs);
   }
   // Card Scanner start screen: drop the stone photo. Other screens are already white.

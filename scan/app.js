@@ -94,11 +94,14 @@ function buildMenu() {
   }).join('');
   else h = `<a href="${site}">${role === 'staff' ? 'Home' : 'Back office'}</a>`;
   if (!placed) h += printerRow(); // same place nav.js uses when the role has no Settings row
-  // JO card zones is inserted by scan-zones.js immediately before Scanner settings. Print test stays the last row.
-  h += `<hr><a href="#" data-m="queue">Pending uploads${c.pending + c.failed ? ` <span class="badge">${c.pending + c.failed}</span>` : ''}</a><a href="#" data-m="settings">Scanner settings</a>`;
-  if (role) h += `<a href="${site}#/logout" data-m="logout">Log out</a>`;
-  else h += `<p class="mnote">Open the scanner from the back-office menu once to see your full menu here.</p>`;
-  h += `<a href="${PRINT_TEST}">Print test</a>`;
+  // JO card zones is inserted by scan-zones.js immediately before Scanner settings. Log out stays last.
+  if (!role) h += `<p class="mnote">Open the scanner from the back-office menu once to see your full menu here.</p>`;
+  if (typeof N.scannerTailHtml === 'function') {
+    h += N.scannerTailHtml({ pending: c.pending, failed: c.failed, printTest: PRINT_TEST, logoutHref: role ? `${site}#/logout` : '' });
+  } else {
+    h += `<hr><a href="#" data-m="queue">Pending uploads${c.pending + c.failed ? ` <span class="badge">${c.pending + c.failed}</span>` : ''}</a><a href="#" data-m="settings">Scanner settings</a><a href="${PRINT_TEST}">Print test</a>`;
+    if (role) h += `<a href="${site}#/logout" data-m="logout">Log out</a>`;
+  }
   return h;
 }
 const menu = $('menu');

@@ -31,6 +31,76 @@ function esc(s) {
 }
 function clamp(n, a, b) { n = Number(n); if (!isFinite(n)) n = 0; return n < a ? a : n > b ? b : n; }
 function round4(n) { return Math.round(n * 10000) / 10000; }
+/* The scanner (scan/app.js rotFor, default "cw") turns a portrait page 90° clockwise and leaves a
+   landscape page alone. Saved zones are normalized fractions of that upright page, the same numbers
+   cropFrom and the scanner's cropZoneB64 apply to imageBase64. The editor shows the sample after
+   EXIF, then its own clockwise turns. A box drawn on that view is converted into the scanner frame
+   before it is stored, so an existing saved box is left as-is and still crops the same pixels. */
+function scannerTurns(w, h) {
+  w = Number(w) || 0; h = Number(h) || 0;
+  if (w > h) return 0;
+  return 1;
+}
+function turnZone(zone, quarters) {
+  var q = ((Number(quarters) || 0) % 4 + 4) % 4;
+  var x = Number(zone && zone.x) || 0, y = Number(zone && zone.y) || 0;
+  var w = Number(zone && zone.w) || 0, h = Number(zone && zone.h) || 0;
+  var n = q === 1 ? { x: 1 - (y + h), y: x, w: h, h: w }
+    : q === 2 ? { x: 1 - (x + w), y: 1 - (y + h), w: w, h: h }
+    : q === 3 ? { x: y, y: 1 - (x + w), w: h, h: w }
+    : { x: x, y: y, w: w, h: h };
+  var o = { x: round4(n.x), y: round4(n.y), w: round4(n.w), h: round4(n.h) };
+  if (zone && zone.id) o.id = zone.id;
+  if (zone && zone.label) o.label = zone.label;
+  return o;
+}
+function viewToStored(zone, viewTurns, scanTurns) {
+  return turnZone(zone, ((Number(scanTurns) || 0) - (Number(viewTurns) || 0)));
+}
+function storedToView(zone, viewTurns, scanTurns) {
+  return turnZone(zone, ((Number(viewTurns) || 0) - (Number(scanTurns) || 0)));
+}
+/* EXIF orientation is applied to the file pixels first. The editor's clockwise turns come after that. */
+function exifQuarterTurns(orientation) {
+  var o = Number(orientation) || 1;
+  if (o === 3 || o === 4) return 2;
+  if (o === 6 || o === 5) return 1;
+  if (o === 8 || o === 7) return 3;
+  return 0;
+}
+function readToken(el) {
+  try {
+    if (!el || el.value == null) return '';
+    return String(el.value).replace(/^\s+|\s+$/g, '');
+  } catch (e) { return ''; }
+}
+/* Green: shared with every phone. Amber: on this phone only. Red: the save did not stick. Grey: not saved yet. */
+function presentSave(res, zones, err) {
+  if (err) return { tone: 'bad', text: 'Could not save these boxes. Try again.', button: 'Save zones' };
+  var text = saveMessage(res, zones);
+  if (res && res.shared) return { tone: 'ok', text: text, button: 'Saved ✓' };
+  if (res && (res.local || res.reason)) return { tone: 'local', text: text, button: 'Saved on this phone' };
+  if (!res || res.ok === false) return { tone: 'bad', text: text || 'Could not save these boxes. Try again.', button: 'Save zones' };
+  return { tone: 'local', text: text, button: 'Saved on this phone' };
+}
+/* Touch on empty card scrolls unless Draw box is on, or the finger has held still for HOLD_MS.
+   A second finger is a pinch and must not draw. Mouse and pen still draw on the first drag. */
+var HOLD_MS = 300;
+var MOVE_PX = 8;
+function gestureBegin(opts) {
+  opts = opts || {};
+  if ((Number(opts.pointers) || 1) > 1) return 'pinch';
+  if (opts.hit === 'resize' || opts.hit === 'move') return opts.hit;
+  if (opts.drawMode) return 'draw';
+  if (opts.pointerType === 'mouse' || opts.pointerType === 'pen') return 'draw';
+  return 'pending';
+}
+function gestureAdvance(mode, dist, heldMs) {
+  if (mode !== 'pending') return mode;
+  if (dist > MOVE_PX) return 'scroll';
+  if (heldMs >= HOLD_MS) return 'draw';
+  return 'pending';
+}
 function known(id) {
   for (var i = 0; i < FIELDS.length; i++) if (FIELDS[i][0] === id) return FIELDS[i];
   return null;
@@ -171,6 +241,90 @@ function readDataUrl(file) {
     rd.readAsDataURL(file);
   });
 }
+function u16(bytes, i, le) { return le ? bytes[i] + (bytes[i + 1] << 8) : (bytes[i] << 8) + bytes[i + 1]; }
+function u32(bytes, i, le) {
+  return le ? (bytes[i] + (bytes[i + 1] << 8) + (bytes[i + 2] << 16) + (bytes[i + 3] * 16777216))
+    : ((bytes[i] * 16777216) + (bytes[i + 1] << 16) + (bytes[i + 2] << 8) + bytes[i + 3]);
+}
+function tiffOrientation(bytes, start, end) {
+  if (start + 8 > end) return 0;
+  var le = bytes[start] === 0x49 && bytes[start + 1] === 0x49;
+  if (!le && !(bytes[start] === 0x4d && bytes[start + 1] === 0x4d)) return 0;
+  var off = u32(bytes, start + 4, le);
+  var ifd = start + off;
+  if (ifd + 2 > end) return 0;
+  var n = u16(bytes, ifd, le), i;
+  for (i = 0; i < n; i++) {
+    var e = ifd + 2 + i * 12;
+    if (e + 12 > end) break;
+    if (u16(bytes, e, le) === 0x0112) return u16(bytes, e + 8, le) || 1;
+  }
+  return 0;
+}
+function jpegOrientation(bytes) {
+  if (!bytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return 1;
+  var i = 2;
+  while (i + 4 < bytes.length) {
+    if (bytes[i] !== 0xff) { i++; continue; }
+    while (i < bytes.length && bytes[i] === 0xff) i++;
+    if (i >= bytes.length) break;
+    var marker = bytes[i];
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (i + 3 >= bytes.length) break;
+    var len = (bytes[i + 1] << 8) + bytes[i + 2];
+    if (len < 2 || i + 1 + len > bytes.length) break;
+    if (marker === 0xe1 && len > 8 && bytes[i + 3] === 0x45 && bytes[i + 4] === 0x78 && bytes[i + 5] === 0x69 && bytes[i + 6] === 0x66) {
+      var o = tiffOrientation(bytes, i + 9, i + 1 + len);
+      if (o) return o;
+    }
+    i += 1 + len;
+  }
+  return 1;
+}
+/* Canvas sized for the oriented result. Transformations match the EXIF orientation tag. */
+function orientedCanvas(source, width, height, orient) {
+  orient = Number(orient) || 1;
+  var c = document.createElement('canvas');
+  var swap = orient > 4 && orient < 9;
+  c.width = swap ? height : width;
+  c.height = swap ? width : height;
+  var g = c.getContext('2d');
+  if (orient === 2) g.transform(-1, 0, 0, 1, width, 0);
+  else if (orient === 3) g.transform(-1, 0, 0, -1, width, height);
+  else if (orient === 4) g.transform(1, 0, 0, -1, 0, height);
+  else if (orient === 5) g.transform(0, 1, 1, 0, 0, 0);
+  else if (orient === 6) g.transform(0, 1, -1, 0, height, 0);
+  else if (orient === 7) g.transform(0, -1, -1, 0, height, width);
+  else if (orient === 8) g.transform(0, -1, 1, 0, 0, width);
+  g.drawImage(source, 0, 0, width, height);
+  return c;
+}
+function canvasToImage(c) {
+  try { return loadImage(c.toDataURL('image/jpeg', 0.92)); }
+  catch (e) { return Promise.resolve(null); }
+}
+/* EXIF (or HEIC irot, applied by libheif when it decodes) first. The view rotation is separate. */
+function fileToOrientedImage(file) {
+  if (isHeic(file)) return heicToJpegUrl(file).then(loadImage);
+  if (typeof createImageBitmap !== 'function' || !file.arrayBuffer) return readDataUrl(file).then(loadImage);
+  return file.arrayBuffer().then(function (buf) {
+    var bytes = new Uint8Array(buf);
+    var orient = jpegOrientation(bytes);
+    var blob = new Blob([buf], { type: file.type || 'image/jpeg' });
+    function fromBitmap(bitmap, tag) {
+      var c = orientedCanvas(bitmap, bitmap.width, bitmap.height, tag);
+      if (bitmap.close) bitmap.close();
+      return canvasToImage(c);
+    }
+    return createImageBitmap(blob, { imageOrientation: 'none' }).then(function (bitmap) {
+      return fromBitmap(bitmap, orient);
+    }, function () {
+      return createImageBitmap(file, { imageOrientation: 'from-image' }).then(function (bitmap) {
+        return fromBitmap(bitmap, 1);
+      }, function () { return readDataUrl(file).then(loadImage); });
+    });
+  });
+}
 function cropFrom(img, zone) {
   try {
     var sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
@@ -304,33 +458,44 @@ function ensureCss() {
     '.oz *,.oz *::before,.oz *::after{box-sizing:border-box}',
     '.oz-pop{position:fixed;inset:0;z-index:10000;overflow:auto;padding:16px 16px 40px;background:#fff}',
     '.oz-inline{margin-top:8px}',
-    '.ozbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}',
-    '.ozbar b{font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:22px;flex:1 0 160px}',
-    '.oznote{font-size:14px;line-height:1.45;color:#444;max-width:720px;margin:0 0 12px}',
-    '.oztools{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}',
-    '.oztools button,.ozfile,.ozcustom{border:1px solid #ddd;background:#fff;border-radius:999px;padding:8px 12px;font:500 12px/1.2 Inter,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}',
+    '.ozbar{display:flex;flex-wrap:wrap;align-items:center;gap:calc(8px * var(--sp, 1));margin-bottom:calc(8px * var(--sp, 1))}',
+    '.ozbar b{font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:calc(22px * var(--fs, 1));flex:1 0 160px}',
+    '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.45;color:#444;max-width:720px;margin:0 0 calc(12px * var(--sp, 1))}',
+    '.oztools{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp, 1));margin:0 0 calc(12px * var(--sp, 1))}',
+    '.oztools button,.ozfile,.ozcustom{border:1px solid #ddd;background:#fff;border-radius:999px;padding:calc(8px * var(--sp, 1)) calc(12px * var(--sp, 1));font:500 calc(12px * var(--fs, 1))/1.2 Inter,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}',
+    '.ozfile{height:calc(34px * var(--sp, 1));display:inline-flex;align-items:center;justify-content:center;padding:0 calc(12px * var(--sp, 1));box-sizing:border-box}',
     '.ozcustom{display:inline-flex;align-items:center;gap:6px;cursor:text}',
     '.ozcustom input{text-transform:none;letter-spacing:0;font:15px Inter,Helvetica,sans-serif;border:0;padding:0;width:7.5em;background:transparent;color:#111}',
     '.oztools button.on{border-color:#d4af37;background:#faf8f1}',
     '.ozpick{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}',
-    '.ozsave,.ozghost{border-radius:999px;padding:10px 16px;font:500 12px/1 Inter,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}',
-    '.ozsave{background:#111;color:#fff;border:0}',
+    '.ozsave,.ozghost{border-radius:999px;padding:0 calc(16px * var(--sp, 1));min-height:calc(34px * var(--sp, 1));font:500 calc(12px * var(--fs, 1))/1 Inter,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}',
+    '.ozsave{background:#111;color:#fff;border:0;white-space:nowrap}',
     '.ozsave:disabled{opacity:.45}',
     '.ozghost{background:#fff;color:#111;border:1px solid #ddd}',
-    '.ozstage{position:relative;max-width:720px;border:1px solid #eee;border-radius:14px;overflow:hidden;background:#f6f4ee;touch-action:none}',
-    '.ozstage canvas{width:100%;height:auto;display:block;touch-action:none;cursor:crosshair}',
+    '.ozstage{position:relative;max-width:720px;border:1px solid #eee;border-radius:14px;overflow:hidden;background:#f6f4ee;touch-action:pan-y pinch-zoom}',
+    '.ozstage canvas{width:100%;height:auto;display:block;touch-action:pan-y pinch-zoom;cursor:default;user-select:none;-webkit-user-select:none}',
+    '.ozstage.ozdraw canvas,.ozstage.ozarm canvas{touch-action:pinch-zoom;cursor:crosshair}',
     '.ozstage:not(.ozhas) canvas{cursor:pointer}',
     '.ozstage.ozhot{box-shadow:inset 0 0 0 2px #d4af37}',
     '.ozupload{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1}',
     '.ozstage.ozhas .ozupload{display:none}',
+    '.ozhits{position:absolute;inset:0;z-index:2;pointer-events:none}',
+    '.ozboxhit,.ozhandlehit{position:absolute;pointer-events:auto;touch-action:none;background:transparent}',
+    '.ozhandlehit{width:calc(24px * var(--sp, 1));height:calc(24px * var(--sp, 1));transform:translate(-50%,-50%);border-radius:50%}',
     '.ozlist{list-style:none;padding:0;margin:12px 0;max-width:720px}',
     '.ozlist li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid #f1f1f1;font-size:14px}',
     '.ozlist li.on{background:#faf8f1}',
     '.ozlist button,.ozlink{background:none;border:0;padding:0;text-decoration:underline;cursor:pointer;font:500 11px Inter,Helvetica,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#111}',
     '.ozrow{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:8px}',
-    '.ozstatus{font-size:14px;color:#333;max-width:720px;min-height:1.2em}',
-    '.oztok{display:flex;flex-direction:column;gap:4px;margin:8px 0 0;max-width:360px;font-size:12px;letter-spacing:.06em;text-transform:uppercase}',
-    '.oztok input{text-transform:none;letter-spacing:0;font:15px Inter,Helvetica,sans-serif;padding:8px 10px;border:1px solid #ddd;border-radius:10px}',
+    '.ozstatus{display:flex;align-items:flex-start;gap:calc(8px * var(--sp, 1));max-width:720px;min-height:1.2em;margin:0 0 calc(12px * var(--sp, 1));font:500 calc(13px * var(--fs, 1))/1.35 Inter,Helvetica,sans-serif;color:#333}',
+    '.ozdot{width:calc(8px * var(--sp, 1));height:calc(8px * var(--sp, 1));border-radius:50%;margin-top:.35em;flex:0 0 auto;background:#8a8a8a}',
+    '.ozstatus[data-tone="ok"] .ozdot{background:#1f7a4d}',
+    '.ozstatus[data-tone="local"] .ozdot{background:#c4922a}',
+    '.ozstatus[data-tone="bad"] .ozdot{background:#b42318}',
+    '.ozstatus[data-tone="dirty"] .ozdot{background:#8a8a8a}',
+    '.oztok{display:flex;flex-direction:column;gap:4px;margin:0 0 calc(12px * var(--sp, 1));max-width:360px;font:500 calc(12px * var(--fs, 1))/1.2 Inter,Helvetica,sans-serif;letter-spacing:.06em;text-transform:uppercase}',
+    '.oztok input{text-transform:none;letter-spacing:0;font:calc(15px * var(--fs, 1)) Inter,Helvetica,sans-serif;padding:calc(8px * var(--sp, 1)) calc(10px * var(--sp, 1));border:1px solid #ddd;border-radius:10px}',
+    '.oztok.ozneed input{border-color:#c4922a;box-shadow:0 0 0 3px rgba(196,146,42,.28)}',
     '#joInput.oyp-ocr-hold{color:transparent}',
     '.ozask{position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:16px}',
     '.ozaskbox{background:#fff;border-radius:16px;padding:18px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px}',
@@ -365,7 +530,10 @@ function hookMenu() {
     a.setAttribute('data-oz', '1');
     a.textContent = 'JO card zones';
     var settings = menu.querySelector('[data-m="settings"]');
-    if (settings) menu.insertBefore(a, settings); else menu.appendChild(a);
+    var logout = menu.querySelector('[data-m="logout"]');
+    if (settings) menu.insertBefore(a, settings);
+    else if (logout) menu.insertBefore(a, logout);
+    else menu.appendChild(a);
   }
   new MutationObserver(inject).observe(menu, { childList: true, attributes: true, attributeFilter: ['class'] });
   menu.addEventListener('click', function (e) {
@@ -383,45 +551,66 @@ function Editor(host, pop) {
   editors += 1;
   var zones = cleanList(state.zones);
   var img = null;
+  var viewTurns = 1;
+  var scanT = 0;
+  var drawMode = false;
   var kind = 'jo';
   var selected = zones.findIndex(function (z) { return z.id === 'jo'; });
-  var drag = null;
+  var gesture = null;
+  var pointers = {};
+  var pinching = false;
+  var holdTimer = null;
+  var saveTimer = null;
   var dirty = false;
   var onKey = null;
+  var paintWait = false;
   host.className = 'oz ' + (pop ? 'oz-pop' : 'oz-inline');
   host.innerHTML = (pop
     ? '<div class="ozbar"><button type="button" class="ozghost" data-z="close">Close</button><b>JO card zones</b><button type="button" class="ozsave" data-z="save">Save zones</button></div>'
     : '<div class="ozbar"><b>JO card zones</b><button type="button" class="ozsave" data-z="save">Save zones</button></div>')
-    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box.</p>'
+    + '<p class="ozstatus" data-tone="dirty" aria-live="polite"><i class="ozdot" aria-hidden="true"></i><span class="ozmsg"></span></p>'
+    + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
+    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box. The sample starts turned clockwise so a vertical phone photo reads upright. Rotate turns it again. Draw box, or a press-and-hold, adds a box. A one-finger drag on the empty card scrolls the page.</p>'
     + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
     + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
-    + '<button type="button" class="ozfile" data-z="change">Change photo</button>'
+    + '<button type="button" class="ozfile" data-z="rot" hidden aria-label="Rotate 90 degrees clockwise">Rotate</button>'
+    + '<button type="button" class="ozfile" data-z="draw" hidden aria-pressed="false">Draw box</button>'
+    + '<button type="button" class="ozfile" data-z="change" hidden>Change photo</button>'
     + '<input class="ozpick" data-z="file" type="file" accept="image/*,.heic,.heif" tabindex="-1" aria-hidden="true"></div>'
     + '<div class="ozstage"><canvas aria-label="Drop a JO card photo here, or click to upload."></canvas>'
+    + '<div class="ozhits" hidden></div>'
     + '<button type="button" class="ozsave ozupload" data-z="upload">Upload photo</button></div>'
     + '<ul class="ozlist"></ul>'
-    + '<div class="ozrow"><button type="button" class="ozlink" data-z="clear">Clear boxes</button></div>'
-    + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
-    + '<p class="ozstatus" aria-live="polite"></p>';
+    + '<div class="ozrow"><button type="button" class="ozlink" data-z="clear">Clear boxes</button></div>';
   var canvas = host.querySelector('canvas');
   var stage = host.querySelector('.ozstage');
+  var hits = host.querySelector('.ozhits');
   var uploadBtn = host.querySelector('[data-z="upload"]');
   var changeBtn = host.querySelector('[data-z="change"]');
+  var rotBtn = host.querySelector('[data-z="rot"]');
+  var drawBtn = host.querySelector('[data-z="draw"]');
   var list = host.querySelector('.ozlist');
   var status = host.querySelector('.ozstatus');
+  var msgEl = host.querySelector('.ozmsg');
   var tok = host.querySelector('[data-z="token"]');
   var tokLab = host.querySelector('.oztok');
+  function copyZone(z) { return { id: z.id, label: z.label, x: z.x, y: z.y, w: z.w, h: z.h }; }
   function showToken() {
+    if (!tok || !tokLab) return;
     var has = !!token();
-    tok.value = has ? token() : '';
+    try { tok.value = has ? token() : ''; } catch (e) {}
     tokLab.style.display = has && isScanner() ? 'none' : '';
-    if (has && !isScanner()) tokLab.firstChild.textContent = 'Scanner token (already on this computer) ';
+    if (has && !isScanner() && tokLab.firstChild) tokLab.firstChild.textContent = 'Scanner token (already on this computer) ';
   }
   showToken();
-  function setStatus(t) { status.textContent = t || ''; }
-  if (hasJo(zones) && state.shared) setStatus('These boxes are already shared with every phone.');
-  else if (hasJo(zones)) setStatus('A JO box is saved on this phone. Save again after the Code.gs paste to share it.');
-  else setStatus('No JO box yet. Scans read the whole card.');
+  function setStatus(text, tone) {
+    if (!status) return;
+    status.setAttribute('data-tone', tone || 'dirty');
+    if (msgEl) msgEl.textContent = text || '';
+  }
+  if (hasJo(zones) && state.shared) setStatus('These boxes are already shared with every phone.', 'ok');
+  else if (hasJo(zones)) setStatus('A JO box is saved on this phone. Save again after the Code.gs paste to share it.', 'local');
+  else setStatus('No JO box yet. Scans read the whole card.', 'dirty');
 
   function color(id) { return colorOf(id); }
   function nextCustomId() {
@@ -444,32 +633,104 @@ function Editor(host, pop) {
     if (!id) return { error: 'Six extra labels already. Remove one to add another.' };
     return { id: id, label: label };
   }
+  function screenScale() {
+    var cssW = canvas.clientWidth || stage.clientWidth;
+    if (!cssW) cssW = Math.min(720, ((root.innerWidth || 390) - 32));
+    var fs = 1, sp = 1;
+    try {
+      var cs = getComputedStyle(host);
+      var fsv = parseFloat(cs.getPropertyValue('--fs'));
+      var spv = parseFloat(cs.getPropertyValue('--sp'));
+      if (isFinite(fsv) && fsv > 0) fs = fsv;
+      if (isFinite(spv) && spv > 0) sp = spv;
+    } catch (e) {}
+    return { px: (canvas.width || 1) / cssW, fs: fs, sp: sp };
+  }
+  function screenPx(n, kind) {
+    var s = screenScale();
+    return n * s.px * (kind === 'fs' ? s.fs : s.sp);
+  }
+  function fillRound(g, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+    g.fill();
+  }
+  function layoutHits() {
+    if (!hits) return;
+    if (!img) { hits.innerHTML = ''; hits.hidden = true; return; }
+    hits.hidden = false;
+    hits.innerHTML = zones.map(function (z, i) {
+      var v = storedToView(z, viewTurns, scanT);
+      var box = '<div class="ozboxhit" data-hit="move" data-i="' + i + '" style="left:' + (v.x * 100) + '%;top:' + (v.y * 100) + '%;width:' + (v.w * 100) + '%;height:' + (v.h * 100) + '%"></div>';
+      var handle = '<div class="ozhandlehit" data-hit="resize" data-i="' + i + '" style="left:' + ((v.x + v.w) * 100) + '%;top:' + ((v.y + v.h) * 100) + '%"></div>';
+      return box + handle;
+    }).join('');
+  }
   function paint() {
-    var W = img ? (img.naturalWidth || img.width) : 600;
-    var H = img ? (img.naturalHeight || img.height) : 400;
+    var sw = img ? (img.naturalWidth || img.width) : 600;
+    var sh = img ? (img.naturalHeight || img.height) : 400;
+    var turns = img ? viewTurns : 0;
+    var side = turns % 2;
+    var W = side ? sh : sw;
+    var H = side ? sw : sh;
     canvas.width = W; canvas.height = H;
     var g = canvas.getContext('2d');
-    if (img) g.drawImage(img, 0, 0, W, H);
-    else { g.fillStyle = '#f6f4ee'; g.fillRect(0, 0, W, H); }
-    var hs = Math.max(16, Math.round(Math.min(W, H) * 0.045));
+    if (img) {
+      g.save();
+      g.translate(W / 2, H / 2);
+      g.rotate(turns * Math.PI / 2);
+      g.drawImage(img, -sw / 2, -sh / 2);
+      g.restore();
+    } else {
+      g.fillStyle = '#f6f4ee';
+      g.fillRect(0, 0, W, H);
+    }
+    var showTurns = img ? viewTurns : 0;
+    var showScan = img ? scanT : 0;
     zones.forEach(function (z, i) {
-      var x = z.x * W, y = z.y * H, w = z.w * W, h = z.h * H, col = color(z.id);
+      var v = storedToView(z, showTurns, showScan);
+      var x = v.x * W, y = v.y * H, w = v.w * W, h = v.h * H, col = color(z.id);
       g.fillStyle = i === selected ? 'rgba(212,175,55,.18)' : 'rgba(255,255,255,.08)';
       g.fillRect(x, y, w, h);
       g.lineWidth = Math.max(2, Math.round(W / 280));
       g.strokeStyle = col;
       g.strokeRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
-      g.font = '600 ' + Math.max(14, Math.round(W * 0.028)) + 'px Inter, Helvetica, sans-serif';
-      var text = z.label, tw = g.measureText(text).width, th = Math.max(18, Math.round(W * 0.04));
+      var fontPx = Math.max(8, screenPx(12, 'fs'));
+      var padX = screenPx(4, 'sp');
+      var padY = screenPx(2, 'sp');
+      var gap = screenPx(4, 'sp');
+      var radius = screenPx(4, 'sp');
+      g.font = '500 ' + fontPx + 'px Inter, Helvetica, sans-serif';
+      var text = z.label;
+      var tw = g.measureText(text).width;
+      var tagW = tw + padX * 2;
+      var tagH = fontPx + padY * 2;
+      var tx = x;
+      var ty = y - gap - tagH;
+      if (ty < 0) ty = y + h + gap;
+      if (tx + tagW > W) tx = Math.max(0, W - tagW);
+      if (tx < 0) tx = 0;
       g.fillStyle = col;
-      g.fillRect(x, y, Math.min(w, tw + 12), th);
+      fillRound(g, tx, ty, tagW, tagH, radius);
       g.fillStyle = '#fff';
-      g.fillText(text, x + 6, y + th - 6);
-      g.fillStyle = '#fff';
-      g.strokeStyle = col;
-      g.lineWidth = 2;
-      g.fillRect(x + w - hs, y + h - hs, hs, hs);
-      g.strokeRect(x + w - hs, y + h - hs, hs, hs);
+      g.textBaseline = 'middle';
+      g.textAlign = 'left';
+      g.fillText(text, tx + padX, ty + tagH / 2);
+      g.textBaseline = 'alphabetic';
+      var hr = Math.max(2, screenPx(11, 'sp') / 2);
+      g.beginPath();
+      g.arc(x + w, y + h, hr, 0, Math.PI * 2);
+      g.fillStyle = col;
+      g.fill();
+      g.lineWidth = Math.max(1, screenPx(1.5, 'sp'));
+      g.strokeStyle = '#fff';
+      g.stroke();
     });
     if (!img) {
       var prompt = 'Drop a JO card photo here, or click to upload.';
@@ -491,8 +752,16 @@ function Editor(host, pop) {
       g.textBaseline = 'alphabetic';
     }
     stage.classList.toggle('ozhas', !!img);
+    stage.classList.toggle('ozdraw', !!drawMode);
     if (changeBtn) changeBtn.hidden = !img;
-    canvas.setAttribute('aria-label', img ? 'Sample JO card. Drag a box on the photo.' : 'Drop a JO card photo here, or click to upload.');
+    if (rotBtn) rotBtn.hidden = !img;
+    if (drawBtn) drawBtn.hidden = !img;
+    canvas.setAttribute('aria-label', img ? 'Sample JO card. A finger drag on empty card scrolls. Draw box, or press and hold, to add a box.' : 'Drop a JO card photo here, or click to upload.');
+    layoutHits();
+    if (img && !canvas.clientWidth && !paintWait) {
+      paintWait = true;
+      requestAnimationFrame(function () { paintWait = false; paint(); });
+    }
   }
   function renderList() {
     list.innerHTML = zones.map(function (z, i) {
@@ -500,28 +769,136 @@ function Editor(host, pop) {
     }).join('') || '<li><span>No boxes yet</span></li>';
     host.querySelectorAll('[data-kind]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-kind') === kind); });
   }
-  function point(e) {
+  function pointFrom(cx, cy) {
     var r = canvas.getBoundingClientRect();
-    return { x: clamp((e.clientX - r.left) / (r.width || 1), 0, 1), y: clamp((e.clientY - r.top) / (r.height || 1), 0, 1), W: canvas.width || 600, H: canvas.height || 400 };
+    return { x: clamp((cx - r.left) / (r.width || 1), 0, 1), y: clamp((cy - r.top) / (r.height || 1), 0, 1) };
   }
-  function hit(fx, fy, W, H) {
-    var hs = Math.max(16, Math.round(Math.min(W, H) * 0.045));
-    var hx = hs / W, hy = hs / H;
-    for (var i = zones.length - 1; i >= 0; i--) {
-      var z = zones[i];
-      if (Math.abs(fx - (z.x + z.w)) <= hx && Math.abs(fy - (z.y + z.h)) <= hy) return { i: i, mode: 'resize' };
-    }
-    for (var j = zones.length - 1; j >= 0; j--) {
-      var q = zones[j];
-      if (fx >= q.x && fx <= q.x + q.w && fy >= q.y && fy <= q.y + q.h) return { i: j, mode: 'move' };
-    }
-    return null;
-  }
-  function upsert(id, rect, label) {
-    var z = { id: id, label: label, x: rect.x, y: rect.y, w: rect.w, h: rect.h };
+  function point(e) { return pointFrom(e.clientX, e.clientY); }
+  function writeView(id, label, rect) {
+    var stored = viewToStored({ id: id, label: label, x: rect.x, y: rect.y, w: rect.w, h: rect.h }, viewTurns, scanT);
+    stored.id = id;
+    stored.label = label;
     var i = zones.findIndex(function (q) { return q.id === id; });
-    if (i >= 0) zones[i] = z; else zones.push(z);
+    if (i >= 0) zones[i] = stored; else zones.push(stored);
     selected = zones.findIndex(function (q) { return q.id === id; });
+  }
+  function clearHold() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  }
+  function releaseCapture(id) {
+    try { if (stage.hasPointerCapture && stage.hasPointerCapture(id)) stage.releasePointerCapture(id); } catch (e) {}
+  }
+  function cancelGesture() {
+    clearHold();
+    if (!gesture) { stage.classList.remove('ozarm'); return; }
+    releaseCapture(gesture.pointerId);
+    if (gesture.mode === 'draw' && gesture.placed) {
+      var i = zones.findIndex(function (z) { return z.id === gesture.id; });
+      if (i >= 0) { if (gesture.prev) zones[i] = gesture.prev; else zones.splice(i, 1); }
+      zones = cleanList(zones);
+    } else if (gesture.origin && (gesture.mode === 'move' || gesture.mode === 'resize') && zones[gesture.i]) {
+      zones[gesture.i] = gesture.origin;
+    }
+    gesture = null;
+    stage.classList.remove('ozarm');
+    paint();
+    renderList();
+  }
+  function armPending() {
+    if (!gesture || gesture.mode !== 'pending') return;
+    var draw = idForDraw();
+    if (draw.error) {
+      setStatus(draw.error, 'dirty');
+      clearHold();
+      gesture = null;
+      return;
+    }
+    var prev = null;
+    zones.forEach(function (z) { if (z.id === draw.id) prev = copyZone(z); });
+    gesture.mode = 'draw';
+    gesture.id = draw.id;
+    gesture.label = draw.label;
+    gesture.prev = prev;
+    gesture.placed = false;
+    gesture.captured = true;
+    stage.classList.add('ozarm');
+    try { stage.setPointerCapture(gesture.pointerId); } catch (err) {}
+  }
+  function beginDraw(e, p) {
+    var draw = idForDraw();
+    if (draw.error) { setStatus(draw.error, 'dirty'); return; }
+    var prev = null;
+    zones.forEach(function (z) { if (z.id === draw.id) prev = copyZone(z); });
+    gesture = { mode: 'draw', pointerId: e.pointerId, ax: p.x, ay: p.y, cx: e.clientX, cy: e.clientY, t0: Date.now(), id: draw.id, label: draw.label, prev: prev, placed: false, captured: false };
+  }
+  function beginAdjust(e, i, mode) {
+    var z = zones[i];
+    if (!z) return;
+    var p = point(e);
+    selected = i;
+    gesture = { mode: mode, pointerId: e.pointerId, i: i, ax: p.x, ay: p.y, id: z.id, label: z.label, view: storedToView(z, viewTurns, scanT), origin: copyZone(z), captured: true };
+    dirty = true;
+    try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+    paint();
+    renderList();
+  }
+  function applyDrag(p) {
+    if (!gesture) return;
+    if (gesture.mode === 'draw') {
+      if (Math.abs(p.x - gesture.ax) < 0.01 && Math.abs(p.y - gesture.ay) < 0.01) return;
+      var x = Math.min(gesture.ax, p.x), y = Math.min(gesture.ay, p.y);
+      writeView(gesture.id, gesture.label, { x: x, y: y, w: Math.abs(p.x - gesture.ax), h: Math.abs(p.y - gesture.ay) });
+      gesture.placed = true;
+      dirty = true;
+    } else if (gesture.mode === 'move') {
+      var vz = gesture.view;
+      var nx = clamp(vz.x + (p.x - gesture.ax), 0, Math.max(0, 1 - vz.w));
+      var ny = clamp(vz.y + (p.y - gesture.ay), 0, Math.max(0, 1 - vz.h));
+      writeView(gesture.id, gesture.label, { x: nx, y: ny, w: vz.w, h: vz.h });
+      dirty = true;
+    } else if (gesture.mode === 'resize') {
+      var rv = gesture.view;
+      var w = clamp(p.x - rv.x, 0.02, Math.max(0.02, 1 - rv.x));
+      var h = clamp(p.y - rv.y, 0.02, Math.max(0.02, 1 - rv.y));
+      writeView(gesture.id, gesture.label, { x: rv.x, y: rv.y, w: w, h: h });
+      dirty = true;
+    }
+  }
+  function endDrag(e) {
+    if (!gesture) return;
+    if (e && e.pointerId !== gesture.pointerId) return;
+    clearHold();
+    releaseCapture(gesture.pointerId);
+    var g = gesture;
+    gesture = null;
+    stage.classList.remove('ozarm');
+    if (g.mode === 'pending' || g.mode === 'scroll' || g.mode === 'pinch') return;
+    if (g.mode === 'draw') {
+      var i = zones.findIndex(function (z) { return z.id === g.id; });
+      if (g.placed && i >= 0) {
+        var c = cleanZone(zones[i]);
+        if (!c) { if (g.prev) zones[i] = g.prev; else zones.splice(i, 1); }
+        else zones[i] = c;
+      }
+      zones = cleanList(zones);
+      selected = zones.findIndex(function (z) { return z.id === g.id; });
+      if (g.placed) setStatus('Unsaved changes.', 'dirty');
+    } else if (g.mode === 'move' || g.mode === 'resize') {
+      if (g.origin && zones[g.i]) {
+        var c2 = cleanZone(zones[g.i]);
+        if (c2) zones[g.i] = c2; else zones[g.i] = g.origin;
+      }
+      zones = cleanList(zones);
+      selected = zones.findIndex(function (z) { return z.id === g.id; });
+      setStatus('Unsaved changes.', 'dirty');
+    }
+    paint();
+    renderList();
+    host.dispatchEvent(new CustomEvent('oyp-zones-drawn', {
+      bubbles: true,
+      detail: zones.map(function (z) { return { id: z.id, label: z.label, x: z.x, y: z.y, w: z.w, h: z.h }; })
+    }));
   }
   paint();
   renderList();
@@ -537,7 +914,7 @@ function Editor(host, pop) {
       if (selected >= zones.length) selected = zones.length - 1;
       dirty = true;
       paint(); renderList();
-      setStatus(hasJo(zones) ? 'JO box still in place. Save to keep this.' : 'No JO box. Saving this makes scans read the whole card again.');
+      setStatus(hasJo(zones) ? 'JO box still in place. Save to keep this.' : 'No JO box. Saving this makes scans read the whole card again.', 'dirty');
       return;
     }
     var row = e.target.closest ? e.target.closest('.ozlist li[data-i]') : null;
@@ -548,28 +925,71 @@ function Editor(host, pop) {
       renderList(); paint();
     }
   });
-  host.querySelector('[data-z="custom"]').addEventListener('focus', function () { kind = 'x'; renderList(); });
-  host.querySelector('[data-z="token"]').addEventListener('change', function () { setToken(tok.value.trim()); showToken(); });
-  host.querySelector('[data-z="save"]').addEventListener('click', function () {
-    var btn = host.querySelector('[data-z="save"]');
-    btn.disabled = true;
-    setStatus('Saving…');
-    setToken(tok.value.trim());
-    saveZones(zones).then(function (res) {
+  var custom = host.querySelector('[data-z="custom"]');
+  if (custom) custom.addEventListener('focus', function () { kind = 'x'; renderList(); });
+  if (tok) tok.addEventListener('change', function () {
+    setToken(readToken(tok));
+    if (readToken(tok) && tokLab) tokLab.classList.remove('ozneed');
+    showToken();
+  });
+  function focusToken() {
+    if (!tokLab || !tok || !tok.isConnected) return;
+    tokLab.classList.add('ozneed');
+    tokLab.style.display = '';
+    try { tok.focus(); tok.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
+  }
+  function finishSave(btn, res, err) {
+    if (!err) {
       zones = cleanList(state.zones);
       dirty = false;
+    }
+    var view = presentSave(res, zones, err);
+    setStatus(view.text, view.tone);
+    if (btn) {
       btn.disabled = false;
-      paint(); renderList();
-      setStatus(saveMessage(res, zones));
-      syncStart();
-      host.dispatchEvent(new CustomEvent('oyp-zones-saved', { bubbles: true, detail: res }));
-    });
+      btn.textContent = view.button;
+      if (view.button !== 'Save zones') {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () { if (btn.isConnected) btn.textContent = 'Save zones'; }, 2000);
+      }
+    }
+    if (!readToken(host.querySelector('[data-z="token"]'))) focusToken();
+    paint();
+    renderList();
+    syncStart();
+    if (!err) host.dispatchEvent(new CustomEvent('oyp-zones-saved', { bubbles: true, detail: res }));
+  }
+  host.querySelector('[data-z="save"]').addEventListener('click', function () {
+    var btn = host.querySelector('[data-z="save"]');
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      setStatus('Saving…', 'dirty');
+      setToken(readToken(host.querySelector('[data-z="token"]')));
+      Promise.resolve().then(function () { return saveZones(zones); }).then(function (res) {
+        finishSave(btn, res, null);
+      }, function (err) {
+        finishSave(btn, null, err || new Error('save'));
+      });
+    } catch (err) {
+      finishSave(btn, null, err);
+    }
   });
   host.querySelector('[data-z="clear"]').addEventListener('click', function () {
     if (!zones.length) return;
     if (!confirm('Clear the JO boxes?')) return;
     zones = []; selected = -1; dirty = true; paint(); renderList();
-    setStatus('Boxes cleared here. Save to keep that.');
+    setStatus('Boxes cleared here. Save to keep that.', 'dirty');
+  });
+  if (rotBtn) rotBtn.addEventListener('click', function () {
+    viewTurns = (viewTurns + 1) % 4;
+    paint();
+  });
+  if (drawBtn) drawBtn.addEventListener('click', function () {
+    drawMode = !drawMode;
+    stage.classList.toggle('ozdraw', drawMode);
+    drawBtn.classList.toggle('on', drawMode);
+    drawBtn.setAttribute('aria-pressed', drawMode ? 'true' : 'false');
   });
   var file = host.querySelector('[data-z="file"]');
   var photoSeq = 0;
@@ -578,20 +998,22 @@ function Editor(host, pop) {
     if (!f) return;
     var seq = ++photoSeq;
     var heic = isHeic(f);
-    var keep = status.textContent;
-    if (keep === 'Opening photo…' || keep === 'Could not open that photo.') keep = '';
-    if (heic) setStatus('Opening photo…');
-    var pending = heic ? heicToJpegUrl(f) : readDataUrl(f);
-    pending.then(function (url) { return loadImage(url); }).then(function (im) {
+    var keepText = msgEl ? msgEl.textContent : '';
+    var keepTone = status ? (status.getAttribute('data-tone') || 'dirty') : 'dirty';
+    if (keepText === 'Opening photo…' || keepText === 'Could not open that photo.') keepText = '';
+    if (heic) setStatus('Opening photo…', 'dirty');
+    fileToOrientedImage(f).then(function (im) {
       if (seq !== photoSeq) return;
-      if (!im) { setStatus('Could not open that photo.'); return; }
+      if (!im) { setStatus('Could not open that photo.', 'bad'); return; }
       img = im;
+      viewTurns = 1;
+      scanT = scannerTurns(im.naturalWidth || im.width, im.naturalHeight || im.height);
       paint();
-      if (heic && status.textContent === 'Opening photo…') setStatus(keep);
+      if (heic && msgEl && msgEl.textContent === 'Opening photo…') setStatus(keepText, keepTone);
       host.dispatchEvent(new CustomEvent('oyp-zones-preview', { bubbles: true }));
     }, function () {
       if (seq !== photoSeq) return;
-      setStatus('Could not open that photo.');
+      setStatus('Could not open that photo.', 'bad');
     });
   }
   file.addEventListener('change', function () {
@@ -604,7 +1026,7 @@ function Editor(host, pop) {
     e.stopPropagation();
     openPicker();
   });
-  host.querySelector('[data-z="change"]').addEventListener('click', openPicker);
+  if (changeBtn) changeBtn.addEventListener('click', openPicker);
   stage.addEventListener('click', function (e) {
     if (img) return;
     if (e.target && e.target.closest && e.target.closest('[data-z="upload"]')) return;
@@ -639,76 +1061,77 @@ function Editor(host, pop) {
     var files = e.dataTransfer && e.dataTransfer.files;
     if (files && files[0]) readPhoto(files[0]);
   });
+  function pointerCount() { return Object.keys(pointers).length; }
+  stage.addEventListener('pointerdown', function (e) {
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (pointerCount() > 1) { pinching = true; cancelGesture(); }
+  }, true);
+  stage.addEventListener('pointerup', function (e) { delete pointers[e.pointerId]; if (!pointerCount()) pinching = false; }, true);
+  stage.addEventListener('pointercancel', function (e) { delete pointers[e.pointerId]; if (!pointerCount()) pinching = false; }, true);
   canvas.addEventListener('pointerdown', function (e) {
-    if (!img) return;
-    e.preventDefault();
+    if (!img || pinching || pointerCount() > 1) return;
     var p = point(e);
-    var h = hit(p.x, p.y, p.W, p.H);
-    if (h) {
-      selected = h.i;
-      drag = { mode: h.mode, i: h.i, ax: p.x, ay: p.y, z: { id: zones[h.i].id, label: zones[h.i].label, x: zones[h.i].x, y: zones[h.i].y, w: zones[h.i].w, h: zones[h.i].h } };
-      dirty = true;
-    } else {
-      var draw = idForDraw();
-      if (draw.error) { setStatus(draw.error); return; }
-      var prev = null;
-      zones.forEach(function (z) { if (z.id === draw.id) prev = { id: z.id, label: z.label, x: z.x, y: z.y, w: z.w, h: z.h }; });
-      drag = { mode: 'draw', id: draw.id, label: draw.label, ax: p.x, ay: p.y, prev: prev, placed: false };
-    }
-    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
-    paint(); renderList();
+    var mode = gestureBegin({ pointers: pointerCount() || 1, drawMode: drawMode, pointerType: e.pointerType || 'mouse' });
+    if (mode === 'pinch') return;
+    if (mode === 'draw') { beginDraw(e, p); return; }
+    gesture = { mode: 'pending', pointerId: e.pointerId, ax: p.x, ay: p.y, cx: e.clientX, cy: e.clientY, t0: Date.now() };
+    clearHold();
+    holdTimer = setTimeout(function () { armPending(); }, HOLD_MS);
   });
-  canvas.addEventListener('pointermove', function (e) {
-    if (!drag) return;
-    var p = point(e);
-    if (drag.mode === 'draw') {
-      if (Math.abs(p.x - drag.ax) < 0.01 && Math.abs(p.y - drag.ay) < 0.01) return;
-      var x = Math.min(drag.ax, p.x), y = Math.min(drag.ay, p.y);
-      upsert(drag.id, { x: x, y: y, w: Math.abs(p.x - drag.ax), h: Math.abs(p.y - drag.ay) }, drag.label);
-      drag.placed = true;
-      dirty = true;
-    } else if (drag.mode === 'move') {
-      var z = drag.z;
-      var nx = clamp(z.x + (p.x - drag.ax), 0, 1 - z.w);
-      var ny = clamp(z.y + (p.y - drag.ay), 0, 1 - z.h);
-      zones[drag.i] = { id: z.id, label: z.label, x: nx, y: ny, w: z.w, h: z.h };
-    } else if (drag.mode === 'resize') {
-      var r = drag.z;
-      var w = clamp(p.x - r.x, 0.02, 1 - r.x);
-      var h = clamp(p.y - r.y, 0.02, 1 - r.y);
-      zones[drag.i] = { id: r.id, label: r.label, x: r.x, y: r.y, w: w, h: h };
-    }
-    paint();
+  hits.addEventListener('pointerdown', function (e) {
+    if (!img || pinching || pointerCount() > 1) return;
+    var el = e.target.closest ? e.target.closest('[data-hit]') : null;
+    if (!el) return;
+    var mode = gestureBegin({ pointers: 1, hit: el.getAttribute('data-hit'), drawMode: drawMode, pointerType: e.pointerType || 'touch' });
+    if (mode !== 'move' && mode !== 'resize') return;
+    e.stopPropagation();
+    beginAdjust(e, Number(el.getAttribute('data-i')), mode);
   });
-  function endDrag() {
-    if (!drag) return;
-    if (drag.mode === 'draw') {
-      var i = zones.findIndex(function (z) { return z.id === drag.id; });
-      if (!drag.placed) { /* a tap on empty card leaves the boxes as they were */ }
-      else if (i >= 0) {
-        var c = cleanZone(zones[i]);
-        if (!c) {
-          if (drag.prev) zones[i] = drag.prev; else zones.splice(i, 1);
-        } else zones[i] = c;
+  stage.addEventListener('pointermove', function (e) {
+    if (pointers[e.pointerId]) pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (!gesture || gesture.pointerId !== e.pointerId || pinching) return;
+    if (gesture.mode === 'pending') {
+      var dist = Math.hypot(e.clientX - gesture.cx, e.clientY - gesture.cy);
+      var next = gestureAdvance(gesture.mode, dist, Date.now() - gesture.t0);
+      if (next === 'scroll') {
+        clearHold();
+        gesture = null;
+        stage.classList.remove('ozarm');
+        return;
       }
-    } else if (drag.i >= 0 && zones[drag.i]) {
-      var c2 = cleanZone(zones[drag.i]);
-      if (c2) zones[drag.i] = c2;
+      if (next === 'draw') armPending();
+      if (!gesture || gesture.mode !== 'draw') return;
     }
-    zones = cleanList(zones);
-    selected = drag && drag.id ? zones.findIndex(function (z) { return z.id === drag.id; }) : selected;
-    if (selected < 0 && drag && drag.z) selected = zones.findIndex(function (z) { return z.id === drag.z.id; });
-    drag = null;
-    paint(); renderList();
-    host.dispatchEvent(new CustomEvent('oyp-zones-drawn', {
-      bubbles: true,
-      detail: zones.map(function (z) { return { id: z.id, label: z.label, x: z.x, y: z.y, w: z.w, h: z.h }; })
-    }));
-  }
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointercancel', endDrag);
+    if (gesture.mode === 'draw' || gesture.mode === 'move' || gesture.mode === 'resize') {
+      if (!gesture.captured) {
+        try { stage.setPointerCapture(gesture.pointerId); } catch (err) {}
+        gesture.captured = true;
+      }
+      e.preventDefault();
+      applyDrag(point(e));
+      paint();
+    }
+  });
+  stage.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches.length > 1) { pinching = true; cancelGesture(); return; }
+    if (gesture && gesture.mode === 'pending' && e.touches && e.touches[0]) {
+      var t = e.touches[0];
+      var dist = Math.hypot(t.clientX - gesture.cx, t.clientY - gesture.cy);
+      if (gestureAdvance('pending', dist, Date.now() - gesture.t0) === 'scroll') {
+        clearHold();
+        gesture = null;
+        stage.classList.remove('ozarm');
+      }
+      return;
+    }
+    if (!gesture) return;
+    if (gesture.mode === 'draw' || gesture.mode === 'move' || gesture.mode === 'resize') e.preventDefault();
+  }, { passive: false });
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
   function close() {
     if (dirty && !confirm('Close without saving these boxes?')) return;
+    clearHold();
     document.removeEventListener('keydown', onKey);
     editors -= 1;
     if (host.parentNode) host.parentNode.removeChild(host);
@@ -722,7 +1145,6 @@ function Editor(host, pop) {
   }
   host.__oypClose = close;
 }
-
 function open() {
   ensureCss();
   refreshP.then(function () {
@@ -1034,6 +1456,11 @@ function boot() {
   });
 }
 
-root.OYPZones = { mount: mount, open: open, prepare: prepare, zones: function () { return state.zones.slice(); }, summary: summary, saveMessage: saveMessage };
+root.OYPZones = {
+  mount: mount, open: open, prepare: prepare, zones: function () { return state.zones.slice(); }, summary: summary, saveMessage: saveMessage,
+  scannerTurns: scannerTurns, turnZone: turnZone, viewToStored: viewToStored, storedToView: storedToView,
+  exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, readToken: readToken, presentSave: presentSave,
+  gestureBegin: gestureBegin, gestureAdvance: gestureAdvance, HOLD_MS: HOLD_MS
+};
 boot();
 })(typeof window !== 'undefined' ? window : globalThis);
