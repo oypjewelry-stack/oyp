@@ -1,0 +1,10 @@
+Fast.gs — one short edit. countLoad is a read, and it must stay fresh, so it is NOT added to FAST.CACHE.
+Do not add linkEpc or countFinish. Those stay writes.
+
+The FIND text is in the middle of the READS line (copy it without leading spaces). It is still there after the To do patch. It is not the CACHE line.
+
+FIND
+matHistory: 1,
+
+REPLACE WITH
+matHistory: 1, countLoad: 1,
