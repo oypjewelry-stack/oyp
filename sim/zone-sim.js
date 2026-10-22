@@ -170,7 +170,7 @@ eq(build.indexOf('Open the scanner from the back-office') < build.indexOf('scann
 eq(build.indexOf('>Print test</a>') < build.indexOf('>Log out</a>'), 'the offline menu still prints before Log out');
 eq(read('nav.js').includes('scan-zones.js?v=6'), 'scan-zones cache bust is v6');
 eq(read('staff/index.html').includes('nav.js?v=35') && read('staff/print-test.html').includes('nav.js?v=35'), 'staff pages load nav.js v35');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=35') && read('scan/index.html').includes('app.js?v=20261022b'), 'the scanner page keeps the production nav host at v35');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=35') && read('scan/index.html').includes('app.js?v=20261022d'), 'the scanner page keeps the production nav host at v35');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');

@@ -33,9 +33,25 @@ function realJO(s) { // a JO this phone will file. 'OCR' is the hold while the n
   const n = normJO(s);
   return /^\d{2}-\d{3,4}[A-Z]?$/.test(n) ? n : '';
 }
-function joFromRead(r) { // readJo_ is confident only when it found one number and did not mark the crop low
-  if (!r || r.ok === false || r.low) return '';
+function uniqueJOs(list) { // real JO numbers named in a readJo found list, once each
+  const out = [];
+  const found = Array.isArray(list) ? list : [];
+  for (let i = 0; i < found.length; i++) {
+    const n = realJO(found[i]);
+    if (n && out.indexOf(n) < 0) out.push(n);
+  }
+  return out;
+}
+function joFromRead(r) { // readJo_ sets low when the crop text runs past 24 characters. One JO in found is still the number.
+  if (!r || r.ok === false) return '';
+  if (uniqueJOs(r.found).length === 1) return realJO(r.jo);
+  if (r.low) return '';
   return realJO(r.jo);
+}
+function joFromPage(r) { // a whole-page read is filed only when it names exactly one JO
+  if (!r || r.ok === false) return '';
+  const one = uniqueJOs(r.found);
+  return one.length === 1 ? one[0] : '';
 }
 if (typeof module !== 'undefined' && module.exports) module.exports.normJO = normJO;
 
@@ -96,10 +112,12 @@ function buildMenu() {
   if (!placed) h += printerRow(); // same place nav.js uses when the role has no Settings row
   // JO card zones is inserted by scan-zones.js immediately before Scanner settings. Log out stays last.
   if (!role) h += `<p class="mnote">Open the scanner from the back-office menu once to see your full menu here.</p>`;
+  const left = c.pending + (c.needsjo || 0);
   if (typeof N.scannerTailHtml === 'function') {
-    h += N.scannerTailHtml({ pending: c.pending, failed: c.failed, printTest: PRINT_TEST, logoutHref: role ? `${site}#/logout` : '' });
+    h += N.scannerTailHtml({ pending: left, failed: c.failed, printTest: PRINT_TEST, logoutHref: role ? `${site}#/logout` : '' });
   } else {
-    h += `<hr><a href="#" data-m="queue">Pending uploads${c.pending + c.failed ? ` <span class="badge">${c.pending + c.failed}</span>` : ''}</a><a href="#" data-m="settings">Scanner settings</a><a href="${PRINT_TEST}">Print test</a>`;
+    const n = left + c.failed;
+    h += `<hr><a href="#" data-m="queue">Pending uploads${n ? ` <span class="badge">${n}</span>` : ''}</a><a href="#" data-m="settings">Scanner settings</a><a href="${PRINT_TEST}">Print test</a>`;
     if (role) h += `<a href="${site}#/logout" data-m="logout">Log out</a>`;
   }
   return h;
@@ -429,10 +447,18 @@ function renderOut(src, quad, enh, maxPx) {
 // Drive name: <JO>-p<page>-<MMDDYY>.jpg, Manila date the page was shot. The server keeps every earlier scan and adds b, c… for a
 // second session the same day; a re-crop in this session sends the same name + session id, so it replaces only its own page.
 function dateTag(d) {
-  const m = new Date((d ? d.getTime() : Date.now()) + 8 * 36e5).toISOString(); // Asia/Manila (UTC+8, no DST)
+  const t = d instanceof Date ? d.getTime() : (typeof d === 'number' && d > 0 ? d : Date.now());
+  const m = new Date(t + 8 * 36e5).toISOString(); // Asia/Manila (UTC+8, no DST)
   return m.slice(5, 7) + m.slice(8, 10) + m.slice(2, 4);
 }
 function pageName(jo, page, d) { return `${jo}-p${page}-${dateTag(d)}.jpg`; }
+function newClientId() {
+  try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+  return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+}
+function shotContext() { // switches and token as they are at the moment the photo is taken
+  return { printJo: stickerOn('jo'), printTag: stickerOn('tag'), token: localStorage.getItem(LS.token) || '', api: api() };
+}
 async function savePage(src, quad, replace, opt) { // the one save path: live shots, photos and re-crops. Upload starts as soon as this page's JPEG is ready.
   opt = opt || {}; const enh = enhanceOn(), out = renderOut(src, quad, enh, opt.maxPx || MAX_PX);
   const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1), th = document.createElement('canvas');
@@ -450,14 +476,17 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
     cap.pages.push(p); cap.saving = false;
   }
   p.thumb = thumb; p.quad = quad || null;
-  if (p.held) p.image = image;
+  p.clientId = newClientId(); // a new photo, including a re-crop. Retries keep the id already stored on the queue item.
+  Object.assign(p, shotContext());
+  if (p.held) p.image = image; // the capture screen still reads the number from this copy
   if (replace && photo.last && photo.last.pg === replace) { // Adjust crop on a Scan JO photo
     photo.last.pg = Object.assign({ quad }, p);
     const i = cap.pages.findIndex(x => x === replace || (x.scan === replace.scan && x.filename === replace.filename && x.page === replace.page));
     if (i >= 0) cap.pages[i] = photo.last.pg;
   }
-  if (p.held) { renderCapture(); return p; }
-  queue.add(Object.assign({ image }, p)).catch(e => { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); });
+  // Durable the moment the JPEG exists. The camera returns as soon as this write finishes; the upload does not.
+  try { await queue.add(Object.assign({ image }, p)); }
+  catch (e) { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); }
   renderCapture();
   return p;
 }
@@ -635,7 +664,7 @@ function loadPhotoMain(file) {
 }
 const cvSoon = ms => Promise.race([loadCV().catch(() => null), new Promise(r => setTimeout(() => r(null), ms))]);
 async function autoSave(src) {
-  const cv = $('doCrop').checked ? await cvSoon(15000) : null;
+  const cv = $('doCrop').checked && window.cv && window.cv.Mat ? window.cv : null; // do not wait on the detector; the photo is queued either way
   let q = null;
   if (cv && cv.Mat) { try { q = detect(cv, src); } catch (e) { console.warn('detect', e); }
     if (q) { try { const m = cv.imread(src); q = CardDetector.refineQuad(cv, m, CardDetector.order(q)); m.delete(); } catch (e) { console.warn('refine', e); } } }
@@ -687,30 +716,95 @@ function cropZoneB64(dataUrl, zone) { // the JO-number box, as a JPEG. Same crop
     img.src = String(dataUrl || '').indexOf('data:') === 0 ? dataUrl : 'data:image/jpeg;base64,' + dataUrl;
   });
 }
+const READ_JO_MAX_B64 = 1500000; // readJo_ rejects ocrBase64 longer than 2,000,000 characters
+function jpegPayload(dataUrl) { // base64 after the comma; that is the string readJo_ measures
+  const s = String(dataUrl || '');
+  const i = s.indexOf(',');
+  return (i >= 0 ? s.slice(i + 1) : s).replace(/\s+/g, '');
+}
+function readJoFit(long, len) { // smaller long edge when this JPEG's base64 is not well under the readJo cap
+  long = Math.max(1, Math.round(Number(long) || 1));
+  if (!(len > READ_JO_MAX_B64)) return long;
+  let edge = Math.round(long * Math.sqrt(READ_JO_MAX_B64 / len) * 0.85);
+  if (!(edge > 0)) edge = Math.round(long * 0.75);
+  if (edge >= long) edge = Math.round(long * 0.75);
+  if (edge < 320 && long > 320) edge = 320;
+  return edge < long ? edge : 0;
+}
+function loadDataUrl(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    const s = String(dataUrl || '');
+    img.src = s.indexOf('data:') === 0 ? s : 'data:image/jpeg;base64,' + s;
+  });
+}
+function canvasJpegB64(img, long) {
+  try {
+    const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+    if (!w0 || !h0) return '';
+    const s = Math.min(1, long / Math.max(w0, h0));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w0 * s)); c.height = Math.max(1, Math.round(h0 * s));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/jpeg', 0.8), i = url.indexOf(',');
+    c.width = c.height = 0;
+    return i >= 0 ? url.slice(i + 1) : '';
+  } catch (e) { return ''; }
+}
+async function pageReadB64(dataUrl) { // whole page 1, shrunk until the base64 stays well under 2,000,000 characters
+  let b64 = jpegPayload(dataUrl);
+  if (b64 && b64.length <= READ_JO_MAX_B64) return b64;
+  const img = await loadDataUrl(dataUrl);
+  const w = img && (img.naturalWidth || img.width), h = img && (img.naturalHeight || img.height);
+  if (!w || !h) return '';
+  let long = Math.max(w, h);
+  for (let n = 0; n < 6; n++) {
+    const len = b64 && b64.length ? b64.length : READ_JO_MAX_B64 + 1;
+    const next = readJoFit(long, len);
+    if (!(next > 0) || next >= long) break;
+    long = next;
+    b64 = canvasJpegB64(img, long);
+    if (!b64) return '';
+    if (b64.length <= READ_JO_MAX_B64) return b64;
+  }
+  return '';
+}
+async function postReadJo(b64) {
+  const res = await (window.__oypNativeFetch || fetch)(api(), { method: 'POST', redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ op: 'readJo', token: localStorage.getItem(LS.token) || '', ocrBase64: b64 }) });
+  try { return await res.json(); } catch (e) { return null; }
+}
 async function ocrJoNumber(dataUrl) { // readJo on the JO-number zone only. A typed number never comes through here.
   await waitZones();
   const zone = zonesNow().find(z => z && z.id === 'jo');
   if (!zone) return '';
   const b64 = await cropZoneB64(dataUrl, zone);
   if (!b64) return '';
-  const res = await (window.__oypNativeFetch || fetch)(api(), { method: 'POST', redirect: 'follow',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ op: 'readJo', token: localStorage.getItem(LS.token) || '', ocrBase64: b64 }) });
-  let r = null; try { r = await res.json(); } catch (e) { r = null; }
-  return joFromRead(r);
+  return joFromRead(await postReadJo(b64));
+}
+async function ocrJoPage(dataUrl) { // one readJo of the whole first page when the zone crop named nothing
+  const b64 = await pageReadB64(dataUrl);
+  if (!b64 || b64.length > READ_JO_MAX_B64) return '';
+  return joFromPage(await postReadJo(b64));
 }
 function fileHeld(jo) { // the number is known: rename the kept pages and upload them as that JO
   jo = realJO(jo); if (!jo) return false;
-  const stamp = String(state.scan || '').split('@')[1] || Date.now().toString(36);
+  const oldScan = state.scan;
+  const stamp = String(oldScan || '').split('@')[1] || Date.now().toString(36);
   state.jo = jo; state.scan = jo + '@' + stamp;
   cap.asking = false; cap.reading = false;
   const start = $('joInput'); if (start) start.value = jo;
   const ask = $('capJoInput'); if (ask) ask.value = '';
+  if (oldScan) queue.bindJo(oldScan, jo, state.scan, it => pageName(jo, it.page, it.shot));
   cap.pages.forEach(p => {
     if (!p.held) return;
     const image = p.image;
     p.jo = jo; p.scan = state.scan; p.filename = pageName(jo, p.page, p.shot); p.held = false; delete p.image;
-    if (image) queue.add(Object.assign({ image }, p)).catch(e => { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); });
+    const queued = queue.list().some(x => (p.clientId && x.clientId === p.clientId) || (x.scan === p.scan && x.page === p.page));
+    if (image && !queued) queue.add(Object.assign({ image }, p)).catch(e => { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); });
   });
   if (photo.last && photo.last.pg) { photo.last.pg.jo = jo; photo.last.pg.scan = state.scan; photo.last.pg.filename = pageName(jo, photo.last.pg.page, photo.last.pg.shot); photo.last.pg.held = false; }
   renderCapture();
@@ -728,11 +822,12 @@ async function readHeldJo() {
   cap.reading = true; renderCapture();
   let jo = '';
   try { jo = await ocrJoNumber(page.image); } catch (e) { console.warn('readJo', e); }
+  if (!jo && !realJO(state.jo)) { try { jo = await ocrJoPage(page.image); } catch (e) { console.warn('readJo page', e); } }
   cap.reading = false;
   if (realJO(state.jo)) return;
   if (jo) fileHeld(jo); else askForJo();
 }
-async function handlePhotos(files) {
+async function handlePhotos(files, fromCamera) {
   files = Array.from(files || []).filter(f => /^image\//.test(f.type) || /\.(hei[cf]|jpe?g|png|webp)$/i.test(f.name));
   if (!files.length) return;
   const typed = realJO($('joInput').value); // a number already in the box wins over the card
@@ -761,7 +856,8 @@ async function handlePhotos(files) {
     }
   } catch (e) { console.error(e); note('Could not save the photo: ' + (e.message || e)); }
   finally { cap.saving = false; photoBusy(false); if (!saved && fresh && !cap.pages.length) showView('startView'); renderCapture(); }
-  if (state.jo === 'OCR') readHeldJo();
+  if (fromCamera && saved) photo.reopen = true; // straight back to the camera; the upload keeps going
+  if (state.jo === 'OCR') readHeldJo(); // does not block the next shot
 }
 function capMatch(pg) {
   const all = queue.list();
@@ -770,6 +866,7 @@ function capMatch(pg) {
 function capState(pg) {
   const it = capMatch(pg);
   if (!it) return (pg.held && cap.asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === 'OCR') ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Waiting' };
+  if (it.state === 'needsjo') return { cls: 'err', t: 'Type JO' };
   if (it.state === 'uploading') return { cls: 'busy', t: 'Uploading…' };
   if (it.state === 'waiting') return { cls: 'queued', t: isOn() ? (it.error ? 'Retrying' : 'Waiting') : 'Offline' };
   if (it.state === 'saved') return { cls: 'ok', t: 'Saved' };
@@ -811,14 +908,14 @@ function renderCapture() {
   applySticker();
 }
 function finishCapture() {
-  if (photo.busy || cap.reading) return; // the page being saved still goes into the queue when it finishes
-  if (cap.pages.some(p => p.held)) return askForJo(); // the photo stays; she types the number here
+  if (photo.busy) return; // the page being saved still goes into the queue when it finishes
   photo.cont = false;
   const c = queue.counts();
   cap.pages = []; cap.saving = false; photo.last = null;
   $('joInput').value = '';
   showView('startView'); renderCapture();
-  if (c.pending) note(c.pending + (c.pending > 1 ? ' pages are' : ' page is') + ' still uploading. They keep going in the background, even if you close this page.');
+  if (c.needsjo) note('Type the JO number in Pending uploads. The photo stays on this phone, and the sticker queues once the number is in.');
+  else if (c.pending) note(c.pending + (c.pending > 1 ? ' pages are' : ' page is') + ' still uploading. They keep going in the background, even if you close this page.');
   else if (c.failed) note(c.failed + (c.failed > 1 ? ' pages failed. ' : ' page failed. ') + 'Open Pending uploads to retry. Nothing was discarded.');
 }
 $('lastScan').addEventListener('click', e => {
@@ -826,7 +923,7 @@ $('lastScan').addEventListener('click', e => {
   if (e.target.closest('[data-adj]') && L.src && L.src.width) openReview(L.src, (L.pg.quad || [[0.08, 0.08], [0.92, 0.08], [0.92, 0.92], [0.08, 0.92]]).map(p => p.slice()), !!L.pg.quad, L.pg, PHOTO);
 });
 $('btnNextPage').addEventListener('click', e => {
-  if (photo.busy || cap.reading) { e.preventDefault(); return; }
+  if (photo.busy) { e.preventDefault(); return; } // upload and the JO read never block the next shot
   photo.cont = true; // one tap opens the camera; no navigation, same JO
 });
 $('btnNextPage').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('btnNextPage').click(); } });
@@ -845,20 +942,29 @@ $('btnScanJO').addEventListener('click', e => {
 });
 $('btnScanJO').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('btnScanJO').click(); } });
 $('lnkGallery').addEventListener('click', e => { photo.cont = false; if (photo.busy) e.preventDefault(); });
-['filePhoto', 'fileGallery'].forEach(id => $(id).addEventListener('change', e => { const fs = e.target.files; handlePhotos(fs).finally(() => { e.target.value = ''; }); }));
+['filePhoto', 'fileGallery'].forEach(id => $(id).addEventListener('change', e => {
+  const fs = e.target.files, fromCamera = id === 'filePhoto';
+  handlePhotos(fs, fromCamera).finally(() => {
+    e.target.value = '';
+    if (!photo.reopen) return;
+    photo.reopen = false; photo.cont = true;
+    const el = $('filePhoto'); if (el) { try { el.click(); } catch (err) {} }
+  });
+}));
 
 /* ---------- upload queue (queue.js, IndexedDB) ---------- */
 // Page 1 creates or identifies the JO and is the only page that queues stickers.
 function scanPayload(it, token, stick) {
   stick = stick || {};
   const body = { token: token || '', jo: it.jo, page: it.page, filename: it.filename, scan: it.scan || '', imageBase64: it.image.split(',')[1] };
+  if (it.clientId) body.clientId = it.clientId; // same id on every retry, so a lost response is not saved twice
   if ((parseInt(it.page, 10) || 1) === 1) {
     body.printJo = stick.printJo !== false;
     body.printTag = stick.printTag !== false;
   }
   return body;
 }
-async function postScan(body, signal) {
+async function postScan(body, signal, url) {
   let payload = body, doFetch = fetch;
   if (body.printJo === false || body.printTag === false) {
     // print.js queues a jo_card after every page-1 upload it can see, and does not read these flags.
@@ -868,7 +974,7 @@ async function postScan(body, signal) {
     }
     doFetch = window.__oypNativeFetch || fetch;
   }
-  return doFetch(api(), { method: 'POST', redirect: 'follow', signal,
+  return doFetch(url || api(), { method: 'POST', redirect: 'follow', signal,
     headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // simple request: no CORS preflight
     body: JSON.stringify(payload) });
 }
@@ -876,7 +982,9 @@ async function sendPage(it) {
   const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, to = ctl && setTimeout(() => ctl.abort(), 120000);
   let res;
   try {
-    res = await postScan(scanPayload(it, localStorage.getItem(LS.token) || '', { printJo: stickerOn('jo'), printTag: stickerOn('tag') }), ctl && ctl.signal);
+    const token = it.token != null ? it.token : (localStorage.getItem(LS.token) || '');
+    const stick = { printJo: it.printJo != null ? it.printJo : stickerOn('jo'), printTag: it.printTag != null ? it.printTag : stickerOn('tag') };
+    res = await postScan(scanPayload(it, token, stick), ctl && ctl.signal, it.api || '');
   } catch (e) {
     const er = new Error(e && e.name === 'AbortError' ? 'timed out' : 'no connection'); er.offline = navigator.onLine === false; throw er;
   } finally { clearTimeout(to); }
@@ -888,8 +996,9 @@ async function sendPage(it) {
 async function deletePage(t) {
   let res;
   try {
-    res = await fetch(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: localStorage.getItem(LS.token) || '', op: 'deletePage', jo: t.jo, page: t.page, scan: t.scan || '', file_id: t.fileId || '', filename: t.savedName || '' }) });
+    const token = t.token != null ? t.token : (localStorage.getItem(LS.token) || '');
+    res = await fetch(t.api || api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: token, op: 'deletePage', jo: t.jo, page: t.page, scan: t.scan || '', file_id: t.fileId || '', filename: t.savedName || '' }) });
   } catch (e) { throw new Error('no connection'); }
   let r; try { r = await res.json(); } catch (e) { const er = new Error('server error ' + res.status); er.permanent = true; throw er; }
   if (!r.ok && /missing image|unknown/i.test(r.error || '')) return { unsupported: true };
@@ -907,36 +1016,73 @@ try { store = window.indexedDB ? OYPQueue.idbStore() : OYPQueue.memoryStore(); }
 const queue = OYPQueue.create({ store, send: sendPage, del: deletePage, onDeleted: deletedNote, normJO, online: () => navigator.onLine !== false, onChange: () => renderQueue() });
 const isOn = () => navigator.onLine !== false;
 function statusText(c) {
-  if (c.pending) return (isOn() ? c.pending + ' still uploading' : c.pending + ' waiting for internet') + (c.failed ? ' · ' + c.failed + ' failed' : '');
+  const jo = c.needsjo ? (c.needsjo === 1 ? ' · 1 needs a JO number' : ' · ' + c.needsjo + ' need a JO number') : '';
+  if (c.pending) return (isOn() ? c.pending + ' uploading' : c.pending + ' waiting for internet') + jo + (c.failed ? ' · ' + c.failed + ' failed' : '');
+  if (c.needsjo) return c.needsjo === 1 ? '1 needs a JO number' : c.needsjo + ' need a JO number';
   if (c.failed) return c.failed + ' failed. Tap to retry';
   return c.total ? 'All saved ✓' : 'No pages waiting';
 }
+function counterText(c) {
+  if (c.pending) return c.pending + ' uploading';
+  if (c.needsjo) return c.needsjo === 1 ? '1 needs JO' : c.needsjo + ' need JO';
+  if (c.failed) return c.failed + ' failed';
+  return '';
+}
 function rowHtml(it, withJO) {
-  const st = it.state === 'saved' ? 'ok' : it.state === 'mismatch' ? 'mm' : it.state === 'failed' ? 'err' : 'queued';
+  const needs = it.state === 'needsjo';
+  const st = it.state === 'saved' ? 'ok' : it.state === 'mismatch' ? 'mm' : (it.state === 'failed' || needs) ? 'err' : 'queued';
   const btns = it.state === 'failed' ? `<div class="acts"><button class="retry" data-retry="${esc(it.id)}">Retry</button><button class="rm" data-rm="${esc(it.id)}">Remove</button></div>`
     : it.state === 'uploading' ? '<span class="spin" aria-hidden="true"></span>' : '';
-  const sw = !withJO && it.state !== 'failed' ? ` data-sw="${esc(it.id)}"` : ''; // page strip: swipe left to delete (failed rows keep Remove)
-  return `<li class="${it.state}"${sw}><img alt="" src="${esc(it.thumb)}"><div class="tx"><div class="nm">${withJO ? 'JO ' + esc(it.jo) + ' · page ' + esc(it.page) : esc(it.filename)}</div>`
-    + `<div class="st ${st}">${esc(OYPQueue.label(it, isOn()))}</div></div>${btns}</li>`;
+  const fix = needs && withJO && (parseInt(it.page, 10) || 1) === 1
+    ? `<form class="jofix" data-jo-for="${esc(it.id)}"><div class="jofixrow"><input aria-label="JO number" placeholder="26-001" autocapitalize="characters" autocomplete="off" inputmode="text"><button class="jofixgo" type="submit">Save</button></div></form>`
+    : '';
+  const sw = !withJO && it.state !== 'failed' && !needs ? ` data-sw="${esc(it.id)}"` : ''; // page strip: swipe left to delete (failed rows keep Remove)
+  const name = withJO ? ((needs ? 'JO not read' : 'JO ' + it.jo) + ' · page ' + it.page) : it.filename;
+  const label = needs && (parseInt(it.page, 10) || 1) !== 1 ? 'Waiting for the JO number on page 1.' : OYPQueue.label(it, isOn());
+  return `<li class="${it.state}"${sw}><img alt="" src="${esc(it.thumb)}"><div class="tx"><div class="nm">${esc(name)}</div>`
+    + `<div class="st ${st}">${esc(label)}</div>${fix}</div>${btns}</li>`;
 }
 function renderQueue() {
-  const c = queue.counts(), n = c.pending + c.failed, txt = statusText(c);
-  document.querySelectorAll('.qbadge').forEach(b => { b.textContent = n; b.classList.toggle('hidden', !n); b.classList.toggle('bad', !!c.failed); });
-  const qs = $('qStatus'); qs.textContent = c.total ? txt : ''; qs.className = 'qstatus' + (c.failed ? ' err' : c.pending ? ' busy' : ' ok');
+  const c = queue.counts(), n = c.pending + c.failed + (c.needsjo || 0), txt = statusText(c), up = counterText(c);
+  document.querySelectorAll('.upcount').forEach(b => {
+    b.textContent = up; b.classList.toggle('hidden', !up);
+    b.classList.toggle('busy', !!c.pending && !c.needsjo && !c.failed);
+    b.classList.toggle('err', !!(c.needsjo || c.failed));
+  });
+  document.querySelectorAll('.qbadge').forEach(b => { b.textContent = n; b.classList.toggle('hidden', !n); b.classList.toggle('bad', !!(c.failed || c.needsjo)); });
+  const qs = $('qStatus');
+  const showDetail = (c.pending && !isOn()) || (c.pending && (c.needsjo || c.failed)) || (!up && c.total);
+  qs.textContent = showDetail ? txt : ''; qs.className = 'qstatus' + ((c.failed || c.needsjo) ? ' err' : c.pending ? ' busy' : ' ok');
   const ss = $('scanStatus'); ss.querySelector('span').textContent = txt; ss.className = 'sstat' + (c.failed ? ' err' : c.pending ? ' busy' : ' ok');
   renderCapture();
   const mine = queue.list().filter(x => x.scan && x.scan === state.scan).reverse();
   if (swHold) swDirty = true; else $('pages').innerHTML = mine.map(it => rowHtml(it, false)).join(''); // not while a row is being swiped / asked about
   if ($('queueView').classList.contains('hidden')) return;
   const all = queue.list().slice().reverse(), grp = (t, l) => l.length ? `<li class="grp">${t}</li>` + l.map(it => rowHtml(it, true)).join('') : '';
-  const bad = all.filter(x => x.state === 'failed' || x.state === 'mismatch'), busy = all.filter(x => x.state === 'waiting' || x.state === 'uploading'),
+  const bad = all.filter(x => x.state === 'failed' || x.state === 'mismatch' || x.state === 'needsjo'), busy = all.filter(x => x.state === 'waiting' || x.state === 'uploading'),
     done = all.filter(x => x.state === 'saved');
   $('qSummary').textContent = c.total ? txt : 'Nothing here yet. Pages you scan show up here until they are safely saved.';
-  $('qSummary').className = 'qsum' + (c.failed ? ' err' : c.pending ? ' busy' : ' ok');
+  $('qSummary').className = 'qsum' + ((c.failed || c.needsjo) ? ' err' : c.pending ? ' busy' : ' ok');
+  watchStorage();
   $('btnRetryFailed').classList.toggle('hidden', !c.failed);
   $('qList').innerHTML = grp('Needs a look', bad) + grp('Uploading', busy) + grp('Saved recently', done);
 }
+function applyQueueJo(it, jo) {
+  jo = realJO(jo); if (!jo || !it) return false;
+  if (it.scan && it.scan === state.scan) return fileHeld(jo);
+  const stamp = String(it.scan || '').split('@')[1] || Date.now().toString(36);
+  queue.bindJo(it.scan, jo, jo + '@' + stamp, page => pageName(jo, page.page, page.shot));
+  return true;
+}
+document.addEventListener('submit', e => {
+  const f = e.target && e.target.closest && e.target.closest('[data-jo-for]'); if (!f) return;
+  e.preventDefault();
+  const input = f.querySelector('input'), jo = realJO(input && input.value);
+  if (!jo) { if (input) input.focus(); return; }
+  applyQueueJo(queue.get(f.getAttribute('data-jo-for')), jo);
+});
 document.addEventListener('click', e => {
+  if (e.target.closest && e.target.closest('.upcount')) return showQueue();
   const r = e.target.closest('[data-retry]'); if (r) return queue.retry(r.dataset.retry);
   const m = e.target.closest('[data-rm]');
   if (m && confirm('Remove this page from the phone? It is NOT saved in Drive, so scan it again later.')) queue.remove(m.dataset.rm);
@@ -995,7 +1141,24 @@ function askDelete(it) {
 }
 window.addEventListener('online', () => { queue.wake(); renderQueue(); });
 window.addEventListener('offline', renderQueue);
-queue.load().then(() => queue.wake()).catch(e => { console.error('queue', e); note('This phone could not open its upload store: ' + (e.message || e)); });
+const LOW_FREE = 80 * 1024 * 1024;
+let storeChecked = 0;
+function requestPersist() {
+  const st = navigator.storage;
+  if (st && st.persist) st.persist().catch(() => {});
+}
+function watchStorage() {
+  requestPersist();
+  const st = navigator.storage;
+  if (!st || !st.estimate) return;
+  const t = Date.now(); if (t - storeChecked < 20000) return; storeChecked = t;
+  st.estimate().then(est => {
+    const quota = est && est.quota || 0, free = quota ? quota - (est.usage || 0) : Infinity;
+    const el = $('storeWarn'); if (el) el.classList.toggle('hidden', !(quota && free < LOW_FREE));
+  }).catch(() => {});
+}
+queue.load().then(() => { queue.wake(); watchStorage(); }).catch(e => { console.error('queue', e); note('This phone could not open its upload store: ' + (e.message || e)); });
+watchStorage();
 const SCAN_HELP = "Tap to scan the JO and choose which sticker to print. If the JO has no number or it's hard to read, type it in the box.";
 function scanHelp() { const h = document.querySelector('#startView .help'); if (h && h.textContent !== SCAN_HELP) h.textContent = SCAN_HELP; }
 scanHelp();
