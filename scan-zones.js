@@ -405,6 +405,7 @@ function Editor(host, pop) {
   var canvas = host.querySelector('canvas');
   var stage = host.querySelector('.ozstage');
   var uploadBtn = host.querySelector('[data-z="upload"]');
+  var changeBtn = host.querySelector('[data-z="change"]');
   var list = host.querySelector('.ozlist');
   var status = host.querySelector('.ozstatus');
   var tok = host.querySelector('[data-z="token"]');
@@ -489,6 +490,7 @@ function Editor(host, pop) {
       g.textBaseline = 'alphabetic';
     }
     stage.classList.toggle('ozhas', !!img);
+    if (changeBtn) changeBtn.hidden = !img;
     canvas.setAttribute('aria-label', img ? 'Sample JO card. Drag a box on the photo.' : 'Drop a JO card photo here, or click to upload.');
   }
   function renderList() {
