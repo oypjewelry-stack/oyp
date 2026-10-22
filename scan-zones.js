@@ -31,15 +31,21 @@ function esc(s) {
 }
 function clamp(n, a, b) { n = Number(n); if (!isFinite(n)) n = 0; return n < a ? a : n > b ? b : n; }
 function round4(n) { return Math.round(n * 10000) / 10000; }
-/* The scanner (scan/app.js rotFor, default "cw") turns a portrait page 90° clockwise and leaves a
-   landscape page alone. Saved zones are normalized fractions of that upright page, the same numbers
-   cropFrom and the scanner's cropZoneB64 apply to imageBase64. The editor shows the sample after
-   EXIF, then its own clockwise turns. A box drawn on that view is converted into the scanner frame
-   before it is stored, so an existing saved box is left as-is and still crops the same pixels. */
+/* The scanner (scan/app.js rotFor) applies EXIF once, then turns. Default "cw": a portrait page
+   turns 90° clockwise and a landscape page stays. 180 is never skipped for a landscape page.
+   none is always zero. ccw on a portrait page is three clockwise quarter-turns. Saved zones are
+   normalized fractions of that frame, the same numbers cropFrom and cropZoneB64 apply. The editor
+   opens on that same frame. Rotate adds clockwise steps on top; those are converted back before save. */
 function scannerTurns(w, h) {
   w = Number(w) || 0; h = Number(h) || 0;
-  if (w > h) return 0;
-  return 1;
+  var key = 'cw';
+  try {
+    var v = localStorage.getItem('oypScanRotate');
+    if (v === 'cw' || v === 'ccw' || v === 'none' || v === '180') key = v;
+  } catch (e) {}
+  var rot = key === 'ccw' ? 3 : key === '180' ? 2 : key === 'none' ? 0 : 1;
+  if ((key === 'cw' || key === 'ccw') && w > h) return 0;
+  return rot;
 }
 function turnZone(zone, quarters) {
   var q = ((Number(quarters) || 0) % 4 + 4) % 4;
@@ -60,7 +66,7 @@ function viewToStored(zone, viewTurns, scanTurns) {
 function storedToView(zone, viewTurns, scanTurns) {
   return turnZone(zone, ((Number(viewTurns) || 0) - (Number(scanTurns) || 0)));
 }
-/* EXIF orientation is applied to the file pixels first. The editor's clockwise turns come after that. */
+/* EXIF is applied to the stored samples exactly once. The opening turn then matches rotFor on those upright pixels. */
 function exifQuarterTurns(orientation) {
   var o = Number(orientation) || 1;
   if (o === 3 || o === 4) return 2;
@@ -281,6 +287,34 @@ function jpegOrientation(bytes) {
   }
   return 1;
 }
+/* Stored JPEG samples, before any orientation. SOF height is at marker+4, width at marker+6. */
+function jpegSize(bytes) {
+  if (!bytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  var i = 2;
+  while (i + 9 < bytes.length) {
+    if (bytes[i] !== 0xff) { i++; continue; }
+    while (i < bytes.length && bytes[i] === 0xff) i++;
+    if (i >= bytes.length) break;
+    var marker = bytes[i];
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (i + 3 >= bytes.length) break;
+    var len = (bytes[i + 1] << 8) + bytes[i + 2];
+    if (len < 2 || i + 1 + len > bytes.length) break;
+    var sof = (marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf);
+    if (sof && i + 7 < bytes.length) return { w: (bytes[i + 6] << 8) + bytes[i + 7], h: (bytes[i + 4] << 8) + bytes[i + 5] };
+    i += 1 + len;
+  }
+  return null;
+}
+/* Tag still to draw. A swap tag (5–8) whose bitmap axes already differ from the stored samples
+   was oriented by the decoder. Applying it again turns the card a second time. */
+function exifTagForPixels(width, height, orient, raw) {
+  orient = Number(orient) || 1;
+  if (orient < 2 || orient > 8) return 1;
+  var swap = orient > 4;
+  if (swap && raw && raw.w && raw.h && ((raw.w > raw.h) !== (width > height))) return 1;
+  return orient;
+}
 /* Canvas sized for the oriented result. Transformations match the EXIF orientation tag. */
 function orientedCanvas(source, width, height, orient) {
   orient = Number(orient) || 1;
@@ -303,24 +337,36 @@ function canvasToImage(c) {
   try { return loadImage(c.toDataURL('image/jpeg', 0.92)); }
   catch (e) { return Promise.resolve(null); }
 }
-/* EXIF (or HEIC irot, applied by libheif when it decodes) first. The view rotation is separate. */
+/* EXIF exactly once (HEIC irot is applied by libheif display, and is not applied again).
+   imageOrientation "none" keeps the stored samples so the tag is drawn here. If that option
+   is ignored, a swap tag whose axes already moved is not drawn a second time. The from-image
+   fallback trusts the browser for a 180° or mirror tag, which the size cannot reveal. */
 function fileToOrientedImage(file) {
   if (isHeic(file)) return heicToJpegUrl(file).then(loadImage);
   if (typeof createImageBitmap !== 'function' || !file.arrayBuffer) return readDataUrl(file).then(loadImage);
   return file.arrayBuffer().then(function (buf) {
     var bytes = new Uint8Array(buf);
     var orient = jpegOrientation(bytes);
+    var raw = jpegSize(bytes);
     var blob = new Blob([buf], { type: file.type || 'image/jpeg' });
-    function fromBitmap(bitmap, tag) {
-      var c = orientedCanvas(bitmap, bitmap.width, bitmap.height, tag);
+    function finish(bitmap, fromImage) {
+      var w = bitmap.width, h = bitmap.height;
+      var tag = exifTagForPixels(w, h, orient, raw);
+      if (fromImage && !(orient > 4 && orient < 9)) tag = 1;
+      var c;
+      if (tag === 1) {
+        c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(bitmap, 0, 0);
+      } else c = orientedCanvas(bitmap, w, h, tag);
       if (bitmap.close) bitmap.close();
       return canvasToImage(c);
     }
     return createImageBitmap(blob, { imageOrientation: 'none' }).then(function (bitmap) {
-      return fromBitmap(bitmap, orient);
+      return finish(bitmap, false);
     }, function () {
       return createImageBitmap(file, { imageOrientation: 'from-image' }).then(function (bitmap) {
-        return fromBitmap(bitmap, 1);
+        return finish(bitmap, true);
       }, function () { return readDataUrl(file).then(loadImage); });
     });
   });
@@ -570,7 +616,7 @@ function Editor(host, pop) {
     : '<div class="ozbar"><b>JO card zones</b><button type="button" class="ozsave" data-z="save">Save zones</button></div>')
     + '<p class="ozstatus" data-tone="dirty" aria-live="polite"><i class="ozdot" aria-hidden="true"></i><span class="ozmsg"></span></p>'
     + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
-    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box. The sample starts turned clockwise so a vertical phone photo reads upright. Rotate turns it again. Draw box, or a press-and-hold, adds a box. A one-finger drag on the empty card scrolls the page.</p>'
+    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box. A vertical phone photo is turned once so the card reads upright. A photo that is already horizontal is left as it is. Rotate turns it again. Draw box, or a press-and-hold, adds a box. A one-finger drag on the empty card scrolls the page.</p>'
     + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
     + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
     + '<button type="button" class="ozfile" data-z="rot" hidden aria-label="Rotate 90 degrees clockwise">Rotate</button>'
@@ -1006,8 +1052,8 @@ function Editor(host, pop) {
       if (seq !== photoSeq) return;
       if (!im) { setStatus('Could not open that photo.', 'bad'); return; }
       img = im;
-      viewTurns = 1;
-      scanT = scannerTurns(im.naturalWidth || im.width, im.naturalHeight || im.height);
+      viewTurns = scannerTurns(im.naturalWidth || im.width, im.naturalHeight || im.height);
+      scanT = viewTurns;
       paint();
       if (heic && msgEl && msgEl.textContent === 'Opening photo…') setStatus(keepText, keepTone);
       host.dispatchEvent(new CustomEvent('oyp-zones-preview', { bubbles: true }));
@@ -1459,7 +1505,7 @@ function boot() {
 root.OYPZones = {
   mount: mount, open: open, prepare: prepare, zones: function () { return state.zones.slice(); }, summary: summary, saveMessage: saveMessage,
   scannerTurns: scannerTurns, turnZone: turnZone, viewToStored: viewToStored, storedToView: storedToView,
-  exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, readToken: readToken, presentSave: presentSave,
+  exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, jpegSize: jpegSize, exifTagForPixels: exifTagForPixels, readToken: readToken, presentSave: presentSave,
   gestureBegin: gestureBegin, gestureAdvance: gestureAdvance, HOLD_MS: HOLD_MS
 };
 boot();
