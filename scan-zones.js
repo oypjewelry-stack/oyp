@@ -1518,8 +1518,8 @@ function syncState(item) {
   if (sc.state) { sc.state.jo = item.jo; sc.state.scan = item.scan; }
   if (sc.photo && sc.photo.last && sc.photo.last.pg) {
     var pg = sc.photo.last.pg;
-    if (pg.jo === HOLD || String(pg.filename || '').indexOf(HOLD + '-') === 0) {
-      pg.jo = item.jo; pg.page = item.page; pg.filename = item.filename; pg.scan = item.scan;
+    if (pg.held || pg.jo === HOLD || String(pg.filename || '').indexOf(HOLD + '-') === 0) {
+      pg.jo = item.jo; pg.page = item.page; pg.filename = item.filename; pg.scan = item.scan; pg.held = false;
     }
   }
 }
@@ -1603,7 +1603,12 @@ function resolveJo(item) {
   });
 }
 function fileAs(item, jo) {
+  item.held = false;
+  if (item.needsJo) item.needsJo = false;
+  var sc = scan();
+  if (sc && typeof sc.fileHeld === 'function') sc.fileHeld(jo); // bind the held page before the toast, and before the queue write
   renameItem(item, jo);
+  item.held = false;
   syncState(item);
   fillJo(jo);
   lastFiled = { id: '', jo: jo, page: item.page, filename: item.filename, scan: item.scan };
@@ -1654,7 +1659,7 @@ function installQueue(sc) {
   if (!q || !q.add || q.add.__oypOcr) return;
   var orig = q.add.bind(q);
   function wrapped(item) {
-    if (!item || item.jo !== HOLD || !hasJo(state.zones)) return orig(item);
+    if (!item || item.boundJo || item.jo !== HOLD || !hasJo(state.zones)) return orig(item);
     var page = parseInt(item.page, 10) || 1;
     if (page === 1) ocrChain = resolveJo(item);
     else ocrChain = ocrChain.then(function (jo) { return jo || ''; });
