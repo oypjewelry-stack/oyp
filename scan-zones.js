@@ -650,6 +650,7 @@ function ensureCss() {
     '.ozbar [data-z="close"]{grid-column:1;justify-self:start;min-width:0}',
     '.ozbar [data-z="save"]{grid-column:3;justify-self:end;min-width:0}',
     '.ozbar b{grid-column:2;justify-self:center;text-align:center;font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:calc(22px * var(--fs, 1));white-space:nowrap}',
+    '@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}.ozbar .ozghost,.ozbar .ozsave{height:calc(34px * var(--sp, 1));min-height:calc(34px * var(--sp, 1));padding:0 calc(10px * var(--sp, 1));letter-spacing:.04em}}',
     '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.35;color:#444;max-width:720px;margin:0 0 calc(12px * var(--sp, 1));padding:0 0 0 1.15em;list-style:disc}',
     '.oznote li{margin:0;padding:0}',
     '.oztools{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp, 1));margin:0 0 calc(12px * var(--sp, 1))}',
