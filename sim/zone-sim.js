@@ -267,7 +267,7 @@ eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, 
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
 eq(read('staff/index.html').includes('nav.js?v=42') && read('staff/print-test.html').includes('nav.js?v=42'), 'staff pages load nav.js v42');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=42') && read('scan/index.html').includes('app.js?v=20261022i') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v42');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=42') && read('scan/index.html').includes('app.js?v=20261022j') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022j'), 'the scanner page keeps the production nav host at v42');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');

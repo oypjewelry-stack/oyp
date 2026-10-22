@@ -242,6 +242,11 @@ select.mid{width:100%;font-size:16px;padding:14px;border:1px solid #ccc;border-r
 /* swipe left to delete (page strip and Pending uploads) */
 #pages,#qList{position:relative}#pages li[data-sw],#qList li[data-sw]{touch-action:pan-y;position:relative;z-index:1}#pages li.swiping,#qList li.swiping{background:#fff;user-select:none;-webkit-user-select:none}
 #qList .jofix,#qList .jofix input,#qList .jofixgo{touch-action:manipulation}
+#qList .qx{display:none}
+@media (hover:hover) and (pointer:fine){
+  #qList li[data-sw]{padding-right:34px}
+  #qList .qx{display:flex;align-items:center;justify-content:center;position:absolute;top:0;right:0;z-index:2;width:34px;height:34px;box-sizing:border-box;margin:0;padding:0;border:0;background:none;color:#999;font-size:22px;line-height:1;cursor:pointer}
+}
 .swbg{position:absolute;left:0;right:0;z-index:0;border-radius:12px;background:#f3c6c3;color:#fff;display:flex;align-items:center;justify-content:flex-end;padding-right:18px;font-family:var(--body);font-size:14px;letter-spacing:.06em;text-transform:uppercase;transition:background .12s}
 .swbg.go{background:#c62828}
 .swconf{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:16px}
