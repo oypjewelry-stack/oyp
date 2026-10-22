@@ -256,8 +256,16 @@ function loadCV() {
   });
   return cvReady;
 }
-// start downloading the detector shortly after first load, so it's ready by the time a card starts
-window.addEventListener('load', () => setTimeout(() => loadCV().catch(() => {}), 600));
+// Download the detector as the app opens. A 600ms delay after load left Scan JO saving
+// before cv.Mat existed, so the page skipped warp, deskew and enhance.
+loadCV().catch(() => {});
+const CV_WAIT_MS = 6000;
+let cvDeadline = 0;
+function detectorReady() { // one 6s wait shared by every save. Later calls return immediately.
+  if (window.cv && window.cv.Mat) return Promise.resolve(window.cv);
+  if (!cvDeadline) cvDeadline = Date.now() + CV_WAIT_MS;
+  return cvSoon(Math.max(0, cvDeadline - Date.now()));
+}
 
 const DW = 480;
 // tiny grayscale signature of the current frame, used to tell "same page still there" from "page flipped"
@@ -335,21 +343,31 @@ $('autoSnap').onchange = () => localStorage.setItem(LS.auto, $('autoSnap').check
 $('doCrop').checked = localStorage.getItem(LS.crop) !== '0';
 $('doCrop').onchange = () => localStorage.setItem(LS.crop, $('doCrop').checked ? '1' : '0');
 function flashSnap() { const f = $('flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
-function capture(quad, auto, conf) {
+async function capture(quad, auto, conf) {
   if (!video.videoWidth || review.open) return;
   state.armed = false; state.snapSig = frameSig(); state.snaps = (state.snaps || 0) + 1;
   const vw = video.videoWidth, vh = video.videoHeight;
   const src = document.createElement('canvas'); src.width = vw; src.height = vh; src.getContext('2d').drawImage(video, 0, 0);
   if (navigator.vibrate) navigator.vibrate(40); flashSnap();
+  stickersSoon(state.jo); // page 1 sticker uses the JO number, not the enhanced photo
   const q = quad ? quad.map(p => p.slice()) : [[0.08, 0.08], [0.92, 0.08], [0.92, 0.92], [0.08, 0.92]];
-  if (!$('doCrop').checked) { const pg = savePage(src, null); src.width = src.height = 0; return pg; }
+  if (!$('doCrop').checked) {
+    const pg = await savePage(src, null);
+    src.width = src.height = 0;
+    return pg;
+  }
+  await detectorReady();
   let raw = q;
   if (quad && window.cv && window.cv.Mat) { // snap detected corners to the true card edges + small inset
     raw = q.map(p => p.slice());
-    try { const m = cv.imread(src); const r = CardDetector.refineQuad(cv, m, CardDetector.order(q)); m.delete(); q.splice(0, 4, ...r); } catch (e) { console.warn('refine', e); } }
+    try { const m = window.cv.imread(src); const r = CardDetector.refineQuad(window.cv, m, CardDetector.order(q)); m.delete(); q.splice(0, 4, ...r); } catch (e) { console.warn('refine', e); } }
   const why = quad ? gateReason(state.lastDet, quad, raw, q) : 'manual';
   if (conf == null) conf = finalConfidence(state.confAvg, Date.now() - state.steadySince); // manual tap: same clean-detection test state.gateWhy = why; state.gateDbg = quad && { q: CardDetector.order(quad).map(p => p.map(v => +v.toFixed(3))), rf: +CardDetector.maxDist(CardDetector.order(raw), CardDetector.order(q)).toFixed(3) };
-  if (quad && conf >= AUTO_ACCEPT && !why) { const pg = savePage(src, CardDetector.order(q)); showToast(pg, src, q); state.cooldownUntil = Date.now() + COOLDOWN_MS; state.steadySince = Date.now(); return; }
+  if (quad && conf >= AUTO_ACCEPT && !why) {
+    const pg = await savePage(src, CardDetector.order(q));
+    showToast(pg, src, q); state.cooldownUntil = Date.now() + COOLDOWN_MS; state.steadySince = Date.now();
+    return pg;
+  }
   openReview(src, q, !!quad);
 }
 // Confidence gate: auto-save only when every signal is clean; otherwise open the corner check.
@@ -442,7 +460,23 @@ function renderOut(src, quad, enh, maxPx) {
   const cv = window.cv;
   if (quad && cv && cv.Mat) { try { const m = cv.imread(out), d = CardDetector.deskew(cv, m); cv.imshow(out, d.mat); m.delete(); d.mat.delete(); } catch (err) { console.warn(err); } }
   if (enh && cv && cv.Mat) { try { const m = cv.imread(out), e = CardDetector.enhance(cv, m); cv.imshow(out, e); m.delete(); e.delete(); } catch (err) { console.warn(err); } }
-  return rotateCanvas(out, rotFor(out)); // upright before compression, thumbnail, queue and upload (so Drive + OCR get the upright page)
+  out = rotateCanvas(out, rotFor(out)); // upright before compression, thumbnail, queue and upload
+  // Every warped page is the same pixel size, so a zone box lands on the same part of the card.
+  if (quad && window.CardDetector && CardDetector.fitStandard) out = CardDetector.fitStandard(out, maxPx || MAX_PX);
+  return out;
+}
+function pageCanvas(src) { // the frame cropFrom sees: detect, warp, deskew, turn, standard size. No upload.
+  let quad = null;
+  const crop = localStorage.getItem(LS.crop) !== '0';
+  if (crop && window.cv && window.cv.Mat) {
+    try { quad = detect(window.cv, src); } catch (e) { console.warn('detect', e); }
+    if (quad) {
+      try { const m = window.cv.imread(src); quad = CardDetector.refineQuad(window.cv, m, CardDetector.order(quad)); m.delete(); }
+      catch (e) { console.warn('refine', e); }
+      quad = CardDetector.order(quad);
+    }
+  }
+  return renderOut(src, quad, enhanceOn(), MAX_PX);
 }
 // Drive name: <JO>-p<page>-<MMDDYY>.jpg, Manila date the page was shot. The server keeps every earlier scan and adds b, c… for a
 // second session the same day; a re-crop in this session sends the same name + session id, so it replaces only its own page.
@@ -460,7 +494,13 @@ function shotContext() { // switches and token as they are at the moment the pho
   return { printJo: stickerOn('jo'), printTag: stickerOn('tag'), token: localStorage.getItem(LS.token) || '', api: api() };
 }
 async function savePage(src, quad, replace, opt) { // the one save path: live shots, photos and re-crops. Upload starts as soon as this page's JPEG is ready.
-  opt = opt || {}; const enh = enhanceOn(), out = renderOut(src, quad, enh, opt.maxPx || MAX_PX);
+  opt = opt || {};
+  if (!replace) stickersSoon(state.jo); // before enhance: the sticker is the JO number only
+  const wantDetector = enhanceOn() || $('doCrop').checked;
+  if (!opt.prepared && wantDetector && !(window.cv && window.cv.Mat)) await detectorReady();
+  const cvOk = !!(window.cv && window.cv.Mat);
+  const plain = opt.plain != null ? !!opt.plain : (wantDetector && !cvOk && !opt.prepared);
+  const enh = enhanceOn(), out = opt.prepared || renderOut(src, quad, enh, opt.maxPx || MAX_PX);
   const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1), th = document.createElement('canvas');
   th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
   th.getContext('2d').drawImage(out, 0, 0, th.width, th.height);
@@ -476,6 +516,7 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
     cap.pages.push(p); cap.saving = false;
   }
   p.thumb = thumb; p.quad = quad || null;
+  if (plain) p.plain = true; // OpenCV never arrived: raw page, reprocessed when the detector loads
   p.clientId = newClientId(); // a new photo, including a re-crop. Retries keep the id already stored on the queue item.
   Object.assign(p, shotContext());
   if (p.held) p.image = image; // the capture screen still reads the number from this copy
@@ -485,7 +526,7 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
     if (i >= 0) cap.pages[i] = photo.last.pg;
   }
   // Durable the moment the JPEG exists. The camera returns as soon as this write finishes; the upload does not.
-  try { await queue.add(Object.assign({ image }, p)); }
+  try { await queue.add(Object.assign({ image, plain: !!plain }, p)); }
   catch (e) { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); }
   renderCapture();
   return p;
@@ -763,15 +804,108 @@ function loadPhotoMain(file) {
   if (typeof createImageBitmap !== 'function') return viaImg();
   return createImageBitmap(file, { imageOrientation: 'from-image' }).then(b => { try { return draw(b, b.width, b.height); } finally { b.close && b.close(); } }, viaImg);
 }
-const cvSoon = ms => Promise.race([loadCV().catch(() => null), new Promise(r => setTimeout(() => r(null), ms))]);
+const cvSoon = ms => Promise.race([loadCV().catch(() => null), new Promise(r => setTimeout(() => r(null), ms))])
+  .then(() => (window.cv && window.cv.Mat) ? window.cv : null);
+let stickerSentFor = '';
+function stickersSoon(jo) { // page 1 only. Fire-and-forget: printEnqueue uses the JO number, and a later upload does not duplicate it.
+  jo = realJO(jo);
+  if (!jo) return;
+  const pages = cap.pages || [];
+  const later = pages.some(p => (parseInt(p.page, 10) || 1) > 1);
+  const filed = pages.some(p => (parseInt(p.page, 10) || 1) === 1 && !p.held);
+  if (later || filed || state.page > 1) return;
+  const key = (state.scan || '') + '|' + jo;
+  if (stickerSentFor === key) return;
+  stickerSentFor = key;
+  const token = localStorage.getItem(LS.token) || '';
+  const go = window.__oypNativeFetch || fetch;
+  const post = kind => {
+    const body = JSON.stringify({ op: 'printEnqueue', token, jo, kind });
+    go(api(), { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body }).catch(() => {});
+  };
+  if (stickerOn('jo')) post('jo_card');
+  if (stickerOn('tag')) post('jewelry_tag');
+}
+let earlyRead = null;
+function startEarlyRead(dataUrl) { // the JO crop does not need enhance, so the sticker can be queued while enhance runs
+  const scan = state.scan;
+  earlyRead = (async () => {
+    let jo = '';
+    try { jo = await ocrJoNumber(dataUrl); } catch (e) { console.warn('readJo', e); }
+    if (!jo) { try { jo = await ocrJoPage(dataUrl); } catch (e) { console.warn('readJo page', e); } }
+    if (jo && state.scan === scan) stickersSoon(jo);
+    return jo;
+  })();
+}
+function enhanceCanvas(canvas) {
+  const cv = window.cv;
+  if (!enhanceOn() || !cv || !cv.Mat) return;
+  try {
+    const m = cv.imread(canvas), e = CardDetector.enhance(cv, m);
+    cv.imshow(canvas, e); m.delete(); e.delete();
+  } catch (e) { console.warn('enhance', e); }
+}
 async function autoSave(src) {
-  const cv = $('doCrop').checked && window.cv && window.cv.Mat ? window.cv : null; // do not wait on the detector; the photo is queued either way
+  stickersSoon(state.jo);
+  const crop = $('doCrop').checked;
+  const cv = (crop || enhanceOn()) ? await detectorReady() : (window.cv && window.cv.Mat ? window.cv : null);
   let q = null;
-  if (cv && cv.Mat) { try { q = detect(cv, src); } catch (e) { console.warn('detect', e); }
-    if (q) { try { const m = cv.imread(src); q = CardDetector.refineQuad(cv, m, CardDetector.order(q)); m.delete(); } catch (e) { console.warn('refine', e); } } }
-  const quad = q && CardDetector.order(q), pg = await savePage(src, quad, null, PHOTO);
-  if (pg) pg.quad = quad;
+  if (crop && cv && cv.Mat) {
+    try { q = detect(cv, src); } catch (e) { console.warn('detect', e); }
+    if (q) {
+      try { const m = cv.imread(src); q = CardDetector.refineQuad(cv, m, CardDetector.order(q)); m.delete(); }
+      catch (e) { console.warn('refine', e); }
+    }
+  }
+  const quad = q && CardDetector.order(q);
+  const plain = (crop || enhanceOn()) && !(cv && cv.Mat);
+  let prepared = null;
+  if (!plain && state.page === 0 && !realJO(state.jo)) {
+    prepared = renderOut(src, quad, false, MAX_PX);
+    try { startEarlyRead(await canvasJpeg(prepared, QUALITY)); } catch (e) { console.warn(e); }
+    enhanceCanvas(prepared);
+  }
+  const pg = await savePage(src, quad, null, Object.assign({}, PHOTO, { prepared, plain }));
+  if (pg) { pg.quad = quad; if (plain) pg.plain = true; }
   return pg;
+}
+async function reprocessPlain() { // a page saved before OpenCV arrived. Replace its JPEG once the detector is up.
+  if (reprocessPlain.busy || !(window.cv && window.cv.Mat) || !queue) return;
+  const rows = queue.list().filter(it => it && it.plain && it.image && it.state !== 'deleting' && it.state !== 'saved' && it.state !== 'mismatch');
+  if (!rows.length) return;
+  reprocessPlain.busy = true;
+  try {
+    for (const it of rows) {
+      const img = await loadDataUrl(it.image);
+      if (!img) continue;
+      const src = document.createElement('canvas');
+      src.width = img.naturalWidth || img.width; src.height = img.naturalHeight || img.height;
+      if (!src.width) continue;
+      src.getContext('2d').drawImage(img, 0, 0);
+      let quad = null;
+      if (localStorage.getItem(LS.crop) !== '0') {
+        try { quad = detect(window.cv, src); } catch (e) { console.warn('detect', e); }
+        if (quad) {
+          try { const m = window.cv.imread(src); quad = CardDetector.refineQuad(window.cv, m, CardDetector.order(quad)); m.delete(); }
+          catch (e) { console.warn('refine', e); }
+          quad = CardDetector.order(quad);
+        }
+      }
+      const out = renderOut(src, quad, enhanceOn(), MAX_PX);
+      const image = await canvasJpeg(out, QUALITY);
+      const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1), th = document.createElement('canvas');
+      th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
+      th.getContext('2d').drawImage(out, 0, 0, th.width, th.height);
+      const thumb = th.toDataURL('image/jpeg', 0.6);
+      out.width = out.height = 0; src.width = src.height = 0;
+      const held = it.state === 'needsjo' || it.jo === 'OCR';
+      await queue.add(Object.assign({}, it, { image, thumb, plain: false, held }));
+      const pg = cap.pages.find(p => (it.clientId && p.clientId === it.clientId) || (p.scan === it.scan && p.filename === it.filename));
+      if (pg) { pg.thumb = thumb; pg.plain = false; pg.quad = quad; if (pg.image) pg.image = image; }
+    }
+    renderCapture();
+  } catch (e) { console.warn('reprocess', e); }
+  finally { reprocessPlain.busy = false; }
 }
 function photoBusy(on) {
   photo.busy = on; $('btnScanJO').classList.toggle('busy', on); $('lnkGallery').classList.toggle('dis', on);
@@ -905,7 +1039,7 @@ function fileHeld(jo) { // the number is known: rename the kept pages and upload
     const image = p.image;
     p.jo = jo; p.scan = state.scan; p.filename = pageName(jo, p.page, p.shot); p.held = false; delete p.image;
     const queued = queue.list().some(x => (p.clientId && x.clientId === p.clientId) || (x.scan === p.scan && x.page === p.page));
-    if (image && !queued) queue.add(Object.assign({ image }, p)).catch(e => { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); });
+    if (image && !queued) queue.add(Object.assign({ image, plain: !!p.plain }, p)).catch(e => { console.error(e); note('Could not store the page on this phone: ' + (e.message || e)); });
   });
   if (photo.last && photo.last.pg) { photo.last.pg.jo = jo; photo.last.pg.scan = state.scan; photo.last.pg.filename = pageName(jo, photo.last.pg.page, photo.last.pg.shot); photo.last.pg.held = false; }
   renderCapture();
@@ -919,11 +1053,15 @@ function askForJo() { // the photo is already on the capture screen; she types t
 async function readHeldJo() {
   if (cap.reading || cap.asking || realJO(state.jo)) return;
   const page = cap.pages.find(p => p.held && p.image && (parseInt(p.page, 10) || 1) === 1);
-  if (!page) return;
+  if (!page && !earlyRead) return;
   cap.reading = true; renderCapture();
   let jo = '';
-  try { jo = await ocrJoNumber(page.image); } catch (e) { console.warn('readJo', e); }
-  if (!jo && !realJO(state.jo)) { try { jo = await ocrJoPage(page.image); } catch (e) { console.warn('readJo page', e); } }
+  if (earlyRead) { try { jo = await earlyRead; } catch (e) { console.warn('readJo', e); } earlyRead = null; }
+  else if (page) {
+    try { jo = await ocrJoNumber(page.image); } catch (e) { console.warn('readJo', e); }
+    if (!jo && !realJO(state.jo)) { try { jo = await ocrJoPage(page.image); } catch (e) { console.warn('readJo page', e); } }
+    if (jo) stickersSoon(jo);
+  }
   cap.reading = false;
   if (realJO(state.jo)) return;
   if (jo) fileHeld(jo); else askForJo();
@@ -1313,7 +1451,8 @@ const SCAN_HELP = "Tap to scan the JO and choose which sticker to print. If the 
 function scanHelp() { const h = document.querySelector('#startView .help'); if (h && h.textContent !== SCAN_HELP) h.textContent = SCAN_HELP; }
 scanHelp();
 window.addEventListener('oyp-zones-ready', () => setTimeout(scanHelp, 50));
-window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, finishCapture, realJO, joFromRead, fileHeld, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize };
+loadCV().then(cv => { if (cv && cv.Mat) reprocessPlain(); }).catch(() => {});
+window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, finishCapture, realJO, joFromRead, fileHeld, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS };
 })();
 
 // owner: stone background only while the start screen is shown
