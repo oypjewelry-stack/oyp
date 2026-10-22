@@ -1,6 +1,23 @@
 /* OYP Card Scanner — static front-end, no build step. */
 (() => {
 'use strict';
+// Pressed look on pointerdown, before any click handler. nav.js is async here, so this runs with the page.
+(function () {
+  var pressSel = 'button, [role="button"], a.pill, a.fchip, a.lnk, .tap';
+  function pressClear() {
+    var nodes = document.querySelectorAll('.is-down'), n;
+    for (n = 0; n < nodes.length; n++) nodes[n].classList.remove('is-down');
+  }
+  document.addEventListener('pointerdown', function (e) {
+    var t = e.target, b;
+    if (!t || !t.closest) return;
+    b = t.closest(pressSel);
+    if (!b || b.disabled || b.getAttribute('aria-disabled') === 'true') return;
+    b.classList.add('is-down');
+  }, true);
+  document.addEventListener('pointerup', pressClear, true);
+  document.addEventListener('pointercancel', pressClear, true);
+})();
 const $ = id => document.getElementById(id);
 const LS = { api: 'oypScanApi', token: 'oypScanToken', rotate: 'oypScanRotate', auto: 'oypScanAuto', crop: 'oypScanCrop', role: 'oypScanRole', printJo: 'oypScanPrintJo', printTag: 'oypScanPrintTag' };
 const qs = new URLSearchParams(location.search);

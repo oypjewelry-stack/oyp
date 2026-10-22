@@ -33,7 +33,7 @@ eq(read('consign.js').includes('Remove this piece from the sheet?') && read('con
 eq(!read('appts.js').includes('OYP.swipe') && !read('pay.js').includes('OYP.swipe'), 'appointments and quotes have no row-level archive, cancel, or delete, so they are unchanged');
 eq(read('app.js').includes('function toastUndo') && read('app.js').includes('async function archiveJos') && read('app.js').includes('swipe: (window.OYPSwipe && window.OYPSwipe.mount)'), 'undo and archive live on the shared OYP helper');
 eq(read('app.css').includes('button.swbtn.pill.sm') && read('app.css').includes('font-family:var(--head)') && read('app.css').includes('height:34px') && read('app.css').includes('#b3261e') && read('app.css').includes('touch-action:pan-y') && read('app.css').includes('--sw-inset'), 'revealed buttons are 34px pills in the site face, inset by the row padding');
-eq(index.includes('swipe.js?v=3') && index.includes('app.js?v=34') && index.includes('app.css?v=45'), 'swipe.js is loaded and cache-busted');
+eq(index.includes('swipe.js?v=3') && index.includes('app.js?v=34') && index.includes('app.css?v=46'), 'swipe.js is loaded and cache-busted');
 eq(index.indexOf('swipe.js?v=3') < index.indexOf('app.js?v=34'), 'swipe.js loads before app.js');
 
 const http = require('http');
