@@ -260,14 +260,60 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=14'), 'scan-zones cache bust is v14');
+eq(read('nav.js').includes('scan-zones.js?v=16'), 'scan-zones cache bust is v16');
 eq(zonesSrc.includes('grid-template-columns:1fr auto 1fr') && zonesSrc.includes('.ozbar b{grid-column:2;justify-self:center') && zonesSrc.includes('.ozbar [data-z="close"]{grid-column:1') && zonesSrc.includes('.ozbar [data-z="save"]{grid-column:3'), 'the zone title is centered on the bar');
 eq(zonesSrc.includes('@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}') && zonesSrc.includes('height:calc(34px * var(--sp, 1))') && !/ellipsis/.test(zonesSrc), 'a narrow bar uses an 18px title and 34px buttons, with the full words');
 eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, then draw its box on the sample photo.') && zonesSrc.includes('Swipe on the card to scroll the page.') && zonesSrc.includes('.oznote li{margin:0;padding:0}') && !zonesSrc.includes('Tag each section of the card once'), 'the zone help is a short bulleted list');
+eq(zonesSrc.includes('<details class="ozhelp"><summary>Instructions</summary>') && zonesSrc.includes('min-height:calc(34px * var(--sp, 1))') && zonesSrc.includes('text-transform:uppercase') && zonesSrc.includes('content:"\\\\203A"'), 'instructions is a 34px small-caps header with a chevron');
+localStorage.removeItem('oypScanInstruct');
+eq(Z.instructWanted() === false, 'instructions start closed, including the first visit');
+localStorage.setItem('oypScanInstruct', '1');
+eq(Z.instructWanted() === true, 'an opened instructions list is remembered');
+localStorage.setItem('oypScanInstruct', '0');
+eq(Z.instructWanted() === false, 'a closed instructions list is remembered');
+localStorage.removeItem('oypScanInstruct');
 eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
 eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
-eq(read('staff/index.html').includes('nav.js?v=43') && read('staff/print-test.html').includes('nav.js?v=43'), 'staff pages load nav.js v43');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=43') && read('scan/index.html').includes('app.js?v=20261022k') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022k'), 'the scanner page keeps the production nav host at v43');
+eq(read('staff/index.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('nav.js?v=47'), 'staff pages load nav.js v47');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=47') && read('scan/index.html').includes('app.js?v=20261022m') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022m'), 'the scanner page keeps the production nav host at v47');
+
+const heldPage = { clientId: 'c1', jo: 'OCR', held: true, page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' };
+const filing = Z.joFiling(heldPage, '26-287b', true);
+eq(filing.toast === 'JO 26-287B, from the card.' && filing.jo === '26-287B' && filing.held === false && filing.queueState === 'waiting' && filing.fromCard === true, 'accepting the card JO files it once, as a waiting page');
+const filedItem = { jo: filing.jo, filename: filing.filename, scan: filing.scan, held: filing.held, page: filing.page, clientId: 'c1' };
+eq(!(filedItem.held || filedItem.needsJo || !filedItem.jo || filedItem.jo === 'OCR'), 'the page handed to the queue is not a needs-JO row');
+const stale = Z.joStatus({
+  jo: 'OCR', scan: filing.scan, prevScan: 'OCR@abc', filename: filing.filename, page: 1, clientId: 'c1',
+  fromCard: true, toast: filing.toast, asking: false, reading: true, saving: false, online: true,
+  pages: [heldPage],
+  rows: [{ clientId: 'c1', jo: 'OCR', state: 'needsjo', page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' }]
+});
+function stillReading(v) {
+  return v.joLine === 'Reading the JO number…' || v.line === 'Reading the JO number…' || /needs JO/.test(v.counter) || v.tiles.some(function (t) { return t.t === 'Reading…' || t.t === 'Type JO'; });
+}
+eq(stale.toast === 'JO 26-287B, from the card.' && stale.joLine === 'JO 26-287B' && stale.tiles[0].t === 'Waiting' && stale.line === '1 page still uploading' && stale.counter === '1 uploading' && !stale.counterErr, 'the tile, the gold line, and the counter update with the toast');
+eq(!stillReading(stale), 'the toast never sits on a reading or needs-JO state');
+const settled = Z.joStatus({
+  jo: filing.jo, scan: filing.scan, toast: filing.toast, fromCard: true, online: true,
+  filename: filing.filename, page: filing.page, clientId: 'c1', prevScan: 'OCR@abc',
+  pages: [filedItem], rows: [{ clientId: 'c1', jo: filing.jo, state: 'waiting', page: 1, filename: filing.filename, scan: filing.scan }]
+});
+eq(!stillReading(settled) && settled.tiles[0].t === 'Waiting' && settled.counter === '1 uploading', 'once the page is filed, the same readout stays consistent');
+const reading = Z.joStatus({
+  jo: 'OCR', toast: 'Reading the JO number…', reading: true, online: true,
+  pages: [heldPage], rows: []
+});
+eq(reading.joLine === 'Reading the JO number…' && reading.line === 'Reading the JO number…' && reading.tiles[0].t === 'Reading…' && reading.counter === '', 'before the number is accepted, the line and the tile still say reading');
+const unread = Z.joStatus({
+  jo: 'OCR', reading: true, online: true,
+  pages: [heldPage],
+  rows: [{ clientId: 'c1', jo: 'OCR', state: 'needsjo', page: 1, filename: 'OCR-p1-102226.jpg', scan: 'OCR@abc' }]
+});
+eq(unread.counter === '1 needs JO' && unread.counterErr === true && unread.tiles[0].t === 'Type JO' && unread.line === 'Reading the JO number…', 'an unread queued page still counts as needs JO');
+const fileAsSrc = zonesSrc.slice(zonesSrc.indexOf('function fileAs'), zonesSrc.indexOf('function addCorrectBtn'));
+eq(fileAsSrc.indexOf('fileHeld(jo)') !== -1 && fileAsSrc.indexOf('fileHeld(jo)') < fileAsSrc.indexOf('say('), 'the held pages are bound before the toast');
+eq(fileAsSrc.indexOf('renderQueue') !== -1 && fileAsSrc.indexOf('say(') !== -1 && fileAsSrc.indexOf('renderQueue') < fileAsSrc.indexOf('say('), 'the toast is set in the same turn as the capture render');
+eq(app.includes('OYPZones.joStatus(captureSnap())') && app.includes('captureView'), 'the page tile, the gold line, and the counter share one readout');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');

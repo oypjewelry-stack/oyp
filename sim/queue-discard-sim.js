@@ -83,7 +83,7 @@ const page = (jo, p, extra) => Object.assign({ jo, page: p, filename: jo + '-p' 
   ok(/button, input, textarea/.test(app), 'a tap on the JO box or Save does not start a swipe');
   ok(/#qList li\[data-sw\]/.test(css) && /touch-action:manipulation/.test(css), 'Pending uploads rows use the same swipe styling, and the JO box keeps its own touch');
   ok(/@media \(hover:hover\) and \(pointer:fine\)/.test(css) && /#qList \.qx\{display:none\}/.test(css) && /width:34px;height:34px/.test(css), 'the × is a 34px corner target, and only on a fine pointer');
-  ok(/app\.js\?v=20261022k/.test(html) && /queue\.js\?v=20261022k/.test(html) && /style\.css\?v=20261022j/.test(html), 'cache-busts are above the main versions');
-  ok(/nav\.js\?v=43/.test(html) && /detector\.js\?v=20261022i/.test(html), 'nav.js is v43 and the detector matches the measured card');
+  ok(/app\.js\?v=20261022m/.test(html) && /queue\.js\?v=20261022m/.test(html) && /style\.css\?v=20261022k/.test(html), 'cache-busts are above the main versions');
+  ok(/nav\.js\?v=47/.test(html) && /detector\.js\?v=20261022i/.test(html), 'nav.js is v47 and the detector matches the measured card');
   console.log('queue-discard tests passed:', n);
 })().catch(e => { console.error(e); process.exit(1); });

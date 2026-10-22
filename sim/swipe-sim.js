@@ -20,6 +20,12 @@ eq(swipe.needsConfirm({ label: 'Delete', confirm: false }) === false, 'an explic
 eq(swipe.needsConfirm({ label: 'Archive', undoable: true }) === false && swipe.needsConfirm({ label: 'Cancel', undoable: true }) === false, 'Archive and Cancel can be undone, so they do not ask');
 eq(swipe.needsConfirm({ label: 'Remove', confirm: 'Remove this piece from the sheet?' }) === true, 'a confirm string always asks');
 eq(swipe.needsConfirm({ label: 'Archive', destructive: true }) === true, 'a destructive action with no undo asks');
+eq(swipe.dismissAction([{ label: 'Snooze' }, { label: 'Done' }]) == null, 'to do does not get a corner control');
+eq(swipe.dismissAction([{ label: 'Reprint' }, { label: 'Cancel', undoable: true }]).label === 'Cancel', 'the print corner control is Cancel');
+eq(swipe.dismissAction([{ label: 'Archive', undoable: true }]).label === 'Archive', 'Archive is the corner action');
+eq(swipe.dismissAction([{ label: 'Unarchive', undoable: true }]).label === 'Unarchive', 'an archived row names Unarchive');
+eq(swipe.dismissAction([{ label: 'Restore', undoable: true }]).label === 'Restore', 'an archived material names Restore');
+eq(swipe.dismissAction([{ label: 'Remove', confirm: 'Remove this piece from the sheet?' }]).label === 'Remove', 'consignment names Remove');
 
 const page = read('todo.js'), card = read('dash.js'), print = read('print.js'), index = read('staff/index.html');
 eq(page.includes('function bindSwipe') && page.includes("'data-td': 'tick'") && page.includes("'data-td': 'done'") && page.includes("label: 'Snooze'") && page.includes("'data-td': 'more'") && page.includes('data-until="tomorrow"') && page.includes('data-until="3d"') && page.includes('data-until="7d"'), 'to-do swipe is Done plus Snooze, and Snooze opens the existing chips');
@@ -33,8 +39,11 @@ eq(read('consign.js').includes('Remove this piece from the sheet?') && read('con
 eq(!read('appts.js').includes('OYP.swipe') && !read('pay.js').includes('OYP.swipe'), 'appointments and quotes have no row-level archive, cancel, or delete, so they are unchanged');
 eq(read('app.js').includes('function toastUndo') && read('app.js').includes('async function archiveJos') && read('app.js').includes('swipe: (window.OYPSwipe && window.OYPSwipe.mount)'), 'undo and archive live on the shared OYP helper');
 eq(read('app.css').includes('button.swbtn.pill.sm') && read('app.css').includes('font-family:var(--head)') && read('app.css').includes('height:34px') && read('app.css').includes('#b3261e') && read('app.css').includes('touch-action:pan-y') && read('app.css').includes('--sw-inset'), 'revealed buttons are 34px pills in the site face, inset by the row padding');
-eq(index.includes('swipe.js?v=3') && index.includes('app.js?v=34') && index.includes('app.css?v=45'), 'swipe.js is loaded and cache-busted');
-eq(index.indexOf('swipe.js?v=3') < index.indexOf('app.js?v=34'), 'swipe.js loads before app.js');
+eq(read('app.css').includes('@media (hover:hover) and (pointer:fine)') && read('app.css').includes('.swx') && read('app.css').includes('width:34px') && read('app.css').includes('height:34px') && read('app.css').includes('color:#777') && read('app.css').includes('.swx:hover,.swx:focus-visible{color:#111}') && read('app.css').includes('.swsel .swclip.hasx .swx{display:none}') && read('app.css').includes('--swx-base') && read('app.css').includes('.swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}') && read('app.css').includes('.swclip.swphoto .swx::before') && read('app.css').includes('border-radius:50%') && read('app.css').includes('rgba(255,255,255,.92)'), 'the corner control is a 34px grey hit area on a fine pointer, hidden while Select is on, and a photo keeps a round chip instead of a gap');
+eq(read('app.css').includes('transition:transform 50ms') && read('app.css').includes('transform:scale(.97)') && read('nav.js').includes("classList.add('is-down')"), 'the 50ms press stays on buttons');
+eq(index.includes('swipe.js?v=4') && index.includes('nav.js?v=47') && index.includes('app.js?v=34') && index.includes('app.css?v=48'), 'swipe.js is loaded and cache-busted');
+eq(index.indexOf('swipe.js?v=4') < index.indexOf('app.js?v=34'), 'swipe.js loads before app.js');
+eq(!read('scan/index.html').includes('swipe.js?v=4') && read('scan/index.html').includes('nav.js?v=47'), 'the scanner loads nav.js v47 and does not load the staff swipe script');
 
 const http = require('http');
 const { spawn } = require('child_process');
@@ -59,11 +68,15 @@ function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve,
 
 async function chromePage(width) {
   const port = 9300 + width;
+  /* Headless Chrome reports pointer:none, so the media query never matches unless
+     the process is started with a pointer. 4 is a fine pointer with hover; 2 is coarse. */
+  const pointer = width < 800 ? 'primaryHoverType=1,primaryPointerType=2' : 'primaryHoverType=2,primaryPointerType=4';
   const chrome = spawn('google-chrome', [
     '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
     '--remote-debugging-port=' + port,
     '--user-data-dir=/tmp/chrome-swipe-sim-' + width,
-    '--window-size=1280,980',
+    '--blink-settings=' + pointer,
+    '--window-size=' + width + ',980',
     'about:blank'
   ], { stdio: 'ignore' });
   let ws;

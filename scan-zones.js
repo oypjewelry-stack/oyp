@@ -13,6 +13,7 @@ if (root.OYPZones) return;
 var KEY = 'oypScanZones';
 var SHARED = 'oypScanZonesShared';
 var TOKEN = 'oypScanToken';
+var HELP = 'oypScanInstruct';
 var API = 'oypScanApi';
 var DEFAULT_API = 'https://script.google.com/macros/s/AKfycbzUmacbdvb0V2nw9ekharFhZPYdSqVgpFpADKiPM2qhSUUF3G5pJ_cAZ46eQPxeawhV/exec';
 var FIELDS = [
@@ -172,6 +173,8 @@ function writeLocal(zones) {
 }
 function api() { try { return localStorage.getItem(API) || DEFAULT_API; } catch (e) { return DEFAULT_API; } }
 function token() { try { return localStorage.getItem(TOKEN) || ''; } catch (e) { return ''; } }
+function instructWanted() { try { return localStorage.getItem(HELP) === '1'; } catch (e) { return false; } }
+function setInstruct(on) { try { localStorage.setItem(HELP, on ? '1' : '0'); } catch (e) {} }
 function setToken(v) { try { if (v) localStorage.setItem(TOKEN, v); else localStorage.removeItem(TOKEN); } catch (e) {} }
 function zonesUrl() { var u = api(); return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'zones=1'; }
 function hasJo(zones) { return (zones || []).some(function (z) { return z.id === 'jo'; }); }
@@ -651,7 +654,13 @@ function ensureCss() {
     '.ozbar [data-z="save"]{grid-column:3;justify-self:end;min-width:0}',
     '.ozbar b{grid-column:2;justify-self:center;text-align:center;font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:calc(22px * var(--fs, 1));white-space:nowrap}',
     '@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}.ozbar .ozghost,.ozbar .ozsave{height:calc(34px * var(--sp, 1));min-height:calc(34px * var(--sp, 1));padding:0 calc(10px * var(--sp, 1));letter-spacing:.04em}}',
-    '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.35;color:#444;max-width:720px;margin:0 0 calc(12px * var(--sp, 1));padding:0 0 0 1.15em;list-style:disc}',
+    '.ozhelp{margin:0 0 calc(4px * var(--sp, 1));max-width:720px}',
+    '.ozhelp summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:calc(8px * var(--sp, 1));width:100%;min-height:calc(34px * var(--sp, 1));margin:0;padding:0;font:500 calc(12px * var(--fs, 1))/1 Inter,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#111}',
+    '.ozhelp summary::-webkit-details-marker,.ozhelp summary::marker{display:none;content:""}',
+    '.ozhelp summary::before{content:"\\203A";display:inline-block;width:1em;font-size:calc(18px * var(--fs, 1));line-height:1;letter-spacing:0;text-align:center;transition:transform .15s}',
+    '.ozhelp[open] summary::before{transform:rotate(90deg)}',
+    '.ozhelp[open]{margin-bottom:calc(8px * var(--sp, 1))}',
+    '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.35;color:#444;max-width:720px;margin:0 0 calc(8px * var(--sp, 1));padding:0 0 0 1.15em;list-style:disc}',
     '.oznote li{margin:0;padding:0}',
     '.oztools{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp, 1));margin:0 0 calc(12px * var(--sp, 1))}',
     '.oztools button,.ozfile,.ozcustom{border:1px solid #ddd;background:#fff;border-radius:999px;padding:calc(8px * var(--sp, 1)) calc(12px * var(--sp, 1));font:500 calc(12px * var(--fs, 1))/1.2 Inter,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}',
@@ -670,6 +679,8 @@ function ensureCss() {
     '.ozstage:not(.ozhas) canvas{cursor:pointer}',
     '.ozstage.ozhot{box-shadow:inset 0 0 0 2px #d4af37}',
     '.ozupload{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1}',
+    '.ozupload:active,.ozupload.is-down{transform:translate(-50%,-50%) scale(.97)}',
+    '@media (prefers-reduced-motion:reduce){.ozupload:active,.ozupload.is-down{transform:translate(-50%,-50%);opacity:.72}}',
     '.ozstage.ozhas .ozupload{display:none}',
     '.ozhits{position:absolute;inset:0;z-index:2;pointer-events:none}',
     '.ozboxhit,.ozhandlehit{position:absolute;pointer-events:auto;touch-action:none;background:transparent}',
@@ -765,7 +776,7 @@ function Editor(host, pop) {
     + '<p class="ozstatus" data-tone="dirty" aria-live="polite"><i class="ozdot" aria-hidden="true"></i><span class="ozmsg"></span></p>'
     + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
     + '<button type="button" class="oztokchange" data-z="changetoken" hidden>Change token</button>'
-    + '<ul class="oznote">'
+    + '<details class="ozhelp"><summary>Instructions</summary><ul class="oznote">'
     + '<li>Pick a label, then draw its box on the sample photo.</li>'
     + '<li>Labels: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or type your own.</li>'
     + '<li>Page 1 reads the JO number only from the JO number box. Other boxes are read under their own label.</li>'
@@ -776,7 +787,7 @@ function Editor(host, pop) {
     + '<li>Vertical photos turn upright on their own. Rotate turns it again.</li>'
     + '<li>The photo is trimmed to the card\'s edges, the same as a scan.</li>'
     + '<li>Swipe on the card to scroll the page.</li>'
-    + '</ul>'
+    + '</ul></details>'
     + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
     + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
     + '<button type="button" class="ozfile" data-z="rot" hidden aria-label="Rotate 90 degrees clockwise">Rotate</button>'
@@ -801,6 +812,11 @@ function Editor(host, pop) {
   var tok = host.querySelector('[data-z="token"]');
   var tokLab = host.querySelector('.oztok');
   var changeTok = host.querySelector('[data-z="changetoken"]');
+  var help = host.querySelector('.ozhelp');
+  if (help) {
+    help.open = instructWanted();
+    help.addEventListener('toggle', function () { setInstruct(help.open); });
+  }
   var lastSave = null;
   var appliedToken = token();
   var saveFlight = false;
@@ -1602,16 +1618,151 @@ function resolveJo(item) {
     });
   });
 }
-function fileAs(item, jo) {
+/* One filing for a JO that was just accepted. The toast, the page tile, the gold line,
+   and the needs-JO counter are all read from this record, in that same turn. */
+function joFiling(item, jo, fromCard) {
+  item = item || {};
+  jo = normJo(jo);
+  var ok = validJo(jo);
+  var named = { filename: item.filename, scan: item.scan, page: item.page, jo: item.jo };
+  if (ok) renameItem(named, jo);
+  return {
+    jo: ok ? named.jo : '',
+    page: named.page,
+    filename: named.filename || '',
+    scan: named.scan || '',
+    prevScan: item.scan || '',
+    clientId: item.clientId || '',
+    held: !ok,
+    queueState: ok ? 'waiting' : 'needsjo',
+    fromCard: !!(fromCard && ok),
+    toast: ok ? (fromCard ? ('JO ' + jo + ', from the card.') : ('JO ' + jo + '.')) : ''
+  };
+}
+function cardAccepted(snap) {
+  var toast = String(snap && snap.toast || '');
+  var m = toast.match(/^JO (\d{2}-\d{3,4}[A-Z]?), from the card\.$/);
+  var jo = validJo(snap && snap.jo) ? normJo(snap.jo) : (m ? m[1] : '');
+  if (!(jo && (snap.fromCard || m))) return '';
+  return jo;
+}
+/* Tile, gold line, and counter for the capture screen. A from-the-card toast is part of
+   the same record, so the readout cannot still say reading or needs-JO. */
+function joStatus(snap) {
+  snap = snap || {};
+  var toast = String(snap.toast || '');
+  var jo = cardAccepted(snap);
+  var accepted = !!jo;
+  if (!accepted && validJo(snap.jo)) jo = normJo(snap.jo);
+  var pages = (snap.pages || []).map(function (p) { return Object.assign({}, p); });
+  var rows = (snap.rows || []).map(function (r) { return Object.assign({}, r); });
+  if (accepted) {
+    pages.forEach(function (p) {
+      var mine = (snap.clientId && p.clientId === snap.clientId) || p.page === snap.page;
+      if (!(p.held || p.jo === HOLD || mine)) return;
+      if (p.held || p.jo === HOLD) { p.held = false; if (!validJo(p.jo)) p.jo = jo; }
+      if (mine) {
+        p.held = false; p.jo = jo;
+        if (snap.scan) p.scan = snap.scan;
+        if (snap.filename) p.filename = snap.filename;
+      } else if (snap.scan && (p.scan === snap.prevScan || p.jo === jo)) p.scan = snap.scan;
+    });
+    rows.forEach(function (r) {
+      var mine = r.state === 'needsjo' && ((snap.clientId && r.clientId === snap.clientId) || r.scan === snap.prevScan || (r.scan === snap.scan && (r.jo === HOLD || r.jo === jo)));
+      if (!mine) return;
+      r.state = 'waiting'; r.jo = jo; r.held = false;
+      if (snap.scan) r.scan = snap.scan;
+      if (snap.filename && (r.page === snap.page || (snap.clientId && r.clientId === snap.clientId))) r.filename = snap.filename;
+    });
+    var covered = function (p) {
+      return rows.some(function (r) {
+        return (p.clientId && r.clientId === p.clientId) || (r.scan && r.scan === p.scan && r.filename === p.filename) || (r.scan && r.scan === p.scan && r.page === p.page);
+      });
+    };
+    pages.forEach(function (p) {
+      if (p.held || covered(p)) return;
+      rows.push({ state: 'waiting', jo: p.jo || jo, page: p.page, filename: p.filename, scan: p.scan, clientId: p.clientId || '' });
+    });
+  }
+  var online = snap.online !== false;
+  var asking = !!snap.asking && !accepted;
+  var reading = !!snap.reading && !jo;
+  var saving = !!snap.saving;
+  function matchRow(pg) {
+    var i, x;
+    for (i = 0; i < rows.length; i++) { x = rows[i]; if (x.scan === pg.scan && x.filename === pg.filename) return x; }
+    for (i = 0; i < rows.length; i++) { x = rows[i]; if (pg.scan && x.scan === pg.scan && x.page === pg.page) return x; }
+    return null;
+  }
+  var tiles = pages.map(function (pg) {
+    var it = matchRow(pg);
+    if (!it) return (pg.held && asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === HOLD) ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Waiting' };
+    if (it.state === 'needsjo') return { cls: 'err', t: 'Type JO' };
+    if (it.state === 'uploading') return { cls: 'busy', t: 'Uploading…' };
+    if (it.state === 'waiting') return { cls: 'queued', t: online ? (it.error ? 'Retrying' : 'Waiting') : 'Offline' };
+    if (it.state === 'saved') return { cls: 'ok', t: 'Saved' };
+    if (it.state === 'mismatch') return { cls: 'mm', t: 'Check JO' };
+    if (it.state === 'failed') return { cls: 'err', t: 'Failed', retry: it.id };
+    return { cls: 'queued', t: it.state || '' };
+  });
+  var held = pages.some(function (p) { return p.held; });
+  var pendingTiles = tiles.filter(function (s) { return s.cls === 'busy' || s.cls === 'queued'; }).length + (saving ? 1 : 0);
+  var failedTiles = tiles.filter(function (s) { return s.retry; }).length;
+  var line = held ? (asking ? 'This photo stays here until you tap Save.' : 'Reading the JO number…')
+    : (!pages.length && !saving) ? ''
+    : failedTiles ? (failedTiles + (failedTiles > 1 ? ' pages failed' : ' page failed'))
+    : pendingTiles ? (pendingTiles === 1 ? '1 page still uploading' : pendingTiles + ' pages still uploading')
+    : (pages.length ? 'All saved' : '');
+  var lineCls = failedTiles ? ' err' : (pendingTiles || held) ? ' busy' : pages.length ? ' ok' : '';
+  var joLine = asking ? 'Type the JO number' : jo ? ('JO ' + jo) : ((pages.length || saving || reading) ? 'Reading the JO number…' : '');
+  var pending = 0, needs = 0, failed = 0;
+  rows.forEach(function (r) {
+    if (r.state === 'waiting' || r.state === 'uploading') pending++;
+    else if (r.state === 'needsjo') needs++;
+    else if (r.state === 'failed') failed++;
+  });
+  var counter = pending ? (pending + ' uploading') : needs ? (needs === 1 ? '1 needs JO' : needs + ' need JO') : failed ? (failed + ' failed') : '';
+  return {
+    toast: toast, joLine: joLine, line: line, lineCls: lineCls, tiles: tiles,
+    counter: counter, counterErr: !!(needs || failed), counterBusy: !!(pending && !needs && !failed)
+  };
+}
+function applyFiling(item, filing) {
+  var clientId = item.clientId || '';
+  var prevName = item.filename;
+  var prevScan = item.scan;
+  item.jo = filing.jo;
+  item.page = filing.page;
+  item.filename = filing.filename;
+  item.scan = filing.scan;
   item.held = false;
   if (item.needsJo) item.needsJo = false;
-  var sc = scan();
-  if (sc && typeof sc.fileHeld === 'function') sc.fileHeld(jo); // bind the held page before the toast, and before the queue write
-  renameItem(item, jo);
-  item.held = false;
   syncState(item);
-  fillJo(jo);
-  lastFiled = { id: '', jo: jo, page: item.page, filename: item.filename, scan: item.scan };
+  var sc = scan();
+  if (sc && sc.cap) { sc.cap.asking = false; sc.cap.reading = false; }
+  var pages = (sc && sc.cap && sc.cap.pages) || [];
+  for (var i = 0; i < pages.length; i++) {
+    var p = pages[i];
+    var mine = (clientId && p.clientId === clientId) || p.filename === prevName || (p.scan === prevScan && p.page === filing.page);
+    if (mine) { p.jo = filing.jo; p.page = filing.page; p.filename = filing.filename; p.scan = filing.scan; p.held = false; }
+    else if (p.held || p.jo === HOLD) { p.held = false; if (!validJo(p.jo)) p.jo = filing.jo; if (p.scan === prevScan) p.scan = filing.scan; }
+  }
+  fillJo(filing.jo);
+}
+function fileAs(item, jo, fromCard, announce) {
+  var sc0 = scan();
+  if (sc0 && typeof sc0.fileHeld === 'function') sc0.fileHeld(jo); // bind every held page before the toast
+  var filing = joFiling(item, jo, fromCard);
+  applyFiling(item, filing);
+  var sc = scan();
+  if (sc && sc.cap) sc.cap.filing = filing;
+  try {
+    if (sc && typeof sc.renderQueue === 'function') sc.renderQueue();
+    else if (sc && typeof sc.renderCapture === 'function') sc.renderCapture();
+  } catch (e) { console.error(e); }
+  if (announce) say(filing.toast);
+  if (sc && sc.cap && sc.cap.filing === filing) sc.cap.filing = null;
+  lastFiled = { id: '', jo: filing.jo, page: filing.page, filename: filing.filename, scan: filing.scan };
   return item;
 }
 function addCorrectBtn(box) {
@@ -1665,8 +1816,7 @@ function installQueue(sc) {
     else ocrChain = ocrChain.then(function (jo) { return jo || ''; });
     return ocrChain.then(function (jo) {
       if (!jo || !validJo(jo)) { rollback(item); if (page === 1) say('Page not saved.'); return null; }
-      fileAs(item, jo);
-      if (page === 1) say(lastFromCard ? ('JO ' + jo + ', from the card.') : ('JO ' + jo + '.'));
+      fileAs(item, jo, page === 1 && lastFromCard, page === 1);
       return Promise.resolve(orig(item)).then(function (saved) {
         lastFiled.id = (saved && saved.id) || (item.jo + '|' + item.filename + '|' + item.scan);
         lastImage = item.image || lastImage;
@@ -1736,7 +1886,7 @@ function boot() {
 root.OYPZones = {
   mount: mount, open: open, prepare: prepare, zones: function () { return state.zones.slice(); }, summary: summary, saveMessage: saveMessage,
   scannerTurns: scannerTurns, turnZone: turnZone, viewToStored: viewToStored, storedToView: storedToView,
-  exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, jpegSize: jpegSize, exifTagForPixels: exifTagForPixels, readToken: readToken, tokenEntryPlan: tokenEntryPlan, presentSave: presentSave,
+  exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, jpegSize: jpegSize, exifTagForPixels: exifTagForPixels, readToken: readToken, tokenEntryPlan: tokenEntryPlan, presentSave: presentSave, instructWanted: instructWanted, joFiling: joFiling, joStatus: joStatus,
   cardPage: cardPage, cropWanted: cropWanted, PAGE_PX: PAGE_PX, FINDING: FINDING, NO_EDGES: NO_EDGES,
   gestureBegin: gestureBegin, gestureAdvance: gestureAdvance, HOLD_MS: HOLD_MS
 };
