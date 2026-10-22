@@ -192,6 +192,15 @@ const okView = Z.presentSave(shared, joZones, null);
 eq(okView.tone === 'ok' && okView.button === 'Saved ✓' && okView.text === Z.saveMessage(shared, joZones), 'a shared save is green');
 const badView = Z.presentSave(null, joZones, new Error('save'));
 eq(badView.tone === 'bad' && badView.button === 'Save zones' && /Could not save/.test(badView.text), 'an exception is red');
+const rejected = { ok: true, local: true, reason: 'Bad token' };
+const rejectedView = Z.presentSave(rejected, joZones, null);
+eq(rejectedView.tone === 'bad' && rejectedView.text === Z.saveMessage(rejected, joZones) && /token was not accepted/.test(rejectedView.text), 'a rejected token turns the dot red');
+const again = Z.tokenEntryPlan(' abc ', joZones, noTok);
+eq(again.token === 'abc' && again.status === 'Token saved.' && again.resave === true, 'Enter after a local save stores the token and sends the boxes');
+eq(Z.tokenEntryPlan('abc', [], null).status === 'Token saved.' && Z.tokenEntryPlan('abc', [], null).resave === false, 'a token with no boxes only confirms it was saved');
+eq(Z.tokenEntryPlan('abc', joZones, { ok: true, shared: true }).resave === true, 'boxes already on the page are saved again with the token');
+eq(Z.tokenEntryPlan('   ', joZones, noTok).resave === false && Z.tokenEntryPlan('   ', [], null).status === '', 'a blank token is not treated as saved');
+eq(Z.tokenEntryPlan('abc', [], { ok: true, local: true, reason: 'offline' }).resave === true, 'a save that stayed on this phone is sent again');
 
 let sample = [{ id: 'jo', x: 0.2 }];
 const swipe = Z.gestureAdvance('pending', 40, 50);
@@ -251,9 +260,11 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=9'), 'scan-zones cache bust is v9');
-eq(read('staff/index.html').includes('nav.js?v=38') && read('staff/print-test.html').includes('nav.js?v=38'), 'staff pages load nav.js v38');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=38') && read('scan/index.html').includes('app.js?v=20261022i') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v38');
+eq(read('nav.js').includes('scan-zones.js?v=10'), 'scan-zones cache bust is v10');
+eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
+eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
+eq(read('staff/index.html').includes('nav.js?v=39') && read('staff/print-test.html').includes('nav.js?v=39'), 'staff pages load nav.js v39');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=39') && read('scan/index.html').includes('app.js?v=20261022i') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v39');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');
