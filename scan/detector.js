@@ -461,27 +461,36 @@ function poseScore(cv, rgba) {
   const g = new cv.Mat(), bin = new cv.Mat();
   cv.cvtColor(sm, g, cv.COLOR_RGBA2GRAY);
   cv.threshold(g, bin, 0, 255, cv.THRESH_BINARY_INV | cv.THRESH_OTSU);
-  const W = bin.cols, H = bin.rows, d = bin.data;
-  const row = new Float64Array(H);
-  let mean = 0;
-  for (let y = 0; y < H; y++) {
-    let s = 0, i = y * W;
-    for (let x = 0; x < W; x++) if (d[i + x]) s++;
-    row[y] = s; mean += s;
-  }
-  mean /= H || 1;
-  let vr = 0;
-  for (let y = 0; y < H; y++) { const z = row[y] - mean; vr += z * z; }
-  vr /= H || 1;
-  const line = vr / ((mean * mean) + 1);
+  const W = bin.cols, H = bin.rows;
   const labels = new cv.Mat(), stats = new cv.Mat(), cents = new cv.Mat();
-  let base = 0, lines = 0;
+  let base = 0, lines = 0, line = 0;
   try {
     const n = cv.connectedComponentsWithStats(bin, labels, stats, cents, 8, cv.CV_32S);
-    const blobs = [], sd = stats.data32S, cols = stats.cols || 5;
+    const sd = stats.data32S, cols = stats.cols || 5, drop = new Uint8Array(n);
     for (let i = 1; i < n; i++) {
+      const w = sd[i * cols + 2], h = sd[i * cols + 3], a = sd[i * cols + 4];
+      // a jewelry photo or a long rule is not a line of type
+      if (h > 48 || w > W * 0.45 || h > H * 0.25 || a > W * H * 0.02) drop[i] = 1;
+    }
+    const ld = labels.data32S, bd = bin.data;
+    if (ld && bd) for (let p = 0; p < ld.length; p++) if (drop[ld[p]]) bd[p] = 0;
+    const d = bin.data, row = new Float64Array(H);
+    let mean = 0;
+    for (let y = 0; y < H; y++) {
+      let s = 0, i = y * W;
+      for (let x = 0; x < W; x++) if (d[i + x]) s++;
+      row[y] = s; mean += s;
+    }
+    mean /= H || 1;
+    let vr = 0;
+    for (let y = 0; y < H; y++) { const z = row[y] - mean; vr += z * z; }
+    vr /= H || 1;
+    line = vr / ((mean * mean) + 1);
+    const blobs = [];
+    for (let i = 1; i < n; i++) {
+      if (drop[i]) continue;
       const y = sd[i * cols + 1], w = sd[i * cols + 2], h = sd[i * cols + 3], a = sd[i * cols + 4];
-      if (a < 8 || h < 4 || w < 2 || h > 48 || w > W * 0.45 || h > H * 0.25) continue;
+      if (a < 8 || h < 4 || w < 2) continue;
       blobs.push({ y: y, bot: y + h, mid: y + h / 2, h: h });
     }
     blobs.sort((p, q) => p.mid - q.mid);
@@ -510,18 +519,23 @@ function poseScore(cv, rgba) {
   sm.delete(); g.delete(); bin.delete(); labels.delete(); stats.delete(); cents.delete();
   return { line: line, base: base, lines: lines };
 }
-// Clockwise quarter-turns that put printed text upright. 0 when the page is already upright.
-function uprightTurns(cv, rgba) {
-  let best = 0, bestScore = -1e9;
+// Clockwise quarter-turns that put printed text upright.
+// `legacy` is the quarter the shape turn already chose (0 to judge this image as it stands).
+// Another quarter wins only when it is clearly more upright, so a photo does not flip a readable page.
+function uprightTurns(cv, rgba, legacy) {
+  const stick = legacy == null ? 0 : ((legacy % 4) + 4) % 4;
+  const scores = [0, 0, 0, 0];
+  let best = stick, bestScore = -1e9;
   for (let q = 0; q < 4; q++) {
     const r = q ? rotateCW(cv, rgba, q) : rgba;
     let s = { line: 0, base: 0 };
     try { s = poseScore(cv, r); } catch (e) {}
     if (q) r.delete();
     const land = (q % 2 === 0) === (rgba.cols >= rgba.rows);
-    const score = s.line * 5 + s.base + (land ? 0.02 : 0);
-    if (score > bestScore) { bestScore = score; best = q; }
+    scores[q] = s.line * 5 + s.base + (land ? 0.02 : 0);
+    if (scores[q] > bestScore) { bestScore = scores[q]; best = q; }
   }
+  if (scores[best] < scores[stick] + 0.5) return stick;
   return best;
 }
 // Grayscale, 3x, black digits on white. The handwritten JO fallback reads this.

@@ -427,9 +427,9 @@ function detectorUrl() {
   var tags = document.getElementsByTagName('script'), i, src;
   for (i = tags.length - 1; i >= 0; i--) {
     src = tags[i].src || '';
-    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022j');
+    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022k');
   }
-  return 'scan/detector.js?v=20261022j';
+  return 'scan/detector.js?v=20261022k';
 }
 function loadDetector() {
   if (root.CardDetector && root.CardDetector.standardPage && root.CardDetector.warpQuad && root.CardDetector.fitStandard) return Promise.resolve(root.CardDetector);

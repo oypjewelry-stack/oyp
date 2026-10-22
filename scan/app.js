@@ -503,7 +503,7 @@ function orientPage(out, warped) {
   if (warped && cv && cv.Mat && window.CardDetector && CardDetector.uprightTurns) {
     try {
       const m = cv.imread(out);
-      const up = CardDetector.uprightTurns(cv, m);
+      const up = CardDetector.uprightTurns(cv, m, turns);
       m.delete();
       if (up >= 0 && up < 4) { extra = (up - turns + 4) % 4; turns = up; }
     } catch (err) { console.warn(err); }
@@ -1149,7 +1149,7 @@ async function uprightCrop(b64) {
   c.getContext('2d').drawImage(img, 0, 0);
   try {
     const m = cv.imread(c);
-    const q = CardDetector.uprightTurns(cv, m);
+    const q = CardDetector.uprightTurns(cv, m, 0);
     m.delete();
     const o = rotateCanvas(c, quarterKey(q));
     const out = o.toDataURL('image/jpeg', 0.85);
@@ -1213,11 +1213,28 @@ async function handReadJo(b64) {
     const worker = await T.createWorker('eng');
     try {
       await worker.setParameters({ tessedit_char_whitelist: '0123456789-', tessedit_pageseg_mode: '7' });
-      const res = await worker.recognize(url);
-      const text = (res && res.data && res.data.text) || '';
-      const jo = realJO(text);
-      if (jo) return jo;
-      return String(text).toUpperCase().replace(/[^0-9-]/g, '').slice(0, 8);
+      const img = await loadDataUrl(url);
+      const base = document.createElement('canvas');
+      base.width = img ? (img.naturalWidth || img.width) : 0;
+      base.height = img ? (img.naturalHeight || img.height) : 0;
+      if (!base.width) return '';
+      base.getContext('2d').drawImage(img, 0, 0);
+      let guess = '';
+      for (let q = 0; q < 4; q++) {
+        const copy = document.createElement('canvas');
+        copy.width = base.width; copy.height = base.height;
+        copy.getContext('2d').drawImage(base, 0, 0);
+        const shot = q ? rotateCanvas(copy, quarterKey(q)) : copy;
+        const res = await worker.recognize(shot);
+        const text = (res && res.data && res.data.text) || '';
+        const jo = realJO(text);
+        if (jo) return jo;
+        if (!guess) {
+          const partial = String(text).toUpperCase().replace(/[^0-9-]/g, '').slice(0, 8);
+          if (partial) guess = partial;
+        }
+      }
+      return guess;
     } finally { try { await worker.terminate(); } catch (e) {} }
   } catch (e) { console.warn('hand', e); return ''; }
 }
