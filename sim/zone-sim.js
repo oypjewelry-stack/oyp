@@ -235,7 +235,7 @@ eq(app.includes('function applyJpegOrient') && app.includes('return applyJpegOri
 eq(app.includes('if (isHeic(file)) return heicToCanvas(file)'), 'a HEIC scan is not given a JPEG orientation on top of irot');
 eq(read('nav.js').includes('scan-zones.js?v=7'), 'scan-zones cache bust is v7');
 eq(read('staff/index.html').includes('nav.js?v=36') && read('staff/print-test.html').includes('nav.js?v=36'), 'staff pages load nav.js v36');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=36') && read('scan/index.html').includes('app.js?v=20261022e'), 'the scanner page keeps the production nav host at v36');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=36') && read('scan/index.html').includes('app.js?v=20261022f'), 'the scanner page keeps the production nav host at v36');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');

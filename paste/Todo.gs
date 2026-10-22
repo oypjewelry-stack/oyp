@@ -48,7 +48,7 @@ function todoList_(req, user) {
       return Array.isArray(rows) ? rows : [];
     }
   });
-  var today = todoDay_(new Date());
+  var today = todoDay_(todoNow_());
   var manual = { open: [], done: [], people: [] };
   try { manual = todoManualList_(user, today); } catch (e) { manual = { open: [], done: [], people: todoPeople_(user) }; }
   var items = todoSort_((manual.open || []).concat(pack.items || []));
@@ -485,6 +485,16 @@ function todoJo_(v) {
   if (typeof jobKey_ === 'function') { try { var k = jobKey_(v); if (k) return String(k); } catch (e) {} }
   return String(v).trim();
 }
+function todoNow_() {
+  if (typeof now_ === 'function') {
+    try {
+      var s = now_();
+      var d = s instanceof Date ? s : new Date(s);
+      if (!isNaN(d.getTime())) return d;
+    } catch (e0) {}
+  }
+  return new Date();
+}
 function todoDay_(d) {
   if (d === '' || d == null) return '';
   if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d.trim())) return d.trim().slice(0, 10);
@@ -749,8 +759,9 @@ function todoManualList_(user, today) {
 }
 function todoMutate_(req, user, kind) {
   var people = todoPeople_(user);
-  var now = typeof now_ === 'function' ? now_() : new Date().toISOString();
-  var today = todoDay_(new Date());
+  var clock = todoNow_();
+  var now = clock.toISOString();
+  var today = todoDay_(clock);
   return todoLock_(function () {
     var pack = todoReadRows_();
     var res = todoApply_(pack.rows, kind, req || {}, user, now, people);
