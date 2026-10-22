@@ -80,11 +80,19 @@ function readToken(el) {
     return String(el.value).replace(/^\s+|\s+$/g, '');
   } catch (e) { return ''; }
 }
+/* Enter or leaving the field stores the token. Boxes, or a save that never left this phone, are sent again. */
+function tokenEntryPlan(value, zones, last) {
+  var tok = readToken({ value: value });
+  var localOnly = !!(last && (last.local || last.reason === 'no-token'));
+  var hasBoxes = !!(zones && zones.length);
+  return { token: tok, status: tok ? 'Token saved.' : '', resave: !!tok && (localOnly || hasBoxes) };
+}
 /* Green: shared with every phone. Amber: on this phone only. Red: the save did not stick. Grey: not saved yet. */
 function presentSave(res, zones, err) {
   if (err) return { tone: 'bad', text: 'Could not save these boxes. Try again.', button: 'Save zones' };
   var text = saveMessage(res, zones);
   if (res && res.shared) return { tone: 'ok', text: text, button: 'Saved ✓' };
+  if (res && /bad token/i.test(String(res.reason || ''))) return { tone: 'bad', text: text, button: 'Saved on this phone' };
   if (res && (res.local || res.reason)) return { tone: 'local', text: text, button: 'Saved on this phone' };
   if (!res || res.ok === false) return { tone: 'bad', text: text || 'Could not save these boxes. Try again.', button: 'Save zones' };
   return { tone: 'local', text: text, button: 'Saved on this phone' };
@@ -416,9 +424,9 @@ function detectorUrl() {
   var tags = document.getElementsByTagName('script'), i, src;
   for (i = tags.length - 1; i >= 0; i--) {
     src = tags[i].src || '';
-    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022h');
+    if (/scan-zones\.js/.test(src)) return src.replace(/scan-zones\.js(\?.*)?$/, 'scan/detector.js?v=20261022i');
   }
-  return 'scan/detector.js?v=20261022h';
+  return 'scan/detector.js?v=20261022i';
 }
 function loadDetector() {
   if (root.CardDetector && root.CardDetector.standardPage && root.CardDetector.warpQuad && root.CardDetector.fitStandard) return Promise.resolve(root.CardDetector);
@@ -638,9 +646,13 @@ function ensureCss() {
     '.oz *,.oz *::before,.oz *::after{box-sizing:border-box}',
     '.oz-pop{position:fixed;inset:0;z-index:10000;overflow:auto;padding:16px 16px 40px;background:#fff}',
     '.oz-inline{margin-top:8px}',
-    '.ozbar{display:flex;flex-wrap:wrap;align-items:center;gap:calc(8px * var(--sp, 1));margin-bottom:calc(8px * var(--sp, 1))}',
-    '.ozbar b{font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:calc(22px * var(--fs, 1));flex:1 0 160px}',
-    '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.45;color:#444;max-width:720px;margin:0 0 calc(12px * var(--sp, 1))}',
+    '.ozbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:calc(8px * var(--sp, 1));margin-bottom:calc(8px * var(--sp, 1))}',
+    '.ozbar [data-z="close"]{grid-column:1;justify-self:start;min-width:0}',
+    '.ozbar [data-z="save"]{grid-column:3;justify-self:end;min-width:0}',
+    '.ozbar b{grid-column:2;justify-self:center;text-align:center;font-family:"Libre Bodoni",Didot,serif;font-weight:500;font-size:calc(22px * var(--fs, 1));white-space:nowrap}',
+    '@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}.ozbar .ozghost,.ozbar .ozsave{height:calc(34px * var(--sp, 1));min-height:calc(34px * var(--sp, 1));padding:0 calc(10px * var(--sp, 1));letter-spacing:.04em}}',
+    '.oznote{font-size:calc(14px * var(--fs, 1));line-height:1.35;color:#444;max-width:720px;margin:0 0 calc(12px * var(--sp, 1));padding:0 0 0 1.15em;list-style:disc}',
+    '.oznote li{margin:0;padding:0}',
     '.oztools{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp, 1));margin:0 0 calc(12px * var(--sp, 1))}',
     '.oztools button,.ozfile,.ozcustom{border:1px solid #ddd;background:#fff;border-radius:999px;padding:calc(8px * var(--sp, 1)) calc(12px * var(--sp, 1));font:500 calc(12px * var(--fs, 1))/1.2 Inter,Helvetica,sans-serif;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}',
     '.ozfile{height:calc(34px * var(--sp, 1));display:inline-flex;align-items:center;justify-content:center;padding:0 calc(12px * var(--sp, 1));box-sizing:border-box}',
@@ -676,6 +688,8 @@ function ensureCss() {
     '.oztok{display:flex;flex-direction:column;gap:4px;margin:0 0 calc(12px * var(--sp, 1));max-width:360px;font:500 calc(12px * var(--fs, 1))/1.2 Inter,Helvetica,sans-serif;letter-spacing:.06em;text-transform:uppercase}',
     '.oztok input{text-transform:none;letter-spacing:0;font:calc(15px * var(--fs, 1)) Inter,Helvetica,sans-serif;padding:calc(8px * var(--sp, 1)) calc(10px * var(--sp, 1));border:1px solid #ddd;border-radius:10px}',
     '.oztok.ozneed input{border-color:#c4922a;box-shadow:0 0 0 3px rgba(196,146,42,.28)}',
+    '.oztokchange{margin:0 0 calc(12px * var(--sp, 1));text-transform:none;letter-spacing:0;font:500 calc(13px * var(--fs, 1))/1.3 Inter,Helvetica,sans-serif;text-decoration:underline;background:none;border:0;padding:0;cursor:pointer;color:#111}',
+    '.oztokchange[hidden]{display:none}',
     '#joInput.oyp-ocr-hold{color:transparent}',
     '.ozask{position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:16px}',
     '.ozaskbox{background:#fff;border-radius:16px;padding:18px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:10px}',
@@ -750,7 +764,19 @@ function Editor(host, pop) {
     : '<div class="ozbar"><b>JO card zones</b><button type="button" class="ozsave" data-z="save">Save zones</button></div>')
     + '<p class="ozstatus" data-tone="dirty" aria-live="polite"><i class="ozdot" aria-hidden="true"></i><span class="ozmsg"></span></p>'
     + '<label class="oztok">Scanner token<input type="password" data-z="token" autocomplete="off" spellcheck="false"></label>'
-    + '<p class="oznote">Tag each section of the card once. Pick a label, then drag that box on a sample photo: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or any other label you type. Page 1 reads the JO number only from the JO number box. Each other box is read on its own, under its label. Later pages of the same card are read in full. Drag a box to move it. Drag the corner to resize it. Drawing a label again replaces that box. A vertical phone photo is turned once so the card reads upright. A photo that is already horizontal is left as it is. Rotate turns it again. When the card edges are found, the sample is straightened to one fixed card size, the same frame a scan is cropped from. Draw box, or a press-and-hold, adds a box. A one-finger drag on the empty card scrolls the page.</p>'
+    + '<button type="button" class="oztokchange" data-z="changetoken" hidden>Change token</button>'
+    + '<ul class="oznote">'
+    + '<li>Pick a label, then draw its box on the sample photo.</li>'
+    + '<li>Labels: JO number, date due, date given, client, phone, item, metal, karat, size, stone, weight, price, notes, or type your own.</li>'
+    + '<li>Page 1 reads the JO number only from the JO number box. Other boxes are read under their own label.</li>'
+    + '<li>Later pages of the card are read in full.</li>'
+    + '<li>Tap Draw box, or press and hold, to add a box.</li>'
+    + '<li>Drag a box to move it. Drag its corner to resize it.</li>'
+    + '<li>Drawing a label again replaces its box.</li>'
+    + '<li>Vertical photos turn upright on their own. Rotate turns it again.</li>'
+    + '<li>The photo is trimmed to the card\'s edges, the same as a scan.</li>'
+    + '<li>Swipe on the card to scroll the page.</li>'
+    + '</ul>'
     + '<div class="oztools">' + FIELDS.map(function (f) { return '<button type="button" data-kind="' + f[0] + '"' + (f[0] === 'jo' ? ' class="on"' : '') + '>' + esc(f[1]) + '</button>'; }).join('')
     + '<button type="button" data-kind="x">Other label</button><label class="ozcustom">Label <input data-z="custom" maxlength="24" placeholder="Repair" aria-label="Label for another box"></label>'
     + '<button type="button" class="ozfile" data-z="rot" hidden aria-label="Rotate 90 degrees clockwise">Rotate</button>'
@@ -774,12 +800,18 @@ function Editor(host, pop) {
   var msgEl = host.querySelector('.ozmsg');
   var tok = host.querySelector('[data-z="token"]');
   var tokLab = host.querySelector('.oztok');
+  var changeTok = host.querySelector('[data-z="changetoken"]');
+  var lastSave = null;
+  var appliedToken = token();
+  var saveFlight = false;
   function copyZone(z) { return { id: z.id, label: z.label, x: z.x, y: z.y, w: z.w, h: z.h }; }
   function showToken() {
     if (!tok || !tokLab) return;
     var has = !!token();
     try { tok.value = has ? token() : ''; } catch (e) {}
-    tokLab.style.display = has && isScanner() ? 'none' : '';
+    var hide = has && isScanner();
+    tokLab.style.display = hide ? 'none' : '';
+    if (changeTok) changeTok.hidden = !hide;
     if (has && !isScanner() && tokLab.firstChild) tokLab.firstChild.textContent = 'Scanner token (already on this computer) ';
   }
   showToken();
@@ -1107,18 +1139,43 @@ function Editor(host, pop) {
   });
   var custom = host.querySelector('[data-z="custom"]');
   if (custom) custom.addEventListener('focus', function () { kind = 'x'; renderList(); });
-  if (tok) tok.addEventListener('change', function () {
-    setToken(readToken(tok));
-    if (readToken(tok) && tokLab) tokLab.classList.remove('ozneed');
+  function commitToken() {
+    var plan = tokenEntryPlan(tok ? tok.value : '', zones, lastSave);
+    var changed = plan.token !== appliedToken;
+    setToken(plan.token);
+    appliedToken = plan.token;
+    if (plan.token && tokLab) tokLab.classList.remove('ozneed');
     showToken();
+    if (!plan.token) return;
+    if (!changed && (saveFlight || (lastSave && lastSave.shared))) return;
+    setStatus(plan.status, 'ok');
+    if (!plan.resave || saveFlight) return;
+    runSave({ keepStatus: true });
+  }
+  if (tok) {
+    tok.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      e.stopPropagation();
+      commitToken();
+    });
+    tok.addEventListener('change', commitToken);
+  }
+  if (changeTok) changeTok.addEventListener('click', function () {
+    if (tokLab) { tokLab.style.display = ''; tokLab.classList.remove('ozneed'); }
+    changeTok.hidden = true;
+    try { tok.focus(); tok.select(); } catch (e) {}
   });
   function focusToken() {
     if (!tokLab || !tok || !tok.isConnected) return;
     tokLab.classList.add('ozneed');
     tokLab.style.display = '';
+    if (changeTok) changeTok.hidden = true;
     try { tok.focus(); tok.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {}
   }
   function finishSave(btn, res, err) {
+    saveFlight = false;
+    if (res) lastSave = res;
     if (!err) {
       zones = cleanList(state.zones);
       dirty = false;
@@ -1139,13 +1196,17 @@ function Editor(host, pop) {
     syncStart();
     if (!err) host.dispatchEvent(new CustomEvent('oyp-zones-saved', { bubbles: true, detail: res }));
   }
-  host.querySelector('[data-z="save"]').addEventListener('click', function () {
+  function runSave(opts) {
+    opts = opts || {};
+    if (saveFlight) return;
+    saveFlight = true;
     var btn = host.querySelector('[data-z="save"]');
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     try {
       if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
-      setStatus('Saving…', 'dirty');
+      if (!opts.keepStatus) setStatus('Saving…', 'dirty');
       setToken(readToken(host.querySelector('[data-z="token"]')));
+      appliedToken = token();
       Promise.resolve().then(function () { return saveZones(zones); }).then(function (res) {
         finishSave(btn, res, null);
       }, function (err) {
@@ -1154,7 +1215,8 @@ function Editor(host, pop) {
     } catch (err) {
       finishSave(btn, null, err);
     }
-  });
+  }
+  host.querySelector('[data-z="save"]').addEventListener('click', function () { runSave(); });
   host.querySelector('[data-z="clear"]').addEventListener('click', function () {
     if (!zones.length) return;
     if (!confirm('Clear the JO boxes?')) return;
@@ -1669,7 +1731,7 @@ function boot() {
 root.OYPZones = {
   mount: mount, open: open, prepare: prepare, zones: function () { return state.zones.slice(); }, summary: summary, saveMessage: saveMessage,
   scannerTurns: scannerTurns, turnZone: turnZone, viewToStored: viewToStored, storedToView: storedToView,
-  exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, jpegSize: jpegSize, exifTagForPixels: exifTagForPixels, readToken: readToken, presentSave: presentSave,
+  exifQuarterTurns: exifQuarterTurns, jpegOrientation: jpegOrientation, jpegSize: jpegSize, exifTagForPixels: exifTagForPixels, readToken: readToken, tokenEntryPlan: tokenEntryPlan, presentSave: presentSave,
   cardPage: cardPage, cropWanted: cropWanted, PAGE_PX: PAGE_PX, FINDING: FINDING, NO_EDGES: NO_EDGES,
   gestureBegin: gestureBegin, gestureAdvance: gestureAdvance, HOLD_MS: HOLD_MS
 };

@@ -192,6 +192,15 @@ const okView = Z.presentSave(shared, joZones, null);
 eq(okView.tone === 'ok' && okView.button === 'Saved ✓' && okView.text === Z.saveMessage(shared, joZones), 'a shared save is green');
 const badView = Z.presentSave(null, joZones, new Error('save'));
 eq(badView.tone === 'bad' && badView.button === 'Save zones' && /Could not save/.test(badView.text), 'an exception is red');
+const rejected = { ok: true, local: true, reason: 'Bad token' };
+const rejectedView = Z.presentSave(rejected, joZones, null);
+eq(rejectedView.tone === 'bad' && rejectedView.text === Z.saveMessage(rejected, joZones) && /token was not accepted/.test(rejectedView.text), 'a rejected token turns the dot red');
+const again = Z.tokenEntryPlan(' abc ', joZones, noTok);
+eq(again.token === 'abc' && again.status === 'Token saved.' && again.resave === true, 'Enter after a local save stores the token and sends the boxes');
+eq(Z.tokenEntryPlan('abc', [], null).status === 'Token saved.' && Z.tokenEntryPlan('abc', [], null).resave === false, 'a token with no boxes only confirms it was saved');
+eq(Z.tokenEntryPlan('abc', joZones, { ok: true, shared: true }).resave === true, 'boxes already on the page are saved again with the token');
+eq(Z.tokenEntryPlan('   ', joZones, noTok).resave === false && Z.tokenEntryPlan('   ', [], null).status === '', 'a blank token is not treated as saved');
+eq(Z.tokenEntryPlan('abc', [], { ok: true, local: true, reason: 'offline' }).resave === true, 'a save that stayed on this phone is sent again');
 
 let sample = [{ id: 'jo', x: 0.2 }];
 const swipe = Z.gestureAdvance('pending', 40, 50);
@@ -239,10 +248,10 @@ eq(app.includes('cvSoon(') && app.includes('CV_WAIT_MS = 6000') && app.includes(
 eq(app.includes('function stickersSoon') && app.includes("op: 'printEnqueue'"), 'the page-1 sticker is queued from the JO number and does not wait on enhance');
 eq(app.includes('p.plain = true') && app.includes('function reprocessPlain'), 'a page saved with no detector is marked and reprocessed later');
 const detSrc = read('scan/detector.js');
-eq((detSrc.match(/const CARD_RATIO = 1\.55/g) || []).length === 1 && !/cardSize[\s\S]{0,400}1\.55/.test(detSrc), 'the card aspect is the one CARD_RATIO constant');
+eq((detSrc.match(/const CARD_RATIO = 217\.5 \/ 136/g) || []).length === 1 && !/1\.55/.test(detSrc), 'the card aspect is the measured 217.5/136');
 const det = require(path.join(root, 'scan/detector.js'));
 const std = det.standardPage(1600);
-eq(std[0] === 1600 && std[1] === 1032, 'every warped page is 1600 by 1032');
+eq(Math.abs(det.CARD_RATIO - 217.5 / 136) < 1e-12 && std[0] === 1600 && std[1] === 1000 && std[1] === Math.round(1600 / det.CARD_RATIO), 'every warped page is 1600 by round(1600/ratio)');
 const wide = det.cardSize([[0, 0], [200, 0], [200, 100], [0, 100]], 1600);
 const tall = det.cardSize([[0, 0], [100, 0], [100, 200], [0, 200]], 1600);
 eq(wide[0] === std[0] && wide[1] === std[1] && tall[0] === std[1] && tall[1] === std[0], 'a sideways quad uses the same page on its side');
@@ -251,9 +260,14 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=8'), 'scan-zones cache bust is v8');
-eq(read('staff/index.html').includes('nav.js?v=37') && read('staff/print-test.html').includes('nav.js?v=37'), 'staff pages load nav.js v37');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=37') && read('scan/index.html').includes('app.js?v=20261022h') && read('scan/index.html').includes('detector.js?v=20261022h') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v37');
+eq(read('nav.js').includes('scan-zones.js?v=13'), 'scan-zones cache bust is v13');
+eq(zonesSrc.includes('grid-template-columns:1fr auto 1fr') && zonesSrc.includes('.ozbar b{grid-column:2;justify-self:center') && zonesSrc.includes('.ozbar [data-z="close"]{grid-column:1') && zonesSrc.includes('.ozbar [data-z="save"]{grid-column:3'), 'the zone title is centered on the bar');
+eq(zonesSrc.includes('@media (max-width:480px){.ozbar b{font-size:calc(18px * var(--fs, 1))}') && zonesSrc.includes('height:calc(34px * var(--sp, 1))') && !/ellipsis/.test(zonesSrc), 'a narrow bar uses an 18px title and 34px buttons, with the full words');
+eq(zonesSrc.includes('<ul class="oznote">') && zonesSrc.includes('Pick a label, then draw its box on the sample photo.') && zonesSrc.includes('Swipe on the card to scroll the page.') && zonesSrc.includes('.oznote li{margin:0;padding:0}') && !zonesSrc.includes('Tag each section of the card once'), 'the zone help is a short bulleted list');
+eq(zonesSrc.includes('>Change token</button>') && zonesSrc.includes('data-z="changetoken"'), 'a saved token stays hidden behind Change token');
+eq(zonesSrc.includes("if (e.key !== 'Enter') return;\n      e.preventDefault();\n      e.stopPropagation();\n      commitToken();"), 'Enter in the token field saves it and does not submit the page');
+eq(read('staff/index.html').includes('nav.js?v=42') && read('staff/print-test.html').includes('nav.js?v=42'), 'staff pages load nav.js v42');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=42') && read('scan/index.html').includes('app.js?v=20261022i') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v42');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');
