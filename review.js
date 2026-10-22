@@ -323,6 +323,25 @@ function wire(main) {
     toast(r.set.length + ' set to ' + locLabel(loc)); S.sel.clear(); rerender();
   };
   main.querySelectorAll('.rvrow').forEach(row => row.onclick = () => { if (!row.dataset.jo) return; S.back = null; S.open = row.dataset.jo; S.conflicts = {}; draw(main); if (innerWidth < 900) scrollTo(0, 0); });
+  const rows = main.querySelector('.rvrows');
+  if (rows && window.OYP.swipe) window.OYP.swipe(rows, {
+    item: '.rvrow[data-jo]',
+    ignore: '.ck',
+    actions: function (row) {
+      const jo = row.getAttribute('data-jo');
+      const j = S.jobs.find(x => x.jo === jo);
+      if (!j || j.stub) return [];
+      const arch = j.location === 'archived';
+      const prev = j.location || '';
+      return [{ label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
+        if (!window.OYP.archiveJos) return;
+        window.OYP.archiveJos([jo], arch ? '' : 'archived', { word: arch ? 'Unarchived' : 'Archived', after: function (undone) {
+          j.location = undone ? prev : (arch ? '' : 'archived');
+          rerender();
+        } });
+      } }];
+    }
+  });
   // lazy thumbnails
   const io = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; io.unobserve(e.target);
     const [jo, fid] = (e.target.dataset.th || e.target.dataset.ph).split('|'); if (!fid) return;

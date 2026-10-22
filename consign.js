@@ -226,9 +226,9 @@ function drawNew() {
   const { esc } = window.OYP, d = S.draft || blankDraft(), people = (S.r.consignees || []);
   const hits = (S.hits || []).map((h, i) => `<button type="button" class="cshit" data-hit="${i}">${hitLabel(h)} ${esc(h.description || '')}
     <span class="muted">${esc(h.location || '')}${h.blocked ? ' · ' + esc(h.blocked) : ''}</span></button>`).join('');
-  const lines = d.items.map((it, i) => `<tr><td>${pieceBits(it)}<br><span class="muted">${esc(it.description || '')}</span></td>
-    ${prices() ? `<td><input class="csval" data-val="${i}" inputmode="decimal" value="${esc(it.value || '')}" placeholder="₱" aria-label="Agreed value"></td>` : ''}
-    <td><button type="button" class="lnk" data-rm="${i}">Remove</button></td></tr>`).join('');
+  const lines = d.items.map((it, i) => `<div class="csitem" data-csitem="${i}"><div class="csitemmain">${pieceBits(it)}<span class="muted">${esc(it.description || '')}</span></div>
+    ${prices() ? `<input class="csval" data-val="${i}" inputmode="decimal" value="${esc(it.value || '')}" placeholder="₱" aria-label="Agreed value">` : ''}
+    <button type="button" class="lnk" data-rm="${i}">Remove</button></div>`).join('');
   return `<div class="cs">
     <button type="button" class="csback" id="csBack">‹ Back</button>
     <div class="dhead cshead"><h2>Consign</h2></div>
@@ -249,7 +249,7 @@ function drawNew() {
         ${noteHtml('add', esc)}
         ${hits ? `<div class="cshits" id="csHits">${hits}</div>` : '<div id="csHits"></div>'}
       </div>
-      ${d.items.length ? `<table class="dt"><thead><tr><th><span class="lab">Piece</span></th>${prices() ? '<th><span class="lab">Agreed value</span></th>' : ''}<th></th></tr></thead><tbody>${lines}</tbody></table>` : '<p class="muted">No pieces yet. Search, or scan a JO or item tag.</p>'}
+      ${d.items.length ? `<div class="csitems" id="csItems"><div class="dgrp"><span class="lab">Piece</span>${prices() ? '<span class="lab">Agreed value</span>' : ''}</div>${lines}</div>` : '<p class="muted">No pieces yet. Search, or scan a JO or item tag.</p>'}
       <div class="csacts"><button type="button" class="pill" id="csSave" ${S.r.setup === false ? 'disabled' : ''}>SAVE</button></div>
     </div>
   </div>`;
@@ -404,7 +404,23 @@ function wire(main) {
   const nm = $('csName'); if (nm) nm.oninput = () => { readDraft(); const p = personByName(nm.value); if (p && $('csPhone')) { S.draft.phone = p.phone || ''; $('csPhone').value = S.draft.phone; } };
   const q = $('csQ'); if (q) { q.oninput = () => { S.q = q.value; clearNote('add'); clearTimeout(qTimer); qTimer = setTimeout(() => search(main), 280); }; q.onkeydown = e => onScanKey(e, main, 'add', q); }
   main.querySelectorAll('[data-hit]').forEach(b => b.onclick = () => addHit(main, Number(b.dataset.hit)));
-  main.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { readDraft(); S.draft.items.splice(Number(b.dataset.rm), 1); draw(main); });
+  main.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
+    if (!confirm('Remove this piece from the sheet?')) return;
+    readDraft(); S.draft.items.splice(Number(b.dataset.rm), 1); draw(main);
+  });
+  const draft = document.getElementById('csItems');
+  if (draft && window.OYP.swipe) window.OYP.swipe(draft, {
+    item: '.csitem',
+    ignore: '.csval',
+    actions: function (row) {
+      const i = Number(row.getAttribute('data-csitem'));
+      return [{ label: 'Remove', confirm: 'Remove this piece from the sheet?', run: function () {
+        readDraft();
+        if (S.draft && S.draft.items) S.draft.items.splice(i, 1);
+        draw(main);
+      } }];
+    }
+  });
   const save = $('csSave'); if (save) save.onclick = () => saveSheet(main);
   const scan = $('csScan'); if (scan) scan.onclick = () => openScan(main);
   const pr = $('csPrint'); if (pr) pr.onclick = () => openPrint(main, S.id);

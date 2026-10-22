@@ -716,8 +716,17 @@ function download(kind, item) {
   });
 }
 function cancel(id) {
+  var it = itemById(id);
   return callPrint('printMark', { print_id: id, mark: 'cancelled', device_id: deviceId() }).then(function (r) {
-    markFailed(r, 'Could not cancel that sticker');
+    var failed = markFailed(r, 'Could not cancel that sticker');
+    if (!failed && it && root.OYP && root.OYP.toastUndo) {
+      root.OYP.toastUndo('Cancelled', function () {
+        return callPrint('printEnqueue', { jo: it.jo, kind: it.kind, reprint: true }).then(function (back) {
+          if (root.OYP && root.OYP.toast) root.OYP.toast(back && back.ok === false ? ((back && back.error) || 'Could not undo') : 'Back in the queue');
+          refresh();
+        });
+      });
+    }
     refresh();
   });
 }
@@ -746,6 +755,7 @@ function paint(r, fromServer) {
   document.querySelectorAll('[data-oyp-q]').forEach(function (el) {
     el.innerHTML = queueHtml(r);
     drawQueuePreviews(el, r);
+    bindQueueSwipe(el);
   });
   primeQueue(r);
 }
@@ -781,10 +791,24 @@ function queueHtml(r) {
     var buttons = failed
       ? '<button type="button" class="pill sm" data-q="again" data-id="' + id + '"' + dis + '>PRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '"' + dis + '>CANCEL</button>'
       : '<button type="button" class="pill sm" data-q="now" data-id="' + id + '"' + dis + '>PRINT</button><button type="button" class="pill sm outline" data-q="reprint" data-id="' + id + '"' + dis + '>REPRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '"' + dis + '>CANCEL</button>';
-    return '<div class="setp oyp-qrow"><canvas class="oyp-qprev" data-qi="' + i + '" aria-label="' + esc(kind) + ' preview"></canvas><div class="setl oyp-qmain"><b class="cn">' + screenLabel(it) + '</b><span class="kf"><span class="chip">' + esc(kind) + '</span><span class="chip">' + esc(st) + '</span></span>'
+    return '<div class="setp oyp-qrow" data-id="' + id + '" data-st="' + (failed ? 'failed' : 'queued') + '"><canvas class="oyp-qprev" data-qi="' + i + '" aria-label="' + esc(kind) + ' preview"></canvas><div class="setl oyp-qmain"><b class="cn">' + screenLabel(it) + '</b><span class="kf"><span class="chip">' + esc(kind) + '</span><span class="chip">' + esc(st) + '</span></span>'
       + (err ? '<span class="muted oyp-qerr">' + esc(err) + '</span>' : '')
       + '</div><div class="fbtns oyp-qbtns">' + buttons + '</div></div>';
   }).join('');
+}
+function bindQueueSwipe(el) {
+  if (!el || !root.OYP || !root.OYP.swipe) return;
+  root.OYP.swipe(el, {
+    item: '.oyp-qrow',
+    ignore: 'canvas, .oyp-qbtns',
+    actions: function (row) {
+      var id = row.getAttribute('data-id');
+      var acts = [];
+      if (row.getAttribute('data-st') === 'failed') acts.push({ label: 'Reprint', attrs: { 'data-q': 'reprint', 'data-id': id } });
+      acts.push({ label: 'Cancel', undoable: true, attrs: { 'data-q': 'cancel', 'data-id': id } });
+      return acts;
+    }
+  });
 }
 function drawQueuePreviews(el, r) {
   if (!el || !r || !r.ok || !root.OYPLabel) return;
