@@ -38,7 +38,7 @@ const state = { jo: '', page: 0, scan: '', stream: null, loop: null, lastQuad: n
 const MAX_PX = 1600, QUALITY = 0.8, THUMB_PX = 160, STEADY_MS = 900, COOLDOWN_MS = 2500;
 const PHOTO = { maxPx: MAX_PX, quality: QUALITY }, PHOTO_SRC_PX = MAX_PX;
 const JPEG_WORKER = 'jpeg-worker.js?v=20261021b';
-const PAGE_WORKER = 'page-worker.js?v=20261022a';
+const PAGE_WORKER = 'page-worker.js?v=20261022b';
 
 /* ---------- JO normalisation (shared logic with Code.gs) ---------- */
 function normJO(s) {
@@ -534,6 +534,20 @@ function dateTag(d) {
   return m.slice(5, 7) + m.slice(8, 10) + m.slice(2, 4);
 }
 function pageName(jo, page, d) { return `${jo}-p${page}-${dateTag(d)}.jpg`; }
+function pageThumb(out) { // a pixel copy of the whole card, taken before the zone crop runs
+  const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1);
+  const th = document.createElement('canvas');
+  th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
+  const g = th.getContext('2d');
+  g.drawImage(out, 0, 0, th.width, th.height);
+  const snap = g.getImageData(0, 0, th.width, th.height);
+  const copy = document.createElement('canvas');
+  copy.width = th.width; copy.height = th.height;
+  copy.getContext('2d').putImageData(snap, 0, 0);
+  const url = copy.toDataURL('image/jpeg', 0.6);
+  th.width = th.height = copy.width = copy.height = 0;
+  return url;
+}
 function newClientId() {
   try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
   return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
@@ -549,10 +563,7 @@ async function savePage(src, quad, replace, opt) { // the one save path: live sh
   const cvOk = !!(window.cv && window.cv.Mat);
   const plain = opt.plain != null ? !!opt.plain : (wantDetector && !cvOk && !opt.prepared);
   const enh = enhanceOn(), out = opt.prepared || renderOut(src, quad, enh, opt.maxPx || MAX_PX);
-  const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1), th = document.createElement('canvas');
-  th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
-  th.getContext('2d').drawImage(out, 0, 0, th.width, th.height);
-  const thumb = th.toDataURL('image/jpeg', 0.6);
+  const thumb = pageThumb(out);
   const image = await canvasJpeg(out, opt.quality || QUALITY); out.width = out.height = 0;
   let p;
   const shot = replace && replace.shot ? replace.shot : new Date();
@@ -1130,11 +1141,8 @@ async function reprocessPlain() { // a page saved before OpenCV arrived. Replace
         }
       }
       const out = renderOut(src, quad, enhanceOn(), MAX_PX);
+      const thumb = pageThumb(out);
       const image = await canvasJpeg(out, QUALITY);
-      const ts = Math.min(1, THUMB_PX / Math.max(out.width, out.height) || 1), th = document.createElement('canvas');
-      th.width = Math.max(1, Math.round(out.width * ts)); th.height = Math.max(1, Math.round(out.height * ts));
-      th.getContext('2d').drawImage(out, 0, 0, th.width, th.height);
-      const thumb = th.toDataURL('image/jpeg', 0.6);
       out.width = out.height = 0; src.width = src.height = 0;
       const plan = OYPQueue.reprocessPlan(it, realJO(state.jo));
       await queue.add(Object.assign({}, it, { image, thumb, plain: false, held: plan.held, boundJo: plan.bind ? plan.jo : '' }));
@@ -1549,10 +1557,10 @@ function capMatch(pg) {
 }
 function capState(pg) {
   const it = capMatch(pg);
-  if (!it) return (pg.held && cap.asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === 'OCR') ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Waiting' };
+  if (!it) return (pg.held && cap.asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === 'OCR') ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Uploading…' };
   if (it.state === 'needsjo') return { cls: 'err', t: 'Type JO' };
   if (it.state === 'uploading') return { cls: 'busy', t: 'Uploading…' };
-  if (it.state === 'waiting') return { cls: 'queued', t: isOn() ? (it.error ? 'Retrying' : 'Waiting') : 'Offline' };
+  if (it.state === 'waiting') return { cls: 'queued', t: isOn() ? (it.error ? 'Retrying' : 'Uploading…') : 'Offline' };
   if (it.state === 'saved') return { cls: 'ok', t: 'Saved' };
   if (it.state === 'mismatch') return { cls: 'mm', t: 'Check JO' };
   if (it.state === 'failed') return { cls: 'err', t: 'Failed', retry: it.id };

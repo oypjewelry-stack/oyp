@@ -111,8 +111,10 @@ function cropMat(cv, mat, zone) {
   if (x < 0) x = 0; if (y < 0) y = 0;
   if (x + w > W) w = W - x; if (y + h > H) h = H - y;
   if (w < 8 || h < 8) return null;
-  const roi = mat.roi(new cv.Rect(x, y, w, h)), out = new cv.Mat();
-  roi.copyTo(out); roi.delete();
+  // Clone the pixels. A ROI header shares the page buffer, and deleting it can free that buffer.
+  const roi = mat.roi(new cv.Rect(x, y, w, h));
+  const out = roi.clone();
+  roi.delete();
   return out;
 }
 function scaleTo(cv, mat, w, h) {
@@ -179,6 +181,9 @@ async function buildPage(d) {
     if (fitted !== page) page.delete();
     page = fitted;
     ms.orient = Math.round(t() - a);
+    // The tile is this bitmap. Copy it before the zone crop, which reads the same mat.
+    const bitmap = bitmapFromMat(cv, page);
+    const width = bitmap.width, height = bitmap.height;
     let zoneBitmap = null;
     a = t();
     if (d.zone && d.zone.w && d.zone.h) {
@@ -186,8 +191,6 @@ async function buildPage(d) {
       if (roi) { zoneBitmap = bitmapFromMat(cv, roi); roi.delete(); }
     }
     ms.crop = Math.round(t() - a);
-    const bitmap = bitmapFromMat(cv, page);
-    const width = bitmap.width, height = bitmap.height;
     dropHeld();
     if (d.enhance) { heldPage = page; return { bitmap, width, height, extra, quad, zoneBitmap, ms, hold: true }; }
     page.delete();

@@ -1747,13 +1747,13 @@ function joStatus(snap) {
   }
   var tiles = pages.map(function (pg) {
     var it = matchRow(pg);
-    if (!it) return (pg.held && asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === HOLD) ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Waiting' };
+    if (!it) return (pg.held && asking) ? { cls: 'mm', t: 'Type JO' } : (pg.held || pg.jo === HOLD) ? { cls: 'busy', t: 'Reading…' } : { cls: 'busy', t: 'Uploading…' };
     if (it.state === 'needsjo') {
       if (reading && sameRead(pg.scan)) return { cls: 'busy', t: 'Reading…' };
       return { cls: 'err', t: 'Type JO' };
     }
     if (it.state === 'uploading') return { cls: 'busy', t: 'Uploading…' };
-    if (it.state === 'waiting') return { cls: 'queued', t: online ? (it.error ? 'Retrying' : 'Waiting') : 'Offline' };
+    if (it.state === 'waiting') return { cls: 'queued', t: online ? (it.error ? 'Retrying' : 'Uploading…') : 'Offline' };
     if (it.state === 'saved') return { cls: 'ok', t: 'Saved' };
     if (it.state === 'mismatch') return { cls: 'mm', t: 'Check JO' };
     if (it.state === 'failed') return { cls: 'err', t: 'Failed', retry: it.id };
