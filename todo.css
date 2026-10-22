@@ -2,6 +2,9 @@
 .tdcount{font-family:var(--label);font-size:12px;font-weight:600;background:#111;color:#fff;border-radius:11px;padding:2px 9px;line-height:18px}
 .todo .chip.arch{margin-left:2px}
 .tdchips{flex-wrap:wrap;scrollbar-width:none;padding-bottom:2px;margin-bottom:14px}.tdchips .fchip{white-space:nowrap}
+.tdtools{display:flex;align-items:center;margin:0 0 14px}
+.tdseg{width:auto;height:34px;min-height:34px;max-height:34px;margin:0;flex:none;box-sizing:border-box}
+.todo .tdseg button{height:100%;min-height:0;padding:0 14px;flex:0 0 auto;line-height:1;box-sizing:border-box}
 .tdgrp{margin-top:6px}.tdgrp+.tdgrp{margin-top:16px}
 .tdgh{display:flex;align-items:center;gap:8px;border-bottom:1px solid #111;padding-bottom:6px;margin-bottom:2px}.tdgh .lab{color:#111;letter-spacing:.1em}
 .tdrow{display:grid;grid-template-columns:auto 1fr auto 18px;align-items:center;gap:calc(12px*var(--sp));padding:calc(11px*var(--sp)) calc(8px*var(--sp)) calc(11px*var(--sp)) calc(10px*var(--sp));border-bottom:1px solid #eee;cursor:pointer;font-size:calc(15px*var(--fs));line-height:1.35}

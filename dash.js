@@ -468,20 +468,26 @@ function todoHtml(esc) {
   if (D.todo.ok === false) return `<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3></span><span class="lab">Reminders · deadlines · suggestions</span></div><p class="muted">${esc(D.todo.error || 'Could not load')}</p></section>`;
   const T = window.OYPTodo;
   const all = (todoRows() || []).filter(it => !T || T.visible(it, D.user));
+  const who = T && T.readWho ? T.readWho() : 'mine';
+  const open = who === 'everyone' || !T ? all : all.filter(it => T.isMine(it, D.user));
   const counts = {};
-  all.forEach(it => { if (it.area && it.area !== 'manual') counts[it.area] = (counts[it.area] || 0) + 1; });
+  open.forEach(it => { if (it.area && it.area !== 'manual') counts[it.area] = (counts[it.area] || 0) + 1; });
   let filt = D.todoFilt || 'all';
   if (filt !== 'all' && !counts[filt]) { filt = 'all'; D.todoFilt = 'all'; }
   const chips = TODO_CHIPS.filter(([k]) => k === 'all' || counts[k]);
-  const shown = filt === 'all' ? all : all.filter(it => it.area === filt);
+  const shown = filt === 'all' ? open : open.filter(it => it.area === filt);
   const vis = !D.todoAll && shown.length > TODO_VIS ? shown.slice(0, TODO_VIS) : shown;
-  const body = T ? T.listHtml(esc, vis, { user: D.user, today: T.today(), people: D.todo.people || [], openId: D.todoOpen, page: false }) : '<p class="muted">All clear.</p>';
+  const empty = who === 'mine' ? '<p class="muted">Nothing assigned to you. Everyone has the rest.</p>' : '<p class="muted">All clear.</p>';
+  const body = T ? T.listHtml(esc, vis, { user: D.user, today: T.today(), people: D.todo.people || [], openId: D.todoOpen, page: false, empty: empty }) : '<p class="muted">All clear.</p>';
   const more = shown.length > TODO_VIS ? `<button type="button" class="lnk tdall" data-td="all">${D.todoAll ? 'Show less' : 'Show all (' + shown.length + ')'}</button>` : '';
-  const badge = D.todo.total > all.length ? D.todo.total : all.length;
+  const badge = who === 'everyone' && D.todo.total > all.length ? D.todo.total : open.length;
+  const whose = who === 'everyone' ? 'Everyone' : 'Yours';
   const add = T ? T.addBar(esc, D.todo.people || []) : '';
-  return `<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3><span class="tdcount">${badge}</span></span><span class="lab">Reminders · deadlines · suggestions</span></div>
+  const tog = T && T.whoBar ? `<div class="tdtools">${T.whoBar(who)}</div>` : '';
+  return `<section class="dcard todo" data-dsec="todo"><div class="dtitle"><span class="dname"><h3>To do</h3><span class="tdcount" aria-label="${badge} ${whose === 'Yours' ? 'yours' : 'for everyone'}">${badge}</span></span><span class="lab">${whose} · reminders · deadlines · suggestions</span></div>
     ${add}
-    <div class="rvchips tdchips" role="tablist" aria-label="To do areas">${chips.map(([k, lab]) => `<button type="button" class="fchip${filt === k ? ' on' : ''}" data-tdf="${k}">${lab}<b>${k === 'all' ? all.length : counts[k]}</b></button>`).join('')}</div>
+    ${tog}
+    <div class="rvchips tdchips" role="tablist" aria-label="To do areas">${chips.map(([k, lab]) => `<button type="button" class="fchip${filt === k ? ' on' : ''}" data-tdf="${k}">${lab}<b>${k === 'all' ? open.length : counts[k]}</b></button>`).join('')}</div>
     ${body}
     ${more}
     <p class="muted tdfoot">Enter adds a to-do. Tick finishes one you typed. Tap any other line to open it. ⋯ gives Done or Snooze.</p></section>`;
@@ -550,6 +556,7 @@ async function todoSubmitAdd(main, u) {
     return window.OYP.toast ? window.OYP.toast((r && r.error) || 'Could not save') : alert((r && r.error) || 'Could not save');
   }
   if (cur && r.item) Object.assign(cur, r.item);
+  if (window.OYPTodo && window.OYPTodo.readWho && window.OYPTodo.readWho() !== 'everyone' && !window.OYPTodo.isMine(cur || item, u || D.user) && window.OYP.toast) window.OYP.toast('Added. It is under Everyone.');
   if (cur && cur._done && r.item) {
     const d = await window.OYP.call('todoDone', { id: r.item.id });
     if (d && d.ok) {
@@ -575,6 +582,8 @@ function wireTodo(main) {
   sec.dataset.tdwire = '1';
   sec.addEventListener('submit', e => { if (e.target.closest('.tdadd')) { e.preventDefault(); todoSubmitAdd(main, D.user); } });
   sec.addEventListener('click', async e => {
+    const whoBtn = e.target.closest('[data-tdwho]');
+    if (whoBtn && window.OYPTodo && window.OYPTodo.writeWho) { e.preventDefault(); window.OYPTodo.writeWho(whoBtn.dataset.tdwho); D.todoOpen = ''; paintTodo(main); return; }
     const chip = e.target.closest('[data-tdf]');
     if (chip) { e.preventDefault(); D.todoFilt = chip.dataset.tdf; D.todoOpen = ''; paintTodo(main); return; }
     const btn = e.target.closest('[data-td]');

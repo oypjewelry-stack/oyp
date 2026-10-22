@@ -1,11 +1,15 @@
 /* OYP back office: manual to-dos on the dashboard card and the To do page (#/todo).
-   The chip is the same in both places: Mine, or From the person who assigned it, plus the due date. */
+   The chip is the same in both places: Mine, or From the person who assigned it, plus the due date.
+   The list opens on Mine (assigned to the signed-in username). Everyone is the rest of what this role can see.
+   The choice is remembered on this phone (oypTodoWho). */
 (function (root) {
 'use strict';
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const AREAS = [['all', 'All'], ['appt', 'Appointments'], ['prod', 'Production'], ['pay', 'Payments'], ['quote', 'Quotes'], ['cons', 'Consignment'], ['stock', 'Stock & rate'], ['msg', 'Messages'], ['shop', 'Shop'], ['rev', 'To review']];
-const SCOPES = [['mine', 'Mine'], ['everyone', 'Everyone'], ['overdue', 'Overdue'], ['done', 'Done']];
+const WHO = [['mine', 'Mine'], ['everyone', 'Everyone']];
+const VIEWS = [['overdue', 'Overdue'], ['done', 'Done']];
+const WHO_KEY = 'oypTodoWho';
 const BUCKET = { today: 'Today', week: 'This week', idea: 'Suggestions' };
 const RANK = { today: 0, week: 1, idea: 2 };
 
@@ -14,6 +18,31 @@ function dow(day) { return new Date(day + 'T00:00:00Z').getUTCDay(); }
 function monday(day) { return addD(day, -((dow(day) + 6) % 7)); }
 function today() { return new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10); }
 function meOf(user) { return user && String(user.username || '').trim().toLowerCase(); }
+function namedAssignee(it) {
+  const a = String((it && it.assignee) || '').trim().toLowerCase();
+  if (!a || a === 'everyone' || a === 'all') return '';
+  return a;
+}
+function manages(user) {
+  const role = user && String(user.role || '');
+  return role === 'admin' || role === 'production_manager';
+}
+function readWho() {
+  try {
+    const v = root.localStorage && root.localStorage.getItem(WHO_KEY);
+    if (v === 'everyone' || v === 'mine') return v;
+  } catch (e) {}
+  return 'mine';
+}
+function writeWho(v) {
+  const next = v === 'everyone' ? 'everyone' : 'mine';
+  try { if (root.localStorage) root.localStorage.setItem(WHO_KEY, next); } catch (e) {}
+  return next;
+}
+function whoBar(who) {
+  const cur = who === 'everyone' ? 'everyone' : 'mine';
+  return `<div class="seg tdseg" role="tablist" aria-label="Whose to-dos">${WHO.map(([k, lab]) => `<button type="button" role="tab" data-tdwho="${k}" class="${cur === k ? 'on' : ''}" aria-selected="${cur === k ? 'true' : 'false'}">${lab}</button>`).join('')}</div>`;
+}
 function dueBit(due, day) {
   if (!due) return '';
   const mon = monday(day), sun = addD(mon, 6);
@@ -28,12 +57,16 @@ function chipLabel(it, user, day) {
   return label;
 }
 function isMine(it, user) {
-  if (!it || !it.manual) return false;
+  if (!it || !user) return false;
   const me = meOf(user);
-  if (!me) return false;
-  if (String(it.created_by || '').trim().toLowerCase() === me) return true;
-  const a = String(it.assignee || '').trim().toLowerCase();
-  return !!a && a !== 'everyone' && a !== 'all' && a === me;
+  const named = namedAssignee(it);
+  if (named) return !!me && named === me;
+  // A blank assignee on a typed row means Everyone (the add-line option), so it stays out of Mine.
+  // Automatic lines never record an assignee. Admin and the production manager — the same pair
+  // the dashboard already treats as management — keep those shop reminders in Mine.
+  // Staff and accounting see them only under Everyone.
+  if (!it.manual) return manages(user);
+  return false;
 }
 function visible(it, user) {
   if (!it || !it.manual) return true;
@@ -103,7 +136,7 @@ function listHtml(esc, items, o) {
   return groups.map(g => `<div class="tdgrp"><div class="tdgh"><span class="lab">${BUCKET[g[0].bucket] || 'This week'}</span><span class="kn">${g.length}</span></div>${g.map(it => rowHtml(esc, it, Object.assign({}, o, { open: o.openId === it.id || o.editId === it.id, editing: o.editId === it.id }))).join('')}</div>`).join('');
 }
 
-const S = { data: null, scope: 'everyone', area: 'all', openId: '', editId: '', user: null, focus: false };
+const S = { data: null, who: 'mine', scope: 'open', area: 'all', openId: '', editId: '', user: null, focus: false };
 function toastUndo(msg, fn) {
   if (root.OYP && typeof root.OYP.toastUndo === 'function') return root.OYP.toastUndo(msg, fn);
   const el = document.getElementById('toast');
@@ -117,18 +150,23 @@ function toastUndo(msg, fn) {
   toastUndo.t = setTimeout(() => el.classList.add('hidden'), 5000);
 }
 function pool() {
-  const d = S.data || {}, user = S.user;
-  return {
-    open: (d.items || []).filter(it => visible(it, user) && it.status !== 'done'),
-    done: (d.done || []).filter(it => visible(it, user))
-  };
+  const d = S.data || {}, user = S.user, who = S.who === 'everyone' ? 'everyone' : 'mine';
+  const open = (d.items || []).filter(it => visible(it, user) && it.status !== 'done');
+  const done = (d.done || []).filter(it => visible(it, user));
+  if (who === 'everyone') return { open: open, done: done };
+  return { open: open.filter(it => isMine(it, user)), done: done.filter(it => isMine(it, user)) };
 }
 function scoped(name) {
   const p = pool();
   if (name === 'done') return p.done;
-  if (name === 'mine') return p.open.filter(it => isMine(it, S.user));
   if (name === 'overdue') return p.open.filter(it => it.late);
   return p.open;
+}
+function emptyHtml() {
+  if (S.scope === 'done') return S.who === 'mine' ? '<p class="muted">Nothing of yours is done yet.</p>' : '<p class="muted">Nothing done yet.</p>';
+  if (S.scope === 'overdue') return S.who === 'mine' ? '<p class="muted">Nothing of yours is overdue.</p>' : '<p class="muted">Nothing overdue.</p>';
+  if (S.who === 'mine') return '<p class="muted">Nothing assigned to you. Everyone has the rest.</p>';
+  return '<p class="muted">All clear.</p>';
 }
 function findItem(id) {
   const d = S.data || {};
@@ -136,23 +174,24 @@ function findItem(id) {
 }
 function draw(main) {
   const esc = root.OYP.esc, d = S.data, day = today();
+  S.who = readWho();
   const title = document.getElementById('title');
   if (title) title.textContent = 'TO DO';
   if (!d) { main.innerHTML = '<section class="dcard todo" data-tdpage="1"><div class="skel tdskel" aria-busy="true" aria-label="Loading to do"><i></i><i></i><i></i></div></section>'; return; }
   if (d.ok === false) { main.innerHTML = `<section class="dcard todo" data-tdpage="1"><p class="muted">${esc(d.error || 'Could not load')}</p></section>`; return; }
   const p = pool();
-  const scopeN = { mine: p.open.filter(it => isMine(it, S.user)).length, everyone: p.open.length, overdue: p.open.filter(it => it.late).length, done: p.done.length };
+  const viewN = { overdue: p.open.filter(it => it.late).length, done: p.done.length };
   const base = scoped(S.scope);
   const counts = {};
   base.forEach(it => { if (it.area && it.area !== 'manual') counts[it.area] = (counts[it.area] || 0) + 1; });
   if (S.area !== 'all' && !counts[S.area]) S.area = 'all';
   const areas = AREAS.filter(([k]) => k === 'all' || counts[k]);
   const shown = S.area === 'all' ? base : base.filter(it => it.area === S.area);
-  const empty = S.scope === 'done' ? '<p class="muted">Nothing done yet.</p>' : '<p class="muted">All clear.</p>';
   main.innerHTML = `<section class="dcard todo" data-tdpage="1">${addBar(esc, d.people || [])}
-    <div class="rvchips tdchips" role="tablist" aria-label="Whose to-dos">${SCOPES.map(([k, lab]) => `<button type="button" class="fchip${S.scope === k ? ' on' : ''}" data-tdscope="${k}">${lab}<b>${scopeN[k]}</b></button>`).join('')}</div>
+    <div class="tdtools">${whoBar(S.who)}</div>
+    <div class="rvchips tdchips" role="tablist" aria-label="To do status">${VIEWS.map(([k, lab]) => `<button type="button" class="fchip${S.scope === k ? ' on' : ''}" data-tdscope="${k}" aria-pressed="${S.scope === k ? 'true' : 'false'}">${lab}<b>${viewN[k]}</b></button>`).join('')}</div>
     <div class="rvchips tdchips" role="tablist" aria-label="To do areas">${areas.map(([k, lab]) => `<button type="button" class="fchip${S.area === k ? ' on' : ''}" data-tdf="${k}">${lab}<b>${k === 'all' ? base.length : counts[k]}</b></button>`).join('')}</div>
-    ${listHtml(esc, shown, { user: S.user, today: day, people: d.people || [], openId: S.openId, editId: S.editId, page: true, empty: empty })}</section>`;
+    ${listHtml(esc, shown, { user: S.user, today: day, people: d.people || [], openId: S.openId, editId: S.editId, page: true, empty: emptyHtml() })}</section>`;
   wire(main);
   const edit = S.focus && main.querySelector('.tdin');
   if (edit) { edit.focus(); const n = edit.value.length; try { edit.setSelectionRange(n, n); } catch (e) {} }
@@ -189,6 +228,7 @@ async function submitAdd(main) {
   }
   if (cur && r.item) Object.assign(cur, r.item);
   draw(main);
+  if (S.who !== 'everyone' && cur && !isMine(cur, S.user)) toast('Added. It is under Everyone.');
 }
 async function saveEdit(main, row) {
   if (!row || S.skip) return;
@@ -285,8 +325,10 @@ function wire(main) {
     }, 80);
   });
   sec.addEventListener('click', async e => {
+    const whoBtn = e.target.closest('[data-tdwho]');
+    if (whoBtn) { writeWho(whoBtn.dataset.tdwho); S.who = readWho(); S.openId = ''; S.editId = ''; draw(main); return; }
     const scope = e.target.closest('[data-tdscope]');
-    if (scope) { S.scope = scope.dataset.tdscope; S.openId = ''; S.editId = ''; draw(main); return; }
+    if (scope) { S.scope = S.scope === scope.dataset.tdscope ? 'open' : scope.dataset.tdscope; S.openId = ''; S.editId = ''; draw(main); return; }
     const chip = e.target.closest('[data-tdf]');
     if (chip) { S.area = chip.dataset.tdf; S.openId = ''; draw(main); return; }
     const btn = e.target.closest('[data-td]');
@@ -329,7 +371,7 @@ function bindSwipe(sec) {
   if (!sec || !root.OYP || !root.OYP.swipe) return;
   root.OYP.swipe(sec, {
     item: '.tdrow',
-    ignore: '.tdmore, .tdtick, .tddel, .tdacts, .tdadd, .tdedit',
+    ignore: '.tdmore, .tdtick, .tddel, .tdacts, .tdadd, .tdedit, .tdseg',
     actions: function (row) {
       const id = row.getAttribute('data-id') || '';
       if (row.classList.contains('manual')) {
@@ -345,6 +387,7 @@ function bindSwipe(sec) {
 }
 function render(main, u) {
   S.user = u;
+  S.who = readWho();
   const title = document.getElementById('title');
   if (title) title.textContent = 'TO DO';
   const live = root.OYP.here();
@@ -356,6 +399,6 @@ function render(main, u) {
     draw(main);
   }).catch(() => { if (!live()) return; S.data = { ok: false, items: [], done: [], people: [], error: 'Could not load' }; draw(main); });
 }
-root.OYPTodo = { today: today, chipLabel: chipLabel, dueBit: dueBit, isMine: isMine, visible: visible, bucketOf: bucketOf, compare: compare, fresh: fresh, areas: AREAS, addBar: addBar, listHtml: listHtml, rowHtml: rowHtml, render: render, bindSwipe: bindSwipe };
+root.OYPTodo = { today: today, chipLabel: chipLabel, dueBit: dueBit, isMine: isMine, visible: visible, bucketOf: bucketOf, compare: compare, fresh: fresh, areas: AREAS, addBar: addBar, listHtml: listHtml, rowHtml: rowHtml, readWho: readWho, writeWho: writeWho, whoBar: whoBar, render: render, bindSwipe: bindSwipe };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPTodo;
 })(typeof window !== 'undefined' ? window : globalThis);
