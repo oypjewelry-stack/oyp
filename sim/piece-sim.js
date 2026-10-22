@@ -132,15 +132,15 @@ function has(file, needle) { eq(live(path.join(root, file)).indexOf(needle) >= 0
 has('dash.js', 'window.OYP.piece(j.client, j.jo)');
 has('dash.js', 'with: c.consignee');
 has('inv.js', 'window.OYP.piece(j.client, j.jo)');
-has('production.js', 'window.OYP.piece(c.client, c.jo)');
+has('production.js', 'window.OYP.piece(c.client, id)');
 has('review.js', 'window.OYP.piece(j.client, j.jo)');
 has('consign.js', 'function pieceBits');
 has('staff/index.html', 'app.css?v=45');
 has('staff/index.html', 'app.js?v=34');
 has('staff/index.html', 'dash.js?v=32');
 has('staff/index.html', 'inv.js?v=13');
-has('staff/index.html', 'production.js?v=11');
-has('staff/index.html', 'production.css?v=9');
+has('staff/index.html', 'production.js?v=13');
+has('staff/index.html', 'production.css?v=11');
 has('staff/index.html', 'consign.js?v=11');
 has('staff/index.html', 'consign.css?v=10');
 has('staff/index.html', 'review.js?v=20');
