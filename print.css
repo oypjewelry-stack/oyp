@@ -11,6 +11,7 @@
 .oyp-pr-pair{display:inline-flex;align-items:center;gap:6px}
 .side a[data-oyp-printer] .oyp-pr-name,.menu a[data-oyp-printer] .oyp-pr-name{font:inherit;letter-spacing:inherit;text-transform:inherit}
 .pr-link .oyp-pr-name{font-family:var(--label,Inter,Helvetica,sans-serif);font-weight:500;font-size:calc(12px * var(--fs,1));letter-spacing:.08em;text-transform:uppercase;color:#111}
+.pr-link .setv .pill.sm{box-sizing:border-box;height:var(--d-btnsm-hp,34px);min-height:var(--d-btnsm-hp,34px);padding:0 calc(18px * var(--sp,1));display:inline-flex;align-items:center;justify-content:center;line-height:1;font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:var(--d-btnsm-fp,calc(14px * var(--hs,1)));font-weight:var(--d-btnsm-g,500)}
 .oyp-pr-pair .oyp-pr-dot{margin-left:0}
 .oyp-pr-dot{display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:50%;background:#b3261e;vertical-align:1px}
 .oyp-pr-dot.on{background:#1b7f3a}
