@@ -53,6 +53,8 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .oyp-pr-acts .pill.sm.outline,.oyp-qbtns .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);letter-spacing:0;border-width:1px;padding-top:calc(9px*var(--sp) - 1px);padding-bottom:calc(9px*var(--sp) - 1px)}
 
 .oyp-qerr{display:block;margin-top:calc(4px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(12px * var(--fs,1));font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;color:#777}
+.oyp-qhold{display:block;margin:0 0 calc(8px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(13px * var(--fs,1));font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;color:#8a5a00}
+.oyp-slotdbg{display:block;margin:0 0 calc(8px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(12px * var(--fs,1));font-weight:500;line-height:1.4;letter-spacing:0;text-transform:none;color:#444;word-break:break-word}
 :where(.oyp-qbtns button:disabled){opacity:.4;cursor:default}
 .oyp-qmain{flex:1;min-width:140px}
 .oyp-qprev{width:84px;height:auto;flex:none;display:block;background:#8e8e8e;border-radius:calc(8px * var(--rad,1))}

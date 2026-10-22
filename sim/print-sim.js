@@ -310,9 +310,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=20') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=47') && index.includes('app.js?v=34') && index.includes('settings.js?v=20') && index.includes('print.css?v=14') && index.includes('app.css?v=48') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=13') && index.includes('production.css?v=11') && index.includes('photos.js?v=2') && index.includes('review.js?v=20'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=20') && read('nav.js').includes('scan-zones.js?v=16') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=20') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=14') && read('staff/print-test.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('app.css?v=48'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=21') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=47') && index.includes('app.js?v=34') && index.includes('settings.js?v=20') && index.includes('print.css?v=15') && index.includes('app.css?v=48') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=13') && index.includes('production.css?v=11') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && read('print.js').includes('print.css?v=15') && read('sim/swipe-preview.html').includes('print.css?v=15'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=21') && read('nav.js').includes('scan-zones.js?v=16') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=21') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=15') && read('staff/print-test.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('app.css?v=48'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
@@ -1122,6 +1122,82 @@ drain().then(function () {
         const marks = named.sandbox.OYPPrint.printerMarks();
         eq(marks.indexOf('B31') >= 0 && marks.indexOf('B1') >= 0, 'a B31 that answers as a B1 is named from the Bluetooth device');
         eq(tag && !onPeer(tag) && card && onPeer(card) && intake && onPeer(intake), 'JO cards and intake stickers follow the B31 name, not the slot or the model id');
+      });
+    });
+  });
+}).then(function () {
+  function claimFor(box, id) {
+    return box.calls.filter(function (b) { return b.mark === 'claim' && b.print_id === id; }).pop();
+  }
+  function onPeer(body) { return !!(body && String(body.device_id || '').slice(-2) === '-2'); }
+  function watchQueue(box) {
+    const host = { innerHTML: '', querySelectorAll() { return []; }, setAttribute() {} };
+    box.sandbox.document.querySelectorAll = function (sel) {
+      if (sel === '[data-oyp-q]') return [host];
+      return [];
+    };
+    return host;
+  }
+  const live = [
+    { print_id: 'pq-tag', jo: '26-363', kind: 'jewelry_tag', status: 'queued', client: 'Ada' },
+    { print_id: 'pq-card', jo: '26-363', kind: 'jo_card', status: 'queued', current_stage: 'intake', client: 'Ada' }
+  ];
+  const staleMode = {
+    auto: true,
+    task: 'B1',
+    model: 'B1',
+    kindsByModel: {
+      B1: { jo_card: true, jewelry_tag: true },
+      B31: { jo_card: true, jewelry_tag: true }
+    },
+    links: [
+      { model: 'B1', btId: 'bt-b31' },
+      { model: 'B1', btId: 'bt-b1' }
+    ]
+  };
+  const both = bootPrint({
+    drive: true,
+    models: ['B1', 'B1'],
+    names: ['B31-HB03011342', 'B1-HC17121009'],
+    pages: ['hold', 'hold'],
+    queue: { ok: true, auto: true, items: live },
+    store: { oypPrint: JSON.stringify(staleMode) }
+  });
+  const bothHost = watchQueue(both);
+  both.sandbox.OYPPrint.connect('bluetooth');
+  both.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+  return drain().then(function () {
+    const tag = claimFor(both, 'pq-tag'), card = claimFor(both, 'pq-card');
+    const saved = JSON.parse(both.store.oypPrint);
+    const slot0 = saved.links[0], slot1 = saved.links[1];
+    eq(slot0 && slot0.model === 'B31' && slot1 && slot1.model === 'B1' && saved.task === 'B1', 'the Bluetooth names B31-HB03011342 and B1-HC17121009 override a saved print mode of B1');
+    eq(tag && onPeer(tag) && card && !onPeer(card), 'with both printers connected, the jewelry tag stays on the B1 and the JO card stays on the B31');
+    eq(both.encodes.indexOf(384) >= 0 && both.encodes.indexOf(600) >= 0, 'the tag uses the B1 head and the JO card uses the B31 head');
+    eq(bothHost.innerHTML.indexOf('B31-HB03011342') >= 0 && bothHost.innerHTML.indexOf('model B31') >= 0 && bothHost.innerHTML.indexOf('B1-HC17121009') >= 0 && bothHost.innerHTML.indexOf('model B1') >= 0 && bothHost.innerHTML.indexOf('saved jewelry tag ignored') >= 0, 'the print station shows each slot name, model, connection, and kinds');
+    const onlyB31 = bootPrint({
+      drive: true,
+      models: ['B1'],
+      names: ['B31-HB03011342'],
+      queue: { ok: true, auto: true, items: live },
+      store: { oypPrint: JSON.stringify(staleMode) }
+    });
+    const b31Host = watchQueue(onlyB31);
+    onlyB31.sandbox.OYPPrint.connect('bluetooth');
+    return drain().then(function () {
+      eq(claimFor(onlyB31, 'pq-card') && !onPeer(claimFor(onlyB31, 'pq-card')) && !claimFor(onlyB31, 'pq-tag'), 'a B31 with a saved jewelry-tag flag still does not print the tag');
+      eq(b31Host.innerHTML.indexOf('id="prHold"') >= 0 && b31Host.innerHTML.indexOf('Connect the B1 to print jewelry tags') >= 0 && b31Host.innerHTML.indexOf('pq-tag') >= 0, 'a held jewelry tag stays in the queue with Connect the B1 to print jewelry tags');
+      const onlyB1 = bootPrint({
+        drive: true,
+        models: ['B1'],
+        names: ['B1-HC17121009'],
+        queue: { ok: true, auto: true, items: live },
+        store: { oypPrint: JSON.stringify(staleMode) }
+      });
+      const b1Host = watchQueue(onlyB1);
+      onlyB1.sandbox.OYPPrint.connect('bluetooth');
+      return drain().then(function () {
+        eq(claimFor(onlyB1, 'pq-tag') && !claimFor(onlyB1, 'pq-card'), 'a saved B31 jewelry-tag flag does not move the JO card onto the B1');
+        eq(b1Host.innerHTML.indexOf('id="prHold"') >= 0 && b1Host.innerHTML.indexOf('Connect the B31 to print JO stickers') >= 0 && b1Host.innerHTML.indexOf('pq-card') >= 0 && b1Host.innerHTML.indexOf('class="oyp-qhold"') >= 0, 'a held JO card stays visible in the queue with Connect the B31 to print JO stickers');
       });
     });
   });

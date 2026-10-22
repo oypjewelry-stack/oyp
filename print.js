@@ -185,10 +185,19 @@ function kinds(link) {
   if (model === 'B1') out.jo_card = false;
   return out;
 }
+function b1Connected() {
+  var list = [state, peer], i;
+  for (i = 0; i < list.length; i++) if (list[i].connected && list[i].model === 'B1') return true;
+  return false;
+}
+/* A saved kinds switch can turn a kind off. It cannot give jewelry tags to a B31 while a B1 is connected. */
 function printsKind(kind, link) {
   if (!link || !knownModel(link.model)) return false;
   var k = kinds(link);
-  if (isTagKind(kind)) return link.model === 'B1' ? k.jewelry_tag !== false : link.model === 'B31' && !!k.jewelry_tag;
+  if (isTagKind(kind)) {
+    if (link.model === 'B31') return !b1Connected() && !!k.jewelry_tag;
+    return link.model === 'B1' && k.jewelry_tag !== false;
+  }
   return link.model === 'B31' && k.jo_card !== false;
 }
 /* The owning model prints the sticker. Another printer is used only when that model is connected and its switch is off. */
@@ -301,7 +310,7 @@ function markFailed(r, fallback) {
 function labelOpts(item, kind, link) {
   item = item || {};
   link = link || state;
-  var model = item.model || link.model || state.model || load().model || 'B1';
+  var model = item.model || link.model || 'B1';
   var sh = shiftPx(model);
   return {
     kind: kind || item.kind || 'jo_card',
@@ -332,7 +341,7 @@ function clock() {
 function logMs(phase, ms, extra) {
   try { console.log('[oyp-print] ' + phase + ' ' + Math.round(ms) + 'ms' + (extra ? ' ' + extra : '')); } catch (e) {}
 }
-/* Settings > Labels > Print mode. Manual wins, then the task this model last finished, then our map. */
+/* Settings > Labels > Print mode. This is the page task only, never the printer model. Manual wins, then the task this model last finished, then our map. */
 function taskName(link) {
   link = link || state;
   var client = link.client;
@@ -861,15 +870,49 @@ function rowError(raw) {
   if (/timeout waiting|timed out|waited for e4|did not respond/i.test(m)) return 'Printer did not respond';
   return m;
 }
+function slotKindText(link) {
+  if (!knownModel(link.model)) return 'none';
+  var saved = kinds(link), parts = [];
+  if (printsKind('jo_card', link)) parts.push('JO card');
+  if (printsKind('jewelry_tag', link)) parts.push('jewelry tag');
+  var text = parts.length ? parts.join(' + ') : 'none';
+  if (link.model === 'B31' && saved.jewelry_tag && !printsKind('jewelry_tag', link)) text += ' (saved jewelry tag ignored)';
+  return text;
+}
+function slotDebugText() {
+  return [state, peer].map(function (link, i) {
+    var conn = link.reconnecting ? 'reconnecting' : (link.connected ? 'connected' : 'not connected');
+    return 'Slot ' + (i + 1) + ': ' + (link.deviceName || 'no name') + ' · model ' + (link.model || 'none') + ' · ' + conn + ' · ' + slotKindText(link);
+  }).join(' | ');
+}
+function slotDebugHtml() {
+  return '<p class="oyp-slotdbg" data-oyp-slots>' + esc(slotDebugText()) + '</p>';
+}
+function holdBanner(items) {
+  var msgs = [], seen = {}, i, it, msg;
+  items = items || [];
+  for (i = 0; i < items.length; i++) {
+    it = items[i];
+    if (!it || it.status !== 'queued' || linkFor(it.kind)) continue;
+    msg = holdText(it.kind);
+    if (seen[msg]) continue;
+    seen[msg] = 1;
+    msgs.push(msg);
+  }
+  if (!msgs.length) return '';
+  return '<p class="oyp-qhold" id="prHold">' + msgs.map(esc).join(' ') + '</p>';
+}
 function queueHtml(r) {
-  if (!r || !r.ok) return '<p class="muted oyp-qempty">' + esc(queueNote(r)) + '</p>';
+  var debug = slotDebugHtml();
+  if (!r || !r.ok) return debug + '<p class="muted oyp-qempty">' + esc(queueNote(r)) + '</p>';
   var items = r.items || [];
-  if (!items.length) return '<p class="muted oyp-qempty">No stickers waiting</p>';
+  var banner = holdBanner(items);
+  if (!items.length) return debug + banner + '<p class="muted oyp-qempty">No stickers waiting</p>';
   var dis = anyPrinting() ? ' disabled' : '';
   var held = 0;
   items.forEach(function (it) { if (it.status === 'queued' && !serverAuto(it.kind)) held += 1; });
   var drain = held ? '<div class="fbtns oyp-qbtns"><button type="button" class="pill sm" data-q="drain"' + dis + '>Print queued</button></div>' : '';
-  return drain + items.map(function (it, i) {
+  return debug + banner + drain + items.map(function (it, i) {
     var kind = isTagKind(it.kind) ? 'Jewelry tag' : 'JO card';
     var failed = it.status === 'failed';
     var st = failed ? 'Failed' : 'Queued';
@@ -995,7 +1038,7 @@ function nextLocal(link) {
   var items = (state.last && state.last.items) || [], now = Date.now(), i, it;
   for (i = 0; i < items.length; i++) {
     it = items[i];
-    if (!it || it.status !== 'queued' || !printsKind(it.kind, link)) continue;
+    if (!it || it.status !== 'queued' || linkFor(it.kind) !== link) continue;
     if (!state.printQueued && !serverAuto(it.kind)) continue;
     if (state.inflight[it.print_id] || state.done[it.print_id] || state.busy[it.print_id]) continue;
     if (state.cool[it.print_id] && state.cool[it.print_id] > now) continue;
@@ -1131,7 +1174,9 @@ function onConnected(link, transport) {
   var meta = (link.client && link.client.getModelMetadata && link.client.getModelMetadata()) || {};
   var named = modelFromName(link.deviceName);
   var reported = knownModel(meta.model);
-  link.model = detectModel(link.deviceName, meta, link.model);
+  /* The Bluetooth name decides which kinds this link prints. Print mode and a saved model do not. */
+  var fromName = modelFromName(link.deviceName);
+  link.model = fromName || detectModel('', meta, link.model);
   if (named && reported && named !== reported) link.head = named === 'B31' ? 600 : 384;
   else link.head = meta.printheadPixels || link.head || (link.model === 'B31' ? 600 : link.model === 'B1' ? 384 : 0);
   link.dir = meta.printDirection || link.dir || 'top';
@@ -1378,6 +1423,11 @@ function paintDots() {
       if (el.title !== title) el.title = title;
     });
     paintLinks();
+    var sig = slotDebugText();
+    if (paintDots.sig !== sig) {
+      paintDots.sig = sig;
+      if (state.last) paint(state.last);
+    }
   } finally {
     paintDots.busy = false;
   }
@@ -1567,6 +1617,7 @@ function paintLinks() {
     var other = links[0] === peer ? state : peer;
     if (slotOpen(other)) html += linkRow(other, slotIndex(other), 'Second printer');
   }
+  html += slotDebugHtml();
   if (host.getAttribute('data-paint') === html) return;
   host.setAttribute('data-paint', html);
   host.innerHTML = html;
@@ -1682,7 +1733,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=14';
+  link.href = (base || '') + 'print.css?v=15';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
