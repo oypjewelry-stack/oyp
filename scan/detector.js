@@ -123,7 +123,7 @@ function rectangularity(q, W, H) {
   const p1 = dd(ang(P[0], P[1]), ang(P[3], P[2])), p2 = dd(ang(P[0], P[3]), ang(P[1], P[2]));
   const worst = Math.max(p1, p2); return worst < 4 ? 1 : Math.max(0.2, 1 - (worst - 4) / 12);
 }
-// soft prior on card shape (long/short side). JO cards measured ~1.55 (5.5x8.5in).
+// soft prior on card shape (long/short side). Owner measured both cards at 136mm x 217.5mm.
 function aspectScore(q, W, H, prior) {
   const P = q.map(([x, y]) => [x * W, y * H]), d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const w = (d(P[0], P[1]) + d(P[3], P[2])) / 2, h = (d(P[0], P[3]) + d(P[1], P[2])) / 2;
@@ -161,7 +161,7 @@ function detectQuad(cv, rgba, opts) {
   cv.morphologyEx(tmp, tmp, cv.MORPH_CLOSE, k7, new cv.Point(-1, -1), 2);
   quadsFromMask(cv, tmp, W, H, 'adapt', cands);
   const sup = new cv.Mat(); cv.Canny(blur, edges, 15, 45); cv.dilate(edges, sup, k3, new cv.Point(-1, -1), 2);
-  const prior = opts.aspect || 1.55;
+  const prior = opts.aspect || CARD_RATIO;
   cv.Canny(blur, edges, 20, 60); rectQuads(cv, edges, sup, W, H, prior, cands);
   for (const c of cands) { c.support = support(sup, c.quad, W, H); c.rect = rectangularity(c.quad, W, H); c.asp = aspectScore(c.quad, W, H, prior); c.step = edgeStep(gray, c.quad, W, H);
     const nb = ([x, y]) => x < 0.006 || y < 0.006 || x > 0.994 || y > 0.994; c.cut = [0, 1, 2, 3].filter(i => nb(c.quad[i]) && nb(c.quad[(i + 1) % 4])).length;
@@ -396,11 +396,12 @@ function trimBackground(cv, rgba, opts) {
 }
 function maxDist(a, b) { return Math.max(...a.map((p, i) => Math.hypot(p[0] - b[i][0], p[1] - b[i][1]))); }
 // warp full-res rgba Mat by normalised quad -> new Mat oriented to card aspect, long side <= maxPx
-/* JO card width / height. The one number every warped page uses.
-   1.55 is the current warp output. Set this when the measured card size arrives. */
-const CARD_RATIO = 1.55;
-/* One page size for every warped card. Long side is the scan's max edge (1600). A portrait
-   quad uses the same pixels on their side; the scanner turn then lands on this landscape page. */
+/* JO card long side / short side. Owner measured both card types at 136mm x 217.5mm.
+   The one number every warped page uses. */
+const CARD_RATIO = 217.5 / 136;
+/* One page size for every warped card. Long side is the scan's max edge (1600).
+   The short side is round(1600 / CARD_RATIO), which is 1000. A portrait quad uses
+   the same pixels on their side; the scanner turn then lands on this landscape page. */
 function standardPage(maxPx) {
   const L = maxPx || 1600, S = Math.round(L / CARD_RATIO);
   return [L, S];

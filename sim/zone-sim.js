@@ -239,10 +239,10 @@ eq(app.includes('cvSoon(') && app.includes('CV_WAIT_MS = 6000') && app.includes(
 eq(app.includes('function stickersSoon') && app.includes("op: 'printEnqueue'"), 'the page-1 sticker is queued from the JO number and does not wait on enhance');
 eq(app.includes('p.plain = true') && app.includes('function reprocessPlain'), 'a page saved with no detector is marked and reprocessed later');
 const detSrc = read('scan/detector.js');
-eq((detSrc.match(/const CARD_RATIO = 1\.55/g) || []).length === 1 && !/cardSize[\s\S]{0,400}1\.55/.test(detSrc), 'the card aspect is the one CARD_RATIO constant');
+eq((detSrc.match(/const CARD_RATIO = 217\.5 \/ 136/g) || []).length === 1 && !/1\.55/.test(detSrc), 'the card aspect is the measured 217.5/136');
 const det = require(path.join(root, 'scan/detector.js'));
 const std = det.standardPage(1600);
-eq(std[0] === 1600 && std[1] === 1032, 'every warped page is 1600 by 1032');
+eq(Math.abs(det.CARD_RATIO - 217.5 / 136) < 1e-12 && std[0] === 1600 && std[1] === 1000 && std[1] === Math.round(1600 / det.CARD_RATIO), 'every warped page is 1600 by round(1600/ratio)');
 const wide = det.cardSize([[0, 0], [200, 0], [200, 100], [0, 100]], 1600);
 const tall = det.cardSize([[0, 0], [100, 0], [100, 200], [0, 200]], 1600);
 eq(wide[0] === std[0] && wide[1] === std[1] && tall[0] === std[1] && tall[1] === std[0], 'a sideways quad uses the same page on its side');
@@ -251,9 +251,9 @@ localStorage.setItem('oypScanCrop', '0');
 eq(Z.cropWanted() === false, 'crop off leaves the whole photo');
 localStorage.removeItem('oypScanCrop');
 eq(Z.FINDING === 'Finding card edges…' && Z.NO_EDGES.indexOf('all 4 card edges visible') > 0, 'the editor says when edges are missing');
-eq(read('nav.js').includes('scan-zones.js?v=8'), 'scan-zones cache bust is v8');
-eq(read('staff/index.html').includes('nav.js?v=37') && read('staff/print-test.html').includes('nav.js?v=37'), 'staff pages load nav.js v37');
-eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=37') && read('scan/index.html').includes('app.js?v=20261022h') && read('scan/index.html').includes('detector.js?v=20261022h') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v37');
+eq(read('nav.js').includes('scan-zones.js?v=9'), 'scan-zones cache bust is v9');
+eq(read('staff/index.html').includes('nav.js?v=38') && read('staff/print-test.html').includes('nav.js?v=38'), 'staff pages load nav.js v38');
+eq(read('scan/index.html').includes('https://oypjewelry.com/nav.js?v=38') && read('scan/index.html').includes('app.js?v=20261022i') && read('scan/index.html').includes('detector.js?v=20261022i') && read('scan/index.html').includes('queue.js?v=20261022h'), 'the scanner page keeps the production nav host at v38');
 
 if (failed) { console.error(failed + ' failed'); process.exit(1); }
 console.log('zone-sim passed');
