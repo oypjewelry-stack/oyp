@@ -132,7 +132,7 @@ if (typeof document !== 'undefined' && document.createElement && document.addEve
   src = cs && (cs.src || '');
   var base = src ? src.replace(/[^/]*$/, '') : '';
   if (base && !document.querySelector('script[src*="print.js"]')) {
-    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=10', 'print.js?v=19'].forEach(function (rel) {
+    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=10', 'print.js?v=20'].forEach(function (rel) {
       var ps = document.createElement('script');
       ps.src = base + rel;
       ps.async = false;

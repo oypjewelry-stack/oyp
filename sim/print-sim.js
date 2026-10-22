@@ -310,9 +310,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=19') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=47') && index.includes('app.js?v=34') && index.includes('settings.js?v=20') && index.includes('print.css?v=14') && index.includes('app.css?v=48') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=13') && index.includes('production.css?v=11') && index.includes('photos.js?v=2') && index.includes('review.js?v=20'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=19') && read('nav.js').includes('scan-zones.js?v=16') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=19') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=14') && read('staff/print-test.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('app.css?v=48'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=20') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=47') && index.includes('app.js?v=34') && index.includes('settings.js?v=20') && index.includes('print.css?v=14') && index.includes('app.css?v=48') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=13') && index.includes('production.css?v=11') && index.includes('photos.js?v=2') && index.includes('review.js?v=20'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=20') && read('nav.js').includes('scan-zones.js?v=16') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=20') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=14') && read('staff/print-test.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('app.css?v=48'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
@@ -474,6 +474,7 @@ function bootPrint(opts) {
   }
   WorkerCtor.prototype.terminate = function () {};
   const nextModel = (opts.models || ['B1']).slice();
+  const nextName = (opts.names || []).slice();
   const tasks = [];
   const encodes = [];
   const logs = [];
@@ -506,6 +507,7 @@ function bootPrint(opts) {
     const step = pages.length ? pages.shift() : 'ok';
     if (step === 'e4') return Promise.reject(new Error('Timeout waiting response (waited for e4)'));
     if (step === 'hang') return new Promise(function () {});
+    if (step === 'hold') return new Promise(function (resolve) { held.push({ mark: 'page', resolve: resolve }); });
     return Promise.resolve();
   };
   Task.prototype.waitForFinished = function () { return Promise.resolve(); };
@@ -516,10 +518,12 @@ function bootPrint(opts) {
   function Client() { clients.push(this); this.beats = 0; this._on = {}; }
   Client.prototype.connect = function (options) {
     connects.push(options || null);
+    const name = nextName.length ? nextName.shift() : ((options && options.authorizedDevice && options.authorizedDevice.name) || '');
+    const info = name ? { deviceName: name } : undefined;
     if (opts.holdConnect && connects.length > (opts.holdConnectAfter || 0)) {
-      return new Promise(function (resolve) { held.push({ mark: 'connect', resolve: resolve }); });
+      return new Promise(function (resolve) { held.push({ mark: 'connect', resolve: function () { resolve(info); } }); });
     }
-    return Promise.resolve();
+    return Promise.resolve(info);
   };
   Client.prototype.disconnect = function () {
     const self = this;
@@ -591,7 +595,10 @@ function bootPrint(opts) {
       }
       if (body.mark === 'claim') {
         if (opts.taken) data = { ok: false, code: 'TAKEN', error: 'Another printer has this sticker' };
-        else data = { ok: true, claimed: true, item: { print_id: body.print_id, status: 'queued', kind: 'jo_card', jo: body.jo || '26-336' } };
+        else {
+          const found = ((opts.queue && opts.queue.items) || []).filter(function (it) { return it.print_id === body.print_id; })[0] || {};
+          data = { ok: true, claimed: true, item: { print_id: body.print_id, status: 'queued', kind: found.kind || 'jo_card', jo: found.jo || body.jo || '26-336', current_stage: found.current_stage || '' } };
+        }
       }
       if (body.mark === 'requeue') data = { ok: true, requeued: true, item: { print_id: body.print_id, status: 'queued', kind: 'jo_card', jo: '26-336', error: '' } };
       if (body.mark === 'printed' || body.mark === 'failed' || body.mark === 'cancelled') data = { ok: true };
@@ -1034,6 +1041,87 @@ drain().then(function () {
         return drain();
       }).then(function () {
         eq(midHost.innerHTML.indexOf('Second printer') < 0 && midHost.innerHTML.indexOf('>B31<') >= 0 && mid.notes.indexOf('B31 connected.') >= 0, 'finishing that connect names B31 and does not bring the extra row back');
+      });
+    });
+  });
+}).then(function () {
+  function mixedItems() {
+    return [
+      { print_id: 'pq-tag', jo: '26-363', kind: 'jewelry_tag', status: 'queued', client: 'Ada' },
+      { print_id: 'pq-card', jo: '26-363', kind: 'jo_card', status: 'queued', current_stage: 'intake', client: 'Ada' },
+      { print_id: 'pq-in', jo: '26-364', kind: 'intake', status: 'queued', current_stage: 'intake', client: 'Ada' }
+    ];
+  }
+  function claimFor(box, id) {
+    return box.calls.filter(function (b) { return b.mark === 'claim' && b.print_id === id; }).pop();
+  }
+  function onPeer(body) { return !!(body && String(body.device_id || '').slice(-2) === '-2'); }
+  function watchQueue(box) {
+    const host = { innerHTML: '', querySelectorAll() { return []; }, setAttribute() {} };
+    box.sandbox.document.querySelectorAll = function (sel) {
+      if (sel === '[data-oyp-q]') return [host];
+      return [];
+    };
+    return host;
+  }
+  const stale = {
+    auto: true,
+    task: 'auto',
+    kindsByModel: {
+      B1: { jo_card: true, jewelry_tag: true },
+      B31: { jo_card: true, jewelry_tag: false }
+    }
+  };
+  const split = bootPrint({
+    drive: true,
+    models: ['B1', 'B31'],
+    pages: ['hold', 'hold'],
+    queue: { ok: true, auto: true, items: mixedItems() },
+    store: { oypPrint: JSON.stringify(stale) }
+  });
+  split.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    split.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+    return drain();
+  }).then(function () {
+    const tag = claimFor(split, 'pq-tag'), card = claimFor(split, 'pq-card'), intake = claimFor(split, 'pq-in');
+    const saved = JSON.parse(split.store.oypPrint);
+    eq(tag && !onPeer(tag) && card && onPeer(card) && !intake, 'with the B1 in the first slot, the tag stays on the B1 and the JO card starts on the B31');
+    eq(split.tasks.length === 2 && split.encodes.indexOf(384) >= 0 && split.encodes.indexOf(600) >= 0, 'the B1 and the B31 drain at the same time');
+    eq(saved.kindsByModel.B1.jo_card === false && saved.kindsByModel.B1.jewelry_tag === true, 'a stale B1 map cannot keep JO stickers');
+    split.release('page');
+    return drain();
+  }).then(function () {
+    const intake = claimFor(split, 'pq-in');
+    const widths = split.encodes.filter(function (w) { return w === 384; });
+    eq(intake && onPeer(intake) && widths.length === 1 && split.encodes.filter(function (w) { return w === 600; }).length === 2, 'the intake sticker waits for the B31, then prints there after the JO card');
+    const held = bootPrint({
+      drive: true,
+      models: ['B1'],
+      queue: { ok: true, auto: true, items: mixedItems() },
+      store: { oypPrint: JSON.stringify(stale) }
+    });
+    const host = watchQueue(held);
+    held.sandbox.OYPPrint.connect('bluetooth');
+    return drain().then(function () {
+      eq(claimFor(held, 'pq-tag') && !claimFor(held, 'pq-card') && !claimFor(held, 'pq-in'), 'a missing B31 does not send JO stickers to the B1');
+      eq(held.notes.indexOf('Connect the B31 to print JO stickers') >= 0 && host.innerHTML.indexOf('Connect the B31 to print JO stickers') >= 0 && host.innerHTML.indexOf('pq-card') >= 0 && host.innerHTML.indexOf('pq-in') >= 0, 'JO stickers stay queued with Connect the B31 to print JO stickers');
+      const named = bootPrint({
+        drive: true,
+        models: ['B1', 'B1'],
+        names: ['B1-4C2A', 'NIIMBOT B31'],
+        queue: { ok: true, auto: true, items: mixedItems() },
+        store: { oypPrint: JSON.stringify({ auto: true, task: 'auto' }) }
+      });
+      named.sandbox.OYPPrint.connect('bluetooth');
+      return drain().then(function () {
+        named.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+        return drain();
+      }).then(function () {
+        const tag = claimFor(named, 'pq-tag'), card = claimFor(named, 'pq-card'), intake = claimFor(named, 'pq-in');
+        const marks = named.sandbox.OYPPrint.printerMarks();
+        eq(marks.indexOf('B31') >= 0 && marks.indexOf('B1') >= 0, 'a B31 that answers as a B1 is named from the Bluetooth device');
+        eq(tag && !onPeer(tag) && card && onPeer(card) && intake && onPeer(intake), 'JO cards and intake stickers follow the B31 name, not the slot or the model id');
       });
     });
   });

@@ -45,6 +45,8 @@ function load() {
     if (o.model && !o.kindsByModel[o.model]) o.kindsByModel[o.model] = { jo_card: !!o.kinds.jo_card, jewelry_tag: !!o.kinds.jewelry_tag };
     o.kinds = null;
   }
+  /* A saved "print both" choice must not put JO stickers on the B1. */
+  if (o.kindsByModel.B1 && typeof o.kindsByModel.B1 === 'object') o.kindsByModel.B1.jo_card = false;
   o.auto = o.auto !== false;
   return o;
 }
@@ -134,7 +136,42 @@ function slotIndex(link) { return link === peer ? 1 : 0; }
 function defaultKinds(model) {
   if (model === 'B31') return { jo_card: true, jewelry_tag: false };
   if (model === 'B1') return { jo_card: false, jewelry_tag: true };
-  return { jo_card: true, jewelry_tag: true };
+  return { jo_card: false, jewelry_tag: false };
+}
+/* Jewelry tags belong to the B1. JO cards, intake, and every other kind belong to the B31. */
+function isTagKind(kind) {
+  var k = String(kind || '').toLowerCase().replace(/[\s-]+/g, '_');
+  return k === 'jewelry_tag' || k === 'jewelry' || k === 'tag' || k === 'cal_tag';
+}
+function ownerModel(kind) { return isTagKind(kind) ? 'B1' : 'B31'; }
+function knownModel(model) {
+  model = String(model || '').toUpperCase();
+  return model === 'B1' || model === 'B31' ? model : '';
+}
+/* The BLE name is "B1" or "B31". A B31 can answer the B1 model id, so the name wins. */
+function modelFromName(name) {
+  var s = String(name || '').toUpperCase();
+  if (s.indexOf('B31') >= 0) return 'B31';
+  if (/(?:^|[^A-Z0-9])B1(?:[^A-Z0-9]|$)/.test(s)) return 'B1';
+  return '';
+}
+function modelFromHead(px) {
+  px = px | 0;
+  if (px >= 500) return 'B31';
+  if (px >= 320 && px <= 420) return 'B1';
+  return '';
+}
+function detectModel(name, meta, previous) {
+  meta = meta || {};
+  var named = modelFromName(name);
+  if (named) return named;
+  var reported = knownModel(meta.model);
+  if (reported) return reported;
+  if (!meta.model) {
+    var byHead = modelFromHead(meta.printheadPixels);
+    if (byHead) return byHead;
+  }
+  return knownModel(previous);
 }
 function activeModel(cfg) {
   return state.model || (cfg || load()).model || '';
@@ -143,19 +180,68 @@ function kinds(link) {
   var cfg = load();
   var model = link ? (link.model || '') : activeModel(cfg);
   var saved = model && cfg.kindsByModel[model];
-  if (saved && typeof saved === 'object') return { jo_card: !!saved.jo_card, jewelry_tag: !!saved.jewelry_tag };
-  return defaultKinds(model);
+  var out = defaultKinds(model);
+  if (saved && typeof saved === 'object') out = { jo_card: !!saved.jo_card, jewelry_tag: !!saved.jewelry_tag };
+  if (model === 'B1') out.jo_card = false;
+  return out;
 }
-function printsKind(kind, link) { return !!kinds(link)[kind]; }
+function printsKind(kind, link) {
+  if (!link || !knownModel(link.model)) return false;
+  var k = kinds(link);
+  if (isTagKind(kind)) return link.model === 'B1' ? k.jewelry_tag !== false : link.model === 'B31' && !!k.jewelry_tag;
+  return link.model === 'B31' && k.jo_card !== false;
+}
+/* The owning model prints the sticker. Another printer is used only when that model is connected and its switch is off. */
 function linkFor(kind) {
-  var list = [state, peer], i, link, busy = null;
+  var owner = ownerModel(kind);
+  var list = [state, peer], i, link, own = null, ownBusy = null, alt = null, altBusy = null, ownerUp = false;
   for (i = 0; i < list.length; i++) {
     link = list[i];
-    if (!link.connected || !printsKind(kind, link)) continue;
-    if (!link.printing) return link;
-    if (!busy) busy = link;
+    if (!link.connected) continue;
+    if (link.model === owner) ownerUp = true;
+    if (!printsKind(kind, link)) continue;
+    if (link.model === owner) {
+      if (!link.printing) own = own || link;
+      else ownBusy = ownBusy || link;
+    } else if (ownerUp) {
+      if (!link.printing) alt = alt || link;
+      else altBusy = altBusy || link;
+    }
   }
-  return busy;
+  return own || ownBusy || alt || altBusy || null;
+}
+function holdText(kind) {
+  var tag = isTagKind(kind);
+  var model = tag ? 'B1' : 'B31';
+  var what = tag ? 'jewelry tags' : 'JO stickers';
+  var list = [state, peer], i, link, up = false, declined = false;
+  for (i = 0; i < list.length; i++) {
+    link = list[i];
+    if (!link.connected || link.model !== model) continue;
+    up = true;
+    if (!printsKind(kind, link)) declined = true;
+  }
+  if (up && declined) return 'The ' + model + ' is not set to print ' + what;
+  return 'Connect the ' + model + ' to print ' + what;
+}
+function heldMessages() {
+  var items = (state.last && state.last.items) || [], seen = {}, out = [], i, it, msg;
+  for (i = 0; i < items.length; i++) {
+    it = items[i];
+    if (!it || it.status !== 'queued' || linkFor(it.kind)) continue;
+    if (!state.printQueued && !serverAuto(it.kind)) continue;
+    msg = holdText(it.kind);
+    if (seen[msg]) continue;
+    seen[msg] = 1;
+    out.push(msg);
+  }
+  return out;
+}
+function noteHeld() {
+  var msgs = heldMessages(), key = msgs.join('|');
+  if (state.heldTold === key) return;
+  state.heldTold = key;
+  msgs.forEach(function (m) { toast(m); });
 }
 function summary() {
   var cfg = load(), k = kinds();
@@ -340,7 +426,8 @@ function trimPrepared() {
 }
 /* Fonts and the QR are ready before the claim returns, and again when the queue is fetched. */
 function prepareItem(item, link) {
-  link = link || linkFor(item && item.kind) || state;
+  if (!link) link = linkFor(item && item.kind);
+  if (!link) return Promise.reject(new Error(holdText(item && item.kind)));
   var sig = labelSig(item, link);
   if (state.prepared[sig]) return Promise.resolve({ encoded: state.prepared[sig].encoded, ms: state.prepared[sig].ms, sig: sig, cached: true });
   if (state.preparing[sig]) return state.preparing[sig];
@@ -368,7 +455,7 @@ function prepareItem(item, link) {
 function primeQueue(r) {
   var items = (r && r.items) || [];
   items.forEach(function (it) {
-    if (it && it.status === 'queued') prepareItem(it, linkFor(it.kind) || state).catch(function () {});
+    if (it && it.status === 'queued') prepareItem(it, linkFor(it.kind)).catch(function () {});
   });
 }
 function sendToPrinter(item, prep, link) {
@@ -460,7 +547,7 @@ function serverAuto(kind) {
     a = cfg.autoKinds && typeof cfg.autoKinds === 'object' ? cfg.autoKinds : { jo_card: cfg.auto !== false, jewelry_tag: cfg.auto !== false };
   }
   if (!kind) return a.jo_card !== false || a.jewelry_tag !== false;
-  return a[kind] !== false;
+  return a[isTagKind(kind) ? 'jewelry_tag' : 'jo_card'] !== false;
 }
 function noteAuto(r) {
   var next = r && autoFrom(r.auto);
@@ -580,12 +667,12 @@ function claimAndPrint(item, link) {
   if (!item) return Promise.resolve();
   if (!link) link = linkFor(item.kind);
   if (!link || !link.connected) {
-    toast('Connect a printer first');
+    toast(holdText(item.kind));
     return Promise.resolve();
   }
   var prep = prepareItem(item, link);
   var job = work(link, function () {
-    if (!link.connected) { markPrinting(link, false); toast('Connect a printer first'); return; }
+    if (!link.connected) { markPrinting(link, false); toast(holdText(item.kind)); return; }
     var id = item.print_id;
     var mine = devId(link);
     markPrinting(link, true);
@@ -650,7 +737,7 @@ function printJo(kind, jo, opts) {
   return callPrint('printEnqueue', { jo: jo, kind: kind, reprint: reprint }).then(function (r) {
     if (!r || r.ok === false) { toast((r && r.error) || 'Sticker did not print'); return r; }
     var item = r.item || { jo: jo, kind: kind };
-    if (!linkFor(item.kind || kind)) { toast('Connect a printer to print. The sticker stays in the queue.'); refresh(); return r; }
+    if (!linkFor(item.kind || kind)) { toast(holdText(item.kind || kind)); refresh(); return r; }
     if (item.status && item.status !== 'queued') { toast('That sticker is already ' + item.status); refresh(); return r; }
     return claimAndPrint(item).then(function () { return r; });
   }).catch(function () { toast('Sticker did not print'); });
@@ -662,7 +749,7 @@ function printAgain(item) {
     var row = Object.assign({}, item, (r && r.item) || {});
     row.status = 'queued';
     row.error = '';
-    if (!linkFor(row.kind || item.kind)) { toast('Connect a printer to print. The sticker stays in the queue.'); refresh(); return; }
+    if (!linkFor(row.kind || item.kind)) { toast(holdText(row.kind || item.kind)); refresh(); return; }
     return claimAndPrint(row);
   });
 }
@@ -783,11 +870,11 @@ function queueHtml(r) {
   items.forEach(function (it) { if (it.status === 'queued' && !serverAuto(it.kind)) held += 1; });
   var drain = held ? '<div class="fbtns oyp-qbtns"><button type="button" class="pill sm" data-q="drain"' + dis + '>Print queued</button></div>' : '';
   return drain + items.map(function (it, i) {
-    var kind = it.kind === 'jewelry_tag' ? 'Jewelry tag' : 'JO card';
+    var kind = isTagKind(it.kind) ? 'Jewelry tag' : 'JO card';
     var failed = it.status === 'failed';
     var st = failed ? 'Failed' : 'Queued';
     var id = esc(it.print_id);
-    var err = failed ? rowError(it.error) : '';
+    var err = failed ? rowError(it.error) : (it.status === 'queued' && !linkFor(it.kind) ? holdText(it.kind) : '');
     var buttons = failed
       ? '<button type="button" class="pill sm" data-q="again" data-id="' + id + '"' + dis + '>PRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '"' + dis + '>CANCEL</button>'
       : '<button type="button" class="pill sm" data-q="now" data-id="' + id + '"' + dis + '>PRINT</button><button type="button" class="pill sm outline" data-q="reprint" data-id="' + id + '"' + dis + '>REPRINT</button><button type="button" class="pill sm outline" data-q="cancel" data-id="' + id + '"' + dis + '>CANCEL</button>';
@@ -929,7 +1016,9 @@ function kickOne(link) {
 }
 function kick() {
   if (!wantsQueue()) return;
-  var started = kickOne(state) || kickOne(peer);
+  var started = kickOne(state);
+  if (kickOne(peer)) started = true;
+  noteHeld();
   if (!started && !anyPrinting()) state.printQueued = false;
 }
 function pump() {
@@ -1040,8 +1129,11 @@ function onConnected(link, transport) {
   var announce = !!link.opening;
   link.opening = false;
   var meta = (link.client && link.client.getModelMetadata && link.client.getModelMetadata()) || {};
-  link.model = meta.model || link.model || '';
-  link.head = meta.printheadPixels || link.head || (link.model === 'B31' ? 600 : link.model === 'B1' ? 384 : 0);
+  var named = modelFromName(link.deviceName);
+  var reported = knownModel(meta.model);
+  link.model = detectModel(link.deviceName, meta, link.model);
+  if (named && reported && named !== reported) link.head = named === 'B31' ? 600 : 384;
+  else link.head = meta.printheadPixels || link.head || (link.model === 'B31' ? 600 : link.model === 'B1' ? 384 : 0);
   link.dir = meta.printDirection || link.dir || 'top';
   link.transport = transport;
   link.connected = true;
@@ -1074,8 +1166,11 @@ function begin(link, transport, device) {
   var client = transport === 'serial' ? new L.NiimbotSerialClient() : new L.NiimbotBluetoothClient();
   link.client = client;
   link.transport = transport;
+  if (device && device.name) link.deviceName = device.name;
   watchLink(link, client);
-  return Promise.resolve(client.connect(connectOpts(device))).then(function () {
+  return Promise.resolve(client.connect(connectOpts(device))).then(function (info) {
+    var named = info && (info.deviceName || info.name);
+    if (named) link.deviceName = named;
     onConnected(link, transport);
   });
 }
@@ -1495,7 +1590,7 @@ function mountSettings(el) {
     + '<div class="setrow"><div class="setl"><span class="lab">Jewelry tag</span><span class="muted">On queues and prints a jewelry tag. Off does not queue it. A manual batch still queues.</span></div><div class="setv">' + tog('prAutoTag', 'jewelry_tag') + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Darkness</span><span class="muted">1 is light, 5 is dark. 3 is the usual.</span></div><div class="setv">' + darkSeg(cfg.darkness) + '</div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">Print mode</span><span class="muted">Auto starts a B31 on the B1 page size, and remembers the task this printer answers. D110M_V4 and B1 stay as manual choices.</span></div><div class="setv"><select id="prTask" aria-label="Print mode">' + [['auto', 'Auto'], ['D110M_V4', 'D110M_V4'], ['B1', 'B1']].map(function (o) { return '<option value="' + o[0] + '"' + ((cfg.task || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div></div>'
-    + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B31 starts on JO cards. A B1 starts on jewelry tags. Either one can print both.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B1 prints jewelry tags. A B31 prints JO stickers. A saved choice can turn a kind off. A B1 does not print JO stickers.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B31 offset</span><span class="muted">Zero is the centre measured on a T30×20 roll. Positive moves the print right, or down the feed.</span></div>' + mmPair('prX31', b31.x, 'B31 horizontal offset', 'prY31', b31.y, 'B31 vertical offset') + '</div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B1 offset</span><span class="muted">Same steps, saved separately for the B1.</span></div>' + mmPair('prX1', b1.x, 'B1 horizontal offset', 'prY1', b1.y, 'B1 vertical offset') + '</div>'
     + '</div><p class="muted">Stickers print the JO number, not the client name. The queue still shows the name first, for example Elena Tan · 26-287.</p></div>';
@@ -1509,7 +1604,9 @@ function mountSettings(el) {
     next.kinds = null;
     if (model) {
       if (!next.kindsByModel || typeof next.kindsByModel !== 'object') next.kindsByModel = {};
-      next.kindsByModel[model] = { jo_card: !!(jo && jo.classList.contains('on')), jewelry_tag: !!(tag && tag.classList.contains('on')) };
+      var picked = { jo_card: !!(jo && jo.classList.contains('on')), jewelry_tag: !!(tag && tag.classList.contains('on')) };
+      if (model === 'B1') picked.jo_card = false;
+      next.kindsByModel[model] = picked;
     }
     next.offsets = {
       B31: { x: stepMm(document.getElementById('prX31').value), y: stepMm(document.getElementById('prY31').value) },
@@ -1527,7 +1624,11 @@ function mountSettings(el) {
   ['prJo', 'prTag'].forEach(function (id) {
     var n = document.getElementById(id);
     if (!n) return;
-    n.onclick = function () { n.classList.toggle('on'); persist(); };
+    n.onclick = function () {
+      if (id === 'prJo' && activeModel() === 'B1') return;
+      n.classList.toggle('on');
+      persist();
+    };
   });
   el.querySelectorAll('#prDark button').forEach(function (b) {
     b.onclick = function () {
