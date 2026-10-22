@@ -310,9 +310,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=18') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=47') && index.includes('app.js?v=34') && index.includes('settings.js?v=20') && index.includes('print.css?v=13') && index.includes('app.css?v=48') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=13') && index.includes('production.css?v=11') && index.includes('photos.js?v=2') && index.includes('review.js?v=20'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=18') && read('nav.js').includes('scan-zones.js?v=16') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=18') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=13') && read('staff/print-test.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('app.css?v=48'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=19') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=47') && index.includes('app.js?v=34') && index.includes('settings.js?v=20') && index.includes('print.css?v=14') && index.includes('app.css?v=48') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=13') && index.includes('production.css?v=11') && index.includes('photos.js?v=2') && index.includes('review.js?v=20'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=19') && read('nav.js').includes('scan-zones.js?v=16') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=19') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=14') && read('staff/print-test.html').includes('nav.js?v=47') && read('staff/print-test.html').includes('app.css?v=48'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
@@ -514,7 +514,13 @@ function bootPrint(opts) {
     return Promise.resolve();
   };
   function Client() { clients.push(this); this.beats = 0; this._on = {}; }
-  Client.prototype.connect = function (options) { connects.push(options || null); return Promise.resolve(); };
+  Client.prototype.connect = function (options) {
+    connects.push(options || null);
+    if (opts.holdConnect && connects.length > (opts.holdConnectAfter || 0)) {
+      return new Promise(function (resolve) { held.push({ mark: 'connect', resolve: resolve }); });
+    }
+    return Promise.resolve();
+  };
   Client.prototype.disconnect = function () {
     const self = this;
     return Promise.resolve().then(function () { self.emit('disconnect'); });
@@ -974,6 +980,62 @@ drain().then(function () {
   return drain().then(function () {
     const port = usb.connects.find(c => c && c.authorizedPort);
     eq(port && port.authorizedPort.id === 'usb-b1' && usb.sandbox.OYPPrint.printerMarks().indexOf('B1') >= 0 && !usb.notes.some(t => t.indexOf('Printer disconnected') >= 0), 'a permitted USB printer reconnects with getPorts');
+  });
+}).then(function () {
+  function linkHost(sandbox) {
+    const host = {
+      innerHTML: '',
+      _attr: {},
+      getAttribute(name) { return Object.prototype.hasOwnProperty.call(this._attr, name) ? this._attr[name] : null; },
+      setAttribute(name, value) { this._attr[name] = String(value); }
+    };
+    const prev = sandbox.document.getElementById;
+    sandbox.document.getElementById = function (id) { return id === 'prLinks' ? host : prev(id); };
+    return host;
+  }
+  function linkRows(html) { return String(html || '').split('class="setrow pr-link"').slice(1); }
+  const blank = { oypPrint: JSON.stringify({ auto: false }) };
+  const none = bootPrint({ queue: { ok: true, items: [] }, store: blank });
+  const noneHost = linkHost(none.sandbox);
+  none.sandbox.OYPPrint.mountSettings({ innerHTML: '', querySelector() { return null; }, querySelectorAll() { return []; } });
+  const noneRows = linkRows(noneHost.innerHTML);
+  eq(noneRows.length === 1 && noneRows[0].indexOf('>Printer<') >= 0 && noneRows[0].indexOf('Not connected') >= 0 && noneRows[0].indexOf('data-slot="0"') >= 0 && noneRows[0].indexOf('data-slot-act="connect"') >= 0 && noneRows[0].indexOf('Second printer') < 0, 'none connected keeps a single printer row');
+  const one = bootPrint({ models: ['B1'], queue: { ok: true, items: [] }, store: blank });
+  const oneHost = linkHost(one.sandbox);
+  one.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    const oneRows = linkRows(oneHost.innerHTML);
+    eq(oneRows.length === 2 && oneRows[0].indexOf('>B1<') >= 0 && oneRows[0].indexOf('data-slot="0"') >= 0 && oneRows[1].indexOf('Second printer') >= 0 && oneRows[1].indexOf('Not connected') >= 0 && oneRows[1].indexOf('data-slot="1"') >= 0 && oneRows[1].indexOf('data-slot="0"') < 0 && oneRows[1].indexOf('data-slot-act="connect"') >= 0 && oneRows[1].indexOf('>Bluetooth<') >= 0 && oneRows[1].indexOf('>USB<') >= 0, 'one connected printer shows a second-printer row on the free slot');
+    eq(one.notes.indexOf('B1 connected.') >= 0, 'connecting confirms with the model name');
+    const both = bootPrint({ models: ['B1', 'B31'], queue: { ok: true, items: [] }, store: blank });
+    const bothHost = linkHost(both.sandbox);
+    both.sandbox.OYPPrint.connect('bluetooth');
+    return drain().then(function () {
+      both.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+      return drain();
+    }).then(function () {
+      const bothRows = linkRows(bothHost.innerHTML);
+      eq(bothRows.length === 2 && bothHost.innerHTML.indexOf('Second printer') < 0 && bothRows[0].indexOf('>B1<') >= 0 && bothRows[1].indexOf('>B31<') >= 0, 'both connected printers leave no extra row');
+      eq(both.notes.indexOf('B31 connected.') >= 0, 'the second printer confirms by name');
+      const mid = bootPrint({
+        holdConnect: true,
+        holdConnectAfter: 1,
+        models: ['B1', 'B31'],
+        queue: { ok: true, items: [] },
+        store: blank
+      });
+      const midHost = linkHost(mid.sandbox);
+      mid.sandbox.OYPPrint.connect('bluetooth');
+      return drain().then(function () {
+        eq(linkRows(midHost.innerHTML).length === 2 && midHost.innerHTML.indexOf('Second printer') >= 0, 'the second-printer row is there before its connect starts');
+        mid.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+        eq(midHost.innerHTML.indexOf('Second printer') < 0 && midHost.innerHTML.indexOf('>B1<') >= 0, 'the second-printer row hides while that connect is in progress');
+        mid.release('connect');
+        return drain();
+      }).then(function () {
+        eq(midHost.innerHTML.indexOf('Second printer') < 0 && midHost.innerHTML.indexOf('>B31<') >= 0 && mid.notes.indexOf('B31 connected.') >= 0, 'finishing that connect names B31 and does not bring the extra row back');
+      });
+    });
   });
 }).then(function () {
   if (failed) { console.error(failed + ' failed'); process.exit(1); }

@@ -1037,6 +1037,8 @@ function watchLink(link, client) {
   });
 }
 function onConnected(link, transport) {
+  var announce = !!link.opening;
+  link.opening = false;
   var meta = (link.client && link.client.getModelMetadata && link.client.getModelMetadata()) || {};
   link.model = meta.model || link.model || '';
   link.head = meta.printheadPixels || link.head || (link.model === 'B31' ? 600 : link.model === 'B1' ? 384 : 0);
@@ -1057,6 +1059,7 @@ function onConnected(link, transport) {
   beat(link);
   rememberBle(link);
   drawChip();
+  if (announce) toast((link.model || 'Printer') + ' connected.');
   startPoll();
   pump();
 }
@@ -1084,10 +1087,12 @@ function connectSlot(i, transport, device) {
   if (transport === 'serial' && !canSerial()) { toast('USB printing needs Chrome or Edge on a computer'); return; }
   link.userDisconnect = false;
   link.expected = true;
+  link.opening = true;
   var prev = link.client;
   link.client = null;
   if (prev && prev.disconnect) Promise.resolve(prev.disconnect()).catch(function () {});
   begin(link, transport, device).catch(function (err) {
+    link.opening = false;
     if (!link.connected) link.client = null;
     link.reconnecting = false;
     drawChip();
@@ -1095,6 +1100,7 @@ function connectSlot(i, transport, device) {
     if (name === 'NotFoundError' || name === 'AbortError') return;
     toast('Could not connect');
   });
+  drawChip();
 }
 function connect(transport) { connectSlot(0, transport); }
 function connectFree(transport) {
@@ -1437,27 +1443,35 @@ function darkSeg(value) {
     return '<button type="button" class="pill sm' + (on ? ' on' : ' outline') + '" data-dark="' + n + '">' + n + '</button>';
   }).join('') + '</div>';
 }
-function linkRow(link, i) {
+function linkRow(link, i, label) {
   var on = link.connected && !link.reconnecting;
-  var named = !!link.model;
+  var named = !!link.model && !label;
   var dot = '<span class="oyp-pr-dot' + (on ? ' on' : '') + '" aria-hidden="true"></span>';
-  var name = named ? '<span class="oyp-pr-name">' + esc(link.model) + '</span>' : '<span class="lab">Printer</span>';
+  var name = label ? '<span class="lab">' + esc(label) + '</span>' : (named ? '<span class="oyp-pr-name">' + esc(link.model) + '</span>' : '<span class="lab">Printer</span>');
   var k = kinds(named ? link : null);
   var which = [];
   if (named && k.jo_card) which.push('JO card');
   if (named && k.jewelry_tag) which.push('Jewelry tag');
   var note = named ? (which.join(' · ') || 'No stickers') : 'Not connected';
   var controls;
-  if (link.connected) controls = '<button type="button" class="pill sm outline" data-slot="' + i + '" data-slot-act="disconnect">Disconnect</button>';
-  else if (link.reconnecting) controls = '<span class="muted">Reconnecting</span>';
+  if (!label && link.connected) controls = '<button type="button" class="pill sm outline" data-slot="' + i + '" data-slot-act="disconnect">Disconnect</button>';
+  else if (!label && link.reconnecting) controls = '<span class="muted">Reconnecting</span>';
   else controls = '<select data-slot-transport="' + i + '" aria-label="Connection"><option value="bluetooth"' + (link.transport === 'serial' ? '' : ' selected') + '>Bluetooth</option><option value="serial"' + (link.transport === 'serial' ? ' selected' : '') + '>USB</option></select><button type="button" class="pill sm" data-slot="' + i + '" data-slot-act="connect">Connect</button>';
-  return '<div class="setrow pr-link"><div class="setl"><span class="oyp-pr-pair">' + name + dot + '</span><span class="muted">' + esc(note) + '</span></div><div class="setv">' + controls + '</div></div>';
+  return '<div class="setrow pr-link" data-slot="' + i + '"><div class="setl"><span class="oyp-pr-pair">' + name + dot + '</span><span class="muted">' + esc(note) + '</span></div><div class="setv">' + controls + '</div></div>';
+}
+/* A slot with no model is free. opening is a connect the person just started, before the model comes back. */
+function slotOpen(link) {
+  return !link.model && !link.connected && !link.reconnecting && !link.opening;
 }
 function paintLinks() {
   var host = document.getElementById('prLinks');
   if (!host) return;
   var links = knownLinks();
   var html = links.length ? links.map(function (link) { return linkRow(link, slotIndex(link)); }).join('') : linkRow(state, 0);
+  if (links.length === 1) {
+    var other = links[0] === peer ? state : peer;
+    if (slotOpen(other)) html += linkRow(other, slotIndex(other), 'Second printer');
+  }
   if (host.getAttribute('data-paint') === html) return;
   host.setAttribute('data-paint', html);
   host.innerHTML = html;
@@ -1567,7 +1581,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=13';
+  link.href = (base || '') + 'print.css?v=14';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
