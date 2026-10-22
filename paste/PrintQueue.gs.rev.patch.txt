@@ -1,0 +1,82 @@
+PrintQueue.gs — a cheap print-queue revision so a station can poll every 5 seconds without reading the sheet.
+CacheService key oypPrintRev. A brief printQueue returns {ok, brief:true, rev} and does not read PrintQueue, JobOrders, or Clients.
+rev is null when the cache is empty or CacheService is missing. The station then keeps the 15 second full poll.
+Bump the rev whenever a row is created, requeued, claimed, printed, failed, or cancelled.
+
+FIND
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+function printSheet_() {
+
+REPLACE WITH
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+var PRINT_REV_KEY = 'oypPrintRev';
+function printCache_() {
+  try {
+    if (typeof CacheService === 'undefined' || !CacheService.getScriptCache) return null;
+    return CacheService.getScriptCache();
+  } catch (e) { return null; }
+}
+function printRevRead_() {
+  var c = printCache_();
+  if (!c) return null;
+  var v = c.get(PRINT_REV_KEY);
+  return v == null || v === '' ? null : String(v);
+}
+function printRevBump_() {
+  var c = printCache_();
+  if (!c) return;
+  c.put(PRINT_REV_KEY, String(new Date().getTime()), 21600);
+}
+function printRevEnsure_() {
+  var v = printRevRead_();
+  if (v != null) return v;
+  var c = printCache_();
+  if (!c) return null;
+  c.put(PRINT_REV_KEY, '1', 21600);
+  return '1';
+}
+function printBrief_(req) {
+  if (!req) return false;
+  var b = req.brief;
+  return b === 1 || b === true || b === '1' || b === 'true';
+}
+function printSheet_() {
+
+FIND
+  if (res.created || res.requeued) printWriteRow_(pack, res.item);
+
+REPLACE WITH
+  if (res.created || res.requeued) {
+    printWriteRow_(pack, res.item);
+    printRevBump_();
+  }
+
+FIND
+    if (res.ok && res.item) printWriteRow_(pack, res.item);
+
+REPLACE WITH
+    if (res.ok && res.item) {
+      printWriteRow_(pack, res.item);
+      printRevBump_();
+    }
+
+FIND
+function printQueue_(req, user) {
+  if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  var pack = printReadRows_(), look = printLookup_();
+  var out = { ok: true, items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
+  if (req && req.jo && printNormJo_(req.jo)) out.spec = printDecorate_({ jo: printNormJo_(req.jo) }, look); // read only: specs for a PNG of one JO
+  return out;
+}
+
+REPLACE WITH
+function printQueue_(req, user) {
+  if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  if (printBrief_(req) && !(req.jo && printNormJo_(req.jo))) return { ok: true, brief: true, rev: printRevRead_() };
+  var pack = printReadRows_(), look = printLookup_();
+  var out = { ok: true, rev: printRevEnsure_(), items: printRowsList_(pack.rows).map(function (r) { return printDecorate_(r, look); }) };
+  if (req && req.jo && printNormJo_(req.jo)) out.spec = printDecorate_({ jo: printNormJo_(req.jo) }, look); // read only: specs for a PNG of one JO
+  return out;
+}

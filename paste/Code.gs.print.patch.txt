@@ -1,4 +1,6 @@
-Code.gs — two short edits. Page 1 of a scan queues a JO card sticker. The save still succeeds if the queue paste is missing.
+Code.gs — two short edits. Page 1 of a scan queues a JO card and a jewelry tag. The save still succeeds if the queue paste is missing.
+The phone sends printJo and printTag. false skips that sticker. A missing field still queues, so an older phone gets both.
+printEnqueue_ then applies the per-kind auto-print switch and skips a row that is already queued or printed for that JO and sticker.
 Both FIND lines are in every Code.gs version we have (before and after the zones paste). Ctrl+H; each FIND matches once.
 
 1. Scanner print ops, right after the token check and BEFORE the fastBump_ line, so a printer polling every 15 seconds
@@ -15,4 +17,4 @@ REPLACE WITH
 
 REPLACE WITH
     var job = typeof recordScan_ === 'function' ? recordScan_(req, jo, file, folder, ocrText, found, ocrError) : null; // JobSync.gs
-    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') printEnqueue_(jo, 'jo_card', 'scanner', {}); } catch (e) {}
+    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') { if (req.printJo !== false) printEnqueue_(jo, 'jo_card', 'scanner', {}); if (req.printTag !== false) printEnqueue_(jo, 'jewelry_tag', 'scanner', {}); } } catch (e) {}

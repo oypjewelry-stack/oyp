@@ -47,6 +47,11 @@ function smallLine(opts) {
   if (opts.stage) return clean(opts.stage).slice(0, 16);
   return '';
 }
+/* The jewelry tag prints the JO, then this note when a description exists. The client name is not a field here. */
+function tagNote(opts) {
+  var d = clean(opts && opts.description);
+  return d ? [d] : [];
+}
 /* Up to three spec lines. Missing fields are skipped. Metal and karat share a line. Size and weight share the last. */
 function specLines(opts) {
   opts = opts || {};
@@ -357,7 +362,7 @@ function render(opts) {
   } else if (kind === 'jewelry_tag') {
     /* QR on the left, JO (largest) and spec lines on the right, inside the head.
        Two pixels of slack so the 4× threshold cannot spill into the 1 mm margin. */
-    var specs = specLines(opts);
+    var specs = tagNote(opts);
     var mods = jo ? makeQr(jo) : null;
     var mod = 3, quiet = 4;
     var qpix = mods ? qrSize(mods, mod, quiet) : 0;

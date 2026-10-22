@@ -7,6 +7,11 @@
 .oyp-pr{position:relative;display:inline-flex;align-items:center;flex:none}
 .oyp-pr .pill{white-space:nowrap}
 .oyp-pr .whomenu{left:auto;right:0;top:calc(100% + 6px);bottom:auto;min-width:280px;max-width:calc(100vw - 16px);z-index:40}
+.side a[data-oyp-printer],.menu a[data-oyp-printer]{display:flex;align-items:center;flex-wrap:wrap;column-gap:10px}
+.oyp-pr-pair{display:inline-flex;align-items:center;gap:6px}
+.side a[data-oyp-printer] .oyp-pr-name,.menu a[data-oyp-printer] .oyp-pr-name{font:inherit;letter-spacing:inherit;text-transform:inherit}
+.pr-link .oyp-pr-name{font-family:var(--label,Inter,Helvetica,sans-serif);font-weight:500;font-size:calc(12px * var(--fs,1));letter-spacing:.08em;text-transform:uppercase;color:#111}
+.oyp-pr-pair .oyp-pr-dot{margin-left:0}
 .oyp-pr-dot{display:inline-block;width:8px;height:8px;margin-left:8px;border-radius:50%;background:#b3261e;vertical-align:1px}
 .oyp-pr-dot.on{background:#1b7f3a}
 .oyp-pr-dot.busy{background:#a37b12}
@@ -19,6 +24,7 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 #oypPrMenu button:hover{background:#faf8f1}
 #oypPrMenu .settog{display:flex;align-items:center;gap:calc(8px * var(--sp,1));width:100%;box-sizing:border-box;margin:0;padding:calc(12px * var(--sp,1)) calc(18px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(12px * var(--fs,1));font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#111;cursor:pointer}
 #oypPrMenu .settog input{width:20px;height:20px;accent-color:#111}
+#oypPrMenu .settog .oyp-k{flex:1;text-align:left}
 .oyp-pr-bar{display:flex;align-items:center;justify-content:space-between;gap:calc(12px * var(--sp,1));padding:calc(8px * var(--sp,1)) 0 calc(2px * var(--sp,1))}
 .oyp-pr-bar .seth{margin:0}
 .oyp-pr-x{width:32px;height:32px;border:1px solid #ddd;border-radius:50%;background:#fff;color:#111;padding:0;line-height:1;font-size:16px;cursor:pointer;flex:none}
@@ -57,6 +63,11 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .pr-page #printSet .setbox + p.muted{margin:calc(8px * var(--sp,1)) 0 0;max-width:none}
 .pr-copy{display:flex;flex-direction:column;gap:calc(22px * var(--sp,1))}
 .pr-page .pr-copy p.muted{margin:0;max-width:none}
+.pr-range{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp,1));align-items:center}
+.pr-range input,.pr-range select{border:1.5px solid #111;border-radius:calc(12px * var(--rad,1));padding:0 12px;font-family:var(--body,'Bodoni Moda',Georgia,serif);font-size:16px;font-weight:400;background:#fff;color:#111;width:auto;min-width:7.5em;height:40px;box-sizing:border-box}
+.set .pr-range input:not([type=checkbox]),.set .pr-range select,.set .pr-link select{width:auto;min-width:7.5em;box-sizing:border-box;height:40px;padding:0 12px;font-family:var(--body,'Bodoni Moda',Georgia,serif);font-size:16px;font-weight:400;border:1.5px solid #111;border-radius:calc(12px * var(--rad,1));background:#fff;color:#111}
+.pr-page #printRange .setrow{align-items:end}
+.pr-page #prRangeN{margin:calc(8px * var(--sp,1)) 0 0}
 .pr-previews{display:grid;grid-template-columns:1fr 1fr;gap:calc(24px * var(--sp,1));align-items:start;margin:calc(22px * var(--sp,1)) 0 0}
 .pr-col{display:flex;flex-direction:column;min-width:0}
 .pr-stage{width:100%;background:#8e8e8e;display:flex;justify-content:center;align-items:flex-start}
