@@ -567,7 +567,8 @@ function warpJS(src, q, maxPx) {
    The photo goes through the same detector, crop, enhance, rotation and savePage() as a live shot. It saves straight away
    (live shots save straight away when the outline is clean); the result card offers Adjust crop afterwards. */
 const photo = { busy: false, cont: false, last: null };
-const cap = { pages: [], saving: false, asking: false, reading: false }; // pages of the capture currently on screen
+const cap = { pages: [], saving: false, asking: false, reading: false, filing: null }; // pages of the capture currently on screen
+let captureView = null; // one joStatus() result for the render that paints the tile, the line, and the counter
 
 /* JO sticker and Jewelry tag: both on by default, each remembered on this phone.
    Page 1 sends printJo and printTag. Off posts with the original fetch so print.js
@@ -1098,6 +1099,21 @@ async function handlePhotos(files, fromCamera) {
   if (fromCamera && saved) photo.reopen = true; // straight back to the camera; the upload keeps going
   if (state.jo === 'OCR') readHeldJo(); // does not block the next shot
 }
+function captureSnap() { // the capture and the queue, plus the filing when a card JO was just accepted
+  const f = cap.filing || null;
+  return {
+    jo: state.jo, scan: (f && f.scan) || state.scan, prevScan: f && f.prevScan || '',
+    filename: f && f.filename || '', page: f && f.page || 0, clientId: f && f.clientId || '',
+    fromCard: !!(f && f.fromCard), toast: f && f.toast || '',
+    asking: cap.asking, reading: cap.reading, saving: cap.saving, online: isOn(),
+    pages: cap.pages, rows: queue.list()
+  };
+}
+function readCapture() {
+  if (captureView) return captureView;
+  if (window.OYPZones && typeof OYPZones.joStatus === 'function') return OYPZones.joStatus(captureSnap());
+  return null;
+}
 function capMatch(pg) {
   const all = queue.list();
   return all.find(x => x.scan === pg.scan && x.filename === pg.filename) || all.find(x => x.scan === pg.scan && x.page === pg.page);
@@ -1114,29 +1130,36 @@ function capState(pg) {
   return { cls: 'queued', t: it.state };
 }
 function renderCapture() {
+  const view = readCapture();
   const strip = $('capStrip'), box = $('lastScan');
   if ($('capJo')) {
-    const known = realJO(state.jo);
-    $('capJo').textContent = cap.asking ? 'Type the JO number' : known ? 'JO ' + known : ((cap.pages.length || cap.saving || cap.reading) ? 'Reading the JO number…' : '');
+    if (view) $('capJo').textContent = view.joLine;
+    else {
+      const known = realJO(state.jo);
+      $('capJo').textContent = cap.asking ? 'Type the JO number' : known ? 'JO ' + known : ((cap.pages.length || cap.saving || cap.reading) ? 'Reading the JO number…' : '');
+    }
   }
   const askForm = $('capJoForm'); if (askForm) askForm.classList.toggle('hidden', !cap.asking);
   if ($('capCount')) $('capCount').textContent = cap.pages.length ? (cap.pages.length === 1 ? '1 page' : cap.pages.length + ' pages') : '';
   if (strip) {
-    const tiles = cap.pages.map(pg => {
-      const s = capState(pg);
+    const tiles = cap.pages.map((pg, i) => {
+      const s = (view && view.tiles[i]) || capState(pg);
       const retry = s.retry ? `<button type="button" class="retry" data-retry="${esc(s.retry)}">Retry</button>` : '';
       return `<li class="${esc(s.cls)}"><img alt="Page ${esc(pg.page)}" src="${esc(pg.thumb || '')}"><span class="pn">Page ${esc(pg.page)}</span><span class="st ${esc(s.cls)}">${esc(s.t)}</span>${retry}</li>`;
     }).join('');
     strip.innerHTML = tiles + (cap.saving ? '<li class="busy"><span class="ph" aria-hidden="true"></span><span class="pn">New page</span><span class="st busy">Saving…</span></li>' : '');
   }
-  const states = cap.pages.map(capState);
+  const states = view ? view.tiles : cap.pages.map(capState);
   const pending = states.filter(s => s.cls === 'busy' || s.cls === 'queued').length + (cap.saving ? 1 : 0);
   const failed = states.filter(s => s.retry).length;
   const prog = $('capProg');
   if (prog) {
-    const held = cap.pages.some(p => p.held);
-    prog.className = 'capprog' + (failed ? ' err' : (pending || held) ? ' busy' : cap.pages.length ? ' ok' : '');
-    prog.textContent = held ? (cap.asking ? 'This photo stays here until you tap Save.' : 'Reading the JO number…') : !cap.pages.length && !cap.saving ? '' : failed ? (failed + (failed > 1 ? ' pages failed' : ' page failed')) : pending ? (pending === 1 ? '1 page still uploading' : pending + ' pages still uploading') : 'All saved';
+    if (view) { prog.className = 'capprog' + (view.lineCls || ''); prog.textContent = view.line; }
+    else {
+      const held = cap.pages.some(p => p.held);
+      prog.className = 'capprog' + (failed ? ' err' : (pending || held) ? ' busy' : cap.pages.length ? ' ok' : '');
+      prog.textContent = held ? (cap.asking ? 'This photo stays here until you tap Save.' : 'Reading the JO number…') : !cap.pages.length && !cap.saving ? '' : failed ? (failed + (failed > 1 ? ' pages failed' : ' page failed')) : pending ? (pending === 1 ? '1 page still uploading' : pending + ' pages still uploading') : 'All saved';
+    }
   }
   const retryAll = $('btnCapRetry'); if (retryAll) retryAll.classList.toggle('hidden', !failed);
   if (box) {
@@ -1283,11 +1306,16 @@ function rowHtml(it, withJO) {
     + `<div class="st ${st}">${esc(label)}</div>${fix}</div>${btns}</li>`;
 }
 function renderQueue() {
-  const c = queue.counts(), n = c.pending + c.failed + (c.needsjo || 0), txt = statusText(c), up = counterText(c);
+  const c = queue.counts(), n = c.pending + c.failed + (c.needsjo || 0), txt = statusText(c);
+  captureView = (window.OYPZones && typeof OYPZones.joStatus === 'function') ? OYPZones.joStatus(captureSnap()) : null;
+  try { renderQueueBody(c, n, txt); } finally { captureView = null; }
+}
+function renderQueueBody(c, n, txt) {
+  const up = captureView ? captureView.counter : counterText(c);
   document.querySelectorAll('.upcount').forEach(b => {
     b.textContent = up; b.classList.toggle('hidden', !up);
-    b.classList.toggle('busy', !!c.pending && !c.needsjo && !c.failed);
-    b.classList.toggle('err', !!(c.needsjo || c.failed));
+    b.classList.toggle('busy', captureView ? !!captureView.counterBusy : (!!c.pending && !c.needsjo && !c.failed));
+    b.classList.toggle('err', captureView ? !!captureView.counterErr : !!(c.needsjo || c.failed));
   });
   document.querySelectorAll('.qbadge').forEach(b => { b.textContent = n; b.classList.toggle('hidden', !n); b.classList.toggle('bad', !!(c.failed || c.needsjo)); });
   const qs = $('qStatus');
@@ -1452,7 +1480,7 @@ function scanHelp() { const h = document.querySelector('#startView .help'); if (
 scanHelp();
 window.addEventListener('oyp-zones-ready', () => setTimeout(scanHelp, 50));
 loadCV().then(cv => { if (cv && cv.Mat) reprocessPlain(); }).catch(() => {});
-window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, finishCapture, realJO, joFromRead, fileHeld, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS };
+window.__scan = { handlePhotos, loadPhoto, photo, cap, rotFor, swipeAxis, swipePast, rotateCanvas, rotation, state, review, openReview, capture, finalConfidence, AUTO_ACCEPT, queue, ensureLive, stickerOn, setSticker, scanPayload, renderCapture, renderQueue, finishCapture, realJO, joFromRead, fileHeld, applyJpegOrient, exifTagForPixels, jpegOrientation, jpegSize, pageCanvas, renderOut, detectorReady, CV_WAIT_MS };
 })();
 
 // owner: stone background only while the start screen is shown
