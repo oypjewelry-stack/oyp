@@ -47,7 +47,8 @@ Site
     paste/PrintQueue.gs                 the whole file (rev, both auto switches, batch, dedupe, jewelry-tag description)
     paste/Code.gs.print.patch.txt       the only Code.gs edit
   Page 1 of a scan (a missing page counts as page 1) queues both stickers. false skips that one. The exact line is:
-    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') { if (req.printJo !== false) printEnqueue_(jo, 'jo_card', 'scanner', {}); if (req.printTag !== false) printEnqueue_(jo, 'jewelry_tag', 'scanner', {}); } } catch (e) {}
+    try { if ((parseInt(req.page, 10) || 1) === 1 && typeof printEnqueue_ === 'function') { if (req.printJo !== false) printEnqueue_(full, 'jo_card', 'scanner', {}); if (req.printTag !== false) printEnqueue_(full, 'jewelry_tag', 'scanner', {}); } } catch (e) {}
+  `full` is joFull_(req.jo), already next to `jo` in doPost. The sticker and the QR keep a version letter (26-287B). A scan with no letter still queues the base number. printNormJo_ keeps that letter, so 26-287B does not dedupe with 26-287.
   printEnqueue_ then reads print_auto_jo_card and print_auto_jewelry_tag. A missing key still follows the old print_auto, and a missing print_auto stays on. A sticker already queued or already printed for that JO is not added again. A manual batch still queues when the switch is off.
   The jo-scanner page no longer has to unwrap fetch. print.js does not watch scan uploads, so that workaround is harmless.
   A connected printer checks printQueue about every 5 seconds. That check is only the oypPrintRev cache value. Until this PrintQueue.gs is pasted, the page stays on a full read every 15 seconds.
