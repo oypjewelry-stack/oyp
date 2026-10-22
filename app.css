@@ -404,6 +404,19 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,.
 button.swbtn.pill.sm{height:34px;min-height:34px;box-sizing:border-box;font-family:var(--head);font-size:var(--d-btnout-fp,calc(18px*var(--hs)));font-weight:var(--d-btnout-g,500);letter-spacing:0;line-height:1;padding:0 calc(18px*var(--sp,1));display:inline-flex;align-items:center;justify-content:center;text-transform:none;white-space:nowrap;flex:0 0 auto;width:auto;min-width:max-content}
 button.swbtn.pill.sm.outline{background:#fff;color:#111;border:1.5px solid #111}
 button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
+/* Corner × for the row's removing action. 34px hit area, small grey glyph.
+   Phones (no hover, or a coarse pointer) keep swipe only. Select hides it.
+   The extra right padding is the hit area, so the glyph sits inside the card
+   and does not cover text or a photo. It is not part of the swipe tray. */
+.swx{display:none;position:absolute;top:0;right:0;z-index:3;width:34px;height:34px;min-width:34px;min-height:34px;box-sizing:border-box;margin:0;padding:0;border:0;background:transparent;color:#777;cursor:pointer;align-items:center;justify-content:center;line-height:0}
+.swx svg{display:block;width:14px;height:14px}
+@media (hover:hover) and (pointer:fine){
+  .swclip.hasx>.swface>.swx{display:flex}
+  .swclip.hasx>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}
+  .swsel .swclip.hasx>.swface>.swx{display:none}
+  .swsel .swclip.hasx>.swface>:first-child{padding-right:var(--swx-base, 0px)}
+  .swx:hover,.swx:focus-visible{color:#111}
+}
 /* Inventory tiles are grid items. A flex clip sized to the tray's max-content
    and let Archive sit past the card. The clip is the cell, and it clips the tray. */
 .ivgrid{min-width:0}
