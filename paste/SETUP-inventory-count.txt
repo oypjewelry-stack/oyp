@@ -1,0 +1,53 @@
+Inventory count — what to paste, and what not to run.
+
+The handheld is a keyboard wedge. It types an EPC (hex) and Enter into the focused field. The Inventory count page keeps a hidden field focused for that. Reads stay on the phone until Finish. Linking a tag is its own save: the page asks first, then linkEpc writes that one EPC cell.
+
+New file (code only)
+  Apps Script: + Script, name it InventoryCount, paste paste/InventoryCount.gs (the whole file, no extra header).
+  Save.
+
+Hook — one line. In Auth.gs, inside handleAction_ (the action router doPost already calls), on its own line immediately after the InvBulk hook. If that line is not there, put it immediately after the JobSync hook. Put it before the unknown-action error.
+
+    if (typeof isInvBulkAction_ === 'function' && isInvBulkAction_(a)) return handleInvBulk_(req, s.user); // InvBulk.gs
+
+  Add under it:
+
+    if (typeof isCountAction_ === 'function' && isCountAction_(a)) return handleCount_(req, s.user); // InventoryCount.gs
+
+  Use the same names as that hook (a, req, s.user). Do not paste a new Auth.gs over the live file.
+  If your project routes actions inside doPost itself, add the same line there, with the same variable names the neighboring hook uses.
+
+Patches, against the live files (exact FIND / REPLACE)
+  Fast.gs        paste/Fast.gs.count.patch.txt        countLoad is a read, and it is not cached
+  DashCache.gs   paste/DashCache.gs.count.patch.txt   countLoad is a read, and it is not saved as a page answer
+
+Do not add linkEpc or countFinish to FAST.READS, FAST.CACHE, or DCACHE.READS. Those are writes, so a link or a finish bumps both caches.
+Do not add countLoad to FAST.CACHE, and do not add it to the DashCache function that saves page answers. The count has to read the sheet as it is now.
+countLoad is handled by handleCount_. It does not go through dcacheRead_.
+
+oauthScopes
+  None. No appsscript.json change.
+
+Items tab
+  The live tab is named Items. There is no new setup function.
+  The first countLoad, link, or finish adds a header cell EPC in the next empty column when no EPC header is already there (epc, Epc, and EPC all count as already there). It also adds last_counted and count_status the same way when those headers are missing.
+  That step writes header cells only. It does not fill, clear, or replace any data cell, and it does not rewrite a header that is already present.
+  Finish writes two cells on each found row: last_counted (an ISO timestamp) and count_status (found).
+  Missing rows are written only when the request has mark_missing true. The page asks before it sends that. Those rows get last_counted and count_status missing.
+  Location, the existing status column, the description, the client, the photo, and every other cell stay as they are.
+  An EPC with no item is not added as a row.
+  Link writes the EPC cell for that one item. A tag that is already stored on a different row is refused. 26-287B is not treated as 26-287.
+
+On hand
+  A row is expected on hand unless its location or status is sold, archived, consigned, cancelled, draft, shipped, picked_up, working, or queue.
+  An on_hand cell of yes, true, or 1 forces the row in. no, false, or 0 forces it out.
+  The JO is returned with its letter. 26-287B stays 26-287B.
+
+Then
+  Deploy > Manage deployments > pencil > New version > Deploy.
+  Do not use New deployment.
+
+Site
+  staff/index.html, nav.js, app.js, count.js, and count.css ship on GitHub Pages.
+  Inventory count is in the left menu for admin, production manager, and staff. The page names stay above Log out. Log out stays last.
+  Start count loads the on-hand rows. Each tag is matched on the phone. A repeat EPC does not count twice. Finish is the first time found and missing rows are written.
