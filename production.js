@@ -168,7 +168,7 @@ function cardH(c, phone) { // every card is the same height: fixed 4:3 photo, cl
     <div class="pbd"><div class="kjo">${window.OYP.piece(c.client, id)}${badge}</div>
       <div class="kd" title="${esc(desc)}">${esc(desc)}</div>
       <div class="kc" title="${esc(who)}">${c.assignee ? '<b>' + esc(c.assignee) + '</b>' : '<i>Unassigned</i>'}</div>
-      ${c.running.length ? `<div class="prun"><i></i>${esc(c.running[0].worker)} · <span data-since="${c.running[0].since}">${elapsed(c.running[0].since)}</span></div>` : '<div class="prun pslot" aria-hidden="true"></div>'}</div></div>
+      ${c.running.length ? `<div class="prun"><i></i><span class="prunln"><b>${esc(c.running[0].worker)}</b><span class="prunsep">·</span><span data-since="${c.running[0].since}">${elapsed(c.running[0].since)}</span></span></div>` : '<div class="prun pslot" aria-hidden="true"></div>'}</div></div>
     <div class="kf">${chips}</div>
     ${phone ? (nx && !(staff && c.col === 'pickup') ? `<button class="pmove" data-move="${c.jo}">Move to ${esc(nx.label)}</button>` : '<div class="pmove pmnone" aria-hidden="true">Last stage</div>') : ''}</div>`;
 }
@@ -206,9 +206,9 @@ function wireBoard(main) {
   main.querySelectorAll('.pcard').forEach(el => el.onclick = e => { if (e.target.closest('[data-move]')) return; const c = S.r.cards.find(x => x.jo === el.dataset.jo); location.hash = '#/production/jo/' + encodeURIComponent(c ? joShown(c) : el.dataset.jo); });
   main.querySelectorAll('[data-move]').forEach(b => b.onclick = e => { e.stopPropagation(); const c = S.r.cards.find(x => x.jo === b.dataset.move), nx = nextCol(c); openMove(c, nx.key); });
   // desktop drag and drop: staff may drop only on the NEXT column; admin + PM anywhere
-  let drag = null;
+  let drag = null, fromX = false;
   main.querySelectorAll('.pcard[draggable]').forEach(el => {
-    el.addEventListener('dragstart', e => { drag = S.r.cards.find(x => x.jo === el.dataset.jo); e.dataTransfer.setData('text/plain', drag.jo); e.dataTransfer.effectAllowed = 'move'; el.classList.add('drag');
+    el.addEventListener('dragstart', e => { if (fromX) { e.preventDefault(); fromX = false; return; } drag = S.r.cards.find(x => x.jo === el.dataset.jo); if (!drag) { e.preventDefault(); return; } e.dataTransfer.setData('text/plain', drag.jo); e.dataTransfer.effectAllowed = 'move'; el.classList.add('drag');
       main.querySelectorAll('.pcol').forEach(c => c.classList.toggle('ok', okDrop(drag, c.dataset.col))); });
     el.addEventListener('dragend', () => { el.classList.remove('drag'); main.querySelectorAll('.pcol').forEach(c => c.classList.remove('ok', 'over')); });
   });
@@ -219,6 +219,13 @@ function wireBoard(main) {
       if (!c || c.col === cl.dataset.col) return; if (!okDrop(c, cl.dataset.col)) return toast('Move one stage forward at a time'); openMove(c, cl.dataset.col); });
   });
   const board = $('pBoard');
+  // A press on the × is Archive, not a drag. Clear it on release so the next card still drags.
+  if (board) {
+    board.addEventListener('pointerdown', e => { fromX = !!(e.target.closest && e.target.closest('.swx')); }, true);
+    const clearX = () => { fromX = false; };
+    board.addEventListener('pointerup', clearX, true);
+    board.addEventListener('pointercancel', clearX, true);
+  }
   const u = S.u;
   if (board && window.OYP.swipe && (can().all || (u && (u.role === 'admin' || u.role === 'production_manager')))) window.OYP.swipe(board, {
     item: '.pcard',
