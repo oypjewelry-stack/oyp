@@ -100,7 +100,7 @@ const nameFor = it => '26-287B-p' + it.page + '-102226.jpg';
   ok(zones.includes('item.boundJo'), 'a re-processed page is stored without waiting on a second JO read');
   ok(app.includes("if ((p.held || p.jo === 'OCR') && realJO(state.jo)) fileHeld(realJO(state.jo))"), 'a page enqueued while the read is in flight is bound when that add finishes');
   ok(fileAs.indexOf('fileHeld(jo)') !== -1 && fileAs.indexOf('fileHeld(jo)') < fileAs.indexOf('say('), 'the zone read binds the held page before the toast');
-  ok(/app\.js\?v=20261022p/.test(html) && /queue\.js\?v=20261022n/.test(html), 'app.js and queue.js cache-busts are v20261022p and v20261022n');
+  ok(/app\.js\?v=20261022q/.test(html) && /queue\.js\?v=20261022n/.test(html), 'app.js and queue.js cache-busts are v20261022q and v20261022n');
   ok(app.includes('function warmOcr') && app.includes('function lookupJo') && app.includes('oypJoList') && app.includes("op: 'joList'") && app.includes('Saved, reading JO…') && app.includes('page-worker.js?v=20261022a'), 'the shutter paints immediately, OCR is warmed, and the JO list stays on the phone');
   ok(early.indexOf('ocrJoPage') < 0 && early.indexOf('postReadJo') < 0 && early.includes('ocrJoNumber'), 'the shutter reads the zone crop and does not send the whole page');
   ok(Q.realJo('26–363') === '26-363' && Q.realJo('26-36O') === '26-360' && Q.realJo('26 - 363') === '26-363' && Q.realJo('26-363b') === '26-363B', 'JO lookup treats a dash, a spaced hyphen, O, and a revision letter as the number');

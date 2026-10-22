@@ -965,21 +965,20 @@ function joListCache() {
     return j && Array.isArray(j.jos) ? j : { jos: [], at: 0 };
   } catch (e) { return { jos: [], at: 0 }; }
 }
-function lookupJo(text) { // the sheet list on this phone. A pattern-valid number still files when the list is empty or the JO is new.
+function strictJO(text) { // the whole OCR line is one JO. A longer digit run is a guess, not a nearby number.
+  const t = String(text || '').toUpperCase().replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-').replace(/O/g, '0').replace(/[^0-9A-Z-]/g, '');
+  return /^\d{2}-\d{3,4}[A-Z]?$/.test(t) ? t : '';
+}
+function lookupJo(text) { // exact list hit when the phone has one. A new JO still files. No network, and no nearby-number swap.
   const t0 = performance.now();
-  const jo = realJO(text);
-  let out = '';
+  const jo = strictJO(text);
+  let out = jo;
   if (jo) {
-    const list = joListCache().jos.map(realJO).filter(Boolean);
-    if (!list.length || list.indexOf(jo) >= 0) out = jo;
-    else {
-      const raw = String(text || '').toUpperCase();
-      const hits = list.filter(n => raw.indexOf(n) >= 0);
-      out = hits.length === 1 ? hits[0] : jo;
-    }
+    const hit = joListCache().jos.map(realJO).find(n => n === jo);
+    if (hit) out = hit;
   }
   lastTiming.lookup = Math.round(performance.now() - t0);
-  return out;
+  return out || '';
 }
 function refreshJoList() { // background. A scan never waits on this.
   const go = window.__oypNativeFetch || fetch;
@@ -1383,9 +1382,11 @@ async function handReadJo(b64) {
     const res = await worker.recognize(base);
     base.width = base.height = 0;
     const text = (res && res.data && res.data.text) || '';
-    const jo = realJO(text);
-    if (jo) return jo;
-    return String(text).toUpperCase().replace(/[^0-9-]/g, '').slice(0, 8);
+    const conf = res && res.data ? Number(res.data.confidence) || 0 : 0;
+    const jo = strictJO(text);
+    // handwriting that only almost matches stays a guess. A clear line is 90 and up.
+    if (jo && conf >= 70) return jo;
+    return String(text).toUpperCase().replace(/[^0-9-]/g, '').slice(0, 12);
   } catch (e) { console.warn('hand', e); tessWorker = null; tessWarm = null; return ''; }
 }
 async function joCropUrl(dataUrl) {
@@ -1509,6 +1510,7 @@ async function handlePhotos(files, fromCamera) {
       const preview = showShotNow(f);
       await paintFrames();
       lastTiming.shown = Math.round(performance.now() - lastTiming.t0);
+      if (typeof location !== 'undefined' && /[?&]profile=after(?:&|$)/.test(location.search || '')) document.title = 'WORKING';
       let src; try { src = await loadPhoto(f); } catch (e) { dropPreview(preview); note('Photo not saved: ' + (e.message || e)); continue; }
       const pg = await autoSave(src);
       cap.saving = false;
