@@ -247,6 +247,17 @@ function layoutOk(L, narrow) {
     const burstState = await evalJson(`window.__state('#page', 'Once only')`);
     check(burstState.rows === 1 && burstState.calls === 1, 'Enter and a submit in the same turn add one row', JSON.stringify({ burst, burstState }));
 
+    const press = await evalJson(`(() => {
+      const btn = document.querySelector('#main .tdaddgo');
+      const cs = getComputedStyle(btn);
+      let reached = false;
+      document.addEventListener('pointerdown', () => { reached = true; }, true);
+      btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      return { prop: cs.transitionProperty, dur: cs.transitionDuration, reached: reached };
+    })()`);
+    check(press && press.reached, 'pointerdown still reaches the document, so the shared press handler can run', JSON.stringify(press));
+    check(press && /transform/.test(press.prop) && (press.dur === '0.05s' || press.dur === '50ms'), 'Add uses the 50ms scale transition and does not replace it', JSON.stringify(press));
+
     for (const [sel, name] of surfaces) {
       const wide = await evalJson(`window.__layout(${JSON.stringify(sel)})`);
       const wideProblems = layoutOk(wide, false);
