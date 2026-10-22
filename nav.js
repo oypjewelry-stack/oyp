@@ -5,7 +5,7 @@
 // back office lives at /staff/ since the site split (oypjewelry.com/ is the customer landing page)
 const STAFF = 'https://oypjewelry.com/staff/';
 const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
-const SCANNER = 'https://oypjewelry-stack.github.io/jo-scanner/';
+const SCANNER = 'https://oypjewelry.com/scan/';
 // Default order with nothing saved on this device, and the order Reset returns to. A role still only sees the items it already had.
 const NAV = {
   admin: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['review', 'To review'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it
@@ -116,14 +116,15 @@ if (typeof document !== 'undefined' && document.createElement) {
   }
   if (base && !document.querySelector('script[src*="scan-zones.js"]')) {
     var zs = document.createElement('script');
-    zs.src = base + 'scan-zones.js?v=4';
+    zs.src = base + 'scan-zones.js?v=5';
     (document.head || document.documentElement).appendChild(zs);
   }
   // Card Scanner start screen: drop the stone photo. Other screens are already white.
   var scanFlag = document.documentElement.getAttribute('data-oyp-scanner');
   var path = (typeof location !== 'undefined' && location && location.pathname) || '';
+  var onScanPath = /jo-scanner/.test(path) || /(^|\/)scan(\/|$)/.test(path);
   var onScanner = scanFlag === '1' ? true : scanFlag === '0' ? false
-    : /jo-scanner/.test(path)
+    : onScanPath
     || !!(document.getElementById('btnMenu') && document.getElementById('menu') && !document.getElementById('vOffice'));
   if (onScanner && !document.getElementById('oyp-scan-plain')) {
     var plain = document.createElement('style');
