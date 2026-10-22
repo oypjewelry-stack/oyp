@@ -8,6 +8,8 @@
 .oyp-pr .pill{white-space:nowrap}
 .oyp-pr .whomenu{left:auto;right:0;top:calc(100% + 6px);bottom:auto;min-width:280px;max-width:calc(100vw - 16px);z-index:40}
 .side a[data-oyp-printer],.menu a[data-oyp-printer]{display:flex;align-items:center;flex-wrap:wrap;column-gap:10px}
+.side a[data-oyp-printer] .oyp-pr-status,.menu a[data-oyp-printer] .oyp-pr-status{display:inline-flex;align-items:center;column-gap:10px;position:relative;padding-left:10px}
+.side a[data-oyp-printer] .oyp-pr-status::before,.menu a[data-oyp-printer] .oyp-pr-status::before{content:"";position:absolute;left:0;top:50%;width:1px;height:14px;transform:translateY(-50%);background:#ccc}
 .oyp-pr-pair{display:inline-flex;align-items:center;gap:6px}
 .side a[data-oyp-printer] .oyp-pr-name,.menu a[data-oyp-printer] .oyp-pr-name{font:inherit;letter-spacing:inherit;text-transform:inherit}
 .pr-link .oyp-pr-name{font-family:var(--label,Inter,Helvetica,sans-serif);font-weight:500;font-size:calc(12px * var(--fs,1));letter-spacing:.08em;text-transform:uppercase;color:#111}
@@ -53,6 +55,8 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .oyp-pr-acts .pill.sm.outline,.oyp-qbtns .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);letter-spacing:0;border-width:1px;padding-top:calc(9px*var(--sp) - 1px);padding-bottom:calc(9px*var(--sp) - 1px)}
 
 .oyp-qerr{display:block;margin-top:calc(4px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(12px * var(--fs,1));font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;color:#777}
+.oyp-qhold{display:block;margin:0 0 calc(8px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(13px * var(--fs,1));font-weight:500;line-height:1.35;letter-spacing:0;text-transform:none;color:#8a5a00}
+.oyp-slotdbg{display:block;margin:0 0 calc(8px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-size:calc(12px * var(--fs,1));font-weight:500;line-height:1.4;letter-spacing:0;text-transform:none;color:#444;word-break:break-word}
 :where(.oyp-qbtns button:disabled){opacity:.4;cursor:default}
 .oyp-qmain{flex:1;min-width:140px}
 .oyp-qprev{width:84px;height:auto;flex:none;display:block;background:#8e8e8e;border-radius:calc(8px * var(--rad,1))}

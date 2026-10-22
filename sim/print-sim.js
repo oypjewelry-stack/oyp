@@ -267,6 +267,18 @@ const listed = ctx.printRowsList_(rows);
 eq(listed.every(r => r.status === 'queued' || r.status === 'failed') && listed.some(r => r.jo === '26-287'), 'the queue list is queued and failed rows');
 const bare = ctx.printRowsEnqueue_([], '26-287', 'jewelry_tag', 'ada', '2026-10-21T00:00:00.000Z', false);
 eq(bare.ok && bare.item.jo === '26-287' && !('client' in bare.item), 'a queued row does not store a client name');
+const idRows = [];
+const made = ctx.printRowsEnqueue_(idRows, '26-510', 'jo_card', 'ada', '2026-10-22T00:00:00.000Z', true, true, 'pq-client1', 'dev-a');
+eq(made.created && made.item.print_id === 'pq-client1' && made.item.device_id === 'dev-a' && made.item.printed_at === '2026-10-22T00:00:00.000Z' && idRows.length === 1, 'a client print id is stored and claimed by that station');
+const replay = ctx.printRowsEnqueue_(idRows, '26-510', 'jo_card', 'ada', '2026-10-22T00:00:01.000Z', true, true, 'pq-client1', 'dev-a');
+eq(!replay.created && replay.replay && replay.item.print_id === 'pq-client1' && idRows.length === 1, 'the same client print id does not add a row');
+const otherStation = ctx.printRowsClaim_(idRows, 'pq-client1', 'dev-b', '2026-10-22T00:00:02.000Z');
+eq(!otherStation.ok && otherStation.code === 'TAKEN', 'another station cannot claim a sticker this station already sent');
+const junk = ctx.printRowsEnqueue_([], '26-511', 'jo_card', 'ada', '2026-10-22T00:00:00.000Z', true, true, '../etc/passwd', 'dev-a');
+eq(junk.created && junk.item.print_id.indexOf('pq-') === 0 && junk.item.print_id !== '../etc/passwd' && !junk.item.device_id, 'a print id that is not pq- is ignored');
+const queuedFirst = [{ print_id: 'pq-oldrow', jo: '26-512', kind: 'jo_card', status: 'queued', device_id: '', printed_at: '' }];
+const adopt = ctx.printRowsEnqueue_(queuedFirst, '26-512', 'jo_card', 'ada', '2026-10-22T00:00:00.000Z', true, true, 'pq-newid1', 'dev-a');
+eq(!adopt.created && adopt.item.print_id === 'pq-oldrow' && queuedFirst.length === 1, 'a waiting row is reused instead of storing a second id');
 
 // Sheet side: specs and the on-screen name come from one JobOrders read and one Clients read; a Date due prints as a day.
 let jobReads = 0;
@@ -310,9 +322,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=20') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=51') && index.includes('app.js?v=35') && index.includes('settings.js?v=21') && index.includes('print.css?v=14') && index.includes('app.css?v=50') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=14') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=20') && read('nav.js').includes('scan-zones.js?v=18') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=20') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=14') && read('staff/print-test.html').includes('nav.js?v=51') && read('staff/print-test.html').includes('app.css?v=50'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=23') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=53') && index.includes('app.js?v=35') && index.includes('settings.js?v=21') && index.includes('print.css?v=16') && index.includes('app.css?v=50') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=14') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=16') && read('sim/swipe-preview.html').includes('print.css?v=16'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=23') && read('nav.js').includes('scan-zones.js?v=18') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=23') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=16') && read('staff/print-test.html').includes('nav.js?v=53') && read('staff/print-test.html').includes('app.css?v=50'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
@@ -349,6 +361,7 @@ eq(read('print.css').includes('.oyp-pr-dot.busy{background:#a37b12}') && read('p
 eq(read('paste/PrintQueue.gs').includes("op === 'requeue'") && read('paste/PrintQueue.gs').includes('res.requeued') && read('paste/PrintQueue.gs.requeue.patch.txt').includes('printRowReset_'), 'the sheet requeues a failed row in place');
 eq(read('print.js').includes('kindsByModel') && read('print.css').includes('.oyp-pr-dot{') && read('print.css').includes('.oyp-pr-dot.on{'), 'kinds are stored per model, and the menu dot has a connected color');
 eq(read('print.js').includes('function printerMarks') && read('print.js').includes('function connectSlot') && read('print.js').includes('authorizedPort') && read('print.js').includes('data-slot-act') && read('print.css').includes('.oyp-pr-name') && read('print.css').includes('.oyp-pr-pair'), 'each set-up printer has a model name and its own connect row');
+eq(read('print.css').includes('.oyp-pr-status::before') && read('print.css').includes('width:1px;height:14px') && read('print.css').includes('background:#ccc') && read('print.css').includes('padding-left:10px') && read('print.js').includes('class="oyp-pr-status"') && !read('print.js').includes("'>|'") && !read('print.js').includes('Printer|'), 'the menu divider is a 1px line before the first printer name');
 eq(pq.includes('String(req.mark || req.op || \'\')') && !pq.includes('String(req.op || req.mark || \'\')'), 'printMark prefers mark over op');
 ctx.printDecorate_ = function (item) { return item; };
 const marked = ctx.printMark_({ op: 'printMark', mark: 'cancelled', print_id: sheetRows[0].print_id, device_id: 'd-x' }, { username: 'scanner' });
@@ -465,7 +478,10 @@ function bootPrint(opts) {
       };
       return el;
     },
-    addEventListener() {}
+    _listeners: {},
+    addEventListener(name, fn) {
+      (this._listeners[name] || (this._listeners[name] = [])).push(fn);
+    }
   };
   function WorkerCtor() {
     if (opts.workerFails) throw new Error('no worker');
@@ -478,6 +494,9 @@ function bootPrint(opts) {
   const tasks = [];
   const encodes = [];
   const logs = [];
+  const timeline = [];
+  let vnow = 0;
+  const lag = opts.lag || null;
   const clients = [];
   const connects = [];
   const notes = [];
@@ -504,11 +523,21 @@ function bootPrint(opts) {
   function Task(name) { this.name = name; tasks.push(name); }
   Task.prototype.printInit = function () { return Promise.resolve(); };
   Task.prototype.printPage = function () {
+    timeline.push({ ev: 'send', t: vnow });
     const step = pages.length ? pages.shift() : 'ok';
     if (step === 'e4') return Promise.reject(new Error('Timeout waiting response (waited for e4)'));
     if (step === 'hang') return new Promise(function () {});
     if (step === 'hold') return new Promise(function (resolve) { held.push({ mark: 'page', resolve: resolve }); });
-    return Promise.resolve();
+    const sendMs = lag ? lag.send : 0;
+    if (!sendMs) return Promise.resolve();
+    const started = vnow;
+    return new Promise(function (resolve) {
+      fakeSet(function () {
+        vnow = Math.max(vnow, started + sendMs);
+        timeline.push({ ev: 'paper', t: started + sendMs });
+        resolve();
+      }, sendMs);
+    });
   };
   Task.prototype.waitForFinished = function () { return Promise.resolve(); };
   Task.prototype.printEnd = function () {
@@ -540,8 +569,8 @@ function bootPrint(opts) {
     return { model: model, printheadPixels: model === 'B31' ? 600 : 384, printDirection: 'top' };
   };
   let ble = opts.bluetooth || {};
-  if (opts.reconnect || opts.devices) {
-    const rawDevices = opts.devices || [{
+  if (opts.reconnect || opts.devices || opts.grantDevices) {
+    const rawDevices = opts.grantDevices || opts.devices || [{
       id: 'bt-b31', name: 'B31',
       gatt: { connected: true, connect: function () { return Promise.resolve(); } }
     }];
@@ -566,7 +595,7 @@ function bootPrint(opts) {
   }
   const sandbox = {
     console: { log() { logs.push(Array.prototype.join.call(arguments, ' ')); }, error() { console.error.apply(console, arguments); } },
-    performance: { now: () => Date.now() },
+    performance: { now: () => (lag ? vnow : Date.now()) },
     Math, Date, String, Object, Array, Number, JSON, Promise, Uint8Array, parseInt, isFinite,
     setTimeout: opts.manualTime ? fakeSet : setTimeout,
     clearTimeout: opts.manualTime ? fakeClear : clearTimeout,
@@ -591,7 +620,7 @@ function bootPrint(opts) {
         if (opts.rev != null) data.rev = String(opts.rev);
       }
       if (body.action === 'printEnqueue' || body.op === 'printEnqueue' || body.action === 'printReprint' || body.op === 'printReprint') {
-        data = { ok: true, created: true, item: { print_id: 'pq-n' + calls.length, jo: body.jo, kind: body.kind, status: 'queued' } };
+        data = { ok: true, created: true, item: { print_id: opts.aliasId || body.print_id || ('pq-n' + calls.length), jo: body.jo, kind: body.kind, status: 'queued' } };
       }
       if (body.mark === 'claim') {
         if (opts.taken) data = { ok: false, code: 'TAKEN', error: 'Another printer has this sticker' };
@@ -607,8 +636,22 @@ function bootPrint(opts) {
         else if (!opts.queue) data = { ok: true, items: [] };
       }
       const res = { json() { return Promise.resolve(data); }, clone() { return { json() { return Promise.resolve(data); } }; } };
+      const scriptMs = lag ? lag.script : 0;
+      const scriptCall = body.action === 'printEnqueue' || body.op === 'printEnqueue' || body.action === 'printReprint' || body.op === 'printReprint' || body.mark === 'claim' || body.mark === 'printed' || body.mark === 'failed';
+      function finishScript() {
+        if (scriptMs) vnow = Math.max(vnow, (finishScript.started || 0) + scriptMs);
+        timeline.push({ ev: 'fetch-done', action: body.action || body.op || '', mark: body.mark || '', t: scriptMs ? (finishScript.started || 0) + scriptMs : vnow });
+        return res;
+      }
+      if (opts.holdEnqueue && (body.action === 'printEnqueue' || body.op === 'printEnqueue')) {
+        return new Promise(resolve => { held.push({ mark: 'enqueue', resolve: () => resolve(finishScript()) }); });
+      }
       if (opts.holdClaim && body.mark === 'claim') return new Promise(resolve => { held.push({ mark: 'claim', resolve: () => resolve(res) }); });
       if (opts.holdPrinted && body.mark === 'printed') return new Promise(resolve => { held.push({ mark: 'printed', resolve: () => resolve(res) }); });
+      if (scriptMs && scriptCall) {
+        finishScript.started = vnow;
+        return new Promise(resolve => { fakeSet(() => resolve(finishScript()), scriptMs); });
+      }
       return Promise.resolve(res);
     },
     Worker: WorkerCtor,
@@ -623,7 +666,7 @@ function bootPrint(opts) {
     NiimbotSerialClient: Client,
     printTasks: { B1: 1, D110M_V4: 1 },
     findPrintTask: function (model, version) { return opts.found || (version >= 4 ? 'D110M_V4' : undefined); },
-    ImageEncoder: { encodeCanvas: function (c) { encodes.push(c && c.width); return { cols: c.width, rows: c.height, rowsData: [] }; } },
+    ImageEncoder: { encodeCanvas: function (c) { encodes.push(c && c.width); if (lag && lag.render) vnow += lag.render; return { cols: c.width, rows: c.height, rowsData: [] }; } },
     PageColorType: { SingleColor: 0 },
     LabelType: { WithGaps: 1 }
   };
@@ -642,7 +685,7 @@ function bootPrint(opts) {
   vm.createContext(sandbox);
   vm.runInContext(read('print.js'), sandbox, { filename: 'print.js' });
   return {
-    sandbox, store, calls, workers, intervals, tasks, encodes, logs, clients, connects, notes, gatt: function () { return gattConnects; },
+    sandbox, store, calls, workers, intervals, tasks, encodes, logs, clients, connects, notes, timeline, now: function () { return vnow; }, gatt: function () { return gattConnects; },
     release(mark) { held.filter(h => h.mark === mark).forEach(h => h.resolve()); },
     flush: flush, setVis: function (v) { vis = v; }
   };
@@ -672,10 +715,21 @@ drain().then(function () {
     const claim = hidden.calls.filter(b => b.mark === 'claim').pop();
     eq(saved.kindsByModel.B31 && saved.kindsByModel.B31.jo_card === true && saved.kindsByModel.B1.jo_card === false, 'a later B31 keeps its own JO-card default');
     eq(claim && claim.op === 'printMark' && claim.mark === 'claim' && !('op' in claim && claim.op !== 'printMark') && !claim.session, 'a hidden tab still claims, and the scanner body keeps op printMark');
-    eq(hidden.workers.length === 1 && !hidden.intervals.some(i => i.ms === 5000), 'the worker timer runs and the fallback interval does not');
-    if (hidden.workers[0]) hidden.workers[0].onmessage();
+    eq(hidden.workers.length === 1 && !hidden.intervals.some(i => i.ms === 1000) && read('print.js').includes('var POLL = 1000'), 'the worker timer runs and the fallback interval does not');
+    const beforePoll = hidden.calls.filter(b => b.op === 'printQueue' || b.action === 'printQueue').length;
+    if (hidden.workers[0]) {
+      hidden.workers[0].onmessage();
+      hidden.workers[0].onmessage();
+      hidden.workers[0].onmessage();
+      hidden.workers[0].onmessage();
+    }
     return drain().then(function () {
-      eq(hidden.calls.filter(b => b.op === 'printQueue' || b.action === 'printQueue').length >= 2, 'a worker tick polls again while the tab is hidden');
+      const mid = hidden.calls.filter(b => b.op === 'printQueue' || b.action === 'printQueue').length;
+      eq(mid === beforePoll, 'a hidden tab skips four of every five polls');
+      if (hidden.workers[0]) hidden.workers[0].onmessage();
+      return drain().then(function () {
+        eq(hidden.calls.filter(b => b.op === 'printQueue' || b.action === 'printQueue').length >= beforePoll + 1, 'the fifth hidden tick polls again');
+      });
     });
   });
 }).then(function () {
@@ -700,7 +754,7 @@ drain().then(function () {
   });
   fallback.sandbox.OYPPrint.connect('bluetooth');
   return drain().then(function () {
-    eq(fallback.workers.length === 0 && fallback.intervals.some(i => i.ms === 5000) && !fallback.intervals.some(i => i.ms === 15000), 'setInterval polls every 5 seconds only when the worker cannot start');
+    eq(fallback.workers.length === 0 && fallback.intervals.some(i => i.ms === 1000) && !fallback.intervals.some(i => i.ms === 15000), 'setInterval polls every second only when the worker cannot start');
   });
 }).then(function () {
   const e4 = bootPrint({
@@ -836,7 +890,7 @@ drain().then(function () {
   });
 }).then(function () {
   const overlap = bootPrint({
-    holdClaim: true,
+    holdEnqueue: true,
     drive: true,
     models: ['B31'],
     queue: { ok: true, items: [] },
@@ -847,11 +901,18 @@ drain().then(function () {
     overlap.sandbox.OYPPrint.printJo('jo_card', '26-336', { reprint: true });
     return drain();
   }).then(function () {
-    eq(overlap.encodes.length === 1 && overlap.tasks.length === 0, 'the label is encoded while the claim is still in flight');
-    overlap.release('claim');
+    eq(overlap.encodes.length === 1 && overlap.tasks.length === 1 && overlap.tasks[0] === 'B1', 'the label is sent without waiting for the queue');
+    eq(!overlap.calls.some(b => b.mark === 'printed') && !overlap.calls.some(b => b.mark === 'claim'), 'the tap does not claim, and the printed mark waits for the log');
+    overlap.sandbox.OYPPrint.printJo('jo_card', '26-336', { reprint: true });
     return drain();
   }).then(function () {
-    eq(overlap.tasks.length === 1 && overlap.tasks[0] === 'B1', 'the claim then sends the bitmap that was already encoded');
+    eq(overlap.tasks.length === 1 && overlap.notes.indexOf('That sticker is already printing') >= 0, 'a second tap of the same sticker does not print again');
+    overlap.release('enqueue');
+    return drain();
+  }).then(function () {
+    const printed = overlap.calls.filter(b => b.mark === 'printed');
+    const enq = overlap.calls.filter(b => b.action === 'printEnqueue' || b.op === 'printEnqueue');
+    eq(printed.length === 1 && enq.length === 1 && printed[0].print_id === enq[0].print_id && /^pq-/.test(enq[0].print_id), 'the log is marked printed with the client print id');
   });
 }).then(function () {
   const pair = bootPrint({
@@ -900,7 +961,7 @@ drain().then(function () {
       slow.workers[0].onmessage();
       return drain().then(function () {
         const n2 = slow.calls.filter(b => b.action === 'printQueue' || b.op === 'printQueue').length;
-        eq(n2 === n + 2, 'without a brief rev, the station reads the queue every 15 seconds');
+        eq(n2 === n + 2, 'without a brief rev, a visible station reads the queue every 3rd tick');
       });
     });
   });
@@ -1123,6 +1184,252 @@ drain().then(function () {
         eq(marks.indexOf('B31') >= 0 && marks.indexOf('B1') >= 0, 'a B31 that answers as a B1 is named from the Bluetooth device');
         eq(tag && !onPeer(tag) && card && onPeer(card) && intake && onPeer(intake), 'JO cards and intake stickers follow the B31 name, not the slot or the model id');
       });
+    });
+  });
+}).then(function () {
+  function claimFor(box, id) {
+    return box.calls.filter(function (b) { return b.mark === 'claim' && b.print_id === id; }).pop();
+  }
+  function onPeer(body) { return !!(body && String(body.device_id || '').slice(-2) === '-2'); }
+  function watchQueue(box) {
+    const host = { innerHTML: '', querySelectorAll() { return []; }, setAttribute() {} };
+    box.sandbox.document.querySelectorAll = function (sel) {
+      if (sel === '[data-oyp-q]') return [host];
+      return [];
+    };
+    return host;
+  }
+  const live = [
+    { print_id: 'pq-tag', jo: '26-363', kind: 'jewelry_tag', status: 'queued', client: 'Ada' },
+    { print_id: 'pq-card', jo: '26-363', kind: 'jo_card', status: 'queued', current_stage: 'intake', client: 'Ada' }
+  ];
+  const staleMode = {
+    auto: true,
+    task: 'B1',
+    model: 'B1',
+    kindsByModel: {
+      B1: { jo_card: true, jewelry_tag: true },
+      B31: { jo_card: true, jewelry_tag: true }
+    },
+    links: [
+      { model: 'B1', btId: 'bt-b31' },
+      { model: 'B1', btId: 'bt-b1' }
+    ]
+  };
+  const both = bootPrint({
+    drive: true,
+    models: ['B1', 'B1'],
+    names: ['B31-HB03011342', 'B1-HC17121009'],
+    pages: ['hold', 'hold'],
+    queue: { ok: true, auto: true, items: live },
+    store: { oypPrint: JSON.stringify(staleMode) }
+  });
+  const bothHost = watchQueue(both);
+  both.sandbox.OYPPrint.connect('bluetooth');
+  both.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+  return drain().then(function () {
+    const tag = claimFor(both, 'pq-tag'), card = claimFor(both, 'pq-card');
+    const saved = JSON.parse(both.store.oypPrint);
+    const slot0 = saved.links[0], slot1 = saved.links[1];
+    eq(slot0 && slot0.model === 'B31' && slot1 && slot1.model === 'B1' && saved.task === 'B1', 'the Bluetooth names B31-HB03011342 and B1-HC17121009 override a saved print mode of B1');
+    eq(tag && onPeer(tag) && card && !onPeer(card), 'with both printers connected, the jewelry tag stays on the B1 and the JO card stays on the B31');
+    eq(both.encodes.indexOf(384) >= 0 && both.encodes.indexOf(600) >= 0, 'the tag uses the B1 head and the JO card uses the B31 head');
+    eq(bothHost.innerHTML.indexOf('B31-HB03011342') >= 0 && bothHost.innerHTML.indexOf('model B31') >= 0 && bothHost.innerHTML.indexOf('B1-HC17121009') >= 0 && bothHost.innerHTML.indexOf('model B1') >= 0 && bothHost.innerHTML.indexOf('saved jewelry tag ignored') >= 0, 'the print station shows each slot name, model, connection, and kinds');
+    const onlyB31 = bootPrint({
+      drive: true,
+      models: ['B1'],
+      names: ['B31-HB03011342'],
+      queue: { ok: true, auto: true, items: live },
+      store: { oypPrint: JSON.stringify(staleMode) }
+    });
+    const b31Host = watchQueue(onlyB31);
+    onlyB31.sandbox.OYPPrint.connect('bluetooth');
+    return drain().then(function () {
+      eq(claimFor(onlyB31, 'pq-card') && !onPeer(claimFor(onlyB31, 'pq-card')) && !claimFor(onlyB31, 'pq-tag'), 'a B31 with a saved jewelry-tag flag still does not print the tag');
+      eq(b31Host.innerHTML.indexOf('id="prHold"') >= 0 && b31Host.innerHTML.indexOf('Connect the B1 to print jewelry tags') >= 0 && b31Host.innerHTML.indexOf('pq-tag') >= 0, 'a held jewelry tag stays in the queue with Connect the B1 to print jewelry tags');
+      const onlyB1 = bootPrint({
+        drive: true,
+        models: ['B1'],
+        names: ['B1-HC17121009'],
+        queue: { ok: true, auto: true, items: live },
+        store: { oypPrint: JSON.stringify(staleMode) }
+      });
+      const b1Host = watchQueue(onlyB1);
+      onlyB1.sandbox.OYPPrint.connect('bluetooth');
+      return drain().then(function () {
+        eq(claimFor(onlyB1, 'pq-tag') && !claimFor(onlyB1, 'pq-card'), 'a saved B31 jewelry-tag flag does not move the JO card onto the B1');
+        eq(b1Host.innerHTML.indexOf('id="prHold"') >= 0 && b1Host.innerHTML.indexOf('Connect the B31 to print JO stickers') >= 0 && b1Host.innerHTML.indexOf('pq-card') >= 0 && b1Host.innerHTML.indexOf('class="oyp-qhold"') >= 0, 'a held JO card stays visible in the queue with Connect the B31 to print JO stickers');
+      });
+    });
+  });
+}).then(function () {
+  const flagText = 'To reconnect automatically, turn on chrome://flags/#enable-web-bluetooth-new-permissions-backend and relaunch Chrome';
+  function settingsHost() {
+    return {
+      innerHTML: '',
+      querySelector(sel) {
+        if (sel === '#prFlagCopy' && this.innerHTML.indexOf('id="prFlagCopy"') >= 0) return { onclick: null };
+        return null;
+      },
+      querySelectorAll() { return []; }
+    };
+  }
+  const hint = bootPrint({
+    bluetooth: {},
+    queue: { ok: true, items: [] },
+    store: { oypPrint: JSON.stringify({ auto: false }) }
+  });
+  const hintHost = settingsHost();
+  hint.sandbox.OYPPrint.mountSettings(hintHost);
+  eq(hintHost.innerHTML.indexOf(flagText) >= 0 && hintHost.innerHTML.indexOf('id="prFlagCopy"') >= 0, 'Settings names the Chrome flag when getDevices is missing');
+  eq(hint.sandbox.OYPPrint.printerMarks().indexOf('oyp-pr-status') < 0, 'a printer with no name has no divider');
+  const watches = { b1: 0, b31: 0 };
+  let b31Fails = 0, otherHits = 0, plainHits = 0;
+  function granted(id, name, connect, watchKey) {
+    return {
+      id: id,
+      name: name,
+      watchAdvertisements: function () {
+        if (watchKey) watches[watchKey] += 1;
+        return Promise.resolve();
+      },
+      gatt: { connect: connect }
+    };
+  }
+  const auto = bootPrint({
+    manualTime: true,
+    models: ['B1', 'B1', 'B1'],
+    grantDevices: [
+      granted('bt-b31', 'B31-2291', function () {
+        b31Fails += 1;
+        if (b31Fails === 1) return Promise.reject(new Error('out of range'));
+        return Promise.resolve();
+      }, 'b31'),
+      granted('bt-b1', 'B1-4C2A', function () { return Promise.resolve(); }, 'b1'),
+      granted('bt-b31', 'B31-2291', function () { return Promise.resolve(); }, 'b31'),
+      granted('bt-other', 'B21-1', function () { otherHits += 1; return Promise.resolve(); }),
+      granted('bt-plain', 'B31', function () { plainHits += 1; return Promise.resolve(); })
+    ],
+    queue: { ok: true, items: [] },
+    store: { oypPrint: JSON.stringify({ auto: false }) }
+  });
+  const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(n, v) { if (n === 'data-paint') this._p = v; } };
+  const row = { innerHTML: '', title: '', _p: '', getAttribute() { return this._p; }, setAttribute(n, v) { if (n === 'data-paint') this._p = v; } };
+  auto.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
+  auto.sandbox.document.querySelectorAll = function (sel) { return sel === '[data-oyp-printer]' ? [row] : []; };
+  return drain().then(function () {
+    const saved = JSON.parse(auto.store.oypPrint);
+    const links = saved.links || [];
+    const b1 = links.filter(function (l) { return l && l.btId === 'bt-b1' && l.model === 'B1'; });
+    const b31 = links.filter(function (l) { return l && l.btId === 'bt-b31' && l.model === 'B31'; });
+    eq(b1.length === 1 && b31.length === 1 && links.filter(Boolean).length === 2, 'granted B1 and B31 attach to different slots, named from the device');
+    eq(auto.notes.indexOf('B1 reconnected') >= 0 && auto.notes.indexOf('B31 reconnected') < 0, 'a granted printer that answers confirms with B1 reconnected');
+    eq(!auto.notes.some(function (t) { return t.indexOf('Could not connect') >= 0 || t.indexOf('Printer disconnected') >= 0; }), 'an out-of-range printer does not raise an error toast');
+    eq(pr.innerHTML.indexOf('id="prAutoNote"') >= 0 && pr.innerHTML.indexOf('B31 is off or out of range') >= 0 && pr.innerHTML.indexOf('Off or out of range') >= 0, 'the status line says the B31 is off or out of range');
+    eq(auto.gatt() === 2 && watches.b1 === 1 && watches.b31 === 1 && otherHits === 0 && plainHits === 0 && auto.clients.length === 1, 'only B1- and B31- names are tried, and a duplicate id is skipped');
+    auto.flush(2999);
+    return drain();
+  }).then(function () {
+    eq(auto.notes.indexOf('B31 reconnected') < 0 && auto.clients.length === 1, 'the retry waits the full 3 seconds');
+    auto.flush(3000);
+    return drain();
+  }).then(function () {
+    const saved = JSON.parse(auto.store.oypPrint);
+    const links = (saved.links || []).filter(Boolean);
+    const ids = links.map(function (l) { return l.btId; }).sort();
+    eq(auto.notes.indexOf('B31 reconnected') >= 0 && ids.join(',') === 'bt-b1,bt-b31' && links.some(function (l) { return l.btId === 'bt-b31' && l.model === 'B31'; }), 'after 3 seconds the B31 reconnects on its own slot');
+    eq(auto.clients.length === 2 && watches.b31 === 2 && otherHits === 0 && plainHits === 0, 'the retry does not open a second copy or a printer that was not granted');
+    const marks = auto.sandbox.OYPPrint.printerMarks();
+    eq(marks.indexOf('oyp-pr-status') >= 0 && marks.indexOf('B31') >= 0 && marks.indexOf('B1') >= 0 && marks.indexOf('|') < 0 && row.innerHTML.indexOf('Printer<span class="oyp-pr-status">') === 0 && row.innerHTML.indexOf('|') < 0, 'the menu row groups the names after Printer and does not use a bar character');
+    const before = auto.clients.length;
+    (auto.sandbox.document._listeners.visibilitychange || []).forEach(function (fn) { fn(); });
+    return drain().then(function () {
+      eq(auto.clients.length === before && auto.gatt() === 3, 'showing the page again does not attach a printer that is already connected');
+      const b31Client = auto.clients.filter(function (c, i) {
+        const opts = auto.connects[i];
+        return opts && opts.authorizedDevice && opts.authorizedDevice.id === 'bt-b31';
+      }).pop();
+      b31Client.emit('disconnect');
+      return drain();
+    });
+  }).then(function () {
+    const saved = JSON.parse(auto.store.oypPrint);
+    const links = (saved.links || []).filter(Boolean);
+    eq(auto.notes.filter(function (t) { return t === 'B31 reconnected'; }).length === 2 && auto.clients.length === 3, 'turning the B31 off reconnects it the same way');
+    eq(!auto.notes.some(function (t) { return t.indexOf('Printer disconnected') >= 0; }) && links.filter(function (l) { return l.btId === 'bt-b31' && l.model === 'B31'; }).length === 1 && links.filter(function (l) { return l.btId === 'bt-b1'; }).length === 1, 'that drop stays on the B31 and leaves the B1 where it is');
+    const ready = bootPrint({
+      grantDevices: [granted('bt-b1', 'B1-4C2A', function () { return Promise.resolve(); })],
+      queue: { ok: true, items: [] },
+      store: { oypPrint: JSON.stringify({ auto: false }) }
+    });
+    const readyHost = settingsHost();
+    return drain().then(function () {
+      ready.sandbox.OYPPrint.mountSettings(readyHost);
+      eq(readyHost.innerHTML.indexOf(flagText) < 0, 'the flag hint stays hidden once getDevices exists');
+    });
+  });
+}).then(function () {
+  const lag = { script: 400, send: 120, render: 30 };
+  const store = { oypPrint: JSON.stringify({ auto: false, model: 'B31', task: 'B1' }) };
+  const oldBox = bootPrint({
+    lag: lag, manualTime: true, drive: true, models: ['B31'],
+    queue: { ok: true, items: [] }, store: store
+  });
+  oldBox.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    const t0 = oldBox.now();
+    const marks = {};
+    const legacy = oldBox.sandbox.fetch('https://example.test', { method: 'POST', body: JSON.stringify({ action: 'printEnqueue', jo: '26-500', kind: 'jo_card', print_id: 'pq-legacy1' }) })
+      .then(function (res) { return res.json(); })
+      .then(function () {
+        marks.enqueue = oldBox.now() - t0;
+        const claim = oldBox.sandbox.fetch('https://example.test', { method: 'POST', body: JSON.stringify({ action: 'printMark', mark: 'claim', print_id: 'pq-legacy1' }) });
+        oldBox.sandbox.niimbluelib.ImageEncoder.encodeCanvas({ width: 384, height: 10 });
+        marks.renderAt = oldBox.now() - t0;
+        return claim.then(function (res) { return res.json(); }).then(function () {
+          marks.claimDone = oldBox.now() - t0;
+          const task = oldBox.clients[0].protocol.newPrintTask('B1');
+          marks.sendAt = oldBox.now() - t0;
+          return task.printInit().then(function () { return task.printPage({}); }).then(function () {
+            marks.paper = oldBox.now() - t0;
+            return marks;
+          });
+        });
+      });
+    oldBox.flush(400);
+    return drain().then(function () {
+      oldBox.flush(400);
+      return drain().then(function () {
+        oldBox.flush(120);
+        return drain().then(function () { return legacy; });
+      });
+    });
+  }).then(function (marks) {
+    eq(marks.enqueue === 400 && marks.renderAt === 430 && marks.claimDone === 800 && marks.sendAt === 800 && marks.paper === 920, 'the old path measures enqueue 400, claim 400, render 30 overlapped, send 120');
+    const neu = bootPrint({
+      lag: lag, manualTime: true, drive: true, models: ['B31'], aliasId: 'pq-serverrow1',
+      queue: { ok: true, items: [] }, store: store
+    });
+    neu.sandbox.OYPPrint.connect('bluetooth');
+    return drain().then(function () {
+      neu.sandbox.OYPPrint.printJo('jo_card', '26-501', { reprint: true });
+      return drain();
+    }).then(function () {
+      const send = neu.timeline.filter(function (e) { return e.ev === 'send'; }).pop();
+      eq(send && send.t === 30 && !neu.timeline.some(function (e) { return e.ev === 'fetch-done' && e.action === 'printEnqueue'; }) && neu.tasks.length === 1, 'the printer starts at 30ms, while enqueue is still in flight');
+      neu.flush(120);
+      return drain().then(function () {
+        const paper = neu.timeline.filter(function (e) { return e.ev === 'paper'; }).pop();
+        eq(paper && paper.t === 150, 'paper is out at 150ms, render 30 plus send 120');
+        neu.flush(400);
+        return drain();
+      });
+    }).then(function () {
+      const enq = neu.timeline.filter(function (e) { return e.ev === 'fetch-done' && e.action === 'printEnqueue'; }).pop();
+      const printed = neu.calls.filter(function (b) { return b.mark === 'printed'; });
+      const sent = neu.calls.filter(function (b) { return b.action === 'printEnqueue' || b.op === 'printEnqueue'; });
+      eq(enq && enq.t === 400 && printed.length === 1 && printed[0].print_id === 'pq-serverrow1' && sent[0].print_id !== 'pq-serverrow1', 'enqueue finishes at 400ms and the existing row is the one marked printed');
+      eq(marks.sendAt - 30 === 770 && marks.paper - 150 === 770, 'tap to printer is 800ms before and 30ms after; tap to paper is 920ms before and 150ms after');
     });
   });
 }).then(function () {

@@ -28,10 +28,18 @@ function printRowReset_(row) {
   row.printed_by = '';
   return row;
 }
-function printRowsEnqueue_(rows, jo, kind, by, now, reprint, allowCreate) {
+function printIdOk_(id) {
+  return /^pq-[A-Za-z0-9][A-Za-z0-9_-]{4,48}$/.test(String(id || ''));
+}
+function printRowsEnqueue_(rows, jo, kind, by, now, reprint, allowCreate, printId, device) {
   jo = printNormJo_(jo);
   kind = printKind_(kind);
   if (!jo || !kind) return { ok: false, error: 'Need a JO and a sticker type' };
+  var clientId = printIdOk_(printId) ? String(printId) : '';
+  if (clientId) {
+    var replay = printFindRow_(rows, clientId);
+    if (replay) return { ok: true, item: replay, created: false, replay: true };
+  }
   var i, row, queued = null, failed = null, printed = null;
   for (i = 0; i < rows.length; i++) {
     row = rows[i];
@@ -47,9 +55,9 @@ function printRowsEnqueue_(rows, jo, kind, by, now, reprint, allowCreate) {
   if (allowCreate === false) return { ok: true, skipped: true, auto: false };
   if (failed) return { ok: true, item: printRowReset_(failed), created: false, requeued: true };
   var item = {
-    print_id: 'pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + Math.floor(Math.random() * 1000000),
+    print_id: clientId || ('pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + Math.floor(Math.random() * 1000000)),
     jo: jo, kind: kind, status: 'queued', created_at: String(now || ''), created_by: String(by || ''),
-    printed_at: '', printed_by: '', device_id: '', error: ''
+    printed_at: clientId && device ? String(now || '') : '', printed_by: '', device_id: clientId && device ? String(device) : '', error: ''
   };
   rows.push(item);
   return { ok: true, item: item, created: true };
@@ -299,10 +307,10 @@ function printDecorate_(item, look) {
   Object.keys(spec).forEach(function (k) { if (spec[k]) copy[k] = spec[k]; });
   return copy;
 }
-function printEnqueueRun_(jo, kind, by, reprint, manual) {
+function printEnqueueRun_(jo, kind, by, reprint, manual, printId, device) {
   var pack = printReadRows_(), now = new Date().toISOString();
   var allow = !!manual || !!reprint || printAutoOn_(kind);
-  var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint, allow);
+  var res = printRowsEnqueue_(pack.rows, jo, kind, by, now, reprint, allow, printId, device);
   if (res.created || res.requeued) {
     printWriteRow_(pack, res.item);
     printRevBump_();
@@ -414,8 +422,9 @@ function printEnqueueBatch_(req, user) {
 function printEnqueue_(jo, kind, actor, opts) {
   opts = opts || {};
   var by = typeof actor === 'string' ? actor : (actor && actor.username) || '';
-  if (opts.locked) return printEnqueueRun_(jo, kind, by, !!opts.reprint, !!opts.manual); // the caller already holds the script lock (prodMove_)
-  return printLock_(function () { return printEnqueueRun_(jo, kind, by, !!opts.reprint, !!opts.manual); });
+  var run = function () { return printEnqueueRun_(jo, kind, by, !!opts.reprint, !!opts.manual, opts.print_id, opts.device_id); };
+  if (opts.locked) return run(); // the caller already holds the script lock (prodMove_)
+  return printLock_(run);
 }
 function printMark_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
@@ -448,7 +457,7 @@ function handlePrint_(req, user) {
   if (req.action === 'printMark') return printMark_(req, user);
   if (req.action === 'printAutoSet') return printAutoSet_(req, user);
   if (req.action === 'printEnqueueBatch') return printEnqueueBatch_(req, user);
-  return printEnqueue_(req.jo, req.kind, user.username, { reprint: req.action === 'printReprint' || !!req.reprint, manual: !!req.manual });
+  return printEnqueue_(req.jo, req.kind, user.username, { reprint: req.action === 'printReprint' || !!req.reprint, manual: !!req.manual, print_id: req.print_id, device_id: req.device_id });
 }
 function printAfterMove_(req, res, user) {
   if (!res || res.ok === false) return;
@@ -461,7 +470,7 @@ function printScanOp_(req) {
   var actor = { username: 'scanner' };
   if (req.op === 'printQueue') return printQueue_(req, actor);
   if (req.op === 'printMark') return printMark_(req, actor);
-  if (req.op === 'printEnqueue' || req.op === 'printReprint') return printEnqueue_(req.jo, req.kind, 'scanner', { reprint: req.op === 'printReprint' || !!req.reprint });
+  if (req.op === 'printEnqueue' || req.op === 'printReprint') return printEnqueue_(req.jo, req.kind, 'scanner', { reprint: req.op === 'printReprint' || !!req.reprint, print_id: req.print_id, device_id: req.device_id });
   return { ok: false, error: 'Unknown op' };
 }
 function setupPrintQueue() {
