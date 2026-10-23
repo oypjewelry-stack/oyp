@@ -76,6 +76,7 @@ async function renderJos(main, u) {
   ivDraw(main);
 }
 function ivDraw(main) {
+  if (window.OYP.popover) window.OYP.closePopover();
   const { esc } = window.OYP, r = IV.r, can = r.can || {}, L = ivShown(), title = IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
   if (IV.offer) { const hid = ivById(IV.offer); if (!hid || L.some(j => j.jo === hid.jo)) IV.offer = ''; }
   const liveIds = new Set(r.jobs.map(j => j.jo));
@@ -101,7 +102,7 @@ function ivDraw(main) {
     </div>` : '';
   main.innerHTML = `<div class="iv${IV.choose ? ' choose' : ''}${n ? ' hasbar' : ''}">
     <div class="dhead"><h2>${esc(title)}</h2><span class="dheadacts"><span class="lab">${esc(plural(L.length, 'item'))}</span><button type="button" class="pill sm outline" id="ivChoose">${IV.choose ? 'Done' : 'Select'}</button></span></div>
-    <p class="muted">Every JO and finished piece. Tap a tile to open it.</p>
+    <p class="muted">Every JO and finished piece. ${can.open ? 'Tap one to open its JO card.' : 'View only: tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     <div class="rvchips ivchips">${Object.keys(IVIEWS).map(k => `<button class="fchip tap ${IV.view === k ? 'on' : ''}" data-iv="${k}">${esc(IVIEWS[k][0])} <b>${cnt(k)}</b></button>`).join('')}</div>
     <input id="ivQ" class="rvq" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire">
@@ -109,14 +110,14 @@ function ivDraw(main) {
     <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
     ${IV.choose && L.length ? `<label class="ivall"><input type="checkbox" id="ivAll" ${allOn ? 'checked' : ''}><span>Select all</span></label>${n ? `<span class="ivcount">${n} selected</span>` : ''}` : ''}
-    <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
+    <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can, edit)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
     ${bar}
   </div>${IV.open ? ivSheet(r.jobs.find(j => j.jo === IV.open), edit) : ''}`;
   const all = main.querySelector('#ivAll');
   if (all) all.indeterminate = n > 0 && !allOn && ids.some(id => IV.sel.has(id));
   ivWire(main); ivThumbs(main, L);
 }
-function ivCard(j, can) {
+function ivCard(j, can, edit) {
   const { esc } = window.OYP, c = [];
   c.push(j.location === 'archived' ? '<span class="chip arch">Archived</span>' : j.location ? `<span class="chip dark">${esc(locLab(j.location))}</span>` : '<span class="chip gold">No location</span>');
   if (MAKING[j.location] && j.stage) c.push(`<span class="chip">${esc(stageLabel(j.stage))}</span>`);
@@ -127,22 +128,17 @@ function ivCard(j, can) {
   if (can.cost) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
   if (can.price) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
   const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo);
-  const tools = IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '';
+  const tools = (IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '')
+      + (edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="false">⋯</button>` : '');
   return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${tools}${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>
     <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
     <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}
     <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div></div>`;
 }
-function ivSheet(j, edit) { // the tile opens this. Actions live here, not in a menu on the card.
-  if (!j) return ''; const { esc } = window.OYP, arch = j.location === 'archived', can = (IV.r && IV.r.can) || {};
+function ivSheet(j, edit) { // details only. Actions stay on the floating ⋯ menu.
+  if (!j) return ''; const { esc } = window.OYP;
   const f = (lab, v) => v ? `<div class="ivf"><span class="lab">${esc(lab)}</span><b>${esc(v)}</b></div>` : '';
-  const locs = ivMoveLocs().map(l => `<button type="button" class="pill sm outline" data-mv="${esc(l[0])}">${esc(locLab(l[0]))}</button>`).join('');
-  const act = `<div class="ivacts"><button type="button" class="pill sm" id="ivPrintOne">Print</button>
-      ${(can.open || edit) ? `<button type="button" class="pill sm outline" id="ivEditOne">${edit ? 'Edit' : 'Details'}</button>` : ''}
-      ${edit ? `<button type="button" class="pill sm outline" id="ivMoveOne" aria-expanded="false">Move location</button><div class="ivlocs" id="ivLocs" hidden>${locs}</div>
-      <button type="button" class="pill sm outline" id="ivArchOne">${arch ? 'Unarchive' : 'Archive'}</button>
-      <button type="button" class="pill sm outline ivdel" id="ivDelOne">Delete</button>` : ''}</div>`;
-  return `<div class="ivsheet" id="ivSheet" role="dialog" aria-label="Item"><div class="ivsbox"><div class="ivscroll"><button class="lnk dback" id="ivSX">‹ BACK</button>
+  return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
     <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${edit ? 'Details' : 'View only'}</span></div>
     <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
     <p class="kd">${esc(j.description || 'No details')}</p>
@@ -150,7 +146,7 @@ function ivSheet(j, edit) { // the tile opens this. Actions live here, not in a 
       ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('Job', j.type === 'repair' ? 'Repair' : j.type === 'revision' ? 'Revision' : j.type ? 'New job' : '')}
       ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
       ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>
-    </div>${act}</div></div>`;
+    </div></div>`;
 }
 function ivRange(jo, shift) {
   const ids = ivShown().map(j => j.jo); // visible order, scanned tiles included where they sit now
@@ -272,9 +268,10 @@ function ivWire(main) {
     input.onclick = e => { stop(e); ivRange(input.dataset.ck, e.shiftKey); IV.picking = IV.sel.size > 0; ivDraw(main); };
   });
   main.querySelectorAll('.ivck').forEach(el => el.onclick = stop);
+  main.querySelectorAll('[data-more]').forEach(b => b.onclick = e => { stop(e); ivOpenMenu(main, b); });
   main.querySelectorAll('.ivcard').forEach(el => {
     el.onpointerdown = e => {
-      if (!ivEdit() || (e.button && e.button !== 0) || e.target.closest('.ivck')) return;
+      if (!ivEdit() || (e.button && e.button !== 0) || e.target.closest('.ivck, .ivmore')) return;
       const jo = el.dataset.jo, x0 = e.clientX, y0 = e.clientY;
       const hold = setTimeout(() => {
         IV.suppress = true; IV.picking = true; IV.sel.add(jo); IV.anchor = jo;
@@ -292,19 +289,19 @@ function ivWire(main) {
       el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('pointermove', end);
     };
     el.onclick = e => {
-      if (e.target.closest('.ivck')) return;
+      if (e.target.closest('.ivck, .ivmore')) return;
       if (IV.suppress) { IV.suppress = false; return; }
       const j = IV.r.jobs.find(x => x.jo === el.dataset.jo); if (!j) return;
       if (ivEdit() && e.shiftKey) { ivRange(j.jo, true); IV.picking = IV.sel.size > 0; ivDraw(main); return; }
-      IV.open = j.jo;
-      ivMountSheet(main);
+      if (!(IV.r.can || {}).open) { IV.open = j.jo; ivMountSheet(main); return; }
+      ivOpenCard(j);
     };
   });
   ivWireSheet(main);
   const grid = $('#ivGrid');
   if (grid && ivEdit() && window.OYP.swipe) window.OYP.swipe(grid, {
     item: '.ivcard',
-    ignore: '.ivck',
+    ignore: '.ivmore, .ivck',
     off: () => IV.choose || IV.sel.size > 0,
     actions: function (row) {
       const jo = row.getAttribute('data-jo');
@@ -352,33 +349,19 @@ function ivWireSheet(main) {
   if (box) box.onclick = e => e.stopPropagation();
   if ($('#ivSX')) $('#ivSX').onclick = () => ivCloseSheet(main);
   sheet.onclick = e => { if (e.target.id === 'ivSheet') ivCloseSheet(main); };
-  if ($('#ivPrintOne')) $('#ivPrintOne').onclick = () => {
-    const j = IV.r.jobs.find(x => x.jo === IV.open); if (!j) return;
-    if (!window.OYPPrint || !window.OYPPrint.askPrint) return window.OYP.toast('Print is not loaded');
-    window.OYPPrint.askPrint([ivPrintJo(j)]);
-  };
-  if ($('#ivEditOne')) $('#ivEditOne').onclick = () => {
-    const j = IV.r.jobs.find(x => x.jo === IV.open); if (!j) return;
-    ivOpenCard(j);
-  };
-  if ($('#ivMoveOne')) $('#ivMoveOne').onclick = () => {
-    const locs = $('#ivLocs'); if (!locs) return;
-    const on = locs.hasAttribute('hidden');
-    if (on) locs.removeAttribute('hidden'); else locs.setAttribute('hidden', '');
-    $('#ivMoveOne').setAttribute('aria-expanded', on ? 'true' : 'false');
-  };
-  main.querySelectorAll('#ivLocs [data-mv]').forEach(b => b.onclick = () => {
-    const j = IV.r.jobs.find(x => x.jo === IV.open); if (!j) return;
-    ivBulk(main, [j.jo], b.dataset.mv, 'move');
-  });
-  if ($('#ivArchOne')) $('#ivArchOne').onclick = () => {
-    const j = IV.r.jobs.find(x => x.jo === IV.open); if (!j) return;
-    if (j.location === 'archived') ivBulk(main, [j.jo], '', 'unarchive'); else ivArchive(main, [j.jo]);
-  };
-  if ($('#ivDelOne')) $('#ivDelOne').onclick = () => {
-    const j = IV.r.jobs.find(x => x.jo === IV.open); if (!j) return;
-    ivDelete(main, j);
-  };
+}
+function ivOpenMenu(main, btn) {
+  const j = IV.r && IV.r.jobs.find(x => x.jo === btn.dataset.more);
+  if (!j || !window.OYP.popover) return;
+  const arch = j.location === 'archived';
+  const moves = ivMoveLocs().map(l => ({ label: locLab(l[0]), run: () => ivBulk(main, [j.jo], l[0], 'move') }));
+  window.OYP.popover(btn, [
+    { label: 'Print', run: () => { if (window.OYPPrint && window.OYPPrint.askPrint) window.OYPPrint.askPrint([ivPrintJo(j)]); else window.OYP.toast('Print is not loaded'); } },
+    { label: 'Details', run: () => { IV.open = j.jo; ivMountSheet(main); } },
+    { label: 'Move location', menu: moves.length ? moves : [{ label: 'No locations', run: () => {} }] },
+    { label: arch ? 'Unarchive' : 'Archive', run: () => { if (arch) ivBulk(main, [j.jo], '', 'unarchive'); else ivArchive(main, [j.jo]); } },
+    { label: 'Delete', danger: true, run: () => ivDelete(main, j) }
+  ]);
 }
 function ivThumbs(main, L) { // piece photos only. 300px thumbs, loaded as tiles scroll in (no 60-tile cap). L kept for the call site.
   void L;

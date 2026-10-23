@@ -28,7 +28,7 @@ eq(swipe.dismissAction([{ label: 'Restore', undoable: true }]).label === 'Restor
 eq(swipe.dismissAction([{ label: 'Remove', confirm: 'Remove this piece from the sheet?' }]).label === 'Remove', 'consignment names Remove');
 
 const page = read('todo.js'), card = read('dash.js'), print = read('print.js'), index = read('staff/index.html');
-eq(page.includes('function bindSwipe') && page.includes("'data-td': 'tick'") && page.includes("'data-td': 'done'") && page.includes("label: 'Snooze'") && page.includes("'data-td': 'more'") && page.includes('data-until="tomorrow"') && page.includes('data-until="3d"') && page.includes('data-until="7d"'), 'to-do swipe is Done plus Snooze, and Snooze opens the existing chips');
+eq(page.includes('function bindSwipe') && page.includes("'data-td': 'tick'") && page.includes("'data-td': 'done'") && page.includes("label: 'Snooze'") && page.includes("'data-td': 'more'") && page.includes("label: 'Tomorrow'") && page.includes("until: '3d'") && page.includes("until: '7d'") && page.includes('OYP.popover'), 'to-do swipe is Done plus Snooze, and Snooze opens the floating menu');
 eq(page.includes('toastUndo') && page.includes('>Undo<') && !/confirm\(/.test(page), 'to-do delete still undoes from the toast and does not ask');
 eq(card.includes('OYPTodo.bindSwipe') && card.indexOf('data-td="tick"') < 0 && card.includes('archiveJos'), 'the dashboard card uses the shared swipe, and drill rows archive');
 eq(print.includes('bindQueueSwipe') && print.includes("label: 'Cancel'") && print.includes("label: 'Reprint'") && print.includes("toastUndo('Cancelled'"), 'the print queue swipes Cancel, and Reprint on a failed row');
@@ -41,8 +41,8 @@ eq(read('app.js').includes('function toastUndo') && read('app.js').includes('asy
 eq(read('app.css').includes('button.swbtn.pill.sm') && read('app.css').includes('font-family:var(--head)') && read('app.css').includes('height:34px') && read('app.css').includes('#b3261e') && read('app.css').includes('touch-action:pan-y') && read('app.css').includes('--sw-inset'), 'revealed buttons are 34px pills in the site face, inset by the row padding');
 eq(read('app.css').includes('@media (hover:hover) and (pointer:fine)') && read('app.css').includes('.swx') && read('app.css').includes('width:34px') && read('app.css').includes('height:34px') && read('app.css').includes('color:#777') && read('app.css').includes('.swx:hover,.swx:focus-visible{color:#111}') && read('app.css').includes('.swsel .swclip.hasx .swx{display:none}') && read('app.css').includes('--swx-base') && read('app.css').includes('.swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}') && read('app.css').includes('.swclip.swphoto .swx::before') && read('app.css').includes('border-radius:50%') && read('app.css').includes('rgba(255,255,255,.92)'), 'the corner control is a 34px grey hit area on a fine pointer, hidden while Select is on, and a photo keeps a round chip instead of a gap');
 eq(read('app.css').includes('transition:transform 50ms') && read('app.css').includes('transform:scale(.97)') && read('nav.js').includes("classList.add('is-down')"), 'the 50ms press stays on buttons');
-eq(index.includes('swipe.js?v=4') && index.includes('nav.js?v=56') && index.includes('app.js?v=35') && index.includes('app.css?v=51'), 'swipe.js is loaded and cache-busted');
-eq(index.indexOf('swipe.js?v=4') < index.indexOf('app.js?v=35'), 'swipe.js loads before app.js');
+eq(index.includes('swipe.js?v=4') && index.includes('nav.js?v=56') && index.includes('app.js?v=36') && index.includes('app.css?v=52'), 'swipe.js is loaded and cache-busted');
+eq(index.indexOf('swipe.js?v=4') < index.indexOf('app.js?v=36'), 'swipe.js loads before app.js');
 eq(!read('scan/index.html').includes('swipe.js?v=4') && read('scan/index.html').includes('nav.js?v=56'), 'the scanner loads nav.js v56 and does not load the staff swipe script');
 
 const http = require('http');

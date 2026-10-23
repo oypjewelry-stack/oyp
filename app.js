@@ -638,7 +638,80 @@ async function archiveJos(jos, location, opts) {
   if (opts.after) { try { opts.after(false); } catch (e) {} }
   return r;
 }
-window.OYP = { call, esc, toast, toastUndo, archiveJos, swipe: (window.OYPSwipe && window.OYPSwipe.mount) || function () {}, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
+/* A small menu that floats over the page, anchored to a button. It is position:fixed
+   on document.body, so a card with overflow:hidden cannot clip it or grow to fit it. */
+let pop = null;
+function closePopover() {
+  if (!pop) return;
+  document.removeEventListener('pointerdown', pop.onDown, true);
+  document.removeEventListener('keydown', pop.onKey);
+  window.removeEventListener('resize', pop.onMove);
+  window.removeEventListener('scroll', pop.onMove, true);
+  if (pop.anchor && pop.anchor.setAttribute) pop.anchor.setAttribute('aria-expanded', 'false');
+  if (pop.el && pop.el.parentNode) pop.el.parentNode.removeChild(pop.el);
+  pop = null;
+}
+function placePopover(el, anchor) {
+  const a = anchor.getBoundingClientRect();
+  const gap = 6, pad = 8;
+  const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  el.style.left = '0px';
+  el.style.top = '0px';
+  const m = el.getBoundingClientRect();
+  let left = a.left, top = a.bottom + gap;
+  if (left + m.width > vw - pad) left = a.right - m.width;
+  if (left < pad) left = pad;
+  if (left + m.width > vw - pad) left = Math.max(pad, vw - m.width - pad);
+  if (top + m.height > vh - pad) top = a.top - gap - m.height;
+  if (top < pad) top = pad;
+  el.style.left = Math.round(left) + 'px';
+  el.style.top = Math.round(top) + 'px';
+}
+function fillPopover(el, anchor, items) {
+  el.textContent = '';
+  (items || []).forEach(item => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'oyp-popi' + (item.danger ? ' is-danger' : '');
+    b.setAttribute('role', 'menuitem');
+    b.textContent = item.label || '';
+    b.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (item.menu) { fillPopover(el, anchor, item.menu); placePopover(el, anchor); return; }
+      closePopover();
+      if (typeof item.run === 'function') item.run();
+    });
+    el.appendChild(b);
+  });
+}
+function popover(anchor, items) {
+  if (!anchor) return closePopover();
+  if (pop && pop.anchor === anchor) return closePopover();
+  closePopover();
+  const el = document.createElement('div');
+  el.className = 'oyp-pop';
+  el.setAttribute('role', 'menu');
+  document.body.appendChild(el);
+  fillPopover(el, anchor, items);
+  placePopover(el, anchor);
+  anchor.setAttribute('aria-expanded', 'true');
+  const onDown = e => {
+    if (el.contains(e.target) || anchor.contains(e.target)) return;
+    closePopover();
+    const kill = ev => { document.removeEventListener('click', kill, true); ev.preventDefault(); ev.stopPropagation(); };
+    document.addEventListener('click', kill, true);
+  };
+  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); closePopover(); } };
+  const onMove = () => { if (pop && pop.el && pop.anchor && pop.anchor.isConnected) placePopover(pop.el, pop.anchor); else closePopover(); };
+  pop = { el, anchor, onDown, onKey, onMove };
+  document.addEventListener('pointerdown', onDown, true);
+  document.addEventListener('keydown', onKey);
+  window.addEventListener('resize', onMove);
+  window.addEventListener('scroll', onMove, true);
+}
+window.addEventListener('hashchange', closePopover);
+window.OYP = { call, esc, toast, toastUndo, archiveJos, popover, closePopover, swipe: (window.OYPSwipe && window.OYPSwipe.mount) || function () {}, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 // Edit layout is off on every load. The pill on each back-office page turns it on. Done saves and turns it off.
 const LE = {
   on: false, fns: [],
