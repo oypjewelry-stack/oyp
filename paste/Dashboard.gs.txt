@@ -1,0 +1,388 @@
+PASTE INTO: Dashboard.gs. Replace the whole file with everything below COPY FROM HERE.
+
+This is a reconstruction of the live Dashboard.gs from the owner's description, plus two changes: the consignment block reads only the Consignment tab, and dashboard_() keeps its answer in CacheService for 15 minutes, per role and per executive flag. Diff it against the live file before sending it. Do not paste it over Auth.gs. No new OAuth scope.
+
+What changed from the live file
+- Consignment reads the one tab named Consignment. It does not read Consignees, Consignments, ConsignmentItems, or Items. missing gets the string Consignment only when that tab is absent. It never gets those four names from this file.
+- counts.owed_by_consignees is the unpaid balance of sold rows (agreed value minus paid_amount). It is set for an executive only. Anyone else does not get the field.
+- counts.consigned_out is how many rows are still out on that tab. counts.consigned_jos is live JobOrders sitting at location consigned that are not already in that list. The two are not added together.
+- dashboard_() stores the answer it returns, under a key that includes the executive flag. A JO, payment, or consignment write drops it by bumping the key oypDashGen (paste/DashCache.gs.txt). When that file is pasted too, this file registers the key so the 5-minute warmer can extend it without reading the Sheet. Do not also wrap dashboard_ in Auth.gs: that second wrap is per role only and could hand an executive answer to someone else in the same role. Still wrap dashDrill, and still add dashCacheNoteWrite_ before the JSON goes back to the browser.
+
+Left as the live file has it
+- Location tiles are built inside the can.consign branch. Accounting has consign:false, so accounting gets no location tiles. That looks like a brace that should close before the location block: locations are not consignment data, and accounting's menu includes Inventory. It is unchanged here so the diff stays honest. Move the block out of the branch if you want accounting to see it.
+
+Assumptions the live description did not spell out, so the diff can check them
+- Sheet headers are trimmed, lowercased, and spaces become underscores before a row is read.
+- A card's since is the Manila date of the JobStages row that is 'doing' for that JO and stage (started_at, else since, else updated_at).
+- A card's client is the job's own client text. When can.clients, a Clients row matched on client_id replaces it with that row's name.
+- An unknown location value is counted as unset.
+- FORBIDDEN is { ok:false, error:'Not allowed', code:'FORBIDDEN' }.
+- Confirmed payments are status confirmed. Rejected payments are left out of the recent list.
+
+Helpers this file calls and does not define: ss_, isExec_, stripPricing_, and, when they exist, jobKey_, jobMergeVersions_, dashInquiries_.
+
+COPY FROM HERE
+
+var DASH = {
+  TZ_OFFSET_H: 8, OVERDUE_DAYS_DEFAULT: 30, RECENT_PAYMENTS: 10, CARDS_PER_COLUMN: 40,
+  COLUMNS: [
+    ['intake', 'Intake', ['intake', 'quote_deposit', 'receive_inspect', 'diagnose_quote', 'repair_intake', 'assess']],
+    ['design', 'Design', ['design', 'approval', 'stone_sourcing', 'model']],
+    ['casting', 'Casting', ['casting', 'bench', 'repair']],
+    ['setting', 'Setting', ['stone_setting', 'stone_reset', 'engraving']],
+    ['polishing', 'Polishing', ['pre_polish', 'final_polish', 'plating', 'clean_polish']],
+    ['qc', 'QC', ['qc', 'photo', 'final_costing']],
+    ['pickup', 'Pickup', ['notify', 'pickup']]
+  ],
+  LOCATIONS: [['working', 'Being worked on'], ['queue', 'In queue'], ['pickup', 'For pickup'], ['vault', 'In vault'], ['showroom', 'Showroom'], ['consigned', 'Consigned'], ['sold', 'Sold'], ['archived', 'Archived']],
+  OPEN_STATUSES: ['draft', 'active', 'done']
+};
+var DASH_ROLES = { admin:{sales:true,consign:true,payments:true,clients:true,inquiries:true}, production_manager:{sales:false,consign:true,payments:false,clients:true,inquiries:false}, accounting:{sales:false,consign:false,payments:true,clients:true,inquiries:false}, staff:{sales:false,consign:false,payments:false,clients:false,inquiries:false} };
+
+function dashboard_(req, user) {
+  var role = user && user.role;
+  if (!DASH_ROLES[role]) return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  var exec = dashExec_(user);
+  var hit = dashSheetGet_(role, exec);
+  if (hit) return hit;
+  var lock = null, locked = false;
+  try { lock = LockService.getScriptLock(); locked = lock.tryLock(8000); } catch (e0) { locked = false; }
+  try {
+    hit = dashSheetGet_(role, exec);
+    if (hit) return hit;
+    var fresh = dashBuild_(req, user);
+    if (fresh && fresh.ok) dashSheetPut_(role, exec, fresh);
+    return fresh;
+  } finally {
+    if (locked) { try { lock.releaseLock(); } catch (e1) {} }
+  }
+}
+
+function dashBuild_(req, user) {
+  var role = user && user.role;
+  var can0 = DASH_ROLES[role];
+  if (!can0) return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
+  var exec = dashExec_(user);
+  var can = { sales: exec, consign: !!can0.consign, payments: !!can0.payments, clients: !!can0.clients, inquiries: !!can0.inquiries, prices: exec };
+  var missing = [];
+  function T(name) { return dashRead_(name, missing); }
+  var today = dashToday_();
+  var overdueDays = DASH.OVERDUE_DAYS_DEFAULT;
+  T('Settings').forEach(function (r) {
+    if (String(r.key) !== 'consign_overdue_days') return;
+    var v = parseInt(r.value, 10);
+    if (v > 0 && v < 3650) overdueDays = v;
+  });
+  var clientsById = {};
+  if (can.clients) T('Clients').forEach(function (r) {
+    var id = String(r.client_id || r.id || '').trim();
+    if (id) clientsById[id] = r;
+  });
+  var allJobs = T('JobOrders').filter(function (j) { return dashJo_(j.jo); });
+  var useLoc = allJobs.some(function (j) { return String(j.location || '').trim() !== ''; });
+  var liveJobs = allJobs.filter(function (j) { return String(j.status || '').trim().toLowerCase() !== 'cancelled'; });
+  var openSet = {};
+  DASH.OPEN_STATUSES.forEach(function (s) { openSet[s] = 1; });
+  var jobs = liveJobs.filter(function (j) {
+    if (useLoc) return String(j.location || '').trim().toLowerCase() === 'working';
+    return !!openSet[String(j.status || '').trim().toLowerCase()];
+  });
+  var colOf = {};
+  DASH.COLUMNS.forEach(function (col) { col[2].forEach(function (code) { colOf[code] = col[0]; }); });
+  var stageSince = {};
+  T('JobStages').forEach(function (r) {
+    if (String(r.status || r.state || '').trim().toLowerCase() !== 'doing') return;
+    var jo = dashJo_(r.jo), code = String(r.stage_code || r.stage || '').trim().toLowerCase();
+    if (!jo || !code) return;
+    stageSince[jo + '|' + code] = dashDay_(r.started_at || r.since || r.updated_at);
+  });
+  var reviewN = 0, pastN = 0, countOver = useLoc ? liveJobs : jobs;
+  countOver.forEach(function (j) {
+    var st = String(j.status || '').trim().toLowerCase();
+    var rev = String(j.review_state || '').trim().toLowerCase();
+    if (rev === 'draft' || st === 'draft') reviewN++;
+    var due = dashDay_(j.due || j.due_date);
+    if (!due || due >= today) return;
+    if (useLoc) {
+      var loc = String(j.location || '').trim().toLowerCase();
+      if (loc !== 'working' && loc !== 'queue') return;
+    }
+    pastN++;
+  });
+  var pays = (can.payments || can.sales) ? T('Payments') : [];
+  var pendingPays = 0;
+  pays.forEach(function (p) { if (String(p.status || '').trim().toLowerCase() === 'pending') pendingPays++; });
+  var activeJobs = jobs.length;
+  var board = DASH.COLUMNS.map(function (col) {
+    var cards = [];
+    jobs.forEach(function (j) {
+      var stage = String(j.stage || j.stage_code || '').trim().toLowerCase();
+      if (colOf[stage] !== col[0]) return;
+      var due = dashDay_(j.due || j.due_date);
+      var jo = dashJo_(j.jo);
+      var card = {
+        jo: jo, description: String(j.description || ''), type: String(j.type || ''), stage: stage,
+        status: String(j.status || ''), due: due, late: !!(due && due < today),
+        review: String(j.review_state || '').trim().toLowerCase() === 'draft' || String(j.status || '').trim().toLowerCase() === 'draft',
+        since: stageSince[jo + '|' + stage] || ''
+      };
+      var client = dashClient_(j, clientsById, can.clients);
+      if (client) card.client = client;
+      cards.push(card);
+    });
+    cards.sort(function (a, b) {
+      if (a.late !== b.late) return a.late ? -1 : 1;
+      var d = String(a.due || '9999-99-99').localeCompare(String(b.due || '9999-99-99'));
+      if (d) return d;
+      return String(a.jo).localeCompare(String(b.jo));
+    });
+    return { key: col[0], label: col[1], count: cards.length, cards: cards.slice(0, DASH.CARDS_PER_COLUMN) };
+  });
+  var out = {
+    ok: true, generated_at: new Date().toISOString(), today: today, role: role, can: can, overdue_days: overdueDays,
+    counts: {
+      active_jobs: activeJobs,
+      pending_work: reviewN + pastN + (can.payments ? pendingPays : 0),
+      pending_breakdown: { reviews: reviewN, past_due: pastN, payments: can.payments ? pendingPays : 0 }
+    },
+    board: board, missing: missing
+  };
+  if (can.consign) {
+    var cg = dashConsign_(today, overdueDays, exec, liveJobs);
+    cg.missing.forEach(function (name) { if (missing.indexOf(name) < 0) missing.push(name); });
+    out.consignments = cg.consignments;
+    out.counts.consigned_out = cg.counts.consigned_out;
+    out.counts.overdue_consignments = cg.counts.overdue_consignments;
+    out.counts.consigned_jos = cg.counts.consigned_jos;
+    if (exec) out.counts.owed_by_consignees = cg.counts.owed_by_consignees;
+    // Live file builds locations here, inside can.consign. Accounting never reaches this block.
+    if (useLoc) {
+      var known = {}, locN = {};
+      DASH.LOCATIONS.forEach(function (pair) { known[pair[0]] = 1; locN[pair[0]] = 0; });
+      var unset = 0;
+      liveJobs.forEach(function (j) {
+        var loc = String(j.location || '').trim().toLowerCase();
+        if (!loc || !known[loc]) { unset++; return; }
+        locN[loc]++;
+      });
+      var onHand = 0;
+      DASH.LOCATIONS.forEach(function (pair) { if (pair[0] !== 'sold' && pair[0] !== 'archived') onHand += locN[pair[0]]; });
+      out.counts.on_hand = onHand;
+      out.locations = DASH.LOCATIONS.map(function (pair) { return { key: pair[0], label: pair[1], count: locN[pair[0]] }; });
+      out.locations.push({ key: 'unset', label: 'No location yet', count: unset });
+    }
+  }
+  if (can.payments) {
+    var recent = [];
+    pays.forEach(function (p) {
+      if (!String(p.pay_id || '').trim()) return;
+      var st = String(p.status || '').trim().toLowerCase();
+      if (st === 'rejected') return;
+      recent.push({
+        pay_id: String(p.pay_id), jo: dashJo_(p.jo), date: dashDay_(p.date || p.confirmed_at),
+        amount: dashNum_(p.amount), method: String(p.method || ''), kind: String(p.kind || ''),
+        payer: String(p.payer || ''), status: st, source: String(p.source || '')
+      });
+    });
+    recent.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)) || String(b.pay_id).localeCompare(String(a.pay_id)); });
+    out.payments = recent.slice(0, DASH.RECENT_PAYMENTS);
+  }
+  if (can.sales) {
+    var month = today.slice(0, 7), buckets = {}, i, ym;
+    for (i = 5; i >= 0; i--) buckets[dashAddMonth_(month, -i)] = 0;
+    pays.forEach(function (p) {
+      if (String(p.status || '').trim().toLowerCase() !== 'confirmed') return;
+      var m = dashDay_(p.date || p.confirmed_at).slice(0, 7);
+      if (buckets[m] == null) return;
+      buckets[m] = Math.round((buckets[m] + (dashNum_(p.amount) || 0)) * 100) / 100;
+    });
+    var months = [];
+    for (ym in buckets) if (buckets.hasOwnProperty(ym)) months.push({ month: ym, total: buckets[ym] });
+    months.sort(function (a, b) { return a.month.localeCompare(b.month); });
+    out.counts.month_sales = buckets[month] || 0;
+    out.sales = { month: month, months: months };
+  }
+  if (can.inquiries) out.inquiries = (typeof dashInquiries_ === 'function') ? dashInquiries_(jobs) : null;
+  if (exec || typeof stripPricing_ !== 'function') return out;
+  return stripPricing_(out, user);
+}
+
+/** Still-out rows on the one Consignment tab. Does not read Consignees, Consignments, ConsignmentItems, or Items. */
+function dashConsign_(today, limit, exec, liveJobs) {
+  function looseCount(onSheet) {
+    var n = 0;
+    (liveJobs || []).forEach(function (j) {
+      var k = dashJo_(j.jo);
+      if (!k || (onSheet && onSheet[k])) return;
+      if (String(j.location || '').trim().toLowerCase() !== 'consigned') return;
+      n++;
+    });
+    return n;
+  }
+  var empty = { missing: [], consignments: [], counts: { consigned_out: 0, overdue_consignments: 0, consigned_jos: 0, owed_by_consignees: 0 } };
+  if (!ss_().getSheetByName('Consignment')) {
+    empty.missing = ['Consignment'];
+    empty.counts.consigned_jos = looseCount(null);
+    return empty;
+  }
+  var list = [], onSheet = {}, owed = 0;
+  dashRead_('Consignment', []).forEach(function (r) {
+    var st = String(r.status || '').trim().toLowerCase();
+    var jo = dashJo_(r.jo);
+    if (st === 'sold' && exec) {
+      var agreed = dashNum_(r.agreed_value != null && String(r.agreed_value).trim() !== '' ? r.agreed_value : r.value);
+      if (agreed != null) {
+        var paid = dashNum_(r.paid_amount);
+        if (paid == null) paid = 0;
+        owed = Math.round((owed + Math.max(0, agreed - paid)) * 100) / 100;
+      }
+    }
+    if (st !== '' && st !== 'consigned' && st !== 'open' && st !== 'out') return;
+    var dout = dashDay_(r.date_out), due = dashDay_(r.due_back || r.due_date);
+    var days = dashDaysBetween_(dout, today);
+    var late = due ? today > due : (days != null && days > limit);
+    var row = {
+      description: String(r.description || ''), item_id: String(r.item_id || ''), jo: jo,
+      consignee: String(r.consignee_name || r.consignee || ''), consignment_id: String(r.consignment_id || ''),
+      date_out: dout, days_out: days, overdue: !!late
+    };
+    var value = dashNum_(r.agreed_value != null && String(r.agreed_value).trim() !== '' ? r.agreed_value : r.value);
+    if (exec && value != null) row.value = value;
+    if (jo) onSheet[jo] = 1;
+    list.push(row);
+  });
+  list.sort(function (a, b) { return String(a.date_out).localeCompare(String(b.date_out)) || String(a.consignment_id).localeCompare(String(b.consignment_id)); });
+  var overdueN = 0;
+  list.forEach(function (r) { if (r.overdue) overdueN++; });
+  var loose = looseCount(onSheet);
+  return {
+    missing: [], consignments: list,
+    counts: { consigned_out: list.length, overdue_consignments: overdueN, consigned_jos: loose, owed_by_consignees: owed }
+  };
+}
+
+function dashRead_(name, missing) {
+  var sh;
+  try { sh = ss_().getSheetByName(name); } catch (e0) { sh = null; }
+  if (!sh) { missing.push(name); return []; }
+  var values;
+  try { values = sh.getDataRange().getValues(); } catch (e1) { return []; }
+  if (!values || values.length < 2) return [];
+  var heads = values[0].map(function (h) { return String(h || '').trim().toLowerCase().replace(/\s+/g, '_'); });
+  var rows = [], r, c, obj, blank;
+  for (r = 1; r < values.length; r++) {
+    obj = {}; blank = true;
+    for (c = 0; c < heads.length; c++) {
+      if (!heads[c]) continue;
+      obj[heads[c]] = values[r][c];
+      if (values[r][c] != null && String(values[r][c]).trim() !== '') blank = false;
+    }
+    if (!blank) rows.push(obj);
+  }
+  if (name === 'JobOrders' && typeof jobMergeVersions_ === 'function') {
+    try { rows = jobMergeVersions_(rows) || rows; } catch (e2) {}
+  }
+  return rows;
+}
+
+function dashExec_(user) {
+  if (typeof isExec_ === 'function') { try { return !!isExec_(user); } catch (e) { return false; } }
+  return !!(user && user.role === 'admin');
+}
+function dashJo_(v) {
+  if (typeof jobKey_ === 'function') { try { var k = jobKey_(v); if (k) return String(k); } catch (e) {} }
+  return String(v || '').trim();
+}
+function dashClient_(j, byId, on) {
+  var raw = String(j.client || j.client_name || '').trim();
+  if (!on) return raw;
+  var id = String(j.client_id || '').trim();
+  var found = (id && byId[id]) || (raw && byId[raw]);
+  if (!found) return raw;
+  return String(found.name || found.client_name || found.client || raw).trim();
+}
+function dashToday_() {
+  try { return Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd'); } catch (e) {}
+  return new Date(Date.now() + DASH.TZ_OFFSET_H * 36e5).toISOString().slice(0, 10);
+}
+function dashDay_(d) {
+  if (d == null || d === '') return '';
+  if (Object.prototype.toString.call(d) === '[object Date]' && !isNaN(d.getTime())) {
+    try { return Utilities.formatDate(d, 'Asia/Manila', 'yyyy-MM-dd'); } catch (e) {}
+  }
+  var s = String(d);
+  var m = s.match(/(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  var t = new Date(s);
+  if (!isNaN(t.getTime())) {
+    try { return Utilities.formatDate(t, 'Asia/Manila', 'yyyy-MM-dd'); } catch (e2) {}
+  }
+  return '';
+}
+function dashDaysBetween_(a, b) {
+  if (!a || !b) return null;
+  var x = Date.parse(a + 'T00:00:00Z'), y = Date.parse(b + 'T00:00:00Z');
+  if (isNaN(x) || isNaN(y)) return null;
+  return Math.round((y - x) / 86400000);
+}
+function dashNum_(v) {
+  if (v == null || String(v).trim() === '') return null;
+  var n = Number(String(v).replace(/[₱,\s]/g, '').replace(/php/ig, ''));
+  return isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+function dashAddMonth_(ym, delta) {
+  var p = String(ym).split('-'), y = Number(p[0]), m = Number(p[1]) - 1 + delta;
+  y += Math.floor(m / 12);
+  m = ((m % 12) + 12) % 12;
+  return y + '-' + (m < 9 ? '0' : '') + (m + 1);
+}
+
+/** Same generation key as DashCache.gs, so a write there drops this copy too. 15 minutes. Per role and executive flag. */
+function dashSheetKey_(role, exec) {
+  var gen = '';
+  try { gen = CacheService.getScriptCache().get('oypDashGen') || ''; } catch (e) { return ''; }
+  if (!gen) return '';
+  return 'd1:' + gen + ':' + role + ':' + (exec ? '1' : '0') + ':dashboard:-:-';
+}
+function dashSheetGet_(role, exec) {
+  var head = dashSheetKey_(role, exec);
+  if (!head) return null;
+  var cache = CacheService.getScriptCache(), meta, info, parts = [], i, raw;
+  try { meta = cache.get(head); } catch (e0) { return null; }
+  if (!meta) return null;
+  try { info = JSON.parse(meta); } catch (e1) { return null; }
+  if (!info || !info.n) return null;
+  for (i = 0; i < info.n; i++) {
+    try { raw = cache.get(head + ':p' + i); } catch (e2) { return null; }
+    if (raw == null) return null;
+    parts.push(raw);
+  }
+  try { return JSON.parse(parts.join('')); } catch (e3) { return null; }
+}
+function dashSheetPut_(role, exec, value) {
+  var cache = CacheService.getScriptCache(), gen = '';
+  try { gen = cache.get('oypDashGen') || ''; } catch (e0) { gen = ''; }
+  if (!gen) {
+    gen = String(Date.now());
+    try { cache.put('oypDashGen', gen, 21600); } catch (e1) { return; }
+  }
+  var head = 'd1:' + gen + ':' + role + ':' + (exec ? '1' : '0') + ':dashboard:-:-';
+  var text;
+  try { text = JSON.stringify(value); } catch (e2) { return; }
+  var parts = [], i = 0, piece;
+  while (i < text.length && parts.length < 8) {
+    piece = text.slice(i, i + 80000);
+    while (piece.length > 1000 && dashUtf8_(piece) > 90000) piece = piece.slice(0, Math.floor(piece.length * 0.9));
+    parts.push(piece);
+    i += piece.length;
+  }
+  if (i < text.length) return;
+  try {
+    cache.put(head, JSON.stringify({ n: parts.length }), 900);
+    for (i = 0; i < parts.length; i++) cache.put(head + ':p' + i, parts[i], 900);
+    if (typeof dashRemember_ === 'function') dashRemember_(gen, head);
+  } catch (e3) {}
+}
+function dashUtf8_(s) {
+  try { return Utilities.newBlob(String(s)).getBytes().length; } catch (e) { return String(s).length; }
+}
