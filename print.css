@@ -36,6 +36,14 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 #prDark .pill.sm:not(.outline){border:1px solid #111}
 .oyp-pr-panel{position:fixed;right:12px;top:64px;width:min(420px,calc(100vw - 24px));max-height:70vh;overflow:auto;background:#fff;border:1px solid #eee;border-radius:calc(14px * var(--rad,1));z-index:40;padding:calc(4px * var(--sp,1)) calc(18px * var(--sp,1));box-shadow:0 8px 24px rgba(0,0,0,.08)}
 .oyp-pr-menu.hidden,.oyp-pr-panel.hidden{display:none}
+.oyp-kind{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:12px}
+.oyp-kindbox{background:#fff;width:min(360px,100%);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.oyp-kindbox .lab{margin:0 0 4px}
+.oyp-kindbox .pill.sm{height:34px;min-height:34px;width:100%;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
+.oyp-kindbox button{touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 50ms}
+.oyp-kindbox button:active,.oyp-kindbox button.is-down{transform:scale(.97)}
+@media (prefers-reduced-motion:reduce){.oyp-kindbox button{transition:none}.oyp-kindbox button:active,.oyp-kindbox button.is-down{transform:none;opacity:.72}}
+@media (min-width:760px){.oyp-kind{align-items:center}}
 
 :where(.oyp-pr .whomenu){position:absolute;background:#fff;border:1px solid #eee;border-radius:calc(12px * var(--rad,1));box-shadow:0 8px 24px rgba(0,0,0,.08);padding:calc(6px * var(--sp,1)) 0}
 :where(.oyp-pr .whomenu button){display:block;width:100%;text-align:left;background:none;border:0;padding:calc(12px * var(--sp,1)) calc(18px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-weight:500;font-size:calc(12px * var(--fs,1));letter-spacing:.08em;text-transform:uppercase;color:#111;cursor:pointer}

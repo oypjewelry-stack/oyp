@@ -160,6 +160,14 @@ function ivRange(jo, shift) {
   IV.anchor = jo;
 }
 function ivJobs(jos) { return jos.map(jo => IV.r.jobs.find(j => j.jo === jo)).filter(Boolean); }
+function ivPrintJo(j) {
+  const raw = String(j && j.jo || '');
+  const p = joParts(raw);
+  if (!p) return raw;
+  if (p.letter) return p.text;
+  const v = String(j.version || '').trim().toUpperCase();
+  return /^[A-Z]$/.test(v) ? p.base + v : p.text;
+}
 async function ivBulk(main, jos, location, kind) {
   const list = ivJobs(jos).filter(j => (location === '' ? j.location === 'archived' : j.location !== location));
   if (!list.length) { window.OYP.toast(location === '' ? 'Nothing archived is selected' : 'Already there'); return; }
@@ -233,9 +241,9 @@ function ivWire(main) {
     ivDraw(main);
   };
   if ($('#ivPrint')) $('#ivPrint').onclick = () => {
-    const items = ivJobs([...IV.sel]).map(j => ({ jo: j.jo, kind: j.on_hand && !MAKING[j.location] ? 'jewelry_tag' : 'jo_card' }));
-    if (!window.OYPPrint || !window.OYPPrint.printStickers) return window.OYP.toast('Print is not loaded');
-    window.OYPPrint.printStickers(items).then(r => { if (!window.OYP.here()()) return; if (!r || r.ok === false) return; IV.sel.clear(); IV.scanned = []; IV.choose = false; IV.picking = false; ivDraw(main); });
+    const jos = ivJobs([...IV.sel]).map(ivPrintJo);
+    if (!window.OYPPrint || !window.OYPPrint.askPrint) return window.OYP.toast('Print is not loaded');
+    window.OYPPrint.askPrint(jos).then(r => { if (!window.OYP.here()()) return; if (!r || r.ok === false) return; IV.sel.clear(); IV.scanned = []; IV.choose = false; IV.picking = false; ivDraw(main); });
   };
   if ($('#ivClear')) $('#ivClear').onclick = () => { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.menu = ''; ivDraw(main); };
   if ($('#ivMove')) $('#ivMove').onchange = e => { const loc = e.target.value; if (!loc) return; ivBulk(main, [...IV.sel], loc, 'move'); };
@@ -300,10 +308,13 @@ function ivWire(main) {
       const j = IV.r.jobs.find(x => x.jo === jo);
       if (!j) return [];
       const arch = j.location === 'archived';
-      return [{ label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
-        if (arch) return ivBulk(main, [jo], '', 'unarchive');
-        return ivArchive(main, [jo]);
-      } }];
+      return [
+        { label: 'Print', run: function () { if (window.OYPPrint && window.OYPPrint.askPrint) return window.OYPPrint.askPrint([ivPrintJo(j)]); } },
+        { label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
+          if (arch) return ivBulk(main, [jo], '', 'unarchive');
+          return ivArchive(main, [jo]);
+        } }
+      ];
     }
   });
   const on = main.querySelector('.ivchips .fchip.on'); if (on && innerWidth < 760) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20;
