@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 29;
+var PRINT_JS = 30;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -658,6 +658,7 @@ function runTask(name, encoded, link, kind) {
   var task = link.client.protocol.newPrintTask(name, {
     totalPages: 1,
     density: load().darkness,
+    /* The jewelry bitmap is the 25 mm flaps plus the 45 mm tail. WithGaps skips the liner gap, so the next label starts on the next pair of flaps. */
     labelType: L.LabelType.WithGaps,
     pageColor: L.PageColorType.SingleColor,
     pageTimeoutMs: PAGE_MS,
@@ -960,7 +961,9 @@ function openLayout(kind, item, onSave) {
   title.className = 'oyp-laytitle';
   title.textContent = kind === 'jo_card' ? 'JO sticker layout' : 'Jewelry tag layout';
   hint.className = 'oyp-layhint';
-  hint.textContent = 'Drag snaps to 0.5 mm. Arrow keys and nudge move 0.1 mm.';
+  hint.textContent = kind === 'jo_card'
+    ? 'Drag snaps to 0.5 mm. Arrow keys and nudge move 0.1 mm.'
+    : 'Two flaps on top, tail below. Drag snaps to 0.5 mm. Arrows and nudge move 0.1 mm.';
   stage.className = 'oyp-laystage';
   frame.className = 'oyp-layframe';
   topRow.className = 'oyp-layrow';
@@ -1064,6 +1067,7 @@ function openLayout(kind, item, onSave) {
     var seen = {}, i, p, b, dw, dh, id, qr = null;
     for (i = 0; i < placed.length; i++) {
       p = placed[i];
+      if (kind === 'jewelry_tag') p = { id: p.id, x: p.y, y: p.x, w: p.h, h: p.w };
       seen[p.id] = 1;
       b = boxMap[p.id];
       if (!b) {
@@ -1099,13 +1103,27 @@ function openLayout(kind, item, onSave) {
   function redraw() {
     try {
       var rendered = L.render(optsFor());
-      var view = L.labelCanvas(rendered);
+      var view = kind === 'jewelry_tag' && L.exitCanvas ? L.exitCanvas(rendered) : L.labelCanvas(rendered);
       placed = rendered.placed || [];
       canvas.width = view.width;
       canvas.height = view.height;
       var ctx = canvas.getContext('2d');
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(view, 0, 0);
+      if (kind === 'jewelry_tag' && L.tagOutline) {
+        ctx.fillStyle = '#d5d5d5';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.beginPath();
+        L.tagOutline(ctx, 0, 0, 1);
+        ctx.clip();
+        ctx.drawImage(view, 0, 0);
+        ctx.restore();
+        ctx.beginPath();
+        L.tagOutline(ctx, 0, 0, 1);
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else ctx.drawImage(view, 0, 0);
     } catch (err) {
       placed = [];
     }
@@ -1133,8 +1151,13 @@ function openLayout(kind, item, onSave) {
       if (b.setPointerCapture && ev.pointerId != null) { try { b.setPointerCapture(ev.pointerId); } catch (e1) {} }
       function move(ev2) {
         var d = dragDelta(start, ev2);
-        el.x = snapHalf(start.x + d.x);
-        el.y = snapHalf(start.y + d.y);
+        if (kind === 'jewelry_tag') {
+          el.x = snapHalf(start.x + d.y);
+          el.y = snapHalf(start.y + d.x);
+        } else {
+          el.x = snapHalf(start.x + d.x);
+          el.y = snapHalf(start.y + d.y);
+        }
         clampPos(el);
         redraw();
       }
@@ -1243,7 +1266,10 @@ function openLayout(kind, item, onSave) {
     var el = working[current];
     tools.textContent = '';
     if (!field || !el) return;
-    tools.setAttribute('data-mm', current + ' ' + mmText(el.x) + ' ' + mmText(el.y));
+    var across = kind === 'jewelry_tag';
+    var xShown = across ? el.y : el.x;
+    var yShown = across ? el.x : el.y;
+    tools.setAttribute('data-mm', current + ' ' + mmText(xShown) + ' ' + mmText(yShown));
     var show = addBtn(tools, el.show ? 'Shown' : 'Hidden', 'show', function () {
       el.show = el.show ? 0 : 1;
       redraw();
@@ -1251,13 +1277,15 @@ function openLayout(kind, item, onSave) {
       fillTools();
     });
     show.setAttribute('aria-pressed', el.show ? 'true' : 'false');
-    numField(tools, 'X mm', mmText(el.x), 0.1, 0, 80, function (raw) {
-      el.x = tenth(raw);
+    numField(tools, 'X mm', mmText(xShown), 0.1, 0, across ? 40 : 80, function (raw) {
+      if (across) el.y = tenth(raw);
+      else el.x = tenth(raw);
       clampPos(el);
       redraw();
     });
-    numField(tools, 'Y mm', mmText(el.y), 0.1, 0, 40, function (raw) {
-      el.y = tenth(raw);
+    numField(tools, 'Y mm', mmText(yShown), 0.1, 0, across ? 80 : 40, function (raw) {
+      if (across) el.x = tenth(raw);
+      else el.y = tenth(raw);
       clampPos(el);
       redraw();
     });
@@ -1325,8 +1353,13 @@ function openLayout(kind, item, onSave) {
   function nudge(dx, dy) {
     var el = working[current];
     if (!el) return;
-    el.x = tenth(el.x + dx * 0.1);
-    el.y = tenth(el.y + dy * 0.1);
+    if (kind === 'jewelry_tag') {
+      el.y = tenth(el.y + dx * 0.1);
+      el.x = tenth(el.x + dy * 0.1);
+    } else {
+      el.x = tenth(el.x + dx * 0.1);
+      el.y = tenth(el.y + dy * 0.1);
+    }
     clampPos(el);
     redraw();
     fillTools();

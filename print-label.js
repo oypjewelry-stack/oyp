@@ -2,10 +2,13 @@
    canvas height is the feed. The 30 mm label is centred. Text is Inter Bold (OFL), drawn with
    fillText at 4x and reduced to the 1-bit label. QR modules stay crisp rectangles.
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
-   Jewelry tag: T30*25+45 cable label, read as 25 mm wide × 30 mm high with a
-   45 mm blank tail to the right (the NIIMBOT Direction ← layout). That picture is
-   drawn upright, then turned into the print bitmap so direction "top" matches it:
-   the 30 mm is across the head and the 25 mm plus the tail run down the feed.
+   Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs it 25 mm wide by
+   30 mm high, Direction ←, with a 45 mm tail to the right. The top 15 mm and the
+   bottom 15 mm are the two flaps, and the dashed line is the fold between them.
+   That picture is drawn upright, then turned so direction "top" matches Direction ←:
+   the top of the design points left, so the flaps sit side by side (15 mm each
+   across the head, 25 mm down the feed) and the blank tail follows. The liner gap
+   is not in the bitmap. WithGaps starts the next label on the next pair of flaps.
    B1 and B31 print direction is "top", so x on the bitmap is across the head.
    The printer draws columns 0..width-1 and does not centre a narrow bitmap,
    so the image stays the full head. A 30 mm label centred on the B31's 600 px
@@ -481,14 +484,14 @@ var LAYOUT_FIELDS = [
 ];
 var LAYOUT_BASE = {
   jewelry_tag: {
-    price: { show: 1, x: 1, y: 0.8, size: 17, bold: 1, align: 'left', w: 14, wrap: 1 },
+    price: { show: 1, x: 1, y: 1, size: 17, bold: 1, align: 'left', w: 14, wrap: 1 },
     logo: { show: 1, x: 19.5, y: 1 },
     name: { show: 1, x: 1, y: 4.1, size: 15, bold: 1, align: 'left', w: 23, wrap: 1 },
-    type: { show: 1, x: 1, y: 12.5, size: 12, bold: 1, align: 'left', w: 7, wrap: 1 },
-    metal: { show: 1, x: 9, y: 12.5, size: 12, bold: 1, align: 'center', w: 7, wrap: 1 },
-    karat: { show: 1, x: 16.5, y: 12.5, size: 12, bold: 1, align: 'right', w: 7.5, wrap: 1 },
+    type: { show: 1, x: 1, y: 11.2, size: 12, bold: 1, align: 'left', w: 7, wrap: 1 },
+    metal: { show: 1, x: 9, y: 11.2, size: 12, bold: 1, align: 'center', w: 7, wrap: 1 },
+    karat: { show: 1, x: 16.5, y: 11.2, size: 12, bold: 1, align: 'right', w: 7.5, wrap: 1 },
     fold: { show: 1, x: 1, y: 15, w: 23 },
-    stones: { show: 1, x: 1, y: 15.5, size: 10, bold: 1, align: 'left', w: 23, wrap: 3 },
+    stones: { show: 1, x: 1, y: 16, size: 10, bold: 1, align: 'left', w: 23, wrap: 3 },
     weight: { show: 1, x: 1, y: 27.2, size: 9, bold: 1, align: 'left', w: 10, wrap: 1 },
     jo: { show: 1, x: 8, y: 23.2, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
     sku: { show: 1, x: 8, y: 24.6, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
@@ -657,13 +660,14 @@ function paintLayout(img, layout, opts, kind) {
   stampLocal(img, runs);
   return { lines: lines, placed: placed, specPx: specPx, joPx: joPx, qr: qrInfo };
 }
+/* Direction ←: the top of the design (small dy) is the left flap. Feed starts at the left of the design, so the tail prints after the flaps. */
 function rotatePaper(img, box, paper) {
-  var contentH = box.labelW, dy, dx, pi;
+  var dy, dx, pi;
   for (dy = 0; dy < paper.h; dy++) {
     for (dx = 0; dx < paper.w; dx++) {
       pi = (dy * paper.w + dx) * 4;
       if (paper.d[pi] !== 0) continue;
-      img.set(box.offsetX + (contentH - 1 - dy), dx);
+      img.set(box.offsetX + dy, dx);
     }
   }
 }
@@ -672,7 +676,7 @@ function drawJewelryLayout(img, box, opts) {
   var paper = new Img(contentW + box.tail, contentH);
   var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag');
   var qrBox = null;
-  if (drawn.qr) qrBox = { x: box.offsetX + (contentH - drawn.qr.y - drawn.qr.size), y: drawn.qr.x, size: drawn.qr.size };
+  if (drawn.qr) qrBox = { x: box.offsetX + drawn.qr.y, y: drawn.qr.x, size: drawn.qr.size };
   rotatePaper(img, box, paper);
   return { lines: drawn.lines, specPx: drawn.specPx, joPx: drawn.joPx, qr: drawn.qr ? drawn.qr.text : '', qrBox: qrBox, paper: paper, sheet: paper, placed: drawn.placed };
 }
@@ -761,7 +765,7 @@ function drawJewelry(img, box, opts) {
     var sm = metricsOf(placed[0], spreadSize);
     var spreadH = Math.ceil(sm.ascent + sm.descent);
     /* The row sits just above the fold, the way the template does. */
-    var spreadY = foldY - 6 - spreadH;
+    var spreadY = foldY - pad - spreadH;
     if (spreadY < nameBottom + 6) spreadY = nameBottom + 6;
     placed.forEach(function (t, i) {
       runs.push({ text: t, x: Math.round(xs[i]), y: spreadY, size: spreadSize });
@@ -791,7 +795,7 @@ function drawJewelry(img, box, opts) {
   var clusterBottom = bottom;
   var clusterH = qpix || (codes.length ? codes.length * 12 : 0);
   var clusterTop = clusterBottom - clusterH;
-  var stoneTop = foldY + 4;
+  var stoneTop = foldY + pad;
   var stoneRoom = clusterTop - 4 - stoneTop;
   var stoneLines = [];
   if (stones && stoneRoom > 8) {
@@ -847,16 +851,9 @@ function drawJewelry(img, box, opts) {
   if (mods) {
     var qx = right - qpix, qy = bottom - qpix;
     paper.qr(mods, qx, qy, mod, quiet);
-    qrBox = { x: box.offsetX + (contentH - qy - qpix), y: qx, size: qpix };
+    qrBox = { x: box.offsetX + qy, y: qx, size: qpix };
   }
-  var dy, dx, pi;
-  for (dy = 0; dy < paper.h; dy++) {
-    for (dx = 0; dx < paper.w; dx++) {
-      pi = (dy * paper.w + dx) * 4;
-      if (paper.d[pi] !== 0) continue;
-      img.set(box.offsetX + (contentH - 1 - dy), dx);
-    }
-  }
+  rotatePaper(img, box, paper);
   return { lines: lines, specPx: specPx, joPx: joPx, qr: jo, qrBox: qrBox, paper: paper };
 }
 
@@ -1002,6 +999,28 @@ function labelCanvas(rendered) {
   ctx.putImageData(image, 0, 0);
   return c;
 }
+/* Exit orientation: flaps side by side, tail below. This is the bitmap the printer feeds. */
+function exitCanvas(rendered) {
+  var src = stickerPixels(rendered);
+  var c = makeCanvas(src.width, src.height);
+  var ctx = c.getContext('2d');
+  var image = ctx.createImageData(src.width, src.height);
+  image.data.set(src.data);
+  ctx.putImageData(image, 0, 0);
+  return c;
+}
+/* Two flap rectangles on the print bitmap. The fold line sits on the shared edge. The tail is outside both. */
+function flapRects(img) {
+  var x0 = (img.offsetX | 0) - (img.shiftX | 0);
+  var y0 = -(img.shiftY | 0);
+  var half = px(15);
+  var flag = px(25);
+  var across = img.labelW || px(30);
+  return [
+    { x: x0, y: y0, w: half, h: flag },
+    { x: x0 + half, y: y0, w: across - half, h: flag }
+  ];
+}
 function toCanvas(rendered) {
   if (typeof document === 'undefined') return null;
   var c = document.createElement('canvas');
@@ -1014,10 +1033,9 @@ function toCanvas(rendered) {
   return c;
 }
 
-/* Display only. The print bitmap stays the full head. A JO card crops to the
-   sticker. A jewelry tag shows the readable cable label: 25×30 mm, tail to the
-   right, dashed fold already in the ink. White rounded paper on a mid-gray field.
-   A saved offset moves JO-card ink inside that paper. */
+/* Display only. The print bitmap stays the full head. A JO card is its sticker.
+   A jewelry tag is shown as it leaves the printer: two flaps, then the 45 mm tail.
+   A saved offset moves ink inside that paper. */
 var PREVIEW_GRAY = '#8e8e8e';
 function roundPath(ctx, x, y, w, h, r) {
   var rr = Math.min(r, w / 2, h / 2);
@@ -1028,6 +1046,23 @@ function roundPath(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
+}
+function addRound(ctx, x, y, w, h, r) {
+  var rr = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+/* Die-cut in exit pixels. Two 15×25 mm flaps, then the 45 mm tail. scale multiplies label pixels. */
+function tagOutline(ctx, ox, oy, scale) {
+  var u = function (mm) { return px(mm) * scale; };
+  var r = u(2);
+  addRound(ctx, ox, oy, u(15), u(25), r);
+  addRound(ctx, ox + u(15), oy, u(15), u(25), r);
+  addRound(ctx, ox, oy + u(25), u(30), u(45), r);
 }
 function stickerPixels(rendered) {
   var w = rendered.labelW, h = rendered.labelH + (rendered.tail || 0);
@@ -1055,8 +1090,9 @@ function preview(rendered, opts) {
   var scale = opts.scale > 0 ? opts.scale : 4;
   var smooth = opts.smooth !== false;
   var labelW = rendered.labelW, labelH = rendered.labelH, tail = rendered.tail || 0;
-  var readable = rendered.paperW > 0 && rendered.paper;
-  var srcW = readable ? rendered.paperW : labelW;
+  var jewelry = rendered.kind === 'jewelry_tag' && tail;
+  var readable = !jewelry && rendered.paperW > 0 && rendered.paper;
+  var srcW = readable ? rendered.paperW : (jewelry ? labelW : labelW);
   var srcH = readable ? rendered.paperH : labelH + tail;
   var pad = px(4), radius = px(2);
   var src = readable ? { width: srcW, height: srcH, data: rendered.paper } : stickerPixels(rendered);
@@ -1071,16 +1107,30 @@ function preview(rendered, opts) {
   ctx.fillStyle = PREVIEW_GRAY;
   ctx.fillRect(0, 0, outW, outH);
   var x = pad * scale, y = pad * scale, w = srcW * scale, h = srcH * scale, rad = radius * scale;
-  roundPath(ctx, x, y, w, h, rad);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
   ctx.save();
-  roundPath(ctx, x, y, w, h, rad);
-  ctx.clip();
+  if (jewelry) {
+    ctx.beginPath();
+    tagOutline(ctx, x, y, scale);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.clip();
+  } else {
+    roundPath(ctx, x, y, w, h, rad);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.clip();
+  }
   ctx.imageSmoothingEnabled = !!smooth;
   if (smooth && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(srcCanvas, x, y, w, h);
-  if (!readable && tail) {
+  ctx.restore();
+  if (jewelry) {
+    ctx.beginPath();
+    tagOutline(ctx, x, y, scale);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = Math.max(1, scale);
+    ctx.stroke();
+  } else if (!readable && tail) {
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(60,60,60,0.28)';
     ctx.lineWidth = Math.max(1, scale);
@@ -1089,7 +1139,6 @@ function preview(rendered, opts) {
     ctx.lineTo(x + w, fy);
     ctx.stroke();
   }
-  ctx.restore();
   var out = ctx.getImageData(0, 0, outW, outH);
   return {
     width: outW, height: outH, data: out.data, canvas: canvas,
@@ -1098,7 +1147,7 @@ function preview(rendered, opts) {
 }
 
 root.OYPLabel = {
-  render: render, toCanvas: toCanvas, preview: preview, labelCanvas: labelCanvas, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
+  render: render, toCanvas: toCanvas, preview: preview, labelCanvas: labelCanvas, exitCanvas: exitCanvas, tagOutline: tagOutline, flapRects: flapRects, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
   normalizeLayout: normalizeLayout, elementDefaults: elementDefaults, layoutFields: layoutFields, paperMm: paperMm,
   ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias
 };

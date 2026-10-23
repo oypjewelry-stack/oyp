@@ -134,6 +134,34 @@ const noPrice = L.render({
   weight: 7, jo: '26-002', sku: '18-498', location: 'A.R3'
 });
 eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
+function outsideFlaps(img) {
+  const rects = L.flapRects(img);
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+    if (img.data[(y * img.width + x) * 4] !== 0) continue;
+    let inside = false;
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) inside = true;
+    }
+    if (!inside) return { x: x, y: y };
+  }
+  return null;
+}
+function flapInk(img) {
+  const x0 = img.offsetX, mid = L.px(15);
+  let left = 0, right = 0, minY = img.labelH, maxY = 0;
+  for (let y = 0; y < img.labelH; y++) for (let x = 0; x < img.labelW; x++) {
+    if (img.data[(y * img.width + x0 + x) * 4] !== 0) continue;
+    if (x < mid) left++; else right++;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return { left: left, right: right, span: maxY - minY };
+}
+const flaps = flapInk(fullTag);
+eq(!outsideFlaps(fullTag) && tailWhite(fullTag), 'no black pixel falls outside the two flap rectangles');
+eq(flaps.left > 40 && flaps.right > 40 && flaps.span > L.px(15), 'each flap carries ink along the feed, not a strip across the top');
+eq(fullTag.height === L.px(25) + L.px(45) && fullTag.labelH === L.px(25) && fullTag.tail === L.px(45), 'the bitmap is the 25 mm flaps plus the 45 mm tail, and the gap stays with the printer');
 function packed(img) {
   let bits = '';
   for (let i = 0; i < img.data.length; i += 4) bits += img.data[i] < 128 ? '1' : '0';
@@ -154,6 +182,7 @@ const lay2 = L.render(Object.assign({ layout: layQr }, layItem));
 eq(packed(lay0) !== packed(lay1) && lay1.lines.indexOf('₱11,500.00') >= 0 && lay1.lines.indexOf('ELENA') < 0, 'the encoded bitmap changes when the layout moves the price');
 eq(packed(lay0) !== packed(lay2) && lay2.qrBox && lay0.qrBox && lay2.qrBox.size > lay0.qrBox.size && decode(lay2) === '26-002', 'the encoded bitmap changes when the layout enlarges the QR');
 eq(paperPx(lay0, 8, 120) === 0 && paperPx(lay0, 12, 120) === 255 && paperPx(lay0, 300, 40) === 255 && decode(lay0) === '26-002', 'the default layout keeps the NIIMBOT fold, a blank tail, and a scannable QR');
+eq(!outsideFlaps(lay0), 'a saved layout still keeps every black pixel inside the flap rectangles');
 const cardLay = L.normalizeLayout('jo_card', null);
 const cardA = L.render({ kind: 'jo_card', model: 'B31', jo: '26-002', due: '2026-10-27', layout: cardLay });
 const cardMoved = JSON.parse(JSON.stringify(cardLay));
@@ -235,10 +264,10 @@ function pxAt(img, x, y) {
 const corner = pxAt(cardView, 0, 0);
 const paper = pxAt(cardView, pad + rad + 8, pad + 6);
 const outside = pxAt(cardView, pad + 1, pad + 1);
-eq(cardView.width === (240 + L.px(4) * 2) * 4 && cardView.height === (160 + L.px(4) * 2) * 4 && tagView.width === (560 + L.px(4) * 2) * 4 && tagView.height === (240 + L.px(4) * 2) * 4, 'a preview is the label, with gray around it');
+eq(cardView.width === (240 + L.px(4) * 2) * 4 && cardView.height === (160 + L.px(4) * 2) * 4 && tagView.width === (240 + L.px(4) * 2) * 4 && tagView.height === (560 + L.px(4) * 2) * 4, 'a preview is the label, with gray around it');
 eq(corner[0] < 180 && corner[0] > 100 && paper[0] > 250 && outside[0] < 180, 'the sticker is a white rounded rectangle on mid-gray');
 const shown = L.render(Object.assign({ model: 'B1' }, tag));
-eq(tagView.tail === 360 && paperPx(shown, 8, 120) === 0 && paperPx(shown, 12, 120) === 255 && paperPx(shown, 300, 40) === 255, 'the jewelry preview is the readable label, with a printed dashed fold and a blank tail');
+eq(tagView.tail === 360 && paperPx(shown, 8, 120) === 0 && paperPx(shown, 12, 120) === 255 && paperPx(shown, 300, 40) === 255, 'the jewelry preview is the flaps-then-tail label, with a printed dashed fold and a blank tail');
 const shifted = L.preview(moved, { scale: 1, smooth: false });
 const still = L.preview(base, { scale: 1, smooth: false });
 function inkX(img) {
@@ -358,9 +387,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=29') && index.includes('print-label.js?v=12') && index.includes('nav.js?v=60') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=19') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=19') && read('sim/swipe-preview.html').includes('print.css?v=19'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=12') && read('nav.js').includes('print.js?v=29') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=29') && read('staff/print-test.html').includes('print-label.js?v=12') && read('staff/print-test.html').includes('print.css?v=19') && read('staff/print-test.html').includes('nav.js?v=60') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=30') && index.includes('print-label.js?v=13') && index.includes('nav.js?v=61') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=19') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=19') && read('sim/swipe-preview.html').includes('print.css?v=19'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=13') && read('nav.js').includes('print.js?v=30') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=30') && read('staff/print-test.html').includes('print-label.js?v=13') && read('staff/print-test.html').includes('print.css?v=19') && read('staff/print-test.html').includes('nav.js?v=61') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -1485,8 +1514,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v29') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v29') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v30') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v30') >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
