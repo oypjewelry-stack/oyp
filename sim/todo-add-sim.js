@@ -25,7 +25,7 @@ check(/\.tdadd \.tdaddgo\{[^}]*height:34px/.test(css), 'Add is 34px tall');
 check(!/\.tdadd \.tdaddgo\{[^}]*(transition|transform)/.test(css), 'Add does not set its own press transition');
 check(/@media \(max-width:760px\)\{\s*\.tdadd\{display:grid/.test(css) && css.includes('grid-column:1 / -1'), 'on a phone the text is its own row');
 check(page.includes('type="submit"') && page.includes('>Add<') && page.includes('isAddEnter') && card.includes('isAddEnter'), 'both surfaces use the shared Enter check and the submit button');
-check(index.includes('todo.js?v=5') && index.includes('todo.css?v=7') && index.includes('dash.js?v=35'), 'todo.js, todo.css, and dash.js are cache-busted');
+check(index.includes('todo.js?v=6') && index.includes('todo.css?v=7') && index.includes('dash.js?v=35'), 'todo.js, todo.css, and dash.js are cache-busted');
 
 function sleep(ms) { return new Promise(ok => setTimeout(ok, ms)); }
 

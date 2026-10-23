@@ -191,9 +191,9 @@ function wireBoard(main) {
   if ($('pClr')) $('pClr').onclick = clr; if ($('pClr2')) $('pClr2').onclick = clr;
   if ($('pChoose')) $('pChoose').onclick = () => { S.choose = !S.choose; if (!S.choose) S.sel.clear(); redraw(); };
   if ($('pPrint')) $('pPrint').onclick = () => {
-    const items = [...S.sel].map(jo => { const c = S.r.cards.find(x => x.jo === jo); return { jo: c ? joShown(c) : jo, kind: 'jo_card' }; });
-    if (!window.OYPPrint || !window.OYPPrint.printStickers) return toast('Print is not loaded');
-    window.OYPPrint.printStickers(items).then(r => { if (!r || r.ok === false) return; S.sel.clear(); S.choose = false; redraw(); });
+    const jos = [...S.sel].map(jo => { const c = S.r.cards.find(x => x.jo === jo); return c ? joShown(c) : jo; });
+    if (!window.OYPPrint || !window.OYPPrint.askPrint) return toast('Print is not loaded');
+    window.OYPPrint.askPrint(jos).then(r => { if (!r || r.ok === false) return; S.sel.clear(); S.choose = false; redraw(); });
   };
   main.querySelectorAll('[data-pck]').forEach(input => input.onclick = e => {
     e.stopPropagation();
@@ -234,10 +234,16 @@ function wireBoard(main) {
     actions: function (row) {
       const jo = row.getAttribute('data-jo');
       if (!jo) return [];
-      return [{ label: 'Archive', undoable: true, run: function () {
-        if (!window.OYP.archiveJos) return;
-        window.OYP.archiveJos([jo], 'archived', { after: () => reload() });
-      } }];
+      return [
+        { label: 'Print', run: function () {
+          const c = S.r.cards.find(x => x.jo === jo);
+          if (window.OYPPrint && window.OYPPrint.askPrint) return window.OYPPrint.askPrint([c ? joShown(c) : jo]);
+        } },
+        { label: 'Archive', undoable: true, run: function () {
+          if (!window.OYP.archiveJos) return;
+          window.OYP.archiveJos([jo], 'archived', { after: () => reload() });
+        } }
+      ];
     }
   });
 }
