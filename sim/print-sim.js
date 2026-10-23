@@ -322,9 +322,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=23') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=56') && index.includes('app.js?v=35') && index.includes('settings.js?v=21') && index.includes('print.css?v=16') && index.includes('app.css?v=50') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=14') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=16') && read('sim/swipe-preview.html').includes('print.css?v=16'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=23') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=23') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=16') && read('staff/print-test.html').includes('nav.js?v=56') && read('staff/print-test.html').includes('app.css?v=50'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=24') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=56') && index.includes('app.js?v=35') && index.includes('settings.js?v=21') && index.includes('print.css?v=16') && index.includes('app.css?v=50') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=14') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=16') && read('sim/swipe-preview.html').includes('print.css?v=16'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=24') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=24') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=16') && read('staff/print-test.html').includes('nav.js?v=56') && read('staff/print-test.html').includes('app.css?v=50'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
@@ -544,7 +544,24 @@ function bootPrint(opts) {
     if (opts.endHangs) return new Promise(function () {});
     return Promise.resolve();
   };
-  function Client() { clients.push(this); this.beats = 0; this._on = {}; }
+  function Client() {
+    var self = this;
+    clients.push(this);
+    this.beats = 0;
+    this._on = {};
+    this.pages = [];
+    this.protocol = {
+      newPrintTask: function (name) {
+        var task = new Task(name);
+        var page = task.printPage;
+        task.printPage = function (encoded, n) {
+          self.pages.push(encoded);
+          return page.call(task, encoded, n);
+        };
+        return task;
+      }
+    };
+  }
   Client.prototype.connect = function (options) {
     connects.push(options || null);
     const name = nextName.length ? nextName.shift() : ((options && options.authorizedDevice && options.authorizedDevice.name) || '');
@@ -563,7 +580,6 @@ function bootPrint(opts) {
   Client.prototype.startHeartbeat = function () { this.beats += 1; };
   Client.prototype.getPrintTaskType = function () { return opts.found || ''; };
   Client.prototype.getPrinterInfo = function () { return { protocolVersion: opts.protocol == null ? 4 : opts.protocol }; };
-  Client.prototype.protocol = { newPrintTask: function (name) { return new Task(name); } };
   Client.prototype.getModelMetadata = function () {
     const model = nextModel.length ? nextModel.shift() : 'B31';
     return { model: model, printheadPixels: model === 'B31' ? 600 : 384, printDirection: 'top' };
@@ -1430,6 +1446,51 @@ drain().then(function () {
       const sent = neu.calls.filter(function (b) { return b.action === 'printEnqueue' || b.op === 'printEnqueue'; });
       eq(enq && enq.t === 400 && printed.length === 1 && printed[0].print_id === 'pq-serverrow1' && sent[0].print_id !== 'pq-serverrow1', 'enqueue finishes at 400ms and the existing row is the one marked printed');
       eq(marks.sendAt - 30 === 770 && marks.paper - 150 === 770, 'tap to printer is 800ms before and 30ms after; tap to paper is 920ms before and 150ms after');
+    });
+  });
+}).then(function () {
+  const onlyTag = { print_id: 'pq-only-tag', jo: '26-363', kind: 'jewelry_tag', status: 'queued', client: 'Ada' };
+  const slot2 = bootPrint({
+    drive: true,
+    models: ['B1'],
+    names: ['B1-HC17121009'],
+    queue: { ok: true, auto: true, items: [onlyTag] },
+    store: { oypPrint: JSON.stringify({ auto: true, task: 'B1' }) }
+  });
+  slot2.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+  return drain().then(function () {
+    eq(slot2.clients.length === 1 && slot2.clients[0].pages.length === 1 && !slot2.notes.some(function (t) { return t.indexOf('protocol') >= 0; }), 'slot 1 is null and the jewelry tag is written on the slot 2 B1');
+    const both = bootPrint({
+      drive: true,
+      models: ['B1', 'B1'],
+      names: ['B31-HB03011342', 'B1-HC17121009'],
+      queue: { ok: true, auto: false, items: [Object.assign({}, onlyTag)] },
+      store: { oypPrint: JSON.stringify({ auto: false, task: 'B1', kindsByModel: { B31: { jo_card: true, jewelry_tag: true }, B1: { jo_card: false, jewelry_tag: true } } }) }
+    });
+    both.sandbox.OYPPrint.connect('bluetooth');
+    both.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+    return drain().then(function () {
+      both.sandbox.OYPPrint.printQueued();
+      return drain();
+    }).then(function () {
+      const wroteB31 = both.logs.some(function (line) { return line.indexOf('[oyp-print] write') >= 0 && line.indexOf('name=B31-') >= 0; });
+      const wroteB1 = both.logs.some(function (line) { return line.indexOf('[oyp-print] write') >= 0 && line.indexOf('btId=') >= 0 && line.indexOf('name=B1-HC17121009') >= 0 && line.indexOf('client=') >= 0 && line.indexOf('model=B1') >= 0; });
+      eq(both.clients.length === 2 && both.clients[1].pages.length === 1 && both.clients[0].pages.length === 0 && wroteB1 && !wroteB31, 'with both connected, the tag bytes reach only the B1 mock');
+      const tap = bootPrint({
+        drive: true,
+        models: ['B1', 'B1'],
+        names: ['B31-HB03011342', 'B1-HC17121009'],
+        queue: { ok: true, auto: false, items: [] },
+        store: { oypPrint: JSON.stringify({ auto: false, task: 'B1' }) }
+      });
+      tap.sandbox.OYPPrint.connect('bluetooth');
+      tap.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+      return drain().then(function () {
+        tap.sandbox.OYPPrint.printJo('jewelry_tag', '26-370', { reprint: true });
+        return drain();
+      }).then(function () {
+        eq(tap.clients.length === 2 && tap.clients[1].pages.length === 1 && tap.clients[0].pages.length === 0, 'instant print writes the tag to the B1 client and not the B31');
+      });
     });
   });
 }).then(function () {

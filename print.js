@@ -317,7 +317,7 @@ function labelOpts(item, kind, link) {
     model: model,
     shiftX: sh.x,
     shiftY: sh.y,
-    head: item.head || link.head || state.head || undefined,
+    head: item.head || link.head || undefined,
     jo: item.jo,
     due: item.due_date || item.due || '',
     date: item.date || item.given || '',
@@ -425,7 +425,7 @@ function labelReady() {
 }
 function labelSig(item, link) {
   var o = labelOpts(item, null, link);
-  var dir = (link && link.dir) || state.dir || '';
+  var dir = (link && link.dir) || '';
   return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, dir, o.jo || '', o.due || '', o.date || '', o.stage || '', o.metal || '', o.karat || '', o.weight || '', o.stone || '', o.stone_size || '', o.size || '', o.description || ''].join('\u001f');
 }
 function trimPrepared() {
@@ -447,7 +447,7 @@ function prepareItem(item, link) {
     var rendered = root.OYPLabel.render(labelOpts(item, null, link));
     var canvas = fitHead(root.OYPLabel.toCanvas(rendered), link);
     if (!canvas) throw new Error('No canvas');
-    var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, (link && link.dir) || state.dir || 'top');
+    var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, (link && link.dir) || 'top');
     var rec = { encoded: encoded, ms: clock() - t0, sig: sig };
     state.prepared[sig] = rec;
     delete state.preparing[sig];
@@ -477,11 +477,23 @@ function sendToPrinter(item, prep, link) {
   return Promise.resolve(prep || prepareItem(item, link)).then(function (rec) {
     var waited = clock() - started;
     logMs('render', rec.cached || already ? 0 : rec.ms, rec.cached ? 'cached' : (already || waited < 8 ? 'overlapped' : ''));
-    return sendEncoded(rec.encoded, link);
+    return sendEncoded(rec.encoded, link, item && item.kind);
   });
 }
-function runTask(name, encoded, link) {
+function clientMark(client) {
+  if (!client) return 'none';
+  if (!client.__oypId) client.__oypId = 'c' + (clientMark.n = (clientMark.n || 0) + 1);
+  return client.__oypId;
+}
+/* A jewelry tag is only ever written to a B1. Checked on the link that owns this client, immediately before the write. */
+function tagBlocked(kind, link) {
+  return isTagKind(kind) && (!link || link.model !== 'B1');
+}
+function runTask(name, encoded, link, kind) {
   link = link || state;
+  if (!link.client) return Promise.reject(new Error('Not connected'));
+  if (tagBlocked(kind, link)) return Promise.reject(new Error('Connect the B1 to print jewelry tags'));
+  logMs('write', 0, 'btId=' + (link.btId || '') + ' name=' + (link.deviceName || '') + ' client=' + clientMark(link.client) + ' model=' + (link.model || ''));
   var L = lib();
   var task = link.client.protocol.newPrintTask(name, {
     totalPages: 1,
@@ -518,11 +530,13 @@ function runTask(name, encoded, link) {
     return Promise.resolve(end()).then(function () { throw err; });
   });
 }
-function sendEncoded(encoded, link) {
+function sendEncoded(encoded, link, kind) {
   link = link || state;
+  if (!link.client) return Promise.reject(new Error('Not connected'));
+  if (tagBlocked(kind, link)) return Promise.reject(new Error('Connect the B1 to print jewelry tags'));
   var names = taskChoices(link), i = 0;
   function once() {
-    return runTask(names[i], encoded).catch(function (err) {
+    return runTask(names[i], encoded, link, kind).catch(function (err) {
       if (i + 1 < names.length && isPageEndTimeout(err)) { i += 1; return once(); }
       throw err;
     });
@@ -857,9 +871,13 @@ function printAgain(item) {
 function printLocal(opts) {
   var item = Object.assign({}, opts || {});
   delete item.model; delete item.head; delete item.client;
-  var link = state.connected ? state : (peer.connected ? peer : state);
+  var link = (item.kind && linkFor(item.kind)) || (state.connected ? state : (peer.connected ? peer : null));
+  if (!link || !link.connected) {
+    toast(item.kind ? holdText(item.kind) : 'Connect a printer first');
+    return Promise.resolve();
+  }
   var job = work(link, function () {
-    if (!link.connected) { toast('Connect a printer first'); return; }
+    if (!link.connected) { toast(holdText(item.kind)); return; }
     markPrinting(link, true);
     toast('Printing…');
     logMs('claim', 0);
