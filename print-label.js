@@ -2,8 +2,17 @@
    canvas height is the feed. The 30 mm label is centred. Text is Inter Bold (OFL), drawn with
    fillText at 4x and reduced to the 1-bit label. QR modules stay crisp rectangles.
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
-   Jewelry tag: the same landscape reading on the 30×25 head (240×200), then a
-   45 mm blank tail. B1 and B31 print direction is "top", so x is across the label.
+   Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs the flag upright,
+   25 mm wide by 30 mm high, with the 45 mm tail to the right of that picture.
+   The B1 prints direction "top": bitmap x increases to the right across the head,
+   bitmap y is the feed, and row 0 is the flap end. Seen from the printed side,
+   flaps on top and the tail below, that bitmap is the paper. The upright design
+   is turned 90° clockwise onto it, a rotation rather than a mirror. The top of
+   the design lands on the right flap. The right edge of the design, where the
+   tail sits in the app, runs into the blank tail. Turn the paper so the tail is
+   on the right and every word reads with the NIIMBOT picture. The liner gap is
+   not in the bitmap. WithGaps starts the next label on the next pair of flaps.
+   B1 and B31 print direction is "top", so x on the bitmap is across the head.
    The printer draws columns 0..width-1 and does not centre a narrow bitmap,
    so the image stays the full head. A 30 mm label centred on the B31's 600 px
    head printed about 2 mm too far right, with extra blank above the picture, on a T30*20 roll.
@@ -47,10 +56,110 @@ function smallLine(opts) {
   if (opts.stage) return clean(opts.stage).slice(0, 16);
   return '';
 }
-/* The jewelry tag prints the JO, then this note when a description exists. The client name is not a field here. */
+/* Kept for callers. The jewelry tag no longer prints this under the JO. The client name is not a field. */
 function tagNote(opts) {
   var d = clean(opts && opts.description);
   return d ? [d] : [];
+}
+function textOf(v) {
+  if (v == null) return '';
+  return String(v).replace(/\s+/g, ' ').trim();
+}
+/* ₱11,500.00 when the value is numeric. A value that already has letters is printed as stored. Blank stays blank. */
+function moneyText(v) {
+  var s = textOf(v);
+  if (!s) return '';
+  if (/[A-Za-z]/.test(s)) return s;
+  var n = Number(s.replace(/[₱$,\s]/g, ''));
+  if (!isFinite(n)) return s;
+  var neg = n < 0;
+  var parts = Math.abs(n).toFixed(2).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (neg ? '-' : '') + '₱' + parts[0] + '.' + parts[1];
+}
+/* 7, 7g, and "7 g" all print as 7g. Anything else is printed as stored. */
+function weightText(v) {
+  var s = textOf(v);
+  if (!s) return '';
+  var m = s.match(/^(-?\d+(?:\.\d+)?)\s*g?$/i);
+  if (!m) return s;
+  var n = m[1];
+  if (n.indexOf('.') >= 0) n = n.replace(/0+$/, '').replace(/\.$/, '');
+  return n + 'g';
+}
+function upOf(v) { return textOf(v).toUpperCase(); }
+/* Piece type, not the job type and not the sticker kind. */
+function pieceType(opts) {
+  opts = opts || {};
+  var t = textOf(opts.item_type || opts.piece_type || '');
+  if (!t) {
+    t = textOf(opts.type);
+    if (/^(jewelry tag|jewelry_tag|jo card|jo_card|repair|revision|new|new job)$/i.test(t)) t = '';
+  }
+  return upOf(t);
+}
+/* The stone sentence when it is already one field, otherwise type, size, and grade. Not the item name. */
+function stoneText(opts) {
+  opts = opts || {};
+  var full = textOf(opts.stones);
+  if (full) return full;
+  var bits = [];
+  var stone = textOf(opts.stone || opts.stone_type);
+  if (stone) bits.push(stone);
+  if (textOf(opts.stone_size)) bits.push(textOf(opts.stone_size));
+  if (textOf(opts.grade)) bits.push(textOf(opts.grade));
+  return bits.join(' ');
+}
+/* OYP wordmark, 36×20, from logo.png. Any opaque pixel is ink. */
+var LOGO_ROWS = [
+  '000000111111110000000000000001110000',
+  '000011110000111000000000000001111100',
+  '000110000000001110000000000001101110',
+  '001100000000000010000000000001101110',
+  '011000000000000011000000010001111011',
+  '010000000000000001101100110001110001',
+  '110000000000000001111100110011100001',
+  '110000000000000000111101111111100001',
+  '100000000000000001111101111001100001',
+  '100000000000000011111111110001100011',
+  '100000000000000000111111100001100110',
+  '100000000000000000100011100001101100',
+  '110000000000000000100111100001111000',
+  '010000000000000001101101000001100000',
+  '011000000000000011001111000001100000',
+  '001100000000000011001011000001100000',
+  '000110000000001110011010000001100000',
+  '000011100000111100011110000001100000',
+  '000001111111110000011100000001100000'
+];
+function blitBits(img, rows, x, y) {
+  var r, c, row;
+  for (r = 0; r < rows.length; r++) {
+    row = rows[r];
+    for (c = 0; c < row.length; c++) if (row.charAt(c) === '1') img.set(x + c, y + r);
+  }
+}
+function dashes(img, x, y, w) {
+  var on = 3, gap = 2, i = 0, n;
+  while (i < w) {
+    n = Math.min(on, w - i);
+    img.rect(x + i, y, n, 1);
+    i += on + gap;
+  }
+}
+/* Words wrap to maxLines. The last line ellipsizes when the rest does not fit. */
+function wrapLines(text, maxW, size, maxLines, bold) {
+  var words = text.split(' ').filter(Boolean), lines = [], cur = '', i, trial;
+  if (!words.length || maxLines < 1) return lines;
+  for (i = 0; i < words.length; i++) {
+    trial = cur ? cur + ' ' + words[i] : words[i];
+    if (metricsOf(trial, size, bold).w <= maxW) { cur = trial; continue; }
+    if (cur && lines.length < maxLines - 1) { lines.push(cur); cur = ''; i--; continue; }
+    lines.push(ellipsis(cur ? cur + ' ' + words.slice(i).join(' ') : words.slice(i).join(' '), maxW, size, bold));
+    return lines;
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 /* Up to three spec lines. Missing fields are skipped. Metal and karat share a line. Size and weight share the last. */
 function specLines(opts) {
@@ -197,10 +306,13 @@ function measureCtx() {
   if (!scratch) scratch = makeCanvas(8, 8).getContext('2d');
   return scratch;
 }
-function fontCss(size) { return '700 ' + (size * SCALE) + 'px ' + FAMILY; }
-function metricsOf(text, size) {
+function fontCss(size, bold) {
+  var weight = (bold === 0 || bold === false) ? '400' : '700';
+  return weight + ' ' + (size * SCALE) + 'px ' + FAMILY;
+}
+function metricsOf(text, size, bold) {
   var ctx = measureCtx();
-  ctx.font = fontCss(size);
+  ctx.font = fontCss(size, bold);
   var m = ctx.measureText(text || 'H');
   return {
     w: m.width / SCALE,
@@ -213,13 +325,13 @@ function sizeThatFits(text, maxW, start, min) {
   while (size > min && metricsOf(text, size).w > maxW) size -= 1;
   return metricsOf(text, size).w <= maxW ? size : 0;
 }
-function ellipsis(text, maxW, size) {
-  if (metricsOf(text, size).w <= maxW) return text;
+function ellipsis(text, maxW, size, bold) {
+  if (metricsOf(text, size, bold).w <= maxW) return text;
   var cut = text;
-  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size).w > maxW) cut = cut.slice(0, -1);
+  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold).w > maxW) cut = cut.slice(0, -1);
   cut = cut.replace(/\s+$/, '');
   var out = (cut || text.charAt(0)) + '...';
-  while (out.length > 4 && metricsOf(out, size).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
+  while (out.length > 4 && metricsOf(out, size, bold).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
   return out;
 }
 /* One size for every spec line. Shrink until the longest fits, then ellipsis. */
@@ -306,7 +418,7 @@ function stampText(img, runs, box) {
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
   runs.forEach(function (run) {
-    ctx.font = fontCss(run.size);
+    ctx.font = fontCss(run.size, run.bold);
     var m = ctx.measureText(run.text);
     var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
     ctx.fillText(run.text, Math.round((run.x - box.offsetX) * SCALE), Math.round(run.y * SCALE + ascent));
@@ -323,6 +435,431 @@ function stampText(img, runs, box) {
       if (dark >= 6) img.set(box.offsetX + x, y);
     }
   }
+}
+/* Same 4× threshold as stampText, in the image's own pixels. run.y is the top of the line. */
+function stampLocal(img, runs) {
+  if (!runs.length) return;
+  var tw = img.w * SCALE, th = img.h * SCALE;
+  var canvas = makeCanvas(tw, th);
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, tw, th);
+  ctx.fillStyle = '#000000';
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  runs.forEach(function (run) {
+    ctx.font = fontCss(run.size, run.bold);
+    var m = ctx.measureText(run.text);
+    var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
+    ctx.fillText(run.text, Math.round(run.x * SCALE), Math.round(run.y * SCALE + ascent));
+  });
+  var data = ctx.getImageData(0, 0, tw, th).data;
+  var y, x, dy, dx, dark, si;
+  for (y = 0; y < img.h; y++) {
+    for (x = 0; x < img.w; x++) {
+      dark = 0;
+      for (dy = 0; dy < SCALE; dy++) for (dx = 0; dx < SCALE; dx++) {
+        si = ((y * SCALE + dy) * tw + (x * SCALE + dx)) * 4;
+        if (data[si] < 150) dark++;
+      }
+      if (dark >= 6) img.set(x, y);
+    }
+  }
+}
+/* Saved positions are millimetres from the top-left of the readable label.
+   No opts.layout keeps the built-in NIIMBOT drawer below. A layout draws each
+   element where it was saved, so the editor, the preview, and the print match. */
+var LAYOUT_FIELDS = [
+  { id: 'price', label: 'Price', kind: 'text' },
+  { id: 'logo', label: 'Logo', kind: 'logo' },
+  { id: 'name', label: 'Name', kind: 'text' },
+  { id: 'type', label: 'Type', kind: 'text' },
+  { id: 'metal', label: 'Metal', kind: 'text' },
+  { id: 'karat', label: 'Karat', kind: 'text' },
+  { id: 'fold', label: 'Fold line', kind: 'fold' },
+  { id: 'stones', label: 'Stones', kind: 'text' },
+  { id: 'weight', label: 'Weight', kind: 'text' },
+  { id: 'jo', label: 'JO', kind: 'text' },
+  { id: 'sku', label: 'SKU', kind: 'text' },
+  { id: 'location', label: 'Location', kind: 'text' },
+  { id: 'qr', label: 'QR', kind: 'qr' },
+  { id: 'line', label: 'Due line', kind: 'text', card: 1 }
+];
+var LAYOUT_BASE = {
+  jewelry_tag: {
+    price: { show: 1, x: 1, y: 1, size: 17, bold: 1, align: 'left', w: 14, wrap: 1 },
+    logo: { show: 1, x: 19.5, y: 1 },
+    name: { show: 1, x: 1, y: 4.1, size: 15, bold: 1, align: 'left', w: 23, wrap: 1 },
+    type: { show: 1, x: 1, y: 11.2, size: 12, bold: 1, align: 'left', w: 7, wrap: 1 },
+    metal: { show: 1, x: 9, y: 11.2, size: 12, bold: 1, align: 'center', w: 7, wrap: 1 },
+    karat: { show: 1, x: 16.5, y: 11.2, size: 12, bold: 1, align: 'right', w: 7.5, wrap: 1 },
+    fold: { show: 1, x: 1, y: 15, w: 23 },
+    stones: { show: 1, x: 1, y: 16, size: 10, bold: 1, align: 'left', w: 23, wrap: 3 },
+    weight: { show: 1, x: 1, y: 27.2, size: 9, bold: 1, align: 'left', w: 10, wrap: 1 },
+    jo: { show: 1, x: 8, y: 23.2, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
+    sku: { show: 1, x: 8, y: 24.6, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
+    location: { show: 1, x: 8, y: 26, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
+    qr: { show: 1, x: 17.8, y: 22.8, qr: 6.2 },
+    line: { show: 0, x: 1, y: 20, size: 9, bold: 1, align: 'left', w: 16, wrap: 1 }
+  },
+  jo_card: {
+    price: { show: 0, x: 1, y: 1, size: 12, bold: 1, align: 'left', w: 14, wrap: 1 },
+    logo: { show: 0, x: 24, y: 1 },
+    name: { show: 0, x: 1, y: 4, size: 12, bold: 1, align: 'left', w: 16, wrap: 1 },
+    type: { show: 0, x: 1, y: 7, size: 10, bold: 1, align: 'left', w: 8, wrap: 1 },
+    metal: { show: 0, x: 10, y: 7, size: 10, bold: 1, align: 'center', w: 8, wrap: 1 },
+    karat: { show: 0, x: 19, y: 7, size: 10, bold: 1, align: 'right', w: 8, wrap: 1 },
+    fold: { show: 0, x: 1, y: 10, w: 28 },
+    stones: { show: 0, x: 1, y: 11, size: 9, bold: 1, align: 'left', w: 16, wrap: 2 },
+    weight: { show: 0, x: 1, y: 16, size: 9, bold: 1, align: 'left', w: 8, wrap: 1 },
+    jo: { show: 1, x: 18.6, y: 4.2, size: 22, bold: 1, align: 'left', w: 10.4, wrap: 1 },
+    sku: { show: 0, x: 18.6, y: 13, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
+    location: { show: 0, x: 18.6, y: 15, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
+    qr: { show: 1, x: 1, y: 1.5, qr: 17 },
+    line: { show: 1, x: 18.6, y: 10.2, size: 12, bold: 1, align: 'left', w: 10.4, wrap: 1 }
+  }
+};
+function copyFields(src) {
+  var out = {}, k;
+  for (k in src) if (Object.prototype.hasOwnProperty.call(src, k)) out[k] = src[k];
+  return out;
+}
+function paperMm(kind) {
+  if (kind === 'jewelry_tag' || kind === 'cal_tag') return { w: 70, h: 30 };
+  return { w: 30, h: 20 };
+}
+function elementDefaults(kind) {
+  var src = LAYOUT_BASE[kind === 'jo_card' ? 'jo_card' : 'jewelry_tag'];
+  var out = {}, id;
+  for (id in src) if (Object.prototype.hasOwnProperty.call(src, id)) out[id] = copyFields(src[id]);
+  return out;
+}
+function layoutFields(kind) {
+  var card = kind === 'jo_card', out = [], i;
+  for (i = 0; i < LAYOUT_FIELDS.length; i++) if (card || !LAYOUT_FIELDS[i].card) out.push(LAYOUT_FIELDS[i]);
+  return out;
+}
+function clampMm(v, fallback, min, max) {
+  var n = Math.round(Number(v) * 10) / 10;
+  if (!isFinite(n)) n = fallback;
+  if (n < min) n = min;
+  if (n > max) n = max;
+  return n;
+}
+function alignOf(v) { return v === 'center' || v === 'right' ? v : 'left'; }
+function normalizeLayout(kind, saved) {
+  var base = elementDefaults(kind);
+  var paper = paperMm(kind);
+  var id, src, el;
+  saved = saved && typeof saved === 'object' ? saved : {};
+  for (id in base) {
+    if (!Object.prototype.hasOwnProperty.call(base, id)) continue;
+    src = saved[id] && typeof saved[id] === 'object' ? saved[id] : {};
+    el = base[id];
+    if (src.show === 0 || src.show === false) el.show = 0;
+    else if (src.show === 1 || src.show === true) el.show = 1;
+    el.x = clampMm(src.x != null ? src.x : el.x, el.x, 0, Math.max(0, paper.w - 2));
+    el.y = clampMm(src.y != null ? src.y : el.y, el.y, 0, Math.max(0, paper.h - 2));
+    if (el.size != null) {
+      el.size = Math.round(Number(src.size != null ? src.size : el.size));
+      if (!isFinite(el.size)) el.size = 12;
+      if (el.size < 6) el.size = 6;
+      if (el.size > 72) el.size = 72;
+    }
+    if (el.bold != null) el.bold = (src.bold === 0 || src.bold === false) ? 0 : 1;
+    if (el.align != null) el.align = alignOf(src.align != null ? src.align : el.align);
+    if (el.w != null) el.w = clampMm(src.w != null ? src.w : el.w, el.w, 1, paper.w);
+    if (el.wrap != null) {
+      el.wrap = Math.round(Number(src.wrap != null ? src.wrap : el.wrap));
+      if (!isFinite(el.wrap) || el.wrap < 1) el.wrap = 1;
+      if (el.wrap > 8) el.wrap = 8;
+    }
+    if (el.qr != null) el.qr = clampMm(src.qr != null ? src.qr : el.qr, el.qr, 2, Math.min(paper.w, paper.h));
+  }
+  return base;
+}
+/* Text for one element. The client name is not a field. */
+function elementText(id, opts) {
+  opts = opts || {};
+  if (id === 'price') return moneyText(opts.price);
+  if (id === 'name') return textOf(opts.name || opts.description);
+  if (id === 'type') return pieceType(opts);
+  if (id === 'metal') return upOf(opts.metal);
+  if (id === 'karat') return upOf(opts.karat);
+  if (id === 'stones') return stoneText(opts);
+  if (id === 'weight') return weightText(opts.weight != null && opts.weight !== '' ? opts.weight : opts.weight_g);
+  if (id === 'jo' || id === 'qr') return joCode(opts.jo) || textOf(opts.jo);
+  if (id === 'sku') return textOf(opts.sku || opts.item_id);
+  if (id === 'location') return textOf(opts.location);
+  if (id === 'line') return smallLine(opts);
+  return '';
+}
+function fitQrBox(mods, boxPx) {
+  var mod = 1, best = 1, size;
+  while (mod < 16) {
+    size = qrSize(mods, mod, 2);
+    if (size > boxPx) break;
+    best = mod;
+    mod++;
+  }
+  return { mod: best, quiet: 2, size: qrSize(mods, best, 2) };
+}
+function paintLayout(img, layout, opts, kind) {
+  var fields = layoutFields(kind);
+  var runs = [], placed = [], lines = [];
+  var specPx = 0, joPx = 0, qrInfo = null, i, field, el, text, x, y, w, size, wrapN, bold, block, cursor, li, m, tw, tx, lineH;
+  for (i = 0; i < fields.length; i++) {
+    field = fields[i];
+    el = layout[field.id];
+    if (!el || !el.show) continue;
+    if (field.kind === 'logo') {
+      x = px(el.x); y = px(el.y);
+      blitBits(img, LOGO_ROWS, x, y);
+      placed.push({ id: 'logo', x: x, y: y, w: LOGO_ROWS[0].length, h: LOGO_ROWS.length });
+      continue;
+    }
+    if (field.kind === 'fold') {
+      x = px(el.x); y = px(el.y); w = Math.max(1, px(el.w || 1));
+      dashes(img, x, y, w);
+      placed.push({ id: 'fold', x: x, y: y > 3 ? y - 3 : 0, w: w, h: 8 });
+      continue;
+    }
+    if (field.kind === 'qr') {
+      text = elementText('qr', opts);
+      x = px(el.x); y = px(el.y); w = Math.max(8, px(el.qr || 6));
+      if (text) {
+        var mods = makeQr(text), fit = fitQrBox(mods, w);
+        img.qr(mods, x, y, fit.mod, fit.quiet);
+        qrInfo = { x: x, y: y, size: fit.size, text: text };
+      }
+      placed.push({ id: 'qr', x: x, y: y, w: w, h: w });
+      continue;
+    }
+    text = elementText(field.id, opts);
+    x = px(el.x); y = px(el.y); w = Math.max(4, px(el.w || 4));
+    size = el.size | 0; wrapN = el.wrap | 0 || 1; bold = el.bold ? 1 : 0;
+    if (field.id === 'stones') specPx = size;
+    if (field.id === 'jo') joPx = size;
+    block = [];
+    if (text) block = wrapN <= 1 ? [ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
+    if (!block.length) {
+      placed.push({ id: field.id, x: x, y: y, w: w, h: Math.max(8, size) });
+      continue;
+    }
+    cursor = y;
+    for (li = 0; li < block.length; li++) {
+      m = metricsOf(block[li], size, bold);
+      tw = m.w;
+      if (el.align === 'right') tx = x + w - tw;
+      else if (el.align === 'center') tx = x + (w - tw) / 2;
+      else tx = x;
+      lineH = Math.ceil(m.ascent + m.descent);
+      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold });
+      lines.push(block[li]);
+      cursor += lineH + 2;
+    }
+    placed.push({ id: field.id, x: x, y: y, w: w, h: Math.max(8, cursor - y) });
+  }
+  stampLocal(img, runs);
+  return { lines: lines, placed: placed, specPx: specPx, joPx: joPx, qr: qrInfo };
+}
+/* 90° clockwise onto the print. Top of the design (small dy) becomes the right flap.
+   Feed follows design x, so the tail drawn to the right of the flag prints after the flaps.
+   One axis is flipped, so the glyphs stay a rotation and not a mirror. */
+function rotatePaper(img, box, paper) {
+  var dy, dx, pi, contentH = paper.h;
+  for (dy = 0; dy < paper.h; dy++) {
+    for (dx = 0; dx < paper.w; dx++) {
+      pi = (dy * paper.w + dx) * 4;
+      if (paper.d[pi] !== 0) continue;
+      img.set(box.offsetX + (contentH - 1 - dy), dx);
+    }
+  }
+}
+function drawJewelryLayout(img, box, opts) {
+  var contentW = box.labelH, contentH = box.labelW;
+  var paper = new Img(contentW + box.tail, contentH);
+  var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag');
+  var qrBox = null;
+  if (drawn.qr) qrBox = { x: box.offsetX + (contentH - drawn.qr.y - drawn.qr.size), y: drawn.qr.x, size: drawn.qr.size };
+  rotatePaper(img, box, paper);
+  return { lines: drawn.lines, specPx: drawn.specPx, joPx: drawn.joPx, qr: drawn.qr ? drawn.qr.text : '', qrBox: qrBox, paper: paper, sheet: paper, placed: drawn.placed };
+}
+function drawCardLayout(img, box, opts) {
+  var sheet = new Img(box.labelW, box.labelH);
+  var drawn = paintLayout(sheet, normalizeLayout('jo_card', opts.layout), opts, 'jo_card');
+  var dy, dx, pi, qrBox = null;
+  for (dy = 0; dy < sheet.h; dy++) {
+    for (dx = 0; dx < sheet.w; dx++) {
+      pi = (dy * sheet.w + dx) * 4;
+      if (sheet.d[pi] !== 0) continue;
+      img.set(box.offsetX + dx, dy);
+    }
+  }
+  if (drawn.qr) qrBox = { x: box.offsetX + drawn.qr.x, y: drawn.qr.y, size: drawn.qr.size };
+  return { lines: drawn.lines, specPx: drawn.specPx, joPx: drawn.joPx, qr: drawn.qr ? drawn.qr.text : '', qrBox: qrBox, sheet: sheet, placed: drawn.placed };
+}
+/* Readable cable label: 25×30 mm flag, tail to the right, then rotated into the print bitmap. */
+function drawJewelry(img, box, opts) {
+  if (opts && opts.layout) return drawJewelryLayout(img, box, opts);
+  var contentW = box.labelH, contentH = box.labelW;
+  var paper = new Img(contentW + box.tail, contentH);
+  var pad = px(1);
+  var left = pad, right = contentW - pad, top = pad, bottom = contentH - pad;
+  var innerW = right - left;
+  var foldY = contentH >> 1;
+  var lines = [];
+  var runs = [];
+  var price = moneyText(opts.price);
+  var name = textOf(opts.name || opts.description);
+  var spread = [pieceType(opts), upOf(opts.metal), upOf(opts.karat)].filter(Boolean);
+  var stones = stoneText(opts);
+  var weight = weightText(opts.weight != null && opts.weight !== '' ? opts.weight : opts.weight_g);
+  var jo = joCode(opts.jo) || textOf(opts.jo);
+  var sku = textOf(opts.sku || opts.item_id);
+  var loc = textOf(opts.location);
+  var logoW = LOGO_ROWS[0].length, logoH = LOGO_ROWS.length;
+  var specPx = 0, joPx = 0;
+  var nameBottom = top + logoH;
+
+  if (price) {
+    var priceMax = Math.max(8, innerW - logoW - 6);
+    var priceSize = sizeThatFits(price, priceMax, 17, 12) || 12;
+    if (metricsOf(price, priceSize).w > priceMax) price = ellipsis(price, priceMax, priceSize);
+    var pm = metricsOf(price, priceSize);
+    runs.push({ text: price, x: left, y: top + Math.max(0, Math.round((logoH - pm.ascent - pm.descent) / 2)), size: priceSize });
+    lines.push(price);
+  }
+  blitBits(paper, LOGO_ROWS, right - logoW, top);
+
+  if (name) {
+    var nameSize = sizeThatFits(name, innerW, 15, 11) || 11;
+    if (metricsOf(name, nameSize).w > innerW) name = ellipsis(name, innerW, nameSize);
+    var nameY = top + logoH + 6;
+    var nameM = metricsOf(name, nameSize);
+    runs.push({ text: name, x: left, y: nameY, size: nameSize });
+    lines.push(name);
+    nameBottom = nameY + Math.ceil(nameM.ascent + nameM.descent);
+  }
+
+  if (spread.length) {
+    var spreadSize = 12;
+    function spreadFits(sz) {
+      var ws = spread.map(function (t) { return metricsOf(t, sz).w; });
+      var sum = 0, i;
+      for (i = 0; i < ws.length; i++) sum += ws[i];
+      if (spread.length === 1) return ws[0] <= innerW;
+      if (spread.length === 2) return sum + 8 <= innerW;
+      var mid = (left + right) / 2;
+      return mid - ws[1] / 2 >= left + ws[0] + 4 && mid + ws[1] / 2 <= right - ws[2] - 4;
+    }
+    while (spreadSize > 8 && !spreadFits(spreadSize)) spreadSize--;
+    var placed = spread.slice();
+    if (!spreadFits(spreadSize)) {
+      var slot = Math.max(8, Math.floor(innerW / placed.length) - 4);
+      placed = placed.map(function (t) { return ellipsis(t, slot, spreadSize); });
+    }
+    var ws2 = placed.map(function (t) { return metricsOf(t, spreadSize).w; });
+    var xs = [];
+    if (placed.length === 1) xs = [left];
+    else if (placed.length === 2) xs = [left, right - ws2[1]];
+    else {
+      var mid2 = (left + right) / 2;
+      xs = [left, mid2 - ws2[1] / 2, right - ws2[2]];
+    }
+    var sm = metricsOf(placed[0], spreadSize);
+    var spreadH = Math.ceil(sm.ascent + sm.descent);
+    /* The row sits just above the fold, the way the template does. */
+    var spreadY = foldY - pad - spreadH;
+    if (spreadY < nameBottom + 6) spreadY = nameBottom + 6;
+    placed.forEach(function (t, i) {
+      runs.push({ text: t, x: Math.round(xs[i]), y: spreadY, size: spreadSize });
+      lines.push(t);
+    });
+  }
+
+  var mods = jo ? makeQr(jo) : null;
+  var mod = 2, quiet = 2;
+  var qpix = mods ? qrSize(mods, mod, quiet) : 0;
+  var codes = [];
+  if (jo) codes.push(jo);
+  if (sku) codes.push(sku);
+  if (loc) codes.push(loc);
+  var metaSize = 9;
+  var codeMax = Math.max(8, (qpix ? right - 4 - qpix : right) - left - 36);
+  while (metaSize > 7 && codes.some(function (t) { return metricsOf(t, metaSize).w > codeMax; })) metaSize--;
+  codes = codes.map(function (t) {
+    if (t === jo && metricsOf(t, metaSize).w <= codeMax) return t;
+    return metricsOf(t, metaSize).w <= codeMax ? t : ellipsis(t, codeMax, metaSize);
+  });
+  if (jo && codes.length && codes[0] !== jo && metricsOf(jo, 7).w <= codeMax) {
+    metaSize = 7;
+    codes[0] = jo;
+  }
+  joPx = jo ? metaSize : 0;
+  var clusterBottom = bottom;
+  var clusterH = qpix || (codes.length ? codes.length * 12 : 0);
+  var clusterTop = clusterBottom - clusterH;
+  var stoneTop = foldY + pad;
+  var stoneRoom = clusterTop - 4 - stoneTop;
+  var stoneLines = [];
+  if (stones && stoneRoom > 8) {
+    specPx = 10;
+    while (specPx > 8) {
+      var trial = wrapLines(stones, innerW, specPx, 3);
+      var tall = 0, li;
+      for (li = 0; li < trial.length; li++) {
+        var tm = metricsOf(trial[li], specPx);
+        tall += Math.ceil(tm.ascent + tm.descent) + (li ? 2 : 0);
+      }
+      if (tall <= stoneRoom) { stoneLines = trial; break; }
+      specPx--;
+    }
+    if (!stoneLines.length) {
+      specPx = 8;
+      stoneLines = wrapLines(stones, innerW, specPx, 3);
+    }
+    var sy = stoneTop;
+    stoneLines.forEach(function (t) {
+      var m = metricsOf(t, specPx);
+      runs.push({ text: t, x: left, y: sy, size: specPx });
+      lines.push(t);
+      sy += Math.ceil(m.ascent + m.descent) + 2;
+    });
+  }
+
+  var codeGap = 2;
+  var codeH = 0;
+  codes.forEach(function (t, i) {
+    var m = metricsOf(t, metaSize);
+    codeH += Math.ceil(m.ascent + m.descent) + (i ? codeGap : 0);
+  });
+  var codeY = qpix ? clusterTop + Math.max(0, Math.round((qpix - codeH) / 2)) : clusterTop;
+  var codesRight = qpix ? right - qpix - 4 : right;
+  codes.forEach(function (t) {
+    var m = metricsOf(t, metaSize);
+    var w = m.w;
+    runs.push({ text: t, x: Math.round(codesRight - w), y: codeY, size: metaSize });
+    lines.push(t);
+    codeY += Math.ceil(m.ascent + m.descent) + codeGap;
+  });
+  if (weight) {
+    var wm = metricsOf(weight, metaSize);
+    var weightY = clusterBottom - Math.ceil(wm.ascent + wm.descent);
+    runs.push({ text: weight, x: left, y: weightY, size: metaSize });
+    lines.push(weight);
+  }
+
+  stampLocal(paper, runs);
+  dashes(paper, left, foldY, innerW);
+  var qrBox = null;
+  if (mods) {
+    var qx = right - qpix, qy = bottom - qpix;
+    paper.qr(mods, qx, qy, mod, quiet);
+    qrBox = { x: box.offsetX + (contentH - qy - qpix), y: qx, size: qpix };
+  }
+  rotatePaper(img, box, paper);
+  return { lines: lines, specPx: specPx, joPx: joPx, qr: jo, qrBox: qrBox, paper: paper };
 }
 
 var ready = (function () {
@@ -351,6 +888,9 @@ function render(opts) {
   var specPx = 0;
   var joPx = 0;
   var qrBox = null;
+  var paperOut = null;
+  var sheetOut = null;
+  var placed = [];
   var x0 = box.offsetX;
   var pad = px(1); // ~1 mm, so type does not touch the 30 mm edges
 
@@ -360,86 +900,24 @@ function render(opts) {
     if (kind === 'cal_tag') img.rect(x0 + 4, box.labelH - 1, box.labelW - 8, 1);
     img.rect(x0 + 6, 6, 8, 8);
   } else if (kind === 'jewelry_tag') {
-    /* QR on the left, JO (largest) and spec lines on the right, inside the head.
-       Two pixels of slack so the 4× threshold cannot spill into the 1 mm margin. */
-    var specs = tagNote(opts);
-    var mods = jo ? makeQr(jo) : null;
-    var mod = 3, quiet = 4;
-    var qpix = mods ? qrSize(mods, mod, quiet) : 0;
-    var gap = qpix ? 8 : 0;
-    /* Right ink margin matches the QR's left ink margin. The quiet zone is white, so the ink starts after it. */
-    function tagTarget() {
-      var leftInk = qpix ? pad + quiet * mod : pad;
-      return Math.max(8, box.labelW - 1 - leftInk - (pad + qpix + gap));
-    }
-    var colW = tagTarget() + 1;
-    /* Module 3 leaves a short column. Below 22 px, Inter caps are under about 2 mm, so drop the QR to module 2. */
-    if (mods && specs.length && fitSpecs(specs, colW).size < 22 && qrSize(mods, 2, quiet) <= box.labelH - pad * 2) {
-      mod = 2;
-      qpix = qrSize(mods, mod, quiet);
-      gap = 8;
-      colW = tagTarget() + 1;
-    }
-    var target = tagTarget();
-    var innerH = box.labelH - pad * 2 - 2;
-    var specCap = SPEC_PX;
-    var fitted = { size: 0, lines: [] };
-    var joFit = null;
-    var block = 0, joM = { ascent: 0, descent: 0 }, lineH = 0, guard = 0;
-    while (guard < 40) {
-      guard++;
-      var longest = '', longestW = -1;
-      specs.forEach(function (t) {
-        var w = metricsOf(t, 16).w;
-        if (w > longestW) { longestW = w; longest = t; }
-      });
-      var specInk = specs.length ? sizeForInk(longest, target, specCap, SPEC_MIN) : null;
-      specPx = specInk ? specInk.size : 0;
-      fitted = {
-        size: specPx,
-        lines: specs.map(function (t) {
-          if (!specPx || inkSpan(t, specPx).right <= target) return t;
-          return ellipsis(t, Math.max(8, target), specPx);
-        })
-      };
-      var joMin = specPx ? specPx + 2 : 18;
-      if (joMin > JO_MAX) joMin = JO_MAX;
-      joFit = jo ? sizeForInk(jo, target, JO_MAX, joMin) : null;
-      joPx = joFit ? joFit.size : 0;
-      joM = joFit ? metricsOf(joFit.text, joPx) : { ascent: 0, descent: 0 };
-      lineH = 0;
-      if (specPx && fitted.lines.length) {
-        var tall = { ascent: 0, descent: 0 };
-        fitted.lines.forEach(function (t) {
-          var m = metricsOf(t, specPx);
-          if (m.ascent > tall.ascent) tall.ascent = m.ascent;
-          if (m.descent > tall.descent) tall.descent = m.descent;
-        });
-        lineH = tall.ascent + tall.descent;
-      }
-      var specBlock = fitted.lines.length ? fitted.lines.length * lineH + (fitted.lines.length - 1) * 4 : 0;
-      var joBlock = joFit ? joM.ascent + joM.descent : 0;
-      block = joBlock + (joFit && fitted.lines.length ? 4 : 0) + specBlock;
-      if (block <= innerH || specCap <= SPEC_MIN) break;
-      specCap -= 1;
-    }
-    if (joFit) lines.push(joFit.text);
-    fitted.lines.forEach(function (t) { lines.push(t); });
-    var textX = x0 + pad + qpix + gap;
-    var textY = pad + Math.max(0, Math.round((innerH - block) / 2));
-    var yRun = textY;
-    if (joFit) {
-      runs.push({ text: joFit.text, x: textX, y: yRun, size: joPx });
-      yRun += joM.ascent + joM.descent + (fitted.lines.length ? 4 : 0);
-    }
-    fitted.lines.forEach(function (t) {
-      runs.push({ text: t, x: textX, y: yRun, size: specPx });
-      yRun += lineH + 4;
-    });
-    var qrY = pad + Math.max(0, Math.round((innerH - qpix) / 2));
-    if (mods) qrBox = { x: x0 + pad, y: qrY, size: qpix };
-    stampText(img, runs, box);
-    if (mods) img.qr(mods, qrBox.x, qrBox.y, mod, quiet);
+    var tag = drawJewelry(img, box, opts);
+    lines = tag.lines;
+    specPx = tag.specPx;
+    joPx = tag.joPx;
+    qrText = tag.qr;
+    qrBox = tag.qrBox;
+    paperOut = tag.paper;
+    sheetOut = tag.sheet || null;
+    placed = tag.placed || [];
+  } else if (opts && opts.layout) {
+    var cardLay = drawCardLayout(img, box, opts);
+    lines = cardLay.lines;
+    specPx = cardLay.specPx;
+    joPx = cardLay.joPx;
+    qrText = cardLay.qr;
+    qrBox = cardLay.qrBox;
+    sheetOut = cardLay.sheet;
+    placed = cardLay.placed || [];
   } else {
     /* QR stays the size that fills the 20 mm height. Its left ink margin is
        repeated on the right, and the JO shrinks into the width that is left. */
@@ -500,10 +978,54 @@ function render(opts) {
     width: box.width, height: box.height, data: img.d, lines: lines, qr: qrText,
     offsetX: box.offsetX, labelW: box.labelW, labelH: box.labelH, tail: box.tail,
     shiftX: shiftX, shiftY: shiftY,
-    specPx: specPx, joPx: joPx, preset: box.preset, kind: kind, head: head, qrBox: qrBox
+    specPx: specPx, joPx: joPx, preset: box.preset, kind: kind, head: head, qrBox: qrBox,
+    paper: paperOut ? paperOut.d : null, paperW: paperOut ? paperOut.w : 0, paperH: paperOut ? paperOut.h : 0,
+    sheet: sheetOut ? sheetOut.d : null, sheetW: sheetOut ? sheetOut.w : 0, sheetH: sheetOut ? sheetOut.h : 0,
+    placed: placed || []
   };
 }
 
+/* The label itself, 1:1, with no grey pad. Jewelry is the readable cable label.
+   A JO card is the sticker. Printer offsets stay on the print bitmap. */
+function labelCanvas(rendered) {
+  var w, h, data, src;
+  if (rendered.sheetW && rendered.sheet) {
+    w = rendered.sheetW; h = rendered.sheetH; data = rendered.sheet;
+  } else if (rendered.paperW && rendered.paper) {
+    w = rendered.paperW; h = rendered.paperH; data = rendered.paper;
+  } else {
+    src = stickerPixels(rendered);
+    w = src.width; h = src.height; data = src.data;
+  }
+  var c = makeCanvas(w, h);
+  var ctx = c.getContext('2d');
+  var image = ctx.createImageData(w, h);
+  image.data.set(data);
+  ctx.putImageData(image, 0, 0);
+  return c;
+}
+/* Exit orientation: flaps side by side, tail below. This is the bitmap the printer feeds. */
+function exitCanvas(rendered) {
+  var src = stickerPixels(rendered);
+  var c = makeCanvas(src.width, src.height);
+  var ctx = c.getContext('2d');
+  var image = ctx.createImageData(src.width, src.height);
+  image.data.set(src.data);
+  ctx.putImageData(image, 0, 0);
+  return c;
+}
+/* Two flap rectangles on the print bitmap. The fold line sits on the shared edge. The tail is outside both. */
+function flapRects(img) {
+  var x0 = (img.offsetX | 0) - (img.shiftX | 0);
+  var y0 = -(img.shiftY | 0);
+  var half = px(15);
+  var flag = px(25);
+  var across = img.labelW || px(30);
+  return [
+    { x: x0, y: y0, w: half, h: flag },
+    { x: x0 + half, y: y0, w: across - half, h: flag }
+  ];
+}
 function toCanvas(rendered) {
   if (typeof document === 'undefined') return null;
   var c = document.createElement('canvas');
@@ -516,10 +1038,9 @@ function toCanvas(rendered) {
   return c;
 }
 
-/* Display only. The print bitmap stays the full head. This crops to the sticker,
-   30×20 or 30×25 plus the 45 mm tail, and draws it as paper: white, rounded,
-   on a mid-gray field, so the edges and the margins are visible. A saved
-   horizontal offset moves the ink inside that paper. The fold line is not printed. */
+/* Display only. The print bitmap stays the full head. A JO card is its sticker.
+   A jewelry tag is shown as it leaves the printer: two flaps, then the 45 mm tail.
+   A saved offset moves ink inside that paper. */
 var PREVIEW_GRAY = '#8e8e8e';
 function roundPath(ctx, x, y, w, h, r) {
   var rr = Math.min(r, w / 2, h / 2);
@@ -530,6 +1051,23 @@ function roundPath(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, rr);
   ctx.arcTo(x, y, x + w, y, rr);
   ctx.closePath();
+}
+function addRound(ctx, x, y, w, h, r) {
+  var rr = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+/* Die-cut in exit pixels. Two 15×25 mm flaps, then the 45 mm tail. scale multiplies label pixels. */
+function tagOutline(ctx, ox, oy, scale) {
+  var u = function (mm) { return px(mm) * scale; };
+  var r = u(2);
+  addRound(ctx, ox, oy, u(15), u(25), r);
+  addRound(ctx, ox + u(15), oy, u(15), u(25), r);
+  addRound(ctx, ox, oy + u(25), u(30), u(45), r);
 }
 function stickerPixels(rendered) {
   var w = rendered.labelW, h = rendered.labelH + (rendered.tail || 0);
@@ -552,35 +1090,63 @@ function stickerPixels(rendered) {
   }
   return { width: w, height: h, data: data };
 }
+/* Printed side, flaps at the top, tail below. B1 direction "top" lays bitmap x to the right
+   and bitmap y down the feed, and row 0 is the flap end. This is that label, without the head margin. */
+function paperView(rendered) {
+  var src = stickerPixels(rendered);
+  return {
+    width: src.width, height: src.height, data: src.data,
+    labelW: rendered.labelW, labelH: rendered.labelH, tail: rendered.tail || 0
+  };
+}
 function preview(rendered, opts) {
   opts = opts || {};
   var scale = opts.scale > 0 ? opts.scale : 4;
   var smooth = opts.smooth !== false;
   var labelW = rendered.labelW, labelH = rendered.labelH, tail = rendered.tail || 0;
-  var stickerH = labelH + tail;
+  var jewelry = rendered.kind === 'jewelry_tag' && tail;
+  var readable = !jewelry && rendered.paperW > 0 && rendered.paper;
+  var srcW = readable ? rendered.paperW : (jewelry ? labelW : labelW);
+  var srcH = readable ? rendered.paperH : labelH + tail;
   var pad = px(4), radius = px(2);
-  var src = stickerPixels(rendered);
-  var srcCanvas = makeCanvas(labelW, stickerH);
+  var src = readable ? { width: srcW, height: srcH, data: rendered.paper } : stickerPixels(rendered);
+  var showH = srcH;
+  if (jewelry && !opts.full) showH = Math.min(srcH, labelH + px(8));
+  var srcCanvas = makeCanvas(srcW, srcH);
   var sctx = srcCanvas.getContext('2d');
-  var id = sctx.createImageData(labelW, stickerH);
+  var id = sctx.createImageData(srcW, srcH);
   id.data.set(src.data);
   sctx.putImageData(id, 0, 0);
-  var outW = (labelW + pad * 2) * scale, outH = (stickerH + pad * 2) * scale;
+  var outW = (srcW + pad * 2) * scale, outH = (showH + pad * 2) * scale;
   var canvas = makeCanvas(outW, outH);
   var ctx = canvas.getContext('2d');
   ctx.fillStyle = PREVIEW_GRAY;
   ctx.fillRect(0, 0, outW, outH);
-  var x = pad * scale, y = pad * scale, w = labelW * scale, h = stickerH * scale, rad = radius * scale;
-  roundPath(ctx, x, y, w, h, rad);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
+  var x = pad * scale, y = pad * scale, w = srcW * scale, h = showH * scale, rad = radius * scale;
   ctx.save();
-  roundPath(ctx, x, y, w, h, rad);
-  ctx.clip();
+  if (jewelry) {
+    ctx.beginPath();
+    tagOutline(ctx, x, y, scale);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.clip();
+  } else {
+    roundPath(ctx, x, y, w, h, rad);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.clip();
+  }
   ctx.imageSmoothingEnabled = !!smooth;
   if (smooth && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(srcCanvas, x, y, w, h);
-  if (tail) {
+  ctx.drawImage(srcCanvas, 0, 0, srcW, showH, x, y, w, h);
+  ctx.restore();
+  if (jewelry) {
+    ctx.beginPath();
+    tagOutline(ctx, x, y, scale);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = Math.max(1, scale);
+    ctx.stroke();
+  } else if (!readable && tail) {
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(60,60,60,0.28)';
     ctx.lineWidth = Math.max(1, scale);
@@ -589,7 +1155,6 @@ function preview(rendered, opts) {
     ctx.lineTo(x + w, fy);
     ctx.stroke();
   }
-  ctx.restore();
   var out = ctx.getImageData(0, 0, outW, outH);
   return {
     width: outW, height: outH, data: out.data, canvas: canvas,
@@ -598,8 +1163,9 @@ function preview(rendered, opts) {
 }
 
 root.OYPLabel = {
-  render: render, toCanvas: toCanvas, preview: preview, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
-  ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias
+  render: render, toCanvas: toCanvas, preview: preview, labelCanvas: labelCanvas, exitCanvas: exitCanvas, tagOutline: tagOutline, flapRects: flapRects, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
+  normalizeLayout: normalizeLayout, elementDefaults: elementDefaults, layoutFields: layoutFields, paperMm: paperMm,
+  ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias, paperView: paperView
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPLabel;
 })(typeof window !== 'undefined' ? window : globalThis);

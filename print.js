@@ -10,7 +10,7 @@ var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
 var POLL = 1000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, hot: {}, prepared: {}, preparing: {}, toldDown: false };
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, hot: {}, prepared: {}, preparing: {}, toldDown: false, edits: {} };
 /* Slot 0 is state. Slot 1 is the second printer on the same page. Each has its own link, chain, and device id. */
 var peer = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, chain: Promise.resolve() };
 var PAGE_MS = 20000;
@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 26;
+var PRINT_JS = 31;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -34,7 +34,7 @@ function deviceId() {
   return id;
 }
 function load() {
-  var o = { darkness: 3, auto: true, transport: '', kinds: null, kindsByModel: {}, taskByModel: {}, model: '', offsets: {}, links: [null, null] };
+  var o = { darkness: 3, auto: true, transport: '', kinds: null, kindsByModel: {}, taskByModel: {}, model: '', offsets: {}, links: [null, null], layout: {} };
   try { var raw = JSON.parse(localStorage.getItem(KEY) || '{}'); if (raw && typeof raw === 'object') o = Object.assign(o, raw); } catch (e) {}
   o.darkness = Math.max(1, Math.min(5, o.darkness | 0 || 3));
   if (!o.offsets || typeof o.offsets !== 'object') o.offsets = {};
@@ -42,6 +42,7 @@ function load() {
   if (!o.taskByModel || typeof o.taskByModel !== 'object') o.taskByModel = {};
   if (!Array.isArray(o.links)) o.links = [null, null];
   o.links = [o.links[0] || null, o.links[1] || null];
+  if (!o.layout || typeof o.layout !== 'object') o.layout = {};
   /* An old browser saved one kinds object for every printer. Keep it only on the model it was saved for. */
   if (o.kinds && typeof o.kinds === 'object') {
     if (o.model && !o.kindsByModel[o.model]) o.kindsByModel[o.model] = { jo_card: !!o.kinds.jo_card, jewelry_tag: !!o.kinds.jewelry_tag };
@@ -55,6 +56,55 @@ function load() {
 function save(o) {
   try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {}
   if (typeof root.onOypPrintSave === 'function') root.onOypPrintSave();
+}
+/* Per kind. Empty means the built-in NIIMBOT layout. The server copy is best-effort. */
+function savedLayout(kind) {
+  var all = load().layout;
+  if (!all || typeof all !== 'object') return null;
+  var one = all[kind];
+  if (!one || typeof one !== 'object') return null;
+  var id, any = false;
+  for (id in one) if (Object.prototype.hasOwnProperty.call(one, id)) { any = true; break; }
+  return any ? one : null;
+}
+function storeLayout(kind, layout) {
+  var L = root.OYPLabel;
+  var o = load();
+  if (!o.layout || typeof o.layout !== 'object') o.layout = {};
+  var clear = true;
+  if (L && L.normalizeLayout) {
+    var norm = L.normalizeLayout(kind, layout);
+    var base = L.normalizeLayout(kind, null);
+    clear = JSON.stringify(norm) === JSON.stringify(base);
+    if (!clear) o.layout[kind] = norm;
+  }
+  if (clear) delete o.layout[kind];
+  save(o);
+  try {
+    var sent = callPrint('printLayoutSet', { kind: kind, layout: clear ? null : o.layout[kind] });
+    if (sent && sent.then) sent.then(function () {}, function () {});
+  } catch (e) {}
+}
+function pullLayouts() {
+  var sent;
+  try { sent = callPrint('printLayout', {}); } catch (e) { return; }
+  if (!sent || !sent.then) return;
+  sent.then(function (r) {
+    if (!r || !r.layout || typeof r.layout !== 'object') return;
+    var keys = [], k, i, key, val, changed = false;
+    for (k in r.layout) if (Object.prototype.hasOwnProperty.call(r.layout, k)) keys.push(k);
+    if (!keys.length) return;
+    var o = load();
+    if (!o.layout || typeof o.layout !== 'object') o.layout = {};
+    for (i = 0; i < keys.length; i++) {
+      key = keys[i];
+      if (key !== 'jewelry_tag' && key !== 'jo_card') continue;
+      val = r.layout[key];
+      if (val && typeof val === 'object') { o.layout[key] = val; changed = true; }
+      else if (val == null && o.layout[key]) { delete o.layout[key]; changed = true; }
+    }
+    if (changed) save(o);
+  }, function () {});
 }
 /* Half-millimetre steps from -5 to +5. Positive x moves the print right. Positive y moves it down the feed. */
 function stepMm(v) {
@@ -381,13 +431,37 @@ function markFailed(r, fallback) {
   return true;
 }
 
-/* Paper fields only. client is display text and is not copied onto the sticker. */
+/* Paper fields only. client is display text and is not copied onto the sticker.
+   Session edits from the preview sheet override the sheet for this print only. */
+var EDIT_PROPS = ['price', 'name', 'item_type', 'metal', 'karat', 'stones', 'weight', 'jo', 'sku', 'location'];
+function withEdits(item, kind) {
+  item = item || {};
+  var used = kind || item.kind || 'jo_card';
+  var edit = state.edits[stickerKey(used, item.jo || '')];
+  if (!edit) return item;
+  var out = Object.assign({}, item);
+  function has(k) { return Object.prototype.hasOwnProperty.call(edit, k); }
+  if (has('price')) out.price = edit.price;
+  if (has('name')) { out.name = edit.name; out.description = ''; }
+  if (has('item_type')) { out.item_type = edit.item_type; out.piece_type = ''; out.type = ''; }
+  if (has('metal')) out.metal = edit.metal;
+  if (has('karat')) out.karat = edit.karat;
+  if (has('stones')) { out.stones = edit.stones; out.stone_type = ''; out.stone = ''; out.stone_size = ''; out.grade = ''; }
+  if (has('weight')) { out.weight = edit.weight; out.weight_g = edit.weight; }
+  if (has('jo')) out.jo = edit.jo;
+  if (has('sku')) { out.sku = edit.sku; out.item_id = ''; }
+  if (has('location')) out.location = edit.location;
+  return out;
+}
 function labelOpts(item, kind, link) {
+  return plainOpts(withEdits(item, kind), kind, link);
+}
+function plainOpts(item, kind, link) {
   item = item || {};
   link = link || state;
   var model = item.model || link.model || 'B1';
   var sh = shiftPx(model);
-  return {
+  var out = {
     kind: kind || item.kind || 'jo_card',
     model: model,
     shiftX: sh.x,
@@ -397,14 +471,25 @@ function labelOpts(item, kind, link) {
     due: item.due_date || item.due || '',
     date: item.date || item.given || '',
     stage: item.current_stage || item.stage || '',
+    price: item.price,
+    name: item.name || '',
+    description: item.description || '',
+    item_type: item.item_type || item.piece_type || '',
+    type: item.type || '',
     metal: item.metal || '',
     karat: item.karat || '',
     weight: item.weight_g != null && item.weight_g !== '' ? item.weight_g : item.weight,
+    stones: item.stones || '',
     stone: item.stone_type || item.stone || '',
     stone_size: item.stone_size || '',
+    grade: item.grade || '',
     size: item.size || '',
-    description: item.description || ''
+    sku: item.sku || item.item_id || '',
+    location: item.location || ''
   };
+  var lay = savedLayout(out.kind);
+  if (lay) out.layout = lay;
+  return out;
 }
 function tasks() { return (lib() && lib().printTasks) || {}; }
 function taskKnown(name) { return !!(name && tasks()[name]); }
@@ -501,7 +586,7 @@ function labelReady() {
 function labelSig(item, link) {
   var o = labelOpts(item, null, link);
   var dir = (link && link.dir) || '';
-  return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, dir, o.jo || '', o.due || '', o.date || '', o.stage || '', o.metal || '', o.karat || '', o.weight || '', o.stone || '', o.stone_size || '', o.size || '', o.description || ''].join('\u001f');
+  return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, dir, o.jo || '', o.due || '', o.date || '', o.stage || '', o.price || '', o.name || '', o.description || '', o.item_type || '', o.type || '', o.metal || '', o.karat || '', o.weight || '', o.stones || '', o.stone || '', o.stone_size || '', o.grade || '', o.size || '', o.sku || '', o.location || '', JSON.stringify(o.layout || '')].join('\u001f');
 }
 function trimPrepared() {
   var keys = Object.keys(state.prepared);
@@ -573,6 +658,7 @@ function runTask(name, encoded, link, kind) {
   var task = link.client.protocol.newPrintTask(name, {
     totalPages: 1,
     density: load().darkness,
+    /* The jewelry bitmap is the 25 mm flaps plus the 45 mm tail. WithGaps skips the liner gap, so the next label starts on the next pair of flaps. */
     labelType: L.LabelType.WithGaps,
     pageColor: L.PageColorType.SingleColor,
     pageTimeoutMs: PAGE_MS,
@@ -692,10 +778,916 @@ function closeKind() {
   else if (el.parentNode) el.parentNode.removeChild(el);
   return true;
 }
-/* Jewelry tag is the filled primary. JO sticker and Both are the other choices. Cancel closes the sheet. */
+function closePreview() {
+  var el = document.getElementById('oypPrev');
+  if (!el) return false;
+  if (el.remove) el.remove();
+  else if (el.parentNode) el.parentNode.removeChild(el);
+  return true;
+}
+function setDisabled(el, on) {
+  if (!el) return;
+  el.disabled = !!on;
+  if (on) el.setAttribute('disabled', 'disabled');
+  else if (typeof el.removeAttribute === 'function') el.removeAttribute('disabled');
+  else if (el.attrs) delete el.attrs.disabled;
+}
+function clearAttr(el, name) {
+  if (!el) return;
+  if (typeof el.removeAttribute === 'function') el.removeAttribute(name);
+  else if (el.attrs) delete el.attrs[name];
+}
+function firstFilled() {
+  var i, v;
+  for (i = 0; i < arguments.length; i++) {
+    v = arguments[i];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+function mountCanvas(host, canvas, className) {
+  if (!host || !canvas || !host.appendChild) return;
+  canvas.className = className;
+  while (host.firstChild && host.removeChild) host.removeChild(host.firstChild);
+  host.appendChild(canvas);
+}
+function previewItem(sticker) {
+  return {
+    kind: sticker.kind,
+    jo: sticker.jo,
+    price: sticker.price,
+    name: sticker.name,
+    description: '',
+    item_type: sticker.item_type,
+    metal: sticker.metal,
+    karat: sticker.karat,
+    weight_g: sticker.weight,
+    weight: sticker.weight,
+    stones: sticker.stones,
+    sku: sticker.sku,
+    location: sticker.location,
+    due_date: sticker.due_date || '',
+    date: sticker.date || '',
+    current_stage: sticker.current_stage || '',
+    size: sticker.size || ''
+  };
+}
+function rememberEdits(sticker) {
+  if (!sticker) return;
+  var key = stickerKey(sticker.kind, sticker.sourceJo);
+  var bag = Object.assign({}, state.edits[key] || {});
+  var any = false, i, prop;
+  for (i = 0; i < EDIT_PROPS.length; i++) {
+    prop = EDIT_PROPS[i];
+    if (!sticker.dirty[prop]) continue;
+    bag[prop] = sticker[prop] == null ? '' : String(sticker[prop]);
+    any = true;
+  }
+  if (any) state.edits[key] = bag;
+}
+function fillFromSpec(sticker, spec) {
+  spec = spec || {};
+  function keep(prop, value) {
+    if (sticker.dirty[prop]) return;
+    sticker[prop] = value == null ? '' : String(value);
+  }
+  var stones = firstFilled(spec.stones);
+  if (!stones) {
+    var bits = [], stoneBit = firstFilled(spec.stone_type, spec.stone), sizeBit = firstFilled(spec.stone_size), gradeBit = firstFilled(spec.grade);
+    if (stoneBit) bits.push(stoneBit);
+    if (sizeBit) bits.push(sizeBit);
+    if (gradeBit) bits.push(gradeBit);
+    stones = bits.join(' ');
+  }
+  keep('price', firstFilled(spec.price));
+  keep('name', firstFilled(spec.name, spec.description));
+  keep('item_type', firstFilled(spec.item_type, spec.piece_type));
+  keep('metal', firstFilled(spec.metal));
+  keep('karat', firstFilled(spec.karat));
+  keep('stones', stones);
+  keep('weight', firstFilled(spec.weight_g, spec.weight));
+  keep('jo', firstFilled(spec.jo, sticker.sourceJo));
+  keep('sku', firstFilled(spec.sku, spec.item_id));
+  keep('location', firstFilled(spec.location));
+  if (!sticker.dirty.due) {
+    sticker.due_date = firstFilled(spec.due_date, spec.due);
+    sticker.date = firstFilled(spec.date, spec.given);
+    sticker.current_stage = firstFilled(spec.current_stage, spec.stage);
+    sticker.size = firstFilled(spec.size);
+  }
+  var prior = state.edits[stickerKey(sticker.kind, sticker.sourceJo)];
+  if (!prior) return;
+  EDIT_PROPS.forEach(function (prop) {
+    if (!Object.prototype.hasOwnProperty.call(prior, prop)) return;
+    sticker[prop] = prior[prop] == null ? '' : String(prior[prop]);
+    sticker.dirty[prop] = true;
+  });
+}
+function loadSpecs(stickers) {
+  var seen = {}, jobs = [];
+  stickers.forEach(function (s) {
+    if (!s.sourceJo || seen[s.sourceJo]) return;
+    seen[s.sourceJo] = 1;
+    jobs.push(s.sourceJo);
+  });
+  return Promise.all(jobs.map(function (jo) {
+    return callPrint('printQueue', { jo: jo }).then(function (r) {
+      var spec = Object.assign({}, (r && r.ok && r.spec) || {});
+      delete spec.client;
+      return { jo: jo, spec: spec };
+    }, function () { return { jo: jo, spec: {} }; });
+  })).then(function (rows) {
+    var map = {};
+    rows.forEach(function (row) { map[row.jo] = row.spec; });
+    return map;
+  });
+}
+function paintSticker(sticker, bigHost, miniHost) {
+  if (!sticker || !root.OYPLabel || !root.OYPLabel.render || !root.OYPLabel.preview) return;
+  try {
+    var rendered = root.OYPLabel.render(plainOpts(previewItem(sticker), sticker.kind, linkFor(sticker.kind)));
+    var view = root.OYPLabel.preview(rendered, { scale: 2, smooth: false });
+    if (bigHost && view && view.canvas) mountCanvas(bigHost, view.canvas, 'oyp-prevbig');
+    if (miniHost && view && view.canvas) {
+      var mini = root.OYPLabel.preview(rendered, { scale: 2, smooth: false });
+      if (mini && mini.canvas) mountCanvas(miniHost, mini.canvas, 'oyp-prevmini');
+    }
+  } catch (err) {}
+}
+function sampleLayoutItem() {
+  return {
+    price: '11500', name: 'Silver Necklace', item_type: 'Earring', metal: 'Gold', karat: '14KWG',
+    stones: 'Cubic Zirconia 1.25mm x 30', weight: '7', jo: '26-002', sku: '18-498', location: 'A.R3',
+    due_date: '2026-10-27'
+  };
+}
+/* Drag snaps to 0.5 mm. Arrow keys and the nudge buttons move 0.1 mm.
+   Reset clears the saved layout, so the next print uses the built-in NIIMBOT drawer. */
+function openLayout(kind, item, onSave) {
+  var L = root.OYPLabel;
+  if (!L || !L.render || !L.normalizeLayout || !L.labelCanvas) return;
+  if (state.layoutDone) state.layoutDone();
+  kind = kind === 'jo_card' ? 'jo_card' : 'jewelry_tag';
+  var fields = L.layoutFields(kind);
+  var working = L.normalizeLayout(kind, savedLayout(kind));
+  var current = fields[0] ? fields[0].id : 'price';
+  var placed = [];
+  var boxMap = {};
+  var alive = true;
+  var mmPerPx = 25.4 / 203;
+  var sheet = document.createElement('div');
+  var box = document.createElement('div');
+  var title = document.createElement('p');
+  var hint = document.createElement('p');
+  var stage = document.createElement('div');
+  var frame = document.createElement('div');
+  var topRow = document.createElement('div');
+  var corner = document.createElement('div');
+  var xRuler = document.createElement('canvas');
+  var midRow = document.createElement('div');
+  var yRuler = document.createElement('canvas');
+  var paper = document.createElement('div');
+  var canvas = document.createElement('canvas');
+  var hits = document.createElement('div');
+  var handle = document.createElement('button');
+  var picks = document.createElement('div');
+  var tools = document.createElement('div');
+  var acts = document.createElement('div');
+  sheet.id = 'oypLay';
+  sheet.className = 'oyp-lay';
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-label', 'Label layout');
+  box.className = 'oyp-laybox';
+  title.className = 'oyp-laytitle';
+  title.textContent = kind === 'jo_card' ? 'JO sticker layout' : 'Jewelry tag layout';
+  hint.className = 'oyp-layhint';
+  hint.textContent = kind === 'jo_card'
+    ? 'Drag snaps to 0.5 mm. Arrow keys and nudge move 0.1 mm.'
+    : 'Two flaps on top, tail below. Drag snaps to 0.5 mm. Arrows and nudge move 0.1 mm.';
+  stage.className = 'oyp-laystage';
+  frame.className = 'oyp-layframe';
+  topRow.className = 'oyp-layrow';
+  corner.className = 'oyp-laycorner';
+  xRuler.className = 'oyp-layruler';
+  midRow.className = 'oyp-layrow';
+  yRuler.className = 'oyp-layruler';
+  paper.className = 'oyp-laypaper';
+  canvas.className = 'oyp-laycanvas';
+  canvas.setAttribute('aria-label', 'Label');
+  hits.className = 'oyp-layhits';
+  handle.type = 'button';
+  handle.className = 'oyp-layhandle';
+  handle.setAttribute('data-lay', 'resize');
+  handle.setAttribute('aria-label', 'QR size');
+  handle.textContent = '';
+  picks.className = 'oyp-laypicks';
+  tools.className = 'oyp-laytools';
+  acts.className = 'oyp-layacts';
+  function fieldBy(id) {
+    var i;
+    for (i = 0; i < fields.length; i++) if (fields[i].id === id) return fields[i];
+    return fields[0];
+  }
+  function mmText(n) { return (Math.round(Number(n) * 10) / 10).toFixed(1); }
+  function snapHalf(v) {
+    var n = Math.round(Number(v) * 2) / 2;
+    return isFinite(n) ? n : 0;
+  }
+  function tenth(v) {
+    var n = Math.round(Number(v) * 10) / 10;
+    return isFinite(n) ? n : 0;
+  }
+  function clampPos(el) {
+    var paperMm = L.paperMm(kind);
+    var maxX = Math.max(0, paperMm.w - 2), maxY = Math.max(0, paperMm.h - 2);
+    if (el.x < 0) el.x = 0;
+    if (el.y < 0) el.y = 0;
+    if (el.x > maxX) el.x = maxX;
+    if (el.y > maxY) el.y = maxY;
+    if (el.qr != null) {
+      var maxQ = Math.min(paperMm.w, paperMm.h);
+      if (el.qr < 2) el.qr = 2;
+      if (el.qr > maxQ) el.qr = maxQ;
+      if (el.x + el.qr > paperMm.w) el.x = tenth(Math.max(0, paperMm.w - el.qr));
+      if (el.y + el.qr > paperMm.h) el.y = tenth(Math.max(0, paperMm.h - el.qr));
+    }
+  }
+  function optsFor() {
+    var o = plainOpts(item || {}, kind, state);
+    o.layout = working;
+    o.shiftX = 0;
+    o.shiftY = 0;
+    return o;
+  }
+  function drawRuler(which) {
+    var dispW = parseFloat(canvas.style.width) || canvas.width || 1;
+    var dispH = parseFloat(canvas.style.height) || canvas.height || 1;
+    var ruler = which === 'x' ? xRuler : yRuler;
+    var ctx = ruler.getContext ? ruler.getContext('2d') : null;
+    if (!ctx || !canvas.width || !canvas.height) return;
+    if (which === 'x') { ruler.width = Math.max(1, Math.round(dispW)); ruler.height = 22; }
+    else { ruler.width = 28; ruler.height = Math.max(1, Math.round(dispH)); }
+    ctx.fillStyle = '#f7f7f7';
+    ctx.fillRect(0, 0, ruler.width, ruler.height);
+    ctx.fillStyle = '#111';
+    ctx.font = '10px sans-serif';
+    var maxMm = (which === 'x' ? canvas.width : canvas.height) * mmPerPx;
+    var mm, pos, major;
+    for (mm = 0; mm <= maxMm + 0.01; mm++) {
+      pos = Math.round(L.px(mm) * (which === 'x' ? dispW / canvas.width : dispH / canvas.height));
+      major = mm % 5 === 0;
+      if (which === 'x') {
+        ctx.fillRect(pos, major ? 8 : 14, 1, major ? 14 : 8);
+        if (major) ctx.fillText(String(mm), pos + 2, 9);
+      } else {
+        ctx.fillRect(major ? 8 : 16, pos, major ? 20 : 12, 1);
+        if (major) ctx.fillText(String(mm), 1, pos > 8 ? pos - 1 : 10);
+      }
+    }
+  }
+  function fit() {
+    var max = stage.clientWidth || 340;
+    if (max > 40) max -= 36;
+    if (kind === 'jewelry_tag' && max > 460) max = 460;
+    var scale = canvas.width ? max / canvas.width : 1;
+    if (kind !== 'jewelry_tag') scale = Math.min(1, scale);
+    if (!(scale > 0)) scale = 1;
+    canvas.style.width = Math.max(1, Math.round(canvas.width * scale)) + 'px';
+    canvas.style.height = Math.max(1, Math.round(canvas.height * scale)) + 'px';
+    drawRuler('x');
+    drawRuler('y');
+  }
+  function markHits() {
+    var id;
+    for (id in boxMap) if (Object.prototype.hasOwnProperty.call(boxMap, id)) boxMap[id].className = 'oyp-layhit' + (id === current ? ' is-on' : '');
+  }
+  function placeBoxes() {
+    var dispW = parseFloat(canvas.style.width) || canvas.width || 1;
+    var dispH = parseFloat(canvas.style.height) || canvas.height || 1;
+    var sx = canvas.width ? dispW / canvas.width : 1;
+    var sy = canvas.height ? dispH / canvas.height : 1;
+    var seen = {}, i, p, b, dw, dh, id, qr = null;
+    for (i = 0; i < placed.length; i++) {
+      p = placed[i];
+      if (kind === 'jewelry_tag') p = { id: p.id, x: canvas.width - p.y - p.h, y: p.x, w: p.h, h: p.w };
+      seen[p.id] = 1;
+      b = boxMap[p.id];
+      if (!b) {
+        b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('data-el', p.id);
+        b.setAttribute('aria-label', (fieldBy(p.id) || { label: p.id }).label);
+        wireDrag(b, p.id);
+        hits.appendChild(b);
+        boxMap[p.id] = b;
+      }
+      dw = Math.max(34, Math.round(p.w * sx));
+      dh = Math.max(34, Math.round(p.h * sy));
+      b.style.left = Math.round(p.x * sx + (p.w * sx - dw) / 2) + 'px';
+      b.style.top = Math.round(p.y * sy + (p.h * sy - dh) / 2) + 'px';
+      b.style.width = dw + 'px';
+      b.style.height = dh + 'px';
+      b.style.zIndex = p.id === current ? '4' : '1';
+      if (p.id === 'qr') qr = { left: p.x * sx, top: p.y * sy, w: p.w * sx, h: p.h * sy };
+    }
+    for (id in boxMap) {
+      if (!Object.prototype.hasOwnProperty.call(boxMap, id) || seen[id]) continue;
+      if (boxMap[id].remove) boxMap[id].remove();
+      delete boxMap[id];
+    }
+    markHits();
+    var sel = boxMap[current];
+    var selBox = null;
+    if (sel) selBox = { left: parseFloat(sel.style.left) || 0, top: parseFloat(sel.style.top) || 0, w: parseFloat(sel.style.width) || 0, h: parseFloat(sel.style.height) || 0 };
+    if (current === 'qr' && qr && working.qr && working.qr.show) selBox = { left: qr.left, top: qr.top, w: qr.w, h: qr.h };
+    if (selBox && working[current] && working[current].show) {
+      handle.style.display = 'block';
+      handle.style.left = Math.round(selBox.left + selBox.w - 17) + 'px';
+      handle.style.top = Math.round(selBox.top + selBox.h - 17) + 'px';
+      handle.setAttribute('data-for', current);
+      handle.setAttribute('aria-label', current === 'qr' ? 'QR size' : 'Move ' + ((fieldBy(current) || { label: current }).label));
+    } else handle.style.display = 'none';
+  }
+  function redraw() {
+    try {
+      var rendered = L.render(optsFor());
+      var view = kind === 'jewelry_tag' && L.exitCanvas ? L.exitCanvas(rendered) : L.labelCanvas(rendered);
+      placed = rendered.placed || [];
+      var showH = view.height;
+      if (kind === 'jewelry_tag') showH = Math.min(view.height, (rendered.labelH || view.height) + L.px(6));
+      canvas.width = view.width;
+      canvas.height = showH;
+      var ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      if (kind === 'jewelry_tag' && L.tagOutline) {
+        ctx.fillStyle = '#d5d5d5';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.beginPath();
+        L.tagOutline(ctx, 0, 0, 1);
+        ctx.clip();
+        ctx.drawImage(view, 0, 0, view.width, showH, 0, 0, view.width, showH);
+        ctx.restore();
+        ctx.beginPath();
+        L.tagOutline(ctx, 0, 0, 1);
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else ctx.drawImage(view, 0, 0, view.width, showH, 0, 0, view.width, showH);
+    } catch (err) {
+      placed = [];
+    }
+    fit();
+    placeBoxes();
+    var el = working[current];
+    if (el) tools.setAttribute('data-mm', current + ' ' + mmText(el.x) + ' ' + mmText(el.y));
+  }
+  function dragDelta(start, ev) {
+    var rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { width: canvas.width, height: canvas.height };
+    var sx = rect.width ? canvas.width / rect.width : 1;
+    var sy = rect.height ? canvas.height / rect.height : 1;
+    return { x: (ev.clientX - start.cx) * sx * mmPerPx, y: (ev.clientY - start.cy) * sy * mmPerPx };
+  }
+  function wireDrag(b, id) {
+    b.onpointerdown = function (ev) {
+      if (ev && ev.button) return;
+      if (ev && ev.preventDefault) ev.preventDefault();
+      current = id;
+      markPicks();
+      fillTools();
+      var el = working[id];
+      if (!el) return;
+      var start = { x: el.x, y: el.y, cx: ev.clientX, cy: ev.clientY };
+      if (b.setPointerCapture && ev.pointerId != null) { try { b.setPointerCapture(ev.pointerId); } catch (e1) {} }
+      function move(ev2) {
+        var d = dragDelta(start, ev2);
+        if (kind === 'jewelry_tag') {
+          el.x = snapHalf(start.x + d.y);
+          el.y = snapHalf(start.y - d.x);
+        } else {
+          el.x = snapHalf(start.x + d.x);
+          el.y = snapHalf(start.y + d.y);
+        }
+        clampPos(el);
+        redraw();
+      }
+      function up(ev2) {
+        b.removeEventListener('pointermove', move);
+        b.removeEventListener('pointerup', up);
+        b.removeEventListener('pointercancel', up);
+        if (ev2) move(ev2);
+        fillTools();
+      }
+      b.addEventListener('pointermove', move);
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+    };
+  }
+  handle.onpointerdown = function (ev) {
+    if (ev && ev.button) return;
+    var moving = working[current];
+    if (!moving || !moving.show) return;
+    if (ev && ev.preventDefault) ev.preventDefault();
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    if (current !== 'qr') {
+      markPicks();
+      fillTools();
+      var origin = { x: moving.x, y: moving.y, cx: ev.clientX, cy: ev.clientY };
+      if (handle.setPointerCapture && ev.pointerId != null) { try { handle.setPointerCapture(ev.pointerId); } catch (eMove) {} }
+      function moveEl(ev2) {
+        var d = dragDelta(origin, ev2);
+        if (kind === 'jewelry_tag') {
+          moving.x = snapHalf(origin.x + d.y);
+          moving.y = snapHalf(origin.y - d.x);
+        } else {
+          moving.x = snapHalf(origin.x + d.x);
+          moving.y = snapHalf(origin.y + d.y);
+        }
+        clampPos(moving);
+        redraw();
+      }
+      function upEl(ev2) {
+        handle.removeEventListener('pointermove', moveEl);
+        handle.removeEventListener('pointerup', upEl);
+        handle.removeEventListener('pointercancel', upEl);
+        if (ev2) moveEl(ev2);
+        fillTools();
+      }
+      handle.addEventListener('pointermove', moveEl);
+      handle.addEventListener('pointerup', upEl);
+      handle.addEventListener('pointercancel', upEl);
+      return;
+    }
+    if (!working.qr || !working.qr.show) return;
+    markPicks();
+    fillTools();
+    var start = { qr: working.qr.qr, cx: ev.clientX, cy: ev.clientY };
+    if (handle.setPointerCapture && ev.pointerId != null) { try { handle.setPointerCapture(ev.pointerId); } catch (e2) {} }
+    function move(ev2) {
+      var d = dragDelta(start, ev2);
+      var delta = Math.abs(d.x) >= Math.abs(d.y) ? d.x : d.y;
+      working.qr.qr = snapHalf(start.qr + delta);
+      clampPos(working.qr);
+      redraw();
+    }
+    function up(ev2) {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      if (ev2) move(ev2);
+      fillTools();
+    }
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  };
+  function markPicks() {
+    var nodes = picks.children || [], i, n;
+    for (i = 0; i < nodes.length; i++) {
+      n = nodes[i];
+      n.className = 'oyp-laypick' + (n.getAttribute('data-el') === current ? ' is-on' : '') + (n.getAttribute('data-hidden') === '1' ? ' is-off' : '');
+    }
+  }
+  function buildPicks() {
+    picks.textContent = '';
+    fields.forEach(function (field) {
+      var b = document.createElement('button');
+      var el = working[field.id];
+      b.type = 'button';
+      b.className = 'oyp-laypick';
+      b.setAttribute('data-el', field.id);
+      if (!el || !el.show) b.setAttribute('data-hidden', '1');
+      b.textContent = field.label;
+      b.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        current = field.id;
+        markPicks();
+        markHits();
+        fillTools();
+      };
+      picks.appendChild(b);
+    });
+    markPicks();
+  }
+  function addBtn(parent, label, attr, fn) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'oyp-laybtn';
+    b.textContent = label;
+    b.setAttribute('data-lay', attr);
+    b.onclick = function (e) {
+      if (e && e.stopPropagation) e.stopPropagation();
+      fn();
+    };
+    parent.appendChild(b);
+    return b;
+  }
+  function numField(parent, label, value, step, min, max, onchange) {
+    var lab = document.createElement('label');
+    var cap = document.createElement('span');
+    var input = document.createElement('input');
+    lab.className = 'oyp-layfield';
+    cap.textContent = label;
+    input.type = 'number';
+    input.step = String(step);
+    input.min = String(min);
+    input.max = String(max);
+    input.value = String(value);
+    input.setAttribute('aria-label', label);
+    input.setAttribute('data-lay', label.toLowerCase());
+    input.oninput = function () { onchange(input.value); };
+    lab.appendChild(cap);
+    lab.appendChild(input);
+    parent.appendChild(lab);
+    return input;
+  }
+  function fillTools() {
+    var field = fieldBy(current);
+    var el = working[current];
+    tools.textContent = '';
+    if (!field || !el) return;
+    var across = kind === 'jewelry_tag';
+    var acrossH = across ? L.paperMm(kind).h : 0;
+    var xShown = across ? tenth(acrossH - el.y) : el.x;
+    var yShown = across ? el.x : el.y;
+    tools.setAttribute('data-mm', current + ' ' + mmText(xShown) + ' ' + mmText(yShown));
+    var show = addBtn(tools, el.show ? 'Shown' : 'Hidden', 'show', function () {
+      el.show = el.show ? 0 : 1;
+      redraw();
+      buildPicks();
+      fillTools();
+    });
+    show.setAttribute('aria-pressed', el.show ? 'true' : 'false');
+    numField(tools, 'X mm', mmText(xShown), 0.1, 0, across ? 40 : 80, function (raw) {
+      if (across) el.y = tenth(acrossH - Number(raw));
+      else el.x = tenth(raw);
+      clampPos(el);
+      redraw();
+    });
+    numField(tools, 'Y mm', mmText(yShown), 0.1, 0, across ? 80 : 40, function (raw) {
+      if (across) el.x = tenth(raw);
+      else el.y = tenth(raw);
+      clampPos(el);
+      redraw();
+    });
+    var nudges = document.createElement('div');
+    nudges.className = 'oyp-laynudge';
+    addBtn(nudges, '\u2190', 'nudge-left', function () { nudge(-1, 0); });
+    addBtn(nudges, '\u2192', 'nudge-right', function () { nudge(1, 0); });
+    addBtn(nudges, '\u2191', 'nudge-up', function () { nudge(0, -1); });
+    addBtn(nudges, '\u2193', 'nudge-down', function () { nudge(0, 1); });
+    tools.appendChild(nudges);
+    if (field.kind === 'text') {
+      numField(tools, 'Size', el.size, 1, 6, 72, function (raw) {
+        var n = Math.round(Number(raw));
+        if (!isFinite(n)) return;
+        if (n < 6) n = 6;
+        if (n > 72) n = 72;
+        el.size = n;
+        redraw();
+      });
+      addBtn(tools, el.bold ? 'Bold' : 'Regular', 'bold', function () {
+        el.bold = el.bold ? 0 : 1;
+        redraw();
+        fillTools();
+      }).setAttribute('aria-pressed', el.bold ? 'true' : 'false');
+      var alignRow = document.createElement('div');
+      alignRow.className = 'oyp-laynudge';
+      ['left', 'center', 'right'].forEach(function (align) {
+        var b = addBtn(alignRow, align.charAt(0).toUpperCase() + align.slice(1), 'align-' + align, function () {
+          el.align = align;
+          redraw();
+          fillTools();
+        });
+        if (el.align === align) b.className = 'oyp-laybtn is-on';
+      });
+      tools.appendChild(alignRow);
+      numField(tools, 'Width mm', mmText(el.w), 0.1, 1, 70, function (raw) {
+        var n = tenth(raw);
+        if (n < 1) n = 1;
+        el.w = n;
+        redraw();
+      });
+      numField(tools, 'Lines', el.wrap, 1, 1, 8, function (raw) {
+        var n = Math.round(Number(raw));
+        if (!isFinite(n) || n < 1) n = 1;
+        if (n > 8) n = 8;
+        el.wrap = n;
+        redraw();
+      });
+    } else if (field.kind === 'fold') {
+      numField(tools, 'Width mm', mmText(el.w), 0.1, 1, 70, function (raw) {
+        var n = tenth(raw);
+        if (n < 1) n = 1;
+        el.w = n;
+        redraw();
+      });
+    } else if (field.kind === 'qr') {
+      numField(tools, 'QR mm', mmText(el.qr), 0.1, 2, 30, function (raw) {
+        var n = tenth(raw);
+        el.qr = n;
+        clampPos(el);
+        redraw();
+      }).setAttribute('data-lay', 'qr-size');
+    }
+  }
+  function nudge(dx, dy) {
+    var el = working[current];
+    if (!el) return;
+    if (kind === 'jewelry_tag') {
+      el.y = tenth(el.y - dx * 0.1);
+      el.x = tenth(el.x + dy * 0.1);
+    } else {
+      el.x = tenth(el.x + dx * 0.1);
+      el.y = tenth(el.y + dy * 0.1);
+    }
+    clampPos(el);
+    redraw();
+    fillTools();
+  }
+  function close(fire) {
+    if (!alive) return;
+    alive = false;
+    if (state.layoutDone === dismiss) state.layoutDone = null;
+    state.layoutNudge = null;
+    if (root.removeEventListener) root.removeEventListener('resize', onResize);
+    if (sheet.remove) sheet.remove();
+    if (fire && onSave) onSave();
+  }
+  function dismiss() { close(false); }
+  function onResize() { if (alive) { fit(); placeBoxes(); } }
+  state.layoutDone = dismiss;
+  state.layoutNudge = function (dx, dy) { if (alive) nudge(dx, dy); };
+  addBtn(acts, 'Reset', 'reset', function () {
+    storeLayout(kind, null);
+    working = L.normalizeLayout(kind, null);
+    current = fields[0] ? fields[0].id : 'price';
+    redraw();
+    buildPicks();
+    fillTools();
+    if (onSave) onSave();
+  });
+  addBtn(acts, 'Cancel', 'cancel', function () { close(false); });
+  var saveBtn = addBtn(acts, 'Save', 'save', function () {
+    storeLayout(kind, working);
+    close(true);
+  });
+  saveBtn.className = 'oyp-laybtn is-primary';
+  topRow.appendChild(corner);
+  topRow.appendChild(xRuler);
+  paper.appendChild(canvas);
+  paper.appendChild(hits);
+  paper.appendChild(handle);
+  midRow.appendChild(yRuler);
+  midRow.appendChild(paper);
+  frame.appendChild(topRow);
+  frame.appendChild(midRow);
+  stage.appendChild(frame);
+  box.appendChild(title);
+  box.appendChild(hint);
+  box.appendChild(stage);
+  box.appendChild(picks);
+  box.appendChild(tools);
+  box.appendChild(acts);
+  sheet.appendChild(box);
+  document.body.appendChild(sheet);
+  if (root.addEventListener) root.addEventListener('resize', onResize);
+  buildPicks();
+  fillTools();
+  var ready = L.ready;
+  var paint = function () {
+    if (!alive) return;
+    redraw();
+    if (root.requestAnimationFrame) root.requestAnimationFrame(function () { if (alive) { fit(); placeBoxes(); } });
+  };
+  if (ready && ready.then) ready.then(paint, paint);
+  else paint();
+}
+/* One sheet for every sticker in the choice. Print all and Print this one queue.
+   Save to item stays off: no pasted action writes this whole field set. */
+function openPreview(list) {
+  var stickers = (list || []).map(function (it) {
+    var jo = String(it.jo || '');
+    return {
+      sourceJo: jo,
+      kind: it.kind === 'jo_card' ? 'jo_card' : 'jewelry_tag',
+      price: '', name: '', item_type: '', metal: '', karat: '', stones: '', weight: '',
+      jo: jo, sku: '', location: '',
+      due_date: '', date: '', current_stage: '', size: '',
+      dirty: {}
+    };
+  });
+  var index = 0, alive = true;
+  var FIELD_DEFS = [
+    ['price', 'Price', 'price'],
+    ['name', 'Name', 'name'],
+    ['type', 'Type', 'item_type'],
+    ['metal', 'Metal', 'metal'],
+    ['karat', 'Karat', 'karat'],
+    ['stones', 'Stones', 'stones'],
+    ['weight', 'Weight', 'weight'],
+    ['jo', 'JO', 'jo'],
+    ['sku', 'SKU', 'sku'],
+    ['location', 'Location', 'location']
+  ];
+  return new Promise(function (resolve) {
+    var sheet = document.createElement('div');
+    var box = document.createElement('div');
+    var stage = document.createElement('div');
+    var strip = document.createElement('div');
+    var prevBtn = document.createElement('button');
+    var nextBtn = document.createElement('button');
+    var thumbs = document.createElement('div');
+    var count = document.createElement('p');
+    var kindLine = document.createElement('p');
+    var fieldsWrap = document.createElement('div');
+    var save = document.createElement('label');
+    var toggle = document.createElement('input');
+    var saveText = document.createElement('span');
+    var note = document.createElement('p');
+    var acts = document.createElement('div');
+    var fieldEls = [], thumbBtns = [], allBtn;
+    sheet.id = 'oypPrev';
+    sheet.className = 'oyp-prev';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-label', 'Print preview');
+    box.className = 'oyp-prevbox';
+    box.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); };
+    stage.className = 'oyp-prevstage';
+    stage.id = 'oypPrevStage';
+    strip.className = 'oyp-prevstrip';
+    prevBtn.type = 'button';
+    prevBtn.className = 'oyp-prevnav';
+    prevBtn.setAttribute('data-nav', 'prev');
+    prevBtn.setAttribute('aria-label', 'Previous');
+    prevBtn.textContent = '\u2039';
+    nextBtn.type = 'button';
+    nextBtn.className = 'oyp-prevnav';
+    nextBtn.setAttribute('data-nav', 'next');
+    nextBtn.setAttribute('aria-label', 'Next');
+    nextBtn.textContent = '\u203a';
+    thumbs.className = 'oyp-prevthumbs';
+    count.className = 'oyp-prevcount';
+    count.id = 'oypPrevCount';
+    kindLine.className = 'oyp-prevkind';
+    kindLine.setAttribute('data-sticker-kind', '1');
+    fieldsWrap.className = 'oyp-prevfields';
+    save.className = 'oyp-prevsave';
+    toggle.type = 'checkbox';
+    toggle.disabled = true;
+    toggle.setAttribute('disabled', 'disabled');
+    toggle.setAttribute('data-save', 'item');
+    toggle.setAttribute('aria-label', 'Save to item');
+    saveText.textContent = 'Save to item';
+    note.className = 'oyp-prevnote';
+    note.setAttribute('data-save-note', '1');
+    note.textContent = 'Saving onto the item needs a paste that is not in the script yet. These edits apply to this print only.';
+    acts.className = 'oyp-prevacts';
+    function act(name, label, primary) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'oyp-prevbtn' + (primary ? ' is-primary' : '');
+      b.setAttribute('data-print', name);
+      b.textContent = label;
+      b.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        finish(name === 'cancel' ? null : name);
+      };
+      acts.appendChild(b);
+      return b;
+    }
+    stickers.forEach(function (sticker, i) {
+      var b = document.createElement('button');
+      var host = document.createElement('div');
+      var num = document.createElement('span');
+      b.type = 'button';
+      b.className = 'oyp-prevthumb';
+      b.setAttribute('data-page', String(i + 1));
+      b.setAttribute('aria-label', 'Page ' + (i + 1));
+      host.className = 'oyp-prevmini';
+      num.className = 'oyp-prevnum';
+      num.textContent = String(i + 1);
+      b.appendChild(host);
+      b.appendChild(num);
+      b.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        show(i);
+      };
+      thumbs.appendChild(b);
+      thumbBtns.push({ button: b, host: host });
+    });
+    FIELD_DEFS.forEach(function (def) {
+      var row = document.createElement('label');
+      var cap = document.createElement('span');
+      var input = document.createElement('input');
+      row.className = 'oyp-prevfield';
+      cap.textContent = def[1];
+      input.type = 'text';
+      input.setAttribute('data-field', def[0]);
+      input.setAttribute('aria-label', def[1]);
+      input.setAttribute('autocomplete', 'off');
+      input.oninput = function () {
+        var sticker = stickers[index];
+        if (!sticker) return;
+        sticker[def[2]] = input.value;
+        sticker.dirty[def[2]] = true;
+        paintSticker(sticker, stage, thumbBtns[index] && thumbBtns[index].host);
+      };
+      row.appendChild(cap);
+      row.appendChild(input);
+      fieldsWrap.appendChild(row);
+      fieldEls.push({ input: input, prop: def[2] });
+    });
+    var layBtn = document.createElement('button');
+    layBtn.type = 'button';
+    layBtn.className = 'oyp-prevbtn';
+    layBtn.setAttribute('data-layout', 'edit');
+    layBtn.textContent = 'Edit layout';
+    layBtn.onclick = function (e) {
+      if (e && e.stopPropagation) e.stopPropagation();
+      var sticker = stickers[index];
+      if (!sticker) return;
+      openLayout(sticker.kind, previewItem(sticker), function () { if (alive) paintAll(); });
+    };
+    allBtn = act('all', 'Print all (' + stickers.length + ')', true);
+    act('one', 'Print this one', false);
+    act('cancel', 'Cancel', false);
+    prevBtn.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); show(index - 1); };
+    nextBtn.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); show(index + 1); };
+    function show(i) {
+      if (!alive || i < 0 || i >= stickers.length) return;
+      index = i;
+      sync();
+      paintSticker(stickers[index], stage, thumbBtns[index] && thumbBtns[index].host);
+    }
+    function sync() {
+      var sticker = stickers[index];
+      var label = (index + 1) + ' / ' + stickers.length;
+      fieldEls.forEach(function (f) {
+        f.input.value = sticker && sticker[f.prop] != null ? String(sticker[f.prop]) : '';
+      });
+      count.textContent = label;
+      count.setAttribute('data-count', label);
+      kindLine.textContent = sticker && sticker.kind === 'jo_card' ? 'JO sticker' : 'Jewelry tag';
+      allBtn.textContent = 'Print all (' + stickers.length + ')';
+      setDisabled(prevBtn, index <= 0);
+      setDisabled(nextBtn, index >= stickers.length - 1);
+      thumbBtns.forEach(function (t, i) {
+        t.button.className = 'oyp-prevthumb' + (i === index ? ' is-on' : '');
+        if (i === index) t.button.setAttribute('aria-current', 'true');
+        else clearAttr(t.button, 'aria-current');
+      });
+    }
+    function paintAll() {
+      var i;
+      for (i = 0; i < stickers.length; i++) paintSticker(stickers[i], i === index ? stage : null, thumbBtns[i] && thumbBtns[i].host);
+    }
+    function finish(which) {
+      if (!alive) return;
+      alive = false;
+      if (state.previewDone === finish) state.previewDone = null;
+      closePreview();
+      if (!which) { resolve(null); return; }
+      var chosen = which === 'one' ? [stickers[index]] : stickers.slice();
+      chosen.forEach(rememberEdits);
+      resolve(printStickers(chosen.map(function (s) { return { jo: s.sourceJo, kind: s.kind }; })));
+    }
+    state.previewDone = finish;
+    strip.appendChild(prevBtn);
+    strip.appendChild(thumbs);
+    strip.appendChild(nextBtn);
+    save.appendChild(toggle);
+    save.appendChild(saveText);
+    box.appendChild(stage);
+    box.appendChild(strip);
+    box.appendChild(count);
+    box.appendChild(kindLine);
+    box.appendChild(fieldsWrap);
+    box.appendChild(save);
+    box.appendChild(note);
+    box.appendChild(layBtn);
+    box.appendChild(acts);
+    sheet.appendChild(box);
+    sheet.onclick = function () { finish(null); };
+    document.body.appendChild(sheet);
+    sync();
+    loadSpecs(stickers).then(function (map) {
+      if (!alive) return;
+      stickers.forEach(function (s) { fillFromSpec(s, map[s.sourceJo]); });
+      sync();
+      return labelReady();
+    }).then(function () {
+      if (!alive) return;
+      paintAll();
+    }).catch(function () {});
+  });
+}
+/* Jewelry tag is the filled primary. JO sticker and Both are the other choices. Cancel closes the sheet.
+   The choice opens a preview. Nothing is queued until Print all or Print this one. */
 function askPrint(jos) {
   jos = (jos || []).map(function (j) { return String(j || '').trim(); }).filter(Boolean);
   if (!jos.length) { toast('Select a sticker first'); return Promise.resolve(null); }
+  if (state.previewDone) state.previewDone(null);
   if (state.kindDone) state.kindDone('cancel');
   var done = false, finish = function () {};
   var sheet = document.createElement('div');
@@ -737,7 +1729,9 @@ function askPrint(jos) {
       if (state.kindDone === finish) state.kindDone = null;
       closeKind();
       if (!choice || choice === 'cancel') { resolve(null); return; }
-      resolve(printStickers(itemsForChoice(jos, choice)));
+      var list = itemsForChoice(jos, choice);
+      if (!list.length) { resolve(null); return; }
+      resolve(openPreview(list));
     };
     state.kindDone = finish;
   });
@@ -924,7 +1918,13 @@ function localItem(kind, jo, id, extra) {
     weight_g: extra.weight_g, weight: extra.weight,
     stone_type: extra.stone_type || extra.stone || '',
     stone_size: extra.stone_size || '', size: extra.size || '',
-    description: extra.description || ''
+    price: extra.price, name: extra.name || '',
+    description: extra.description || '',
+    item_type: extra.item_type || extra.piece_type || '',
+    type: extra.type || '',
+    stones: extra.stones || '', grade: extra.grade || '',
+    sku: extra.sku || extra.item_id || '',
+    location: extra.location || ''
   };
 }
 /* A tap prints from the fields already on the page. The queue write is a log, with this print_id, and it does not hold the printer. */
@@ -1053,7 +2053,7 @@ function download(kind, item) {
   if (!root.OYPLabel) return;
   item = Object.assign({}, item || {});
   delete item.client;
-  var needSpecs = kind === 'jewelry_tag' && item.jo && !item.metal && !item.karat && !item.stone_type && !item.stone && !item.size && !item.weight_g && !item.weight;
+  var needSpecs = kind === 'jewelry_tag' && item.jo && !item.metal && !item.karat && !item.stone_type && !item.stone && !item.stones && !item.size && !item.weight_g && !item.weight && !item.price && !item.description && !item.name && !item.sku && !item.item_id && !item.location && !item.item_type;
   var ready = needSpecs ? callPrint('printQueue', { jo: item.jo }).then(function (r) {
     var spec = (r && r.ok && r.spec) || {};
     delete spec.client;
@@ -2202,6 +3202,7 @@ function mountSettings(el) {
     + '<div class="setrow"><div class="setl"><span class="lab">This printer prints</span><span class="muted">A B1 prints jewelry tags. A B31 prints JO stickers. A saved choice can turn a kind off. A B1 does not print JO stickers.</span></div><div class="setv"><div class="setdays">' + kindChip('prJo', k.jo_card, 'JO card') + kindChip('prTag', k.jewelry_tag, 'Jewelry tag') + '</div></div></div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B31 offset</span><span class="muted">Zero is the centre measured on a T30×20 roll. Positive moves the print right, or down the feed.</span></div>' + mmPair('prX31', b31.x, 'B31 horizontal offset', 'prY31', b31.y, 'B31 vertical offset') + '</div>'
     + '<div class="setrow"><div class="setl"><span class="lab">B1 offset</span><span class="muted">Same steps, saved separately for the B1.</span></div>' + mmPair('prX1', b1.x, 'B1 horizontal offset', 'prY1', b1.y, 'B1 vertical offset') + '</div>'
+    + '<div class="setrow"><div class="setl"><span class="lab">Layout</span><span class="muted">Move each part of the jewelry tag or the JO sticker. Saved on this station, and on the server once that paste is in.</span></div><div class="setv"><button type="button" class="pill sm oyp-layopen" id="prLayTag">Edit jewelry tag</button><button type="button" class="pill sm outline oyp-layopen" id="prLayCard">Edit JO sticker</button></div></div>'
     + '</div><p class="muted">Stickers print the JO number, not the client name. The queue still shows the name first, for example Elena Tan · 26-287.</p></div>';
   function persist() {
     var next = load();
@@ -2252,6 +3253,13 @@ function mountSettings(el) {
   paintLinks();
   var copyBtn = el.querySelector && el.querySelector('#prFlagCopy');
   if (copyBtn) copyBtn.onclick = function () { copyFlag(flagUrl); };
+  function layBtn(id) {
+    if (el.querySelector) return el.querySelector('#' + id);
+    return document.getElementById(id);
+  }
+  var tagLay = layBtn('prLayTag'), cardLay = layBtn('prLayCard');
+  if (tagLay) tagLay.onclick = function () { openLayout('jewelry_tag', sampleLayoutItem()); };
+  if (cardLay) cardLay.onclick = function () { openLayout('jo_card', sampleLayoutItem()); };
 }
 function copyFlag(url) {
   var clip = root.navigator && navigator.clipboard;
@@ -2306,12 +3314,13 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=17';
+  link.href = (base || '') + 'print.css?v=20';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
   try { console.log('[oyp-print] print.js v' + PRINT_JS); } catch (e0) {}
   css();
+  pullLayouts();
   deviceId();
   installFetch();
   mountChip();
@@ -2362,7 +3371,7 @@ function start() {
       return;
     }
     if (!e.target.closest('#oypPrMenu')) toggleMenu(false);
-    if (panelOpen() && !e.target.closest('#oypPrintPanel') && !e.target.closest('#oypKind')) closePanel();
+    if (panelOpen() && !e.target.closest('#oypPrintPanel') && !e.target.closest('#oypKind') && !e.target.closest('#oypPrev') && !e.target.closest('#oypLay')) closePanel();
     var ask = e.target.closest('[data-oyp-ask]');
     if (ask) { askPrint([ask.getAttribute('data-jo')]); return; }
     var b = e.target.closest('[data-oyp-print]');
@@ -2372,7 +3381,19 @@ function start() {
     if (e.target.closest('[data-q]')) onQueueClick(e);
   });
   document.addEventListener('keydown', function (e) {
+    if (state.layoutDone) {
+      if (e.key === 'Escape') { state.layoutDone(); return; }
+      var tag = e.target && e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      var step = e.key === 'ArrowLeft' ? [-1, 0] : e.key === 'ArrowRight' ? [1, 0] : e.key === 'ArrowUp' ? [0, -1] : e.key === 'ArrowDown' ? [0, 1] : null;
+      if (step && state.layoutNudge) {
+        if (e.preventDefault) e.preventDefault();
+        state.layoutNudge(step[0], step[1]);
+      }
+      return;
+    }
     if (e.key !== 'Escape') return;
+    if (state.previewDone) { state.previewDone(); return; }
     if (state.kindDone) { state.kindDone('cancel'); return; }
     toggleMenu(false);
     closePanel();
