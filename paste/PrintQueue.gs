@@ -290,13 +290,20 @@ function printSpecsFor_(jo, look) {
     return '';
   }
   out.client = pick(['client_name', 'client']) || (hit.client_id ? (look.names[String(hit.client_id)] || '') : ''); // screen only, never printed
+  out.price = pick(['price', 'price_php']);
+  out.name = pick(['name']);
+  out.description = pick(['description']); // item name on the tag when name is empty. Never the client name.
+  out.item_type = pick(['item_type', 'piece_type']);
   out.metal = pick(['metal']);
   out.karat = pick(['karat']);
   out.weight_g = pick(['weight_g', 'weight']);
+  out.stones = pick(['stones']);
   out.stone_type = pick(['stone_type', 'stone']);
   out.stone_size = pick(['stone_size']);
+  out.grade = pick(['grade']);
   out.size = pick(['size']);
-  out.description = pick(['description']); // printed later, under the JO. Never the client name.
+  out.sku = pick(['sku', 'item_id']);
+  out.location = pick(['location']);
   out.due_date = pick(['due_date', 'due']);
   out.current_stage = pick(['current_stage']);
   return out;

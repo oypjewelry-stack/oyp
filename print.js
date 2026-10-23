@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 26;
+var PRINT_JS = 27;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -397,13 +397,21 @@ function labelOpts(item, kind, link) {
     due: item.due_date || item.due || '',
     date: item.date || item.given || '',
     stage: item.current_stage || item.stage || '',
+    price: item.price,
+    name: item.name || '',
+    description: item.description || '',
+    item_type: item.item_type || item.piece_type || '',
+    type: item.type || '',
     metal: item.metal || '',
     karat: item.karat || '',
     weight: item.weight_g != null && item.weight_g !== '' ? item.weight_g : item.weight,
+    stones: item.stones || '',
     stone: item.stone_type || item.stone || '',
     stone_size: item.stone_size || '',
+    grade: item.grade || '',
     size: item.size || '',
-    description: item.description || ''
+    sku: item.sku || item.item_id || '',
+    location: item.location || ''
   };
 }
 function tasks() { return (lib() && lib().printTasks) || {}; }
@@ -501,7 +509,7 @@ function labelReady() {
 function labelSig(item, link) {
   var o = labelOpts(item, null, link);
   var dir = (link && link.dir) || '';
-  return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, dir, o.jo || '', o.due || '', o.date || '', o.stage || '', o.metal || '', o.karat || '', o.weight || '', o.stone || '', o.stone_size || '', o.size || '', o.description || ''].join('\u001f');
+  return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, dir, o.jo || '', o.due || '', o.date || '', o.stage || '', o.price || '', o.name || '', o.description || '', o.item_type || '', o.type || '', o.metal || '', o.karat || '', o.weight || '', o.stones || '', o.stone || '', o.stone_size || '', o.grade || '', o.size || '', o.sku || '', o.location || ''].join('\u001f');
 }
 function trimPrepared() {
   var keys = Object.keys(state.prepared);
@@ -924,7 +932,13 @@ function localItem(kind, jo, id, extra) {
     weight_g: extra.weight_g, weight: extra.weight,
     stone_type: extra.stone_type || extra.stone || '',
     stone_size: extra.stone_size || '', size: extra.size || '',
-    description: extra.description || ''
+    price: extra.price, name: extra.name || '',
+    description: extra.description || '',
+    item_type: extra.item_type || extra.piece_type || '',
+    type: extra.type || '',
+    stones: extra.stones || '', grade: extra.grade || '',
+    sku: extra.sku || extra.item_id || '',
+    location: extra.location || ''
   };
 }
 /* A tap prints from the fields already on the page. The queue write is a log, with this print_id, and it does not hold the printer. */
@@ -1053,7 +1067,7 @@ function download(kind, item) {
   if (!root.OYPLabel) return;
   item = Object.assign({}, item || {});
   delete item.client;
-  var needSpecs = kind === 'jewelry_tag' && item.jo && !item.metal && !item.karat && !item.stone_type && !item.stone && !item.size && !item.weight_g && !item.weight;
+  var needSpecs = kind === 'jewelry_tag' && item.jo && !item.metal && !item.karat && !item.stone_type && !item.stone && !item.stones && !item.size && !item.weight_g && !item.weight && !item.price && !item.description && !item.name && !item.sku && !item.item_id && !item.location && !item.item_type;
   var ready = needSpecs ? callPrint('printQueue', { jo: item.jo }).then(function (r) {
     var spec = (r && r.ok && r.spec) || {};
     delete spec.client;

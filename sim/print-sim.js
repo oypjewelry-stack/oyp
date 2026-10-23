@@ -67,18 +67,19 @@ if (draw) {
   const t2 = L.render(Object.assign({ model }, tag));
   eq(t.width === head && t.height === 560 && t.offsetX === ox && t.labelW === 240 && t.labelH === 200 && t.tail === 360, model + ' jewelry tag is ' + head + '×560, head 240×200, tail 360');
   eq(same(t.data, t2.data), model + ' jewelry tag pixels ignore the client name');
-  eq(noName(t) && t.lines.length === 1 && t.lines[0] === '26-287' && t.specPx === 0 && t.lines.indexOf('18K GOLD') < 0 && t.lines.indexOf('ELENA') < 0, model + ' jewelry tag is the QR and the JO');
+  eq(noName(t) && t.lines.indexOf('26-287') >= 0 && t.lines.indexOf('GOLD') >= 0 && t.lines.indexOf('18K') >= 0 && t.lines.indexOf('diamond') >= 0 && t.lines.indexOf('4.2g') >= 0 && t.lines.indexOf('18K GOLD') < 0 && t.lines.indexOf('SIZE 6') < 0 && t.lines.indexOf('ELENA') < 0, model + ' jewelry tag prints the JO, metal, karat, stone, and weight');
   eq(tailWhite(t), model + ' jewelry tag tail is blank');
-  eq(landscape(t), model + ' jewelry tag reads landscape, QR on the left and text on the right');
-  eq(decode(t) === '26-287', model + ' jewelry tag QR is 26-287');
+  eq(readableTag(t) && decode(t) === '26-287', model + ' jewelry tag reads upright with the tail to the right, and the QR is 26-287');
 });
 
 const noted = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', description: 'thin band', metal: 'yellow gold', client: 'Elena Tan' });
-eq(noted.specPx >= 16 && noted.joPx > noted.specPx && noName(noted) && noted.lines.indexOf('THIN BAND') >= 0 && noted.lines.indexOf('YELLOW') < 0 && noted.lines.indexOf('ELENA') < 0, 'a description prints under the JO, and the metal and the client name do not');
-const long = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', description: 'thin gold band', client: 'Elena Tan' });
-eq(long.specPx >= 16 && long.specPx < L.SPEC_PX && long.joPx > long.specPx && noName(long) && long.lines.indexOf('THIN GOLD BAND') >= 0, 'a description shrinks but stays at least 16 px, still smaller than the JO, still with no name');
-const wide = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', description: 'a very long description of this finished piece that cannot fit', client: 'Elena Tan' });
-eq(wide.specPx >= 14 && wide.joPx > wide.specPx && noName(wide) && wide.lines.some(s => s.indexOf('...') >= 0), 'a description that still does not fit is ellipsized and stays off the edge');
+eq(noName(noted) && noted.lines.indexOf('thin band') >= 0 && noted.lines.indexOf('YELLOW GOLD') >= 0 && noted.lines.indexOf('THIN BAND') < 0 && noted.lines.indexOf('ELENA') < 0, 'the item name prints as stored, the metal prints on the spread row, and the client name does not');
+const wide = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', name: 'a very long description of this finished piece that cannot fit on one line of the tag', client: 'Elena Tan' });
+eq(noName(wide) && wide.lines.some(s => s.indexOf('...') >= 0) && wide.lines.indexOf('ELENA') < 0, 'a name that does not fit is ellipsized and the client name stays off');
+const stones = 'Cubic Zirconia 1.25mm x 30 Cubic Zirconia 2.75mm x 3 Round Brilliant 3.00mm x 12 Baguette 4.00mm x 8 Marquise 5mm x 4 and a center stone that keeps going past the third line';
+const longStones = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', stones: stones, client: 'Elena Tan' });
+const stoneLines = longStones.lines.filter(s => /Cubic|Brilliant|Baguette|Marquise|center|\.\.\./.test(s));
+eq(noName(longStones) && stoneLines.length >= 2 && stoneLines.length <= 3 && stoneLines.some(s => s.indexOf('...') >= 0), 'long stones wrap to at most three lines and the last one ellipsizes');
 function clearMargin(img) {
   const m = L.px(1), x0 = img.offsetX;
   for (let y = 0; y < img.labelH; y++) for (let x = 0; x < img.labelW; x++) {
@@ -88,25 +89,23 @@ function clearMargin(img) {
   }
   return true;
 }
-/* Text sits beside the QR, not under it, and stays inside the head. */
-function landscape(img) {
-  const box = img.qrBox;
-  if (!box || box.x > img.offsetX + L.px(1) + 1) return false;
-  const right = box.x + box.size;
-  let ink = false;
-  for (let y = 0; y < img.labelH; y++) {
-    for (let x = right + 2; x < img.offsetX + img.labelW - L.px(1); x++) {
-      if (img.data[(y * img.width + x) * 4] === 0) ink = true;
-    }
-  }
-  for (let y = box.y + box.size + 2; y < img.labelH; y++) {
-    for (let x = img.offsetX; x < right - 4; x++) {
-      if (img.data[(y * img.width + x) * 4] === 0) return false;
-    }
-  }
-  return ink;
+/* Readable cable label: flag on the left, blank tail on the right, dashed fold through the middle. */
+function paperPx(img, x, y) {
+  if (!img.paper || x < 0 || y < 0 || x >= img.paperW || y >= img.paperH) return 255;
+  return img.paper[(y * img.paperW + x) * 4];
 }
-eq(clearMargin(long) && clearMargin(wide), 'spec ink stays about 1 mm inside the 30 mm edges');
+function readableTag(img) {
+  if (img.paperW !== 560 || img.paperH !== 240) return false;
+  for (let y = 0; y < img.paperH; y++) for (let x = img.labelH; x < img.paperW; x++) if (paperPx(img, x, y) !== 255) return false;
+  const fold = 120;
+  let dash = 0, gap = 0;
+  for (let x = 8; x < 192; x++) { if (paperPx(img, x, fold) === 0) dash++; else gap++; }
+  if (dash < 40 || gap < 20) return false;
+  const box = img.qrBox;
+  if (!box) return false;
+  return box.y >= img.labelH - box.size - L.px(2);
+}
+eq(clearMargin(wide) && clearMargin(longStones), 'tag ink stays about 1 mm inside the flag edges');
 function sideMargins(img) {
   const x0 = img.offsetX;
   let left = -1, right = -1;
@@ -124,8 +123,21 @@ function sameMargin(img, msg) {
 }
 sameMargin(L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21' }), 'B31 JO card left and right ink margins match');
 sameMargin(L.render({ kind: 'jo_card', model: 'B31', jo: '26-1287', due: '2026-10-21' }), 'a long JO card keeps equal side margins');
-sameMargin(L.render(Object.assign({ model: 'B1' }, tag)), 'B1 jewelry tag left and right ink margins match');
-sameMargin(L.render(Object.assign({ model: 'B1', jo: '26-1287' }, tag)), 'a long jewelry tag keeps equal side margins');
+const fullTag = L.render({
+  kind: 'jewelry_tag', model: 'B1', price: 11500, name: 'Silver Necklace', item_type: 'Earring',
+  metal: 'Gold', karat: '14KWG', stones: 'Cubic Zirconia 1.25mm x 30 Cubic Zirconia 2.75mm x 3',
+  weight: 7, jo: '26-002', sku: '18-498', location: 'A.R3', client: 'Elena Tan'
+});
+const noPrice = L.render({
+  kind: 'jewelry_tag', model: 'B1', name: 'Silver Necklace', item_type: 'Earring',
+  metal: 'Gold', karat: '14KWG', stones: 'Cubic Zirconia 1.25mm x 30 Cubic Zirconia 2.75mm x 3',
+  weight: 7, jo: '26-002', sku: '18-498', location: 'A.R3'
+});
+eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
+eq(!noPrice.lines.some(s => s.indexOf('₱') >= 0 || s.indexOf('0.00') >= 0 || s.indexOf('11,500') >= 0) && noPrice.lines.indexOf('Silver Necklace') >= 0 && noPrice.lines.indexOf('26-002') >= 0, 'a missing price stays blank');
+const shiftedTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-002', shiftX: L.px(0.5), shiftY: L.px(-1) });
+const stillTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-002' });
+eq(shiftedTag.offsetX === stillTag.offsetX + L.px(0.5) && shiftedTag.qrBox.y === stillTag.qrBox.y - L.px(1), 'a saved offset still moves the jewelry tag on the head');
 const cal = L.render({ kind: 'cal_tag', model: 'B31' });
 eq(cal.width === 600 && cal.height === 560 && cal.lines.length === 0 && cal.qr === '', 'calibration has no JO text and no name');
 function darkAt(img, x, y) { return img.data[(y * img.width + x) * 4] === 0; }
@@ -182,7 +194,7 @@ letterJos.forEach(jo => {
 });
 const px287 = letterImgs['26-287'].card.joPx, pxB = letterImgs['26-287B'].card.joPx, pxA = letterImgs['26-1234A'].card.joPx, pxShort = letterImgs['11-520'].card.joPx;
 eq(pxShort > px287 && px287 > 19 && px287 < 21 && px287 > pxB && pxB > pxA && pxA >= 12 && pxA < 16, 'a JO card keeps today\'s size when the line fits, and shrinks a 7-character JO plus a letter');
-eq(letterImgs['26-1234A'].tag.joPx >= 18 && letterImgs['26-287'].tag.joPx >= letterImgs['26-287B'].tag.joPx, 'a jewelry tag keeps the JO at least as large as today when a letter still fits');
+eq(letterImgs['26-1234A'].tag.lines.indexOf('26-1234A') >= 0 && letterImgs['26-287'].tag.lines.indexOf('26-287') >= 0 && letterImgs['26-1234A'].tag.joPx > 0 && letterImgs['26-1234A'].tag.joPx <= letterImgs['26-287'].tag.joPx, 'a jewelry tag keeps the whole JO, and a longer JO does not grow');
 const base = L.render(Object.assign({ model: 'B31' }, card));
 const moved = L.render(Object.assign({ model: 'B31', shiftX: L.px(0.5), shiftY: L.px(-1) }, card));
 eq(moved.offsetX === base.offsetX + L.px(0.5) && moved.qrBox.y === base.qrBox.y - L.px(1), 'a saved offset moves the JO card on the head');
@@ -197,12 +209,10 @@ function pxAt(img, x, y) {
 const corner = pxAt(cardView, 0, 0);
 const paper = pxAt(cardView, pad + rad + 8, pad + 6);
 const outside = pxAt(cardView, pad + 1, pad + 1);
-const foldY = pad + tagView.labelH * 4;
-const fold = pxAt(tagView, pad + Math.round(tagView.labelW * 4 / 2), foldY);
-const above = pxAt(tagView, pad + Math.round(tagView.labelW * 4 / 2), foldY - 8);
-eq(cardView.width === (240 + L.px(4) * 2) * 4 && cardView.height === (160 + L.px(4) * 2) * 4 && tagView.height === (560 + L.px(4) * 2) * 4, 'a preview is the label, with gray around it');
+eq(cardView.width === (240 + L.px(4) * 2) * 4 && cardView.height === (160 + L.px(4) * 2) * 4 && tagView.width === (560 + L.px(4) * 2) * 4 && tagView.height === (240 + L.px(4) * 2) * 4, 'a preview is the label, with gray around it');
 eq(corner[0] < 180 && corner[0] > 100 && paper[0] > 250 && outside[0] < 180, 'the sticker is a white rounded rectangle on mid-gray');
-eq(tagView.tail === 360 && fold[0] < above[0] - 8, 'the jewelry preview draws a faint fold between the head and the tail');
+const shown = L.render(Object.assign({ model: 'B1' }, tag));
+eq(tagView.tail === 360 && paperPx(shown, 8, 120) === 0 && paperPx(shown, 12, 120) === 255 && paperPx(shown, 300, 40) === 255, 'the jewelry preview is the readable label, with a printed dashed fold and a blank tail');
 const shifted = L.preview(moved, { scale: 1, smooth: false });
 const still = L.preview(base, { scale: 1, smooth: false });
 function inkX(img) {
@@ -284,7 +294,7 @@ eq(!adopt.created && adopt.item.print_id === 'pq-oldrow' && queuedFirst.length =
 let jobReads = 0;
 ctx.jobRows_ = function (name) {
   jobReads++;
-  if (name === 'JobOrders') return [{ jo: '26-287', client_id: 'c-1', metal: 'yellow gold', karat: '18k', weight_g: 3.2, stone_type: 'diamond', stone_size: '0.5ct', size: '6', due_date: new Date(2026, 9, 27) }];
+  if (name === 'JobOrders') return [{ jo: '26-287', client_id: 'c-1', metal: 'yellow gold', karat: '18k', weight_g: 3.2, stone_type: 'diamond', stone_size: '0.5ct', size: '6', due_date: new Date(2026, 9, 27), price: 11500, description: 'Silver Necklace', item_type: 'earring', sku: '18-498', location: 'A.R3', stones: 'Cubic Zirconia 1.25mm x 30' }];
   if (name === 'Clients') return [{ client_id: 'c-1', name: 'Elena Tan' }];
   return [];
 };
@@ -292,11 +302,11 @@ const look = ctx.printLookup_();
 const d1 = ctx.printDecorate_({ print_id: 'pq-1', jo: '26-287', kind: 'jewelry_tag', status: 'queued' }, look);
 const d2 = ctx.printDecorate_({ print_id: 'pq-2', jo: '26-287', kind: 'jo_card', status: 'queued' }, look);
 eq(jobReads === 2 && d1.client === 'Elena Tan' && d2.client === 'Elena Tan', 'the queue reads JobOrders and Clients once and shows the name on screen');
-eq(d1.due_date === '2026-10-27' && d1.metal === 'yellow gold' && d1.stone_size === '0.5ct', 'a Date due is a day, specs are joined');
+eq(d1.due_date === '2026-10-27' && d1.metal === 'yellow gold' && d1.stone_size === '0.5ct' && d1.price === '11500' && d1.description === 'Silver Necklace' && d1.item_type === 'earring' && d1.sku === '18-498' && d1.location === 'A.R3' && d1.stones === 'Cubic Zirconia 1.25mm x 30', 'a Date due is a day, and the tag fields are joined');
 if (draw) {
-  const r1 = L.render(Object.assign({ model: 'B1', kind: 'jewelry_tag' }, { jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size }));
-  const r2 = L.render({ model: 'B1', kind: 'jewelry_tag', jo: d1.jo, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stone: d1.stone_type, stone_size: d1.stone_size, size: d1.size, client: d1.client });
-  eq(same(r1.data, r2.data) && noName(r2), 'a decorated row prints the same pixels with or without the name');
+  const r1 = L.render(Object.assign({ model: 'B1', kind: 'jewelry_tag' }, { jo: d1.jo, price: d1.price, description: d1.description, item_type: d1.item_type, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stones: d1.stones, stone: d1.stone_type, stone_size: d1.stone_size, sku: d1.sku, location: d1.location, size: d1.size }));
+  const r2 = L.render({ model: 'B1', kind: 'jewelry_tag', jo: d1.jo, price: d1.price, description: d1.description, item_type: d1.item_type, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stones: d1.stones, stone: d1.stone_type, stone_size: d1.stone_size, sku: d1.sku, location: d1.location, size: d1.size, client: d1.client });
+  eq(same(r1.data, r2.data) && noName(r2) && r2.lines.indexOf('₱11,500.00') >= 0 && r2.lines.indexOf('Silver Necklace') >= 0 && r2.lines.indexOf('EARRING') >= 0 && r2.lines.indexOf('A.R3') >= 0 && r2.lines.indexOf('18-498') >= 0, 'a decorated row prints the tag fields and ignores the client name');
   const card2 = L.render({ model: 'B31', kind: 'jo_card', jo: '26-287', due: d1.due_date });
   eq(card2.lines.indexOf('DUE 27 OCT') >= 0, 'a JO card due line reads DUE 27 OCT');
 }
@@ -322,9 +332,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=26') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=57') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=17') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=17') && read('sim/swipe-preview.html').includes('print.css?v=17'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=26') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=26') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=17') && read('staff/print-test.html').includes('nav.js?v=57') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=27') && index.includes('print-label.js?v=11') && index.includes('nav.js?v=58') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=17') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=17') && read('sim/swipe-preview.html').includes('print.css?v=17'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=11') && read('nav.js').includes('print.js?v=27') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=27') && read('staff/print-test.html').includes('print-label.js?v=11') && read('staff/print-test.html').includes('print.css?v=17') && read('staff/print-test.html').includes('nav.js?v=58') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -1449,8 +1459,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v26') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v26') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v27') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v27') >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
