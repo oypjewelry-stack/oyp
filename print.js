@@ -17,6 +17,8 @@ var PAGE_MS = 20000;
 var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
+var LINK_MS = 10000;
+var PRINT_JS = 26;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -117,6 +119,79 @@ function withTimeout(p, ms, message) {
       reject(err);
     });
   });
+}
+/* One attempt id per connect. A late resolve after a timeout or Retry tap must not call onConnected. */
+function freshAttempt(link) {
+  link.attempt = (link.attempt || 0) + 1;
+  return link.attempt;
+}
+function liveAttempt(link, token) {
+  return !!token && link.attempt === token;
+}
+function dropGatt(device) {
+  var gatt = device && device.gatt;
+  if (!gatt || typeof gatt.disconnect !== 'function') return;
+  try {
+    logMs('link gatt.disconnect', 0, (device.name || device.id || ''));
+    gatt.disconnect();
+  } catch (e) {}
+}
+/* Resolves, rejects, times out, or cancels. The logged ms is the deadline when the step times out. */
+function step(link, label, p, ms, extra) {
+  var t0 = clock();
+  var who = extra || '';
+  logMs('link ' + label + ' start', 0, who);
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    function finish(err, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (link && link.waiters) {
+        var at = link.waiters.indexOf(cancel);
+        if (at >= 0) link.waiters.splice(at, 1);
+      }
+      var elapsed = clock() - t0;
+      if (err && /timed out/.test(String(err.message || ''))) elapsed = ms;
+      logMs('link ' + label, elapsed, (err ? (err.message || 'failed') : 'ok') + (who ? ' ' + who : ''));
+      if (err) reject(err);
+      else resolve(value);
+    }
+    function cancel() { finish(Object.assign(new Error(label + ' cancelled'), { quiet: 'cancel' })); }
+    var timer = setTimeout(function () { finish(new Error(label + ' timed out')); }, ms);
+    if (link) {
+      link.waiters = link.waiters || [];
+      link.waiters.push(cancel);
+    }
+    Promise.resolve(p).then(function (v) { finish(null, v); }, function (err) { finish(err || new Error(label + ' failed')); });
+  });
+}
+function watchDevice(link, device, token) {
+  if (!device || typeof device.watchAdvertisements !== 'function') return Promise.resolve();
+  var who = device.name || device.id || '';
+  return step(link, 'watchAdvertisements', Promise.resolve().then(function () { return device.watchAdvertisements(); }), LINK_MS, who).catch(function (err) {
+    if (!liveAttempt(link, token)) throw err;
+    if (err && /timed out/.test(String(err.message || ''))) throw err;
+    return undefined;
+  });
+}
+/* Drops the in-flight GATT connect and invalidates its promise. Returns the client to disconnect, or false if a newer attempt owns the link. */
+function abortAttempt(link, token) {
+  if (token && !liveAttempt(link, token)) return false;
+  var waiters = link.waiters || [];
+  link.waiters = [];
+  var c = link.client;
+  link.client = null;
+  var device = link.gattDevice;
+  link.gattDevice = null;
+  freshAttempt(link);
+  link.reconnecting = false;
+  link.opening = false;
+  link.auto = false;
+  if (link.btId && state.autoBusy) delete state.autoBusy[link.btId];
+  waiters.forEach(function (fn) { try { fn(); } catch (e2) {} });
+  dropGatt(device);
+  return c;
 }
 /* A print that never answers must not sit on this chain. The next Print tap would look like it did nothing. */
 function work(link, fn) {
@@ -1076,7 +1151,7 @@ function slotDebugText() {
   }).join(' | ');
 }
 function slotDebugHtml() {
-  return '<p class="oyp-slotdbg" data-oyp-slots>' + esc(slotDebugText()) + '</p>';
+  return '<p class="oyp-slotdbg" data-oyp-slots>' + esc(slotDebugText()) + '</p><p class="muted" id="prBuild">print.js v' + PRINT_JS + '</p>';
 }
 function holdBanner(items) {
   var msgs = [], seen = {}, i, it, msg;
@@ -1264,6 +1339,9 @@ function pump() {
 }
 /* On screen, every 1s asks only for the rev. A hidden tab checks every 5th tick. A server without that cheap answer falls back to a full read every 3rd tick that actually runs. */
 function pollTick() {
+  /* The library heartbeat is what keeps an idle printer from dropping the link. */
+  if (state.connected) beat(state);
+  if (peer.connected) beat(peer);
   if (!anyUp() || state.pumping) return;
   state.ticks = (state.ticks || 0) + 1;
   if (!pageVisible() && state.ticks % 5 !== 0) return;
@@ -1312,7 +1390,10 @@ function stopPoll() {
 
 function beat(link) {
   var c = link && link.client;
-  if (!c) return;
+  if (!c || !link.connected) return;
+  /* Already running. Starting again would reset the failure count and hide a dead radio. */
+  if (c.heartbeatTimer) return;
+  logMs('link heartbeat', 0, 'start ' + (link.deviceName || link.model || ''));
   /* niimbluelib also starts this on its own connect event. Calling it here covers a client that did not. */
   if (c.startHeartbeat) c.startHeartbeat();
   else if (c.setHeartbeatAutoStart) c.setHeartbeatAutoStart(true);
@@ -1390,7 +1471,12 @@ function onConnected(link, transport) {
   beat(link);
   rememberBle(link);
   drawChip();
-  if (link.btId && state.autoTries) delete state.autoTries[link.btId];
+  if (state.autoTries) {
+    if (link.btId) delete state.autoTries[link.btId];
+    delete state.autoTries['serial-' + slotIndex(link)];
+  }
+  clearAutoTimer(link.btId);
+  clearAutoTimer('serial-' + slotIndex(link));
   refreshAutoNote();
   if (quiet) toast((link.model || 'Printer') + ' reconnected');
   else if (announce) toast((link.model || 'Printer') + ' connected.');
@@ -1403,18 +1489,27 @@ function connectOpts(device) {
   if (device.authorizedDevice) return { authorizedDevice: device.authorizedDevice };
   return { authorizedDevice: device };
 }
-function begin(link, transport, device) {
+function begin(link, transport, device, token) {
+  if (!liveAttempt(link, token)) return Promise.resolve();
   var L = lib();
   var client = transport === 'serial' ? new L.NiimbotSerialClient() : new L.NiimbotBluetoothClient();
   link.client = client;
   link.transport = transport;
+  if (device) link.gattDevice = device;
   if (device && device.name) link.deviceName = device.name;
   watchLink(link, client);
-  return Promise.resolve(client.connect(connectOpts(device))).then(function (info) {
+  var who = (device && (device.name || device.id)) || transport || '';
+  var p = Promise.resolve(client.connect(connectOpts(device))).then(function (info) {
+    if (!liveAttempt(link, token) || link.client !== client) {
+      dropGatt(device);
+      if (client.disconnect) Promise.resolve(client.disconnect()).catch(function () {});
+      return;
+    }
     var named = info && (info.deviceName || info.name);
     if (named) link.deviceName = named;
     onConnected(link, transport);
   });
+  return step(link, 'begin', p, LINK_MS, who);
 }
 function connectSlot(i, transport, device) {
   var L = lib();
@@ -1422,16 +1517,21 @@ function connectSlot(i, transport, device) {
   if (!L) { toast('Printer library is not loaded'); return; }
   if (transport === 'bluetooth' && !canBt()) { toast('Bluetooth printing needs Chrome or Edge'); return; }
   if (transport === 'serial' && !canSerial()) { toast('USB printing needs Chrome or Edge on a computer'); return; }
+  var prev = link.client;
+  abortAttempt(link);
   link.userDisconnect = false;
   link.expected = true;
   link.opening = true;
-  var prev = link.client;
-  link.client = null;
-  if (prev && prev.disconnect) Promise.resolve(prev.disconnect()).catch(function () {});
-  begin(link, transport, device).catch(function (err) {
-    link.opening = false;
-    if (!link.connected) link.client = null;
-    link.reconnecting = false;
+  link.connected = false;
+  var token = freshAttempt(link);
+  if (device) link.gattDevice = device;
+  if (prev && prev !== link.client && prev.disconnect) Promise.resolve(prev.disconnect()).catch(function () {});
+  begin(link, transport, device, token).catch(function (err) {
+    if (err && err.quiet === 'cancel') return;
+    var c = abortAttempt(link, token);
+    if (c === false) return;
+    if (c && c.disconnect) Promise.resolve(c.disconnect()).catch(function () {});
+    link.connected = false;
     drawChip();
     var name = err && err.name;
     if (name === 'NotFoundError' || name === 'AbortError') return;
@@ -1451,22 +1551,26 @@ function disconnect(link) {
   if (!link || typeof link !== 'object') link = state;
   var c = link.client;
   link.userDisconnect = true;
-  link.reconnecting = false;
+  abortAttempt(link);
+  link.userDisconnect = true;
   link.connected = false;
   link.expected = false;
   link.printing = false;
   link.away = false;
   clearAutoTimer(link.btId);
-  if (state.autoTries) delete state.autoTries[link.btId];
+  clearAutoTimer('serial-' + slotIndex(link));
+  if (state.autoTries) {
+    delete state.autoTries[link.btId];
+    delete state.autoTries['serial-' + slotIndex(link)];
+  }
   if (state.autoModel) delete state.autoModel[link.btId];
   link.btId = '';
   refreshAutoNote();
   saveLinks();
   if (!anyUp()) stopPoll();
   drawChip();
-  if (!c || !c.disconnect) { link.client = null; link.userDisconnect = false; return; }
+  if (!c || !c.disconnect) { link.userDisconnect = false; return; }
   Promise.resolve(c.disconnect()).catch(function () {}).then(function () {
-    if (link.client === c) link.client = null;
     link.userDisconnect = false;
     drawChip();
   });
@@ -1522,6 +1626,24 @@ function onLinkDown(link) {
   }
   quietReconnect(link);
 }
+function releaseClient(c) {
+  if (c && c.disconnect) Promise.resolve(c.disconnect()).catch(function () {});
+}
+function noteFail(link, token, id, model) {
+  var c = abortAttempt(link, token);
+  if (c === false) return;
+  releaseClient(c);
+  link.connected = false;
+  link.away = true;
+  if (!id) { drawChip(); return; }
+  autoMaps();
+  state.autoTries[id] = (state.autoTries[id] || 0) + 1;
+  if (model) state.autoModel[id] = model;
+  clearAutoTimer(id);
+  refreshAutoNote();
+  scheduleAuto(id);
+  logMs('link retry', autoDelay(state.autoTries[id] || 1), id);
+}
 function quietReconnect(link) {
   link = link || state;
   var bt = root.navigator && navigator.bluetooth;
@@ -1532,23 +1654,56 @@ function quietReconnect(link) {
     drawChip();
     return;
   }
+  var token = freshAttempt(link);
+  var id = link.btId;
+  var model = link.model || grantedName(link.deviceName) || '';
   link.reconnecting = true;
+  link.opening = false;
+  link.auto = true;
   drawChip();
+  logMs('link quietReconnect start', 0, id);
   Promise.resolve(bt.getDevices()).then(function (list) {
+    if (!liveAttempt(link, token)) return;
     var device = null, i;
     list = list || [];
-    for (i = 0; i < list.length; i++) if (list[i] && list[i].id === link.btId) device = list[i];
-    if (!device || !device.gatt || typeof device.gatt.connect !== 'function') throw new Error('no device');
-    return device.gatt.connect().then(function () { return device; });
-  }).then(function (device) {
-    return begin(link, 'bluetooth', device);
-  }).catch(function () {
-    link.client = null;
-    link.connected = false;
-    link.reconnecting = false;
-    tellDown();
-    drawChip();
+    for (i = 0; i < list.length; i++) if (list[i] && list[i].id === id) device = list[i];
+    if (!device || !device.gatt || typeof device.gatt.connect !== 'function') {
+      var missing = new Error('no device');
+      missing.quiet = 'missing';
+      throw missing;
+    }
+    link.gattDevice = device;
+    return watchDevice(link, device, token).then(function () {
+      if (!liveAttempt(link, token)) return;
+      return step(link, 'gatt.connect', device.gatt.connect(), LINK_MS, device.name || id);
+    }).then(function () {
+      if (!liveAttempt(link, token)) return;
+      return begin(link, 'bluetooth', device, token);
+    });
+  }).catch(function (err) {
+    if (!liveAttempt(link, token)) return;
+    if (err && err.quiet === 'missing') {
+      abortAttempt(link, token);
+      tellDown();
+      drawChip();
+      return;
+    }
+    noteFail(link, token, id, model);
   });
+}
+function scheduleSerial(link) {
+  var id = 'serial-' + slotIndex(link);
+  autoMaps();
+  if (state.autoTimers[id]) return;
+  if (!pageVisible()) { state.autoHold = true; return; }
+  var wait = autoDelay(state.autoTries[id] || 1);
+  logMs('link retry', wait, id);
+  state.autoTimers[id] = setTimeout(function () {
+    delete state.autoTimers[id];
+    if (!pageVisible()) { state.autoHold = true; return; }
+    if (link.connected || link.reconnecting) return;
+    quietSerial(link);
+  }, wait);
 }
 function quietSerial(link) {
   var serial = root.navigator && navigator.serial;
@@ -1559,20 +1714,43 @@ function quietSerial(link) {
     drawChip();
     return;
   }
+  var token = freshAttempt(link);
+  var id = 'serial-' + slotIndex(link);
   link.reconnecting = true;
+  link.opening = false;
+  link.auto = true;
   drawChip();
+  logMs('link quietSerial start', 0, id);
   Promise.resolve(serial.getPorts()).then(function (ports) {
+    if (!liveAttempt(link, token)) return;
     ports = ports || [];
     var port = ports[slotIndex(link)];
     if (!port) port = ports[0];
-    if (!port) throw new Error('no port');
-    return begin(link, 'serial', { authorizedPort: port });
-  }).catch(function () {
-    link.client = null;
+    if (!port) {
+      var missing = new Error('no port');
+      missing.quiet = 'missing';
+      throw missing;
+    }
+    return begin(link, 'serial', { authorizedPort: port }, token);
+  }).catch(function (err) {
+    if (!liveAttempt(link, token)) return;
+    if (err && err.quiet === 'missing') {
+      abortAttempt(link, token);
+      tellDown();
+      drawChip();
+      return;
+    }
+    var c = abortAttempt(link, token);
+    if (c === false) return;
+    releaseClient(c);
     link.connected = false;
-    link.reconnecting = false;
-    tellDown();
-    drawChip();
+    link.away = true;
+    autoMaps();
+    state.autoTries[id] = (state.autoTries[id] || 0) + 1;
+    if (link.model) state.autoModel[id] = link.model;
+    clearAutoTimer(id);
+    refreshAutoNote();
+    scheduleSerial(link);
   });
 }
 /* Granted Bluetooth devices are named B1-… or B31-…. The Chrome flag is what makes getDevices return them. */
@@ -1656,11 +1834,12 @@ function scheduleAuto(id) {
     grantReconnect(true);
   }, wait);
 }
-function reachDevice(device) {
-  var watch = (device && typeof device.watchAdvertisements === 'function') ? Promise.resolve(device.watchAdvertisements()).catch(function () {}) : Promise.resolve();
-  return watch.then(function () {
+function reachDevice(link, device, token) {
+  var who = (device && (device.name || device.id)) || '';
+  return watchDevice(link, device, token).then(function () {
+    if (!liveAttempt(link, token)) return;
     if (!device.gatt || typeof device.gatt.connect !== 'function') throw new Error('no gatt');
-    return device.gatt.connect();
+    return step(link, 'gatt.connect', device.gatt.connect(), LINK_MS, who);
   });
 }
 function attachGranted(device) {
@@ -1671,6 +1850,7 @@ function attachGranted(device) {
   autoMaps();
   state.autoBusy[id] = 1;
   clearAutoTimer(id);
+  var token = freshAttempt(link);
   link.reconnecting = true;
   link.opening = false;
   link.auto = true;
@@ -1680,32 +1860,25 @@ function attachGranted(device) {
   link.btId = id || link.btId;
   link.deviceName = device.name || link.deviceName || '';
   link.model = model;
+  link.gattDevice = device;
   drawChip();
-  return reachDevice(device).then(function () {
-    return begin(link, 'bluetooth', device);
+  logMs('link attach start', 0, device.name || id);
+  return reachDevice(link, device, token).then(function () {
+    if (!liveAttempt(link, token)) return;
+    return begin(link, 'bluetooth', device, token);
   }).then(function () {
+    if (!liveAttempt(link, token)) return;
     delete state.autoBusy[id];
     link.away = false;
-  }, function () {
-    delete state.autoBusy[id];
-    link.auto = false;
-    link.reconnecting = false;
-    link.opening = false;
-    link.connected = false;
-    link.away = true;
-    if (link.client && !link.connected) link.client = null;
-    state.autoTries[id] = (state.autoTries[id] || 0) + 1;
-    state.autoModel[id] = model;
-    refreshAutoNote();
-    scheduleAuto(id);
+  }, function (err) {
+    if (err && err.quiet === 'cancel') return;
+    noteFail(link, token, id, model);
   });
 }
-/* Previously approved printers, without the pairing chooser. One try on load, then 3s, 10s, 30s, and every 60s while the page is visible. */
+/* Previously approved printers, without the pairing chooser. One try on load, then 3s, 10s, 30s, and every 60s while the page is visible. A stuck attempt does not hold the other slot. */
 function grantReconnect(fromTimer) {
   if (!canGetDevices()) return;
   if (fromTimer && !pageVisible()) { state.autoHold = true; return; }
-  if (state.granting) { state.grantAgain = true; return; }
-  state.granting = true;
   state.autoHold = false;
   Promise.resolve(navigator.bluetooth.getDevices()).then(function (list) {
     var jobs = [], seen = {}, i, dev, id;
@@ -1719,10 +1892,30 @@ function grantReconnect(fromTimer) {
       jobs.push(attachGranted(dev));
     }
     return Promise.all(jobs);
-  }).catch(function () {}).then(function () {
-    state.granting = false;
-    if (state.grantAgain) { state.grantAgain = false; grantReconnect(fromTimer); }
-  });
+  }).catch(function () {});
+}
+function retrySlot(link) {
+  var c = abortAttempt(link);
+  releaseClient(c);
+  link.userDisconnect = false;
+  link.away = false;
+  link.connected = false;
+  link.expected = true;
+  link.printing = false;
+  if (link.btId) {
+    autoMaps();
+    clearAutoTimer(link.btId);
+    delete state.autoTries[link.btId];
+    delete state.autoModel[link.btId];
+  }
+  clearAutoTimer('serial-' + slotIndex(link));
+  if (state.autoTries) delete state.autoTries['serial-' + slotIndex(link)];
+  refreshAutoNote();
+  logMs('link retry tap', 0, link.deviceName || link.btId || String(slotIndex(link)));
+  drawChip();
+  if (link.transport === 'serial') { quietSerial(link); return; }
+  if (canGetDevices() && (link.btId || grantedName(link.deviceName))) { grantReconnect(); return; }
+  connectSlot(slotIndex(link), 'bluetooth');
 }
 function restoreLinks() {
   var cfg = load(), i, saved, link;
@@ -1959,7 +2152,7 @@ function linkRow(link, i, label) {
   var note = link.away && !on ? 'Off or out of range' : (named ? (which.join(' · ') || 'No stickers') : 'Not connected');
   var controls;
   if (!label && link.connected) controls = '<button type="button" class="pill sm outline" data-slot="' + i + '" data-slot-act="disconnect">Disconnect</button>';
-  else if (!label && link.reconnecting) controls = '<span class="muted">Reconnecting</span>';
+  else if (!label && (link.reconnecting || link.away)) controls = (link.reconnecting ? '<span class="muted">Reconnecting</span>' : '') + '<button type="button" class="pill sm" data-slot="' + i + '" data-slot-act="retry">Retry</button>';
   else controls = '<select data-slot-transport="' + i + '" aria-label="Connection"><option value="bluetooth"' + (link.transport === 'serial' ? '' : ' selected') + '>Bluetooth</option><option value="serial"' + (link.transport === 'serial' ? ' selected' : '') + '>USB</option></select><button type="button" class="pill sm" data-slot="' + i + '" data-slot-act="connect">Connect</button>';
   return '<div class="setrow pr-link" data-slot="' + i + '"><div class="setl"><span class="oyp-pr-pair">' + name + dot + '</span><span class="muted">' + esc(note) + '</span></div><div class="setv">' + controls + '</div></div>';
 }
@@ -2117,6 +2310,7 @@ function css() {
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
+  try { console.log('[oyp-print] print.js v' + PRINT_JS); } catch (e0) {}
   css();
   deviceId();
   installFetch();
@@ -2133,6 +2327,7 @@ function start() {
       var slotAct = slotBtn.getAttribute('data-slot-act');
       var slotLink = idx === 1 ? peer : state;
       if (slotAct === 'disconnect') disconnect(slotLink);
+      else if (slotAct === 'retry') retrySlot(slotLink);
       else {
         var sel = document.querySelector('[data-slot-transport="' + idx + '"]');
         connectSlot(idx, sel && sel.value === 'serial' ? 'serial' : 'bluetooth');
@@ -2183,7 +2378,14 @@ function start() {
     closePanel();
   });
   document.addEventListener('visibilitychange', function () {
-    if (pageVisible()) grantReconnect();
+    if (pageVisible()) {
+      grantReconnect();
+      if (state.autoHold) {
+        [state, peer].forEach(function (link) {
+          if (link.transport === 'serial' && link.expected && !link.connected && !link.reconnecting) quietSerial(link);
+        });
+      }
+    }
     if (anyUp()) pump();
   });
   if (root.addEventListener) root.addEventListener('focus', function () { if (anyUp()) pump(); });

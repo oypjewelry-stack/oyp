@@ -322,9 +322,27 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=25') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=56') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=17') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=17') && read('sim/swipe-preview.html').includes('print.css?v=17'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=25') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=25') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=17') && read('staff/print-test.html').includes('nav.js?v=56') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=26') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=57') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=17') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=17') && read('sim/swipe-preview.html').includes('print.css?v=17'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=26') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=26') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=17') && read('staff/print-test.html').includes('nav.js?v=57') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
+function assetVer(src, file) {
+  const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
+  return m ? m[1] : '';
+}
+const printVer = (read('print.js').match(/var PRINT_JS = (\d+)/) || [])[1];
+eq(printVer && printVer === assetVer(read('nav.js'), 'print.js') && printVer === assetVer(read('staff/index.html'), 'print.js') && printVer === assetVer(read('staff/print-test.html'), 'print.js'), 'nav.js injects the same print.js version the print station loads');
+eq(read('print.js').includes("console.log('[oyp-print] print.js v' + PRINT_JS)") && read('print.js').includes('id="prBuild">print.js v\' + PRINT_JS'), 'the print station logs and shows its print.js version');
+const { execFileSync } = require('child_process');
+function gitShow(rel) {
+  try { return execFileSync('git', ['show', 'origin/main:' + rel], { encoding: 'utf8' }); }
+  catch (e) { return ''; }
+}
+const mainNav = gitShow('nav.js');
+if (mainNav && mainNav !== read('nav.js')) {
+  eq(assetVer(read('staff/index.html'), 'nav.js') !== assetVer(gitShow('staff/index.html'), 'nav.js'), 'nav.js changed since main, so staff/index.html bumps nav.js');
+  eq(assetVer(read('staff/print-test.html'), 'nav.js') !== assetVer(gitShow('staff/print-test.html'), 'nav.js'), 'nav.js changed since main, so the print test bumps nav.js');
+  eq(assetVer(read('scan/index.html'), 'nav.js') !== assetVer(gitShow('scan/index.html'), 'nav.js'), 'nav.js changed since main, so the scanner bumps the absolute nav.js URL');
+}
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
@@ -521,6 +539,11 @@ function bootPrint(opts) {
       });
     }
   }
+  function poke(limit) {
+    timers.slice().forEach(function (t) {
+      if (t.on && t.ms <= limit) { t.on = false; t.fn(); }
+    });
+  }
   function Task(name) { this.name = name; tasks.push(name); }
   Task.prototype.printInit = function () { return Promise.resolve(); };
   Task.prototype.printPage = function () {
@@ -578,7 +601,15 @@ function bootPrint(opts) {
   };
   Client.prototype.on = function (name, fn) { this._on[name] = fn; };
   Client.prototype.emit = function (name) { if (this._on[name]) this._on[name](); };
-  Client.prototype.startHeartbeat = function () { this.beats += 1; };
+  Client.prototype.startHeartbeat = function () {
+    this.beats += 1;
+    if (this.heartbeatTimer) return;
+    /* A plain flag. A real interval here would keep the sim process alive after the asserts. */
+    this.heartbeatTimer = { on: true, ms: 2000 };
+  };
+  Client.prototype.stopHeartbeat = function () {
+    this.heartbeatTimer = 0;
+  };
   Client.prototype.getPrintTaskType = function () { return opts.found || ''; };
   Client.prototype.getPrinterInfo = function () { return { protocolVersion: opts.protocol == null ? 4 : opts.protocol }; };
   Client.prototype.getModelMetadata = function () {
@@ -702,7 +733,7 @@ function bootPrint(opts) {
   vm.createContext(sandbox);
   vm.runInContext(read('print.js'), sandbox, { filename: 'print.js' });
   return {
-    sandbox, store, calls, workers, intervals, tasks, encodes, logs, clients, connects, notes, timeline, now: function () { return vnow; }, gatt: function () { return gattConnects; },
+    sandbox, store, calls, workers, intervals, tasks, encodes, logs, clients, connects, notes, timeline, now: function () { return vnow; }, gatt: function () { return gattConnects; }, poke: poke,
     release(mark) { held.filter(h => h.mark === mark).forEach(h => h.resolve()); },
     flush: flush, setVis: function (v) { vis = v; }
   };
@@ -1384,6 +1415,113 @@ drain().then(function () {
       ready.sandbox.OYPPrint.mountSettings(readyHost);
       eq(readyHost.innerHTML.indexOf(flagText) < 0, 'the flag hint stays hidden once getDevices exists');
     });
+  });
+}).then(function () {
+  let b31Tries = 0;
+  const dropped = { n: 0 };
+  const stuck = bootPrint({
+    manualTime: true,
+    models: ['B1', 'B1', 'B1', 'B1', 'B1'],
+    grantDevices: [
+      {
+        id: 'bt-b31',
+        name: 'B31-HB03011342',
+        watchAdvertisements: function () { return Promise.resolve(); },
+        gatt: {
+          connect: function () {
+            b31Tries += 1;
+            if (b31Tries === 1) return new Promise(function () {});
+            return Promise.resolve();
+          },
+          disconnect: function () { dropped.n += 1; }
+        }
+      },
+      {
+        id: 'bt-b1',
+        name: 'B1-HC17121009',
+        watchAdvertisements: function () { return Promise.resolve(); },
+        gatt: { connect: function () { return Promise.resolve(); }, disconnect: function () {} }
+      }
+    ],
+    queue: { ok: true, items: [] },
+    store: { oypPrint: JSON.stringify({ auto: false }) }
+  });
+  const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
+  stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
+  return drain().then(function () {
+    eq(stuck.logs.indexOf('[oyp-print] print.js v26') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v26') >= 0, 'the print station shows the print.js version');
+    eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
+    const live = stuck.clients[0];
+    eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
+    const beats = live.beats;
+    live.heartbeatTimer = 0;
+    stuck.workers[0].onmessage();
+    eq(live.heartbeatTimer && live.beats === beats + 1, 'a stopped idle heartbeat is started again');
+    live.emit('disconnect');
+    return drain();
+  }).then(function () {
+    eq(stuck.clients.length === 2 && stuck.notes.filter(function (t) { return t === 'B1 reconnected'; }).length >= 2 && b31Tries === 1, 'a disconnect while idle reconnects that slot while the other attempt is still stuck');
+    stuck.poke(9999);
+    return drain();
+  }).then(function () {
+    eq(dropped.n === 0 && stuck.notes.indexOf('B31 reconnected') < 0 && b31Tries === 1, 'the stuck connect is still inside the 10 second budget');
+    stuck.poke(10000);
+    return drain();
+  }).then(function () {
+    eq(dropped.n >= 1 && pr.innerHTML.indexOf('>Retry<') >= 0 && stuck.notes.indexOf('B31 reconnected') < 0, 'at 10 seconds the link disconnects and shows Retry');
+    eq(stuck.logs.some(function (l) { return l.indexOf('[oyp-print] link gatt.connect ') === 0 && l.indexOf('10000ms') >= 0 && l.indexOf('timed out') >= 0; }), 'the timeout is logged with its 10000 ms budget');
+    stuck.poke(3000);
+    return drain();
+  }).then(function () {
+    const saved = JSON.parse(stuck.store.oypPrint);
+    const links = (saved.links || []).filter(Boolean);
+    eq(stuck.notes.indexOf('B31 reconnected') >= 0 && links.some(function (l) { return l.btId === 'bt-b31' && l.model === 'B31'; }) && links.some(function (l) { return l.btId === 'bt-b1' && l.model === 'B1'; }) && stuck.clients.length === 3, 'the next retry connects the B31 and leaves the B1 up');
+  });
+}).then(function () {
+  let tries = 0;
+  const tapped = bootPrint({
+    manualTime: true,
+    models: ['B1', 'B1', 'B1'],
+    grantDevices: [
+      {
+        id: 'bt-b31',
+        name: 'B31-HB03011342',
+        watchAdvertisements: function () { return Promise.resolve(); },
+        gatt: {
+          connect: function () {
+            tries += 1;
+            if (tries === 1) return new Promise(function () {});
+            return Promise.resolve();
+          },
+          disconnect: function () {}
+        }
+      },
+      {
+        id: 'bt-b1',
+        name: 'B1-HC17121009',
+        watchAdvertisements: function () { return Promise.resolve(); },
+        gatt: { connect: function () { return Promise.resolve(); } }
+      }
+    ],
+    queue: { ok: true, items: [] },
+    store: { oypPrint: JSON.stringify({ auto: false }) }
+  });
+  return drain().then(function () {
+    const btn = {
+      getAttribute(name) {
+        if (name === 'data-slot-act') return 'retry';
+        if (name === 'data-slot') return '0';
+        return null;
+      },
+      closest(sel) { return sel === '[data-slot-act]' ? btn : null; }
+    };
+    (tapped.sandbox.document._listeners.click || []).forEach(function (fn) {
+      fn({ target: btn, preventDefault() {} });
+    });
+    return drain();
+  }).then(function () {
+    eq(tries === 2 && tapped.notes.indexOf('B31 reconnected') >= 0 && tapped.clients.length === 2, 'Retry cancels the stuck attempt and connects on the next try');
   });
 }).then(function () {
   const lag = { script: 400, send: 120, render: 30 };
