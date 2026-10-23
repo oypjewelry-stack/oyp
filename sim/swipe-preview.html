@@ -5,7 +5,7 @@
 <title>Swipe preview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../app.css?v=50">
+<link rel="stylesheet" href="../app.css?v=51">
 <link rel="stylesheet" href="../todo.css?v=6">
 <link rel="stylesheet" href="../production.css?v=12">
 <link rel="stylesheet" href="../consign.css?v=10">
@@ -49,8 +49,8 @@
   function invHtml() {
     return '<div class="iv"><div class="dhead"><h2>Inventory</h2><span class="dheadacts"><span class="lab">2 items</span><button type="button" class="pill sm outline" id="ivChoose">Select</button></span></div>'
       + '<p class="muted">Every JO and finished piece.</p><div class="ivgrid" id="ivGrid">'
-      + '<div class="ivcard tap" data-jo="26-287"><div class="ivph"><button type="button" class="ivmore" aria-label="Actions">⋯</button><span>No photo</span></div><div class="ivb"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div><div class="kf"><span class="chip dark">Vault</span></div></div></div>'
-      + '<div class="ivcard tap" data-jo="26-265"><div class="ivph"><button type="button" class="ivmore" aria-label="Actions">⋯</button><span>No photo</span></div><div class="ivb"><div class="kjo">26-265</div><div class="kd">Plain band, size 6</div><div class="kf"><span class="chip">Casting</span></div></div></div>'
+      + '<div class="ivcard tap" data-jo="26-287"><div class="ivph"><span>No photo</span></div><div class="ivb"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div><div class="kf"><span class="chip dark">Vault</span></div></div></div>'
+      + '<div class="ivcard tap" data-jo="26-265"><div class="ivph"><span>No photo</span></div><div class="ivb"><div class="kjo">26-265</div><div class="kd">Plain band, size 6</div><div class="kf"><span class="chip">Casting</span></div></div></div>'
       + '</div></div>';
   }
   function prodCard(jo, name, desc, who, phone) {
@@ -106,7 +106,7 @@
         { label: 'Done', attrs: { 'data-td': 'done', 'data-id': id } }
       ];
     } });
-    if (name === 'inv') OYPSwipe.mount(main.querySelector('#ivGrid'), { item: '.ivcard', ignore: '.ivmore', off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
+    if (name === 'inv') OYPSwipe.mount(main.querySelector('#ivGrid'), { item: '.ivcard', ignore: '.ivck', off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
     if (name === 'prod') OYPSwipe.mount(main.querySelector('#pBoard'), { item: '.pcard', ignore: '.pck, [data-move]', off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
     if (name === 'review') OYPSwipe.mount(main.querySelector('.rvrows'), { item: '.rvrow[data-jo]', ignore: '.ck', actions: function () { return [{ label: 'Archive', undoable: true }]; } });
     if (name === 'mats') OYPSwipe.mount(main.querySelector('.rvrows'), { item: '.mrow', actions: function () { return [{ label: 'Archive', undoable: true }]; } });
@@ -178,7 +178,7 @@
 
   mountList('inv');
   var card = main.querySelector('.ivcard');
-  check(card.querySelector('.ivmore'), 'the inventory menu stays');
+  check(!card.querySelector('.ivmore') && !card.querySelector('.ivmenu'), 'an inventory tile has no popup menu');
   pointer(card.querySelector('.kd'), -140, 0);
   check(card.closest('.swclip').classList.contains('open') && card.closest('.swclip').querySelector('.swbtn').textContent === 'Archive', 'an inventory tile reveals Archive');
   OYPSwipe.close();

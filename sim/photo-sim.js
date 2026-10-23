@@ -34,7 +34,7 @@ eq(photos.includes('indexedDB') && photos.includes('localStorage') && photos.inc
 eq(app.includes('photoThumbs: 1') && app.includes('photoFile: 1'), 'photo reads do not clear the page cache');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(!/photoThumbs|photoFile/.test(cached), 'photo answers are not stored with the page cache');
-eq(index.includes('photos.js?v=2') && index.includes('inv.js?v=14') && index.includes('production.js?v=15') && index.includes('review.js?v=20') && index.includes('app.js?v=35') && index.includes('app.css?v=50'), 'changed files are cache-busted');
+eq(index.includes('photos.js?v=2') && index.includes('inv.js?v=15') && index.includes('production.js?v=15') && index.includes('review.js?v=20') && index.includes('app.js?v=35') && index.includes('app.css?v=51'), 'changed files are cache-busted');
 eq(fast.includes('photoThumbs: 1, photoFile: 1') && fast.includes('NOT added to FAST.CACHE'), 'Fast.gs keeps the new actions as fresh reads');
 eq(steps.includes('PASTE_STEPS') && steps.includes('Manage deployments') && steps.includes('New version'), 'paste steps tell the owner to deploy a new version');
 

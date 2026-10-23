@@ -275,15 +275,9 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivcard{position:relative;border:1px solid #eee;border-radius:calc(14px*var(--rad));overflow:hidden;cursor:pointer;background:#fff;display:flex;flex-direction:column}.ivcard:hover{border-color:#111}
 .ivcard.on{border-color:#111;box-shadow:inset 0 0 0 1px #111}
 .ivph{position:relative;aspect-ratio:4/3;background:#f4f2ec center/cover no-repeat;display:flex;align-items:center;justify-content:center}.ivph span{font-family:var(--label);font-size:calc(10px*var(--fs));letter-spacing:.08em;text-transform:uppercase;color:#b9b2a0}
-.ivck,.ivmore{position:absolute;z-index:2;opacity:0;pointer-events:none}
-.ivck{top:8px;left:8px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.94);border-radius:6px}
+.ivck{position:absolute;z-index:2;top:8px;left:8px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.94);border-radius:6px;opacity:0;pointer-events:none}
 .ivck input{width:20px;height:20px;margin:0;accent-color:#111;cursor:pointer}
-.ivmore{top:8px;right:8px;width:28px;height:28px;border:0;border-radius:6px;background:rgba(255,255,255,.94);color:#111;font-size:18px;line-height:1;cursor:pointer}
-.ivcard:hover .ivmore,.ivcard.menu .ivmore,.iv.choose .ivmore,html.iv-coarse .ivmore{opacity:1;pointer-events:auto}
 .iv.choose .ivck,.ivck:focus-within{opacity:1;pointer-events:auto}
-.ivmenu{position:absolute;top:40px;right:8px;z-index:4;background:#fff;border:1px solid #111;border-radius:10px;min-width:132px;padding:4px;display:flex;flex-direction:column}
-.ivmenu button{background:#fff;border:0;text-align:left;padding:8px 10px;cursor:pointer;font-family:var(--body);font-size:calc(14px*var(--fs));color:#111;border-radius:8px}
-.ivmenu button:hover{background:#faf8f1}
 .ivall{display:inline-flex;align-items:center;gap:8px;margin:0 12px 12px 0;font-family:var(--label);font-size:calc(12px*var(--fs));letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
 .ivall input{width:20px;height:20px;margin:0;accent-color:#111}
 .ivcount{font-family:var(--label);font-size:calc(12px*var(--fs));color:#333}
@@ -298,17 +292,20 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivbar .pill,.ivbar .pill.sm:not(.outline):not(.ghost){background:#fff;color:#111}
 .ivbar .pill.outline,.ivbar .pill.sm.outline{background:transparent;color:#fff;border-color:#fff}
 .ivbar .lnk{background:none;border:0;color:#fff;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer}
-.ivacts{margin-top:16px}
-.ivacts .muted{margin:8px 0 0}
+.ivacts{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.ivlocs{display:flex;flex-direction:column;gap:8px}
+.ivlocs[hidden]{display:none}
 .ivb{padding:calc(10px*var(--sp)) calc(12px*var(--sp)) calc(12px*var(--sp))}.ivb .kd{color:#333}.ivsp{font-family:var(--label);font-size:calc(12px*var(--fs));color:#555;margin:calc(2px*var(--sp)) 0}
 .ivmoney{display:flex;gap:calc(10px*var(--sp));flex-wrap:wrap;font-family:var(--label);font-size:calc(12px*var(--fs));color:#555;margin-top:calc(8px*var(--sp));padding-top:calc(7px*var(--sp));border-top:1px solid #f1f1f1}.ivmoney b{font-weight:500;color:#111}.ivm{color:#a8861c}
-.ivsheet{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:30;display:flex;justify-content:flex-end}.ivsbox{background:#fff;width:min(calc(460px*var(--pw)),100%);height:100%;overflow:auto;padding:calc(20px*var(--sp)) calc(22px*var(--sp))}
+.ivsheet{position:fixed;inset:0;z-index:25;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:24px}.ivsbox{background:#fff;width:min(560px,100%);max-height:min(900px,100%);display:flex;flex-direction:column;overflow:hidden;border-radius:16px;padding:calc(20px*var(--sp)) calc(22px*var(--sp));box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.ivscroll{flex:1;min-height:0;overflow:auto}
 .ivsbox .dback{background:none;border:0;cursor:pointer;margin-bottom:calc(12px*var(--sp));padding:0}.ivph.big{border-radius:calc(12px*var(--rad));margin:calc(10px*var(--sp)) 0 calc(12px*var(--sp))}
 .ivfs{display:grid;grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp)) calc(14px*var(--sp));margin:calc(12px*var(--sp)) 0}.ivf b{font-family:var(--head);font-weight:500;font-size:calc(16px*var(--hs));display:block;margin-top:calc(2px*var(--sp))}
 @media (max-width:760px){.ivgrid{grid-template-columns:1fr;gap:0;border-top:1px solid #eee}.ivcard{flex-direction:row;border:0;border-bottom:1px solid #eee;border-radius:0;padding:calc(10px*var(--sp)) calc(2px*var(--sp));gap:calc(12px*var(--sp))}
   .ivcard .ivph{width:76px;height:76px;aspect-ratio:auto;border-radius:calc(10px*var(--rad));flex-shrink:0}.ivb{padding:0;min-width:0;flex:1}.ivsel{min-width:0;flex:1 1 30%}.ivsel select{width:100%;font-size:calc(14px*var(--fs));padding:calc(8px*var(--sp))}
-  .ivck,.ivmore{opacity:1;pointer-events:auto}
-  .ivsheet{background:#fff}.ivsbox{width:100%}}
+  .ivck{opacity:1;pointer-events:auto}
+  .ivsheet{padding:0;background:#fff;align-items:stretch}.ivsbox{display:flex;flex-direction:column;width:100%;max-height:none;height:100%;border-radius:0;box-shadow:none;overflow:hidden}
+  .ivscroll{flex:1;min-height:0;overflow:auto}.ivsheet .ivph.big{max-height:220px;aspect-ratio:16/9}.ivacts{flex:none;margin-top:8px}}
 .mats .rvchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.mats .fchip{white-space:nowrap}
 .rvrow.mrow{grid-template-columns:1fr auto}.mrow .kd{white-space:normal}.mq{text-align:right}.mq b{font-family:var(--head);font-weight:500;font-size:calc(22px*var(--hs));display:block;line-height:1}
 .mbig{display:flex;align-items:center;justify-content:space-between;border:1.5px solid #111;border-radius:calc(14px*var(--rad));padding:calc(12px*var(--sp)) calc(16px*var(--sp));margin:calc(12px*var(--sp)) 0}.mbig b{font-family:var(--head);font-weight:500;font-size:calc(30px*var(--hs))}.mbig span{font-family:var(--label);font-size:calc(12px*var(--fs));text-transform:uppercase;letter-spacing:.06em;color:#555}
@@ -424,7 +421,7 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
    Phones (no hover, or a coarse pointer) keep swipe only. Select hides it.
    Text rows reserve 34px so the glyph clears the words. That gap is not part
    of the swipe tray. A full-width photo stays full width: the × sits on the
-   photo, on a small round white chip, and the inventory ⋯ moves left of it. */
+   photo, on a small round white chip. */
 .swx{display:none;position:absolute;top:0;right:0;z-index:3;width:34px;height:34px;min-width:34px;min-height:34px;box-sizing:border-box;margin:0;padding:0;border:0;background:transparent;color:#777;cursor:pointer;align-items:center;justify-content:center;line-height:0}
 .swx svg{display:block;width:14px;height:14px}
 .swclip.swphoto .swx::before{content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 1px 3px rgba(0,0,0,.28)}
@@ -434,8 +431,6 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
   .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}
   .swsel .swclip.hasx .swx{display:none}
   .swsel .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:var(--swx-base, 0px)}
-  .ivph.hasx>.ivmore{right:42px}
-  .swsel .ivph.hasx>.ivmore{right:8px}
   .swx:hover,.swx:focus-visible{color:#111}
 }
 /* Inventory tiles are grid items. A flex clip sized to the tray's max-content
@@ -450,3 +445,5 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
 .swclip:last-child .oyp-qrow{border-bottom:0}
 @media (max-width:760px){.ivgrid{grid-template-columns:minmax(0,1fr)}.ivgrid>.swclip{border-radius:0}}
 @media (prefers-reduced-motion:reduce){.swface{transition:none}}
+.ivacts .pill.sm{box-sizing:border-box;height:34px;min-height:34px;width:100%;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.ivacts .pill.outline.ivdel{color:#b3261e;border-color:#b3261e}
