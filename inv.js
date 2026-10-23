@@ -1,7 +1,8 @@
 /* OYP back office: Inventory (#/jos, every JO / finished piece) and Materials (#/inventory, raw stock).
    Server: InventoryPages.gs (invList, invThumbs, matList, matHistory, matSave, matMove). The server strips what a role may not
    see (price + margin: executives; costs: executives + production manager); this file only draws what it gets.
-   Move / Archive on this page is one call, invBulk (paste/InvBulk.gs.txt). It changes location. It does not delete a row. */
+   Move / Archive on this page is one call, invBulk (paste/InvBulk.gs.txt). It changes location. It does not delete a row.
+   Delete is a separate call, invDelete, and the sheet asks before it sends that. */
 (() => {
 'use strict';
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -22,7 +23,7 @@ const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see
 const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', menu: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [] };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [] };
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
@@ -75,6 +76,7 @@ async function renderJos(main, u) {
   ivDraw(main);
 }
 function ivDraw(main) {
+  if (window.OYP.popover) window.OYP.closePopover();
   const { esc } = window.OYP, r = IV.r, can = r.can || {}, L = ivShown(), title = IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
   if (IV.offer) { const hid = ivById(IV.offer); if (!hid || L.some(j => j.jo === hid.jo)) IV.offer = ''; }
   const liveIds = new Set(r.jobs.map(j => j.jo));
@@ -125,20 +127,17 @@ function ivCard(j, can, edit) {
   const money = [];
   if (can.cost) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
   if (can.price) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
-  const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo), arch = j.location === 'archived';
+  const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo);
   const tools = (IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '')
-      + (edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="${IV.menu === j.jo ? 'true' : 'false'}">⋯</button>` : '');
-  const menu = edit && IV.menu === j.jo ? `<div class="ivmenu" role="menu"><button type="button" data-arch="${esc(j.jo)}">${arch ? 'Unarchive' : 'Archive'}</button><button type="button" data-detail="${esc(j.jo)}">Details</button></div>` : '';
-  return `<div class="ivcard tap${on ? ' on' : ''}${IV.menu === j.jo ? ' menu' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${tools}${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>${menu}
+      + (edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="false">⋯</button>` : '');
+  return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${tools}${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>
     <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
     <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}
     <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div></div>`;
 }
-function ivSheet(j, edit) { // details. Roles that can't open the JO card land here from the tile. Editors open it from the tile menu.
-  if (!j) return ''; const { esc } = window.OYP, arch = j.location === 'archived';
+function ivSheet(j, edit) { // details only. Actions stay on the floating ⋯ menu.
+  if (!j) return ''; const { esc } = window.OYP;
   const f = (lab, v) => v ? `<div class="ivf"><span class="lab">${esc(lab)}</span><b>${esc(v)}</b></div>` : '';
-  const act = edit ? `<div class="ivacts"><button type="button" class="pill sm outline" id="ivArchOne">${arch ? 'Unarchive' : 'Archive'}</button>
-      <p class="muted">Archive keeps the JO on record. Nothing is deleted.</p></div>` : '';
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
     <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${edit ? 'Details' : 'View only'}</span></div>
     <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
@@ -147,7 +146,7 @@ function ivSheet(j, edit) { // details. Roles that can't open the JO card land h
       ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('Job', j.type === 'repair' ? 'Repair' : j.type === 'revision' ? 'Revision' : j.type ? 'New job' : '')}
       ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
       ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>
-    ${act}</div></div>`;
+    </div></div>`;
 }
 function ivRange(jo, shift) {
   const ids = ivShown().map(j => j.jo); // visible order, scanned tiles included where they sit now
@@ -160,6 +159,14 @@ function ivRange(jo, shift) {
   IV.anchor = jo;
 }
 function ivJobs(jos) { return jos.map(jo => IV.r.jobs.find(j => j.jo === jo)).filter(Boolean); }
+function ivPrintJo(j) {
+  const raw = String(j && j.jo || '');
+  const p = joParts(raw);
+  if (!p) return raw;
+  if (p.letter) return p.base + p.letter;
+  const v = String(j.version || '').trim().toUpperCase();
+  return /^[A-Z]$/.test(v) ? p.base + v : p.base;
+}
 async function ivBulk(main, jos, location, kind) {
   const list = ivJobs(jos).filter(j => (location === '' ? j.location === 'archived' : j.location !== location));
   if (!list.length) { window.OYP.toast(location === '' ? 'Nothing archived is selected' : 'Already there'); return; }
@@ -172,7 +179,7 @@ async function ivBulk(main, jos, location, kind) {
   const sets = r.set || [];
   const done = new Set(sets.map(x => x.jo));
   IV.r.jobs.forEach(j => { if (done.has(j.jo)) j.location = location; });
-  IV.sel.clear(); IV.scanned = []; IV.menu = ''; IV.anchor = ''; IV.picking = false;
+  IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false;
   const n = done.size, word = kind === 'archive' ? 'Archived' : kind === 'unarchive' ? 'Unarchived' : 'Moved';
   const msg = word + ' ' + n + (r.missing && r.missing.length ? ' · ' + r.missing.length + ' not found' : '');
   if ((kind === 'archive' || kind === 'unarchive') && window.OYP.toastUndo) {
@@ -198,10 +205,26 @@ function ivArchive(main, jos) {
   if (list.length > 1 && !confirm('Archive ' + list.length + ' items? They stay on record. Nothing is deleted.')) return;
   return ivBulk(main, list.map(j => j.jo), 'archived', 'archive');
 }
+async function ivDelete(main, j) {
+  if (!j) return;
+  const label = ivPrintJo(j) || j.jo;
+  if (!confirm('Delete ' + label + '? This cannot be undone.')) return;
+  if (IV.busy) return;
+  IV.busy = true;
+  const r = await window.OYP.call('invDelete', { jo: j.jo });
+  IV.busy = false;
+  if (!window.OYP.here()()) return;
+  if (!r || !r.ok) return window.OYP.toast(!r || r.error === 'Unknown action' ? 'Deleting needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).' : ((r && r.error) || 'Could not delete'));
+  IV.r.jobs = IV.r.jobs.filter(x => x.jo !== j.jo);
+  IV.sel.delete(j.jo);
+  IV.open = null;
+  window.OYP.toast('Deleted ' + label);
+  ivDraw(main);
+}
 function ivWire(main) {
   const $ = s => main.querySelector(s);
   const stop = e => e.stopPropagation();
-  main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; IV.menu = ''; ivDraw(main); });
+  main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; ivDraw(main); });
   $('#ivQ').oninput = e => { IV.q = e.target.value; const pos = e.target.selectionStart; ivDraw(main); const q = $('#ivQ'); q.focus(); q.setSelectionRange(pos, pos); };
   $('#ivQ').onkeydown = e => {
     if (e.isComposing) return;
@@ -229,15 +252,15 @@ function ivWire(main) {
   };
   if ($('#ivChoose')) $('#ivChoose').onclick = () => {
     IV.choose = !IV.choose;
-    if (!IV.choose) { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.menu = ''; }
+    if (!IV.choose) { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; }
     ivDraw(main);
   };
   if ($('#ivPrint')) $('#ivPrint').onclick = () => {
-    const items = ivJobs([...IV.sel]).map(j => ({ jo: j.jo, kind: j.on_hand && !MAKING[j.location] ? 'jewelry_tag' : 'jo_card' }));
-    if (!window.OYPPrint || !window.OYPPrint.printStickers) return window.OYP.toast('Print is not loaded');
-    window.OYPPrint.printStickers(items).then(r => { if (!window.OYP.here()()) return; if (!r || r.ok === false) return; IV.sel.clear(); IV.scanned = []; IV.choose = false; IV.picking = false; ivDraw(main); });
+    const jos = ivJobs([...IV.sel]).map(ivPrintJo);
+    if (!window.OYPPrint || !window.OYPPrint.askPrint) return window.OYP.toast('Print is not loaded');
+    window.OYPPrint.askPrint(jos).then(r => { if (!window.OYP.here()()) return; if (!r || r.ok === false) return; IV.sel.clear(); IV.scanned = []; IV.choose = false; IV.picking = false; ivDraw(main); });
   };
-  if ($('#ivClear')) $('#ivClear').onclick = () => { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.menu = ''; ivDraw(main); };
+  if ($('#ivClear')) $('#ivClear').onclick = () => { IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; ivDraw(main); };
   if ($('#ivMove')) $('#ivMove').onchange = e => { const loc = e.target.value; if (!loc) return; ivBulk(main, [...IV.sel], loc, 'move'); };
   if ($('#ivArch')) $('#ivArch').onclick = () => ivArchive(main, [...IV.sel]);
   if ($('#ivUnarch')) $('#ivUnarch').onclick = () => ivBulk(main, [...IV.sel], '', 'unarchive');
@@ -245,21 +268,13 @@ function ivWire(main) {
     input.onclick = e => { stop(e); ivRange(input.dataset.ck, e.shiftKey); IV.picking = IV.sel.size > 0; ivDraw(main); };
   });
   main.querySelectorAll('.ivck').forEach(el => el.onclick = stop);
-  main.querySelectorAll('[data-more]').forEach(b => b.onclick = e => {
-    stop(e); IV.menu = IV.menu === b.dataset.more ? '' : b.dataset.more; ivDraw(main);
-  });
-  main.querySelectorAll('.ivmenu').forEach(el => el.onclick = stop);
-  main.querySelectorAll('[data-arch]').forEach(b => b.onclick = e => {
-    stop(e); const jo = b.dataset.arch, j = IV.r.jobs.find(x => x.jo === jo); IV.menu = '';
-    if (j && j.location === 'archived') ivBulk(main, [jo], '', 'unarchive'); else ivArchive(main, [jo]);
-  });
-  main.querySelectorAll('[data-detail]').forEach(b => b.onclick = e => { stop(e); IV.menu = ''; IV.open = b.dataset.detail; ivDraw(main); });
+  main.querySelectorAll('[data-more]').forEach(b => b.onclick = e => { stop(e); ivOpenMenu(main, b); });
   main.querySelectorAll('.ivcard').forEach(el => {
     el.onpointerdown = e => {
-      if (!ivEdit() || (e.button && e.button !== 0) || e.target.closest('.ivck, .ivmore, .ivmenu')) return;
+      if (!ivEdit() || (e.button && e.button !== 0) || e.target.closest('.ivck, .ivmore')) return;
       const jo = el.dataset.jo, x0 = e.clientX, y0 = e.clientY;
       const hold = setTimeout(() => {
-        IV.suppress = true; IV.picking = true; IV.sel.add(jo); IV.anchor = jo; IV.menu = '';
+        IV.suppress = true; IV.picking = true; IV.sel.add(jo); IV.anchor = jo;
         const drop = () => { setTimeout(() => { IV.suppress = false; }, 0); };
         window.addEventListener('pointerup', drop, { once: true });
         ivDraw(main);
@@ -274,39 +289,79 @@ function ivWire(main) {
       el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('pointermove', end);
     };
     el.onclick = e => {
-      if (e.target.closest('.ivck, .ivmore, .ivmenu')) return;
+      if (e.target.closest('.ivck, .ivmore')) return;
       if (IV.suppress) { IV.suppress = false; return; }
       const j = IV.r.jobs.find(x => x.jo === el.dataset.jo); if (!j) return;
       if (ivEdit() && e.shiftKey) { ivRange(j.jo, true); IV.picking = IV.sel.size > 0; ivDraw(main); return; }
-      IV.menu = '';
-      if (!(IV.r.can || {}).open) { IV.open = j.jo; ivDraw(main); return; }
-      try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'BACK',
-        row: { description: j.description, client: j.client, location: j.location, stage_label: stageLabel(j.stage), due: j.due, late: j.late } })); } catch (_) {}
-      location.hash = '#/review';
+      if (!(IV.r.can || {}).open) { IV.open = j.jo; ivMountSheet(main); return; }
+      ivOpenCard(j);
     };
   });
-  if ($('#ivArchOne')) $('#ivArchOne').onclick = () => {
-    const j = IV.r.jobs.find(x => x.jo === IV.open); if (!j) return;
-    if (j.location === 'archived') ivBulk(main, [j.jo], '', 'unarchive'); else ivArchive(main, [j.jo]);
-  };
-  if ($('#ivSX')) { $('#ivSX').onclick = () => { IV.open = null; ivDraw(main); }; $('#ivSheet').onclick = e => { if (e.target.id === 'ivSheet') { IV.open = null; ivDraw(main); } }; }
+  ivWireSheet(main);
   const grid = $('#ivGrid');
   if (grid && ivEdit() && window.OYP.swipe) window.OYP.swipe(grid, {
     item: '.ivcard',
-    ignore: '.ivmore, .ivmenu, .ivck',
+    ignore: '.ivmore, .ivck',
     off: () => IV.choose || IV.sel.size > 0,
     actions: function (row) {
       const jo = row.getAttribute('data-jo');
       const j = IV.r.jobs.find(x => x.jo === jo);
       if (!j) return [];
       const arch = j.location === 'archived';
-      return [{ label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
-        if (arch) return ivBulk(main, [jo], '', 'unarchive');
-        return ivArchive(main, [jo]);
-      } }];
+      return [
+        { label: 'Print', run: function () { if (window.OYPPrint && window.OYPPrint.askPrint) return window.OYPPrint.askPrint([ivPrintJo(j)]); } },
+        { label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
+          if (arch) return ivBulk(main, [jo], '', 'unarchive');
+          return ivArchive(main, [jo]);
+        } }
+      ];
     }
   });
   const on = main.querySelector('.ivchips .fchip.on'); if (on && innerWidth < 760) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20;
+}
+function ivCloseSheet(main) {
+  IV.open = null;
+  const el = main.querySelector('#ivSheet');
+  if (el) el.remove();
+}
+/* The sheet is position:fixed, so opening it does not rebuild the grid. */
+function ivMountSheet(main) {
+  const old = main.querySelector('#ivSheet');
+  if (old) old.remove();
+  if (!IV.open || !IV.r) return;
+  const j = IV.r.jobs.find(x => x.jo === IV.open);
+  if (!j) { IV.open = null; return; }
+  main.insertAdjacentHTML('beforeend', ivSheet(j, ivEdit()));
+  ivWireSheet(main);
+  const big = main.querySelector('#ivSheet .ivph.big');
+  if (big && j.has_photo && window.OYPPhotos) window.OYPPhotos.stage(big, { jo: j.jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: 'No photo' });
+}
+function ivOpenCard(j) {
+  try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'BACK',
+    row: { description: j.description, client: j.client, location: j.location, stage_label: stageLabel(j.stage), due: j.due, late: j.late } })); } catch (_) {}
+  location.hash = '#/review';
+}
+function ivWireSheet(main) {
+  const $ = s => main.querySelector(s);
+  const sheet = $('#ivSheet');
+  if (!sheet) return;
+  const box = sheet.querySelector('.ivsbox');
+  if (box) box.onclick = e => e.stopPropagation();
+  if ($('#ivSX')) $('#ivSX').onclick = () => ivCloseSheet(main);
+  sheet.onclick = e => { if (e.target.id === 'ivSheet') ivCloseSheet(main); };
+}
+function ivOpenMenu(main, btn) {
+  const j = IV.r && IV.r.jobs.find(x => x.jo === btn.dataset.more);
+  if (!j || !window.OYP.popover) return;
+  const arch = j.location === 'archived';
+  const moves = ivMoveLocs().map(l => ({ label: locLab(l[0]), run: () => ivBulk(main, [j.jo], l[0], 'move') }));
+  window.OYP.popover(btn, [
+    { label: 'Print', run: () => { if (window.OYPPrint && window.OYPPrint.askPrint) window.OYPPrint.askPrint([ivPrintJo(j)]); else window.OYP.toast('Print is not loaded'); } },
+    { label: 'Details', run: () => { IV.open = j.jo; ivMountSheet(main); } },
+    { label: 'Move location', menu: moves.length ? moves : [{ label: 'No locations', run: () => {} }] },
+    { label: arch ? 'Unarchive' : 'Archive', run: () => { if (arch) ivBulk(main, [j.jo], '', 'unarchive'); else ivArchive(main, [j.jo]); } },
+    { label: 'Delete', danger: true, run: () => ivDelete(main, j) }
+  ]);
 }
 function ivThumbs(main, L) { // piece photos only. 300px thumbs, loaded as tiles scroll in (no 60-tile cap). L kept for the call site.
   void L;
@@ -475,7 +530,7 @@ function mWire(main) {
   const med = $('.medit'); if (med) med.ontoggle = () => { MS.editing = med.open; };
 }
 // a fresh visit (menu / link) on a phone starts on the list; on a desktop the last item stays open
-window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.scanned = []; IV.menu = ''; IV.anchor = ''; IV.picking = false; IV.offer = ''; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
+window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.offer = ''; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
    The search box takes the same scan when it is focused: a fast wedge, or a full JO and Enter.
@@ -570,7 +625,7 @@ function ivFlash(jo) {
 }
 function ivTake(main, job, base, fromBox) {
   const already = IV.sel.has(job.jo);
-  IV.offer = ''; IV.sel.add(job.jo); IV.anchor = job.jo; IV.picking = true; IV.menu = '';
+  IV.offer = ''; IV.sel.add(job.jo); IV.anchor = job.jo; IV.picking = true;
   IV.scanned = [job.jo].concat(IV.scanned.filter(id => id !== job.jo));
   window.OYP.toast(already ? 'already selected' : base + ' selected (' + IV.sel.size + ')');
   ivDraw(main); if (fromBox) ivRefocus(main); ivFlash(job.jo);

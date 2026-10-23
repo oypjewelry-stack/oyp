@@ -317,7 +317,7 @@ function labelOpts(item, kind, link) {
     model: model,
     shiftX: sh.x,
     shiftY: sh.y,
-    head: item.head || link.head || state.head || undefined,
+    head: item.head || link.head || undefined,
     jo: item.jo,
     due: item.due_date || item.due || '',
     date: item.date || item.given || '',
@@ -425,7 +425,7 @@ function labelReady() {
 }
 function labelSig(item, link) {
   var o = labelOpts(item, null, link);
-  var dir = (link && link.dir) || state.dir || '';
+  var dir = (link && link.dir) || '';
   return [o.kind, o.model, o.head || '', o.shiftX, o.shiftY, load().darkness, dir, o.jo || '', o.due || '', o.date || '', o.stage || '', o.metal || '', o.karat || '', o.weight || '', o.stone || '', o.stone_size || '', o.size || '', o.description || ''].join('\u001f');
 }
 function trimPrepared() {
@@ -447,7 +447,7 @@ function prepareItem(item, link) {
     var rendered = root.OYPLabel.render(labelOpts(item, null, link));
     var canvas = fitHead(root.OYPLabel.toCanvas(rendered), link);
     if (!canvas) throw new Error('No canvas');
-    var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, (link && link.dir) || state.dir || 'top');
+    var encoded = L.ImageEncoder.encodeCanvas(canvas, L.PageColorType.SingleColor, (link && link.dir) || 'top');
     var rec = { encoded: encoded, ms: clock() - t0, sig: sig };
     state.prepared[sig] = rec;
     delete state.preparing[sig];
@@ -477,11 +477,23 @@ function sendToPrinter(item, prep, link) {
   return Promise.resolve(prep || prepareItem(item, link)).then(function (rec) {
     var waited = clock() - started;
     logMs('render', rec.cached || already ? 0 : rec.ms, rec.cached ? 'cached' : (already || waited < 8 ? 'overlapped' : ''));
-    return sendEncoded(rec.encoded, link);
+    return sendEncoded(rec.encoded, link, item && item.kind);
   });
 }
-function runTask(name, encoded, link) {
+function clientMark(client) {
+  if (!client) return 'none';
+  if (!client.__oypId) client.__oypId = 'c' + (clientMark.n = (clientMark.n || 0) + 1);
+  return client.__oypId;
+}
+/* A jewelry tag is only ever written to a B1. Checked on the link that owns this client, immediately before the write. */
+function tagBlocked(kind, link) {
+  return isTagKind(kind) && (!link || link.model !== 'B1');
+}
+function runTask(name, encoded, link, kind) {
   link = link || state;
+  if (!link.client) return Promise.reject(new Error('Not connected'));
+  if (tagBlocked(kind, link)) return Promise.reject(new Error('Connect the B1 to print jewelry tags'));
+  logMs('write', 0, 'btId=' + (link.btId || '') + ' name=' + (link.deviceName || '') + ' client=' + clientMark(link.client) + ' model=' + (link.model || ''));
   var L = lib();
   var task = link.client.protocol.newPrintTask(name, {
     totalPages: 1,
@@ -518,11 +530,13 @@ function runTask(name, encoded, link) {
     return Promise.resolve(end()).then(function () { throw err; });
   });
 }
-function sendEncoded(encoded, link) {
+function sendEncoded(encoded, link, kind) {
   link = link || state;
+  if (!link.client) return Promise.reject(new Error('Not connected'));
+  if (tagBlocked(kind, link)) return Promise.reject(new Error('Connect the B1 to print jewelry tags'));
   var names = taskChoices(link), i = 0;
   function once() {
-    return runTask(names[i], encoded).catch(function (err) {
+    return runTask(names[i], encoded, link, kind).catch(function (err) {
       if (i + 1 < names.length && isPageEndTimeout(err)) { i += 1; return once(); }
       throw err;
     });
@@ -573,12 +587,92 @@ function printQueued() {
 function enqueueBatch(payload) {
   return callPrint('printEnqueueBatch', payload || {});
 }
+function queuedText(items, skipped) {
+  var tags = 0, cards = 0, i;
+  for (i = 0; i < items.length; i++) {
+    if (isTagKind(items[i].kind)) tags++;
+    else cards++;
+  }
+  function bit(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  var msg = 'Queued ';
+  if (tags && cards) msg += bit(tags, 'jewelry tag', 'jewelry tags') + ' and ' + bit(cards, 'JO sticker', 'JO stickers');
+  else if (tags) msg += bit(tags, 'jewelry tag', 'jewelry tags');
+  else msg += bit(cards, 'JO sticker', 'JO stickers');
+  if (skipped) msg += ' · ' + skipped + ' already waiting';
+  return msg;
+}
+function itemsForChoice(jos, choice) {
+  var kinds = choice === 'both' ? ['jewelry_tag', 'jo_card'] : [choice === 'jo_card' ? 'jo_card' : 'jewelry_tag'];
+  var items = [], i, k;
+  for (i = 0; i < jos.length; i++) {
+    if (!jos[i]) continue;
+    for (k = 0; k < kinds.length; k++) items.push({ jo: String(jos[i]), kind: kinds[k] });
+  }
+  return items;
+}
+function closeKind() {
+  var el = document.getElementById('oypKind');
+  if (!el) return false;
+  if (el.remove) el.remove();
+  else if (el.parentNode) el.parentNode.removeChild(el);
+  return true;
+}
+/* Jewelry tag is the filled primary. JO sticker and Both are the other choices. Cancel closes the sheet. */
+function askPrint(jos) {
+  jos = (jos || []).map(function (j) { return String(j || '').trim(); }).filter(Boolean);
+  if (!jos.length) { toast('Select a sticker first'); return Promise.resolve(null); }
+  if (state.kindDone) state.kindDone('cancel');
+  var done = false, finish = function () {};
+  var sheet = document.createElement('div');
+  var box = document.createElement('div');
+  sheet.id = 'oypKind';
+  sheet.className = 'oyp-kind';
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-label', 'Print');
+  box.className = 'oyp-kindbox';
+  function add(kind, label, primary) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pill sm' + (primary ? '' : ' outline');
+    b.setAttribute('data-kind', kind);
+    b.textContent = label;
+    if (primary) b.setAttribute('aria-current', 'true');
+    b.onclick = function (e) {
+      if (e && e.stopPropagation) e.stopPropagation();
+      finish(kind);
+    };
+    box.appendChild(b);
+    return b;
+  }
+  var title = document.createElement('p');
+  title.className = 'lab';
+  title.textContent = jos.length === 1 ? jos[0] : (jos.length + ' selected');
+  box.appendChild(title);
+  add('jewelry_tag', 'Jewelry tag', true);
+  add('jo_card', 'JO sticker', false);
+  add('both', 'Both', false);
+  add('cancel', 'Cancel', false);
+  sheet.appendChild(box);
+  sheet.onclick = function () { finish('cancel'); };
+  document.body.appendChild(sheet);
+  return new Promise(function (resolve) {
+    finish = function (choice) {
+      if (done) return;
+      done = true;
+      if (state.kindDone === finish) state.kindDone = null;
+      closeKind();
+      if (!choice || choice === 'cancel') { resolve(null); return; }
+      resolve(printStickers(itemsForChoice(jos, choice)));
+    };
+    state.kindDone = finish;
+  });
+}
 function printStickers(list) {
   var items = (list || []).filter(function (it) { return it && it.jo && it.kind; });
   if (!items.length) { toast('Select a sticker first'); return Promise.resolve(); }
   return enqueueBatch({ items: items }).then(function (r) {
     if (!r || r.ok === false) { toast((r && r.error) || 'Could not queue those stickers'); return r; }
-    toast('Queued ' + (r.queued || 0) + (r.skipped ? ' · ' + r.skipped + ' already waiting' : ''));
+    toast(queuedText(items, r.skipped));
     refresh();
     if (anyUp()) kick();
     return r;
@@ -857,9 +951,13 @@ function printAgain(item) {
 function printLocal(opts) {
   var item = Object.assign({}, opts || {});
   delete item.model; delete item.head; delete item.client;
-  var link = state.connected ? state : (peer.connected ? peer : state);
+  var link = (item.kind && linkFor(item.kind)) || (state.connected ? state : (peer.connected ? peer : null));
+  if (!link || !link.connected) {
+    toast(item.kind ? holdText(item.kind) : 'Connect a printer first');
+    return Promise.resolve();
+  }
   var job = work(link, function () {
-    if (!link.connected) { toast('Connect a printer first'); return; }
+    if (!link.connected) { toast(holdText(item.kind)); return; }
     markPrinting(link, true);
     toast('Printing…');
     logMs('claim', 0);
@@ -2002,7 +2100,7 @@ function addButtons() {
     if (jo2) {
       var host = document.createElement('div');
       host.className = 'fbtns oyp-pr-acts';
-      host.innerHTML = '<button type="button" class="pill sm outline" data-oyp-print="jo_card" data-jo="' + esc(jo2) + '">PRINT STICKER</button><button type="button" class="pill sm outline" data-oyp-print="jewelry_tag" data-jo="' + esc(jo2) + '">PRINT TAG</button><button type="button" class="pill sm outline" data-oyp-png="jewelry_tag" data-jo="' + esc(jo2) + '">DOWNLOAD TAG PNG</button>';
+      host.innerHTML = '<button type="button" class="pill sm" data-oyp-ask="1" data-jo="' + esc(jo2) + '">Print</button><button type="button" class="pill sm outline" data-oyp-png="jewelry_tag" data-jo="' + esc(jo2) + '">DOWNLOAD TAG PNG</button>';
       var back = sheet.querySelector('.pdh') || sheet.querySelector('#pSX');
       if (back && back.parentNode) back.parentNode.insertBefore(host, back.nextSibling);
     }
@@ -2015,7 +2113,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=16';
+  link.href = (base || '') + 'print.css?v=17';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -2069,7 +2167,9 @@ function start() {
       return;
     }
     if (!e.target.closest('#oypPrMenu')) toggleMenu(false);
-    if (panelOpen() && !e.target.closest('#oypPrintPanel')) closePanel();
+    if (panelOpen() && !e.target.closest('#oypPrintPanel') && !e.target.closest('#oypKind')) closePanel();
+    var ask = e.target.closest('[data-oyp-ask]');
+    if (ask) { askPrint([ask.getAttribute('data-jo')]); return; }
     var b = e.target.closest('[data-oyp-print]');
     if (b) { printJo(b.getAttribute('data-oyp-print'), b.getAttribute('data-jo'), { reprint: true }); return; }
     var png = e.target.closest('[data-oyp-png]');
@@ -2078,6 +2178,7 @@ function start() {
   });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (state.kindDone) { state.kindDone('cancel'); return; }
     toggleMenu(false);
     closePanel();
   });
@@ -2092,5 +2193,5 @@ function start() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();
 
-root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, printQueued: printQueued, printStickers: printStickers, enqueueBatch: enqueueBatch, download: download, connect: connect, connectSlot: connectSlot, disconnect: disconnect, printerMarks: printerMarks, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx };
+root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, printQueued: printQueued, printStickers: printStickers, askPrint: askPrint, enqueueBatch: enqueueBatch, download: download, connect: connect, connectSlot: connectSlot, disconnect: disconnect, printerMarks: printerMarks, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx };
 })(typeof window !== 'undefined' ? window : globalThis);

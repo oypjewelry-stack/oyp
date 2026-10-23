@@ -4,6 +4,8 @@ No new OAuth scopes. Do not add any scopes. No new columns. This does not replac
 
 Archive and Unarchive change the location cell. They do not delete a row. Move to… does the same with another location. One invBulk call updates every JO in the request and writes updated_at and updated_by on each row it changes. Those two columns are the audit columns already on JobOrders. If a header is missing, that cell is left alone (jobSet_ only writes headers that exist). audit_ also records the change.
 
+invDelete removes one JobOrders row. The Inventory sheet asks before it sends that call. It does not run from Archive or Move.
+
 Hook — one line. In Auth.gs, inside handleAction_, on its own line immediately after the JobSync hook:
 
     if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user); // JobSync.gs
@@ -27,14 +29,15 @@ COPY FROM HERE
 /**
  * Inventory bulk move / archive. One action: invBulk.
  * Sets JobOrders.location for each JO in the request. Writes updated_at and updated_by.
- * Archive is location "archived". Unarchive clears location. Never deletes a row.
+ * Archive is location "archived". Unarchive clears location. invBulk never deletes a row.
+ * invDelete deletes one JobOrders row. The page asks first.
  *
  * Auth.gs handleAction_, immediately after the JobSync line:
  *   if (typeof isInvBulkAction_ === 'function' && isInvBulkAction_(a)) return handleInvBulk_(req, s.user); // InvBulk.gs
  */
 var INV_BULK_ROLES = { admin: true, production_manager: true };
 
-function isInvBulkAction_(a) { return String(a || '') === 'invBulk'; }
+function isInvBulkAction_(a) { a = String(a || ''); return a === 'invBulk' || a === 'invDelete'; }
 
 function handleInvBulk_(req, user) {
   if (!user || !user.username) {
@@ -44,13 +47,13 @@ function handleInvBulk_(req, user) {
       else if (sess && sess.username) user = sess;
     } catch (e) {}
   }
-  if (!req || req.action !== 'invBulk') return { ok: false, error: 'Unknown action' };
+  if (!req || (req.action !== 'invBulk' && req.action !== 'invDelete')) return { ok: false, error: 'Unknown action' };
   if (!user || !INV_BULK_ROLES[user.role]) {
     try { audit_((user && user.username) || '', 'denied', 'invBulk', req.device_id, 'role ' + ((user && user.role) || '')); } catch (e2) {}
     return { ok: false, error: 'Not allowed', code: 'FORBIDDEN' };
   }
   var res;
-  try { res = (typeof withLock_ === 'function') ? withLock_(function () { return invBulk_(req, user); }) : invBulk_(req, user); }
+  try { res = (typeof withLock_ === 'function') ? withLock_(function () { return req.action === 'invDelete' ? invDelete_(req, user) : invBulk_(req, user); }) : (req.action === 'invDelete' ? invDelete_(req, user) : invBulk_(req, user)); }
   catch (err) { res = { ok: false, error: String(err && err.message || err).slice(0, 300) }; }
   return res;
 }
@@ -128,6 +131,20 @@ function invBulkAllowed_() {
     if (k) keys[k] = 1;
   });
   return keys;
+}
+
+function invDelete_(req, user) {
+  if (!ss_().getSheetByName('JobOrders')) return { ok: false, error: 'JobOrders tab is missing' };
+  var jo = jobStr_(req.jo);
+  if (!jo) return { ok: false, error: 'Missing JO' };
+  var row = null;
+  jobRows_('JobOrders').forEach(function (j) {
+    if (!row && jobStr_(j.jo) === jo) row = j;
+  });
+  if (!row || !row._row) return { ok: false, error: 'Not found' };
+  ss_().getSheetByName('JobOrders').deleteRow(row._row);
+  try { audit_(user.username, 'invDelete', jo, req.device_id, ''); } catch (e) {}
+  return { ok: true, jo: jo };
 }
 
 function invBulkStatus_(row, loc, patch) {

@@ -322,16 +322,16 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=23') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=56') && index.includes('app.js?v=35') && index.includes('settings.js?v=21') && index.includes('print.css?v=16') && index.includes('app.css?v=50') && index.includes('settings.css?v=11') && index.includes('inv.js?v=13') && index.includes('production.js?v=14') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=16') && read('sim/swipe-preview.html').includes('print.css?v=16'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=23') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=23') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=16') && read('staff/print-test.html').includes('nav.js?v=56') && read('staff/print-test.html').includes('app.css?v=50'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=25') && index.includes('print-label.js?v=10') && index.includes('nav.js?v=56') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=17') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=17') && read('sim/swipe-preview.html').includes('print.css?v=17'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=10') && read('nav.js').includes('print.js?v=25') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=25') && read('staff/print-test.html').includes('print-label.js?v=10') && read('staff/print-test.html').includes('print.css?v=17') && read('staff/print-test.html').includes('nav.js?v=56') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
 const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
 eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
 eq(testCss.includes('grid-template-columns:1fr 1fr') && testCss.includes('.pr-stage') && testCss.includes('justify-content:center') && /max-width:800px/.test(testCss), 'print test is two equal columns and stacks below an iPad portrait');
-eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && !testPage.includes('printChip') && !index.includes('printChip') && testPage.includes('class="office"') && testPage.includes('id="side"') && testPage.includes('class="side"') && testPage.includes('OYPNav.sideHtml') && testPage.includes('app.css?v=50') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header and the same left menu, with no printer pill');
+eq(testPage.includes('class="top"') && testPage.includes('id="btnMenu"') && testPage.includes('class="logo"') && !testPage.includes('printChip') && !index.includes('printChip') && testPage.includes('class="office"') && testPage.includes('id="side"') && testPage.includes('class="side"') && testPage.includes('OYPNav.sideHtml') && testPage.includes('app.css?v=52') && testPage.includes('OYPNav.menuHtml'), 'print test uses the staff header and the same left menu, with no printer pill');
 eq(read('print.js').includes('Print queue not set up yet') && read('print.js').includes('No stickers waiting') && read('print.js').includes('class="pill sm"') && read('print.js').includes('class="dchip') && read('print.js').includes('class="setp') && read('print.js').includes('class="cn"') && read('print.js').includes('whomenu') && read('print.css').includes(':where(') && !read('print.css').includes('.oyp-pr-btn') && testPage.includes("'dcard'") && testPage.includes("'dtitle'") && testPage.includes('class="setbox" id="printQueue"'), 'print controls use the staff cards, pills, rows, and menu');
 eq(read('print.js').includes('Open in Chrome or Edge to connect a printer') && read('print.js').includes("iPad can't connect a printer. Stickers wait in the print queue.") && read('print.js').includes('Connect by Bluetooth') && read('print.js').includes('Connect by USB') && read('print.js').includes('aria-label="Close"') && read('print.js').includes("e.key !== 'Escape'"), 'Safari sees how to connect, and the queue panel can close');
 eq(testPage.indexOf('<h2>Print queue</h2>') < testPage.indexOf('<h2>Settings</h2>') && testPage.indexOf('<h2>Settings</h2>') < testPage.indexOf('<h2>Label alignment</h2>') && testPage.indexOf('<h2>Printer</h2>') < 0, 'print test leads with the queue, then settings, then label alignment');
@@ -451,7 +451,8 @@ for (let n = 0; n < 201; n++) tooMany.push({ jo: '26-' + String(1000 + n), kind:
 const capRows = sheetRows.length;
 const capped = ctx.printEnqueueBatch_({ items: tooMany }, { username: 'ada' });
 eq(capped.ok === false && capped.code === 'CAP' && capped.count === 201 && batchWrites.length === failWrites && sheetRows.length === capRows, 'more than 200 stickers are refused and nothing is written');
-eq(read('inv.js').includes('id="ivChoose"') && read('inv.js').includes('Print stickers (${n})') && read('inv.js').includes("jewelry_tag' : 'jo_card'") && !read('inv.js').includes('#ivScan') && !read('inv.js').includes('id="ivScan"') && read('inv.js').includes('Search or scan JO, client, 18k, sapphire…') && read('inv.js').includes('ivScanCommit') && read('inv.js').includes('ivQFast') && read('inv.js').includes('ivFullJo') && read('production.js').includes('id="pChoose"') && read('production.js').includes('Print stickers (${S.sel.size})') && read('production.js').includes("kind: 'jo_card'") && read('app.css').includes('.iv.choose .ivck') && !read('app.css').includes('.ivcard:hover .ivck') && read('print.js').includes('Print a range') && read('print.js').includes('preview: 1') && read('print.js').includes("'printEnqueueBatch'") && read('settings.js').includes('id="printRange"') && testPage.includes('id="printRange"'), 'lists stay clear until Select, and a range shows its count before it queues');
+eq(read('inv.js').includes('id="ivChoose"') && read('inv.js').includes('Print stickers (${n})') && read('inv.js').includes('askPrint') && read('inv.js').includes('ivPrintJo') && !read('inv.js').includes('#ivScan') && !read('inv.js').includes('id="ivScan"') && read('inv.js').includes('Search or scan JO, client, 18k, sapphire…') && read('inv.js').includes('ivScanCommit') && read('inv.js').includes('ivQFast') && read('inv.js').includes('ivFullJo') && read('production.js').includes('id="pChoose"') && read('production.js').includes('Print stickers (${S.sel.size})') && read('production.js').includes('askPrint') && read('production.js').includes('joShown') && read('app.css').includes('.iv.choose .ivck') && !read('app.css').includes('.ivcard:hover .ivck') && read('print.js').includes('Print a range') && read('print.js').includes('preview: 1') && read('print.js').includes("'printEnqueueBatch'") && read('print.js').includes('data-oyp-ask') && read('print.js').includes('printJo(item.kind') && read('print.css').includes('transition:transform 50ms') && read('settings.js').includes('id="printRange"') && testPage.includes('id="printRange"'), 'lists stay clear until Select, and a range shows its count before it queues');
+eq(read('inv.js').includes('class="ivmore"') && !read('inv.js').includes('class="ivmenu"') && read('inv.js').includes('OYP.popover') && read('inv.js').includes("label: 'Print'") && read('inv.js').includes("label: 'Details'") && read('inv.js').includes("label: 'Move location'") && read('inv.js').includes("label: 'Delete'") && read('inv.js').includes("confirm('Delete ") && read('inv.js').includes('p.base + p.letter') && read('app.js').includes('function popover') && read('app.css').includes('.oyp-pop{position:fixed') && read('app.css').includes('z-index:80') && read('todo.js').includes('OYP.popover'), 'the inventory menu floats above the card, and the to-do menu uses the same popover');
 eq(testPage.includes("textContent = 'Download'") && testPage.includes("textContent = 'PRINT'") && !testPage.includes('DOWNLOAD PNG') && testPage.includes("png.className = 'pill sm outline'") && testPage.includes("go.className = 'pill sm'") && testCss.includes('.oyp-pr-acts .pill.sm.outline,.oyp-qbtns .pill.sm.outline{align-self:stretch;display:inline-flex;align-items:center;justify-content:center;font-family:var(--head,\'Libre Bodoni\',Georgia,serif);font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500);letter-spacing:0;border-width:1px;padding-top:calc(9px*var(--sp) - 1px)'), 'Download matches Print in size and stays an outline');
 
 function bootPrint(opts) {
@@ -544,7 +545,24 @@ function bootPrint(opts) {
     if (opts.endHangs) return new Promise(function () {});
     return Promise.resolve();
   };
-  function Client() { clients.push(this); this.beats = 0; this._on = {}; }
+  function Client() {
+    var self = this;
+    clients.push(this);
+    this.beats = 0;
+    this._on = {};
+    this.pages = [];
+    this.protocol = {
+      newPrintTask: function (name) {
+        var task = new Task(name);
+        var page = task.printPage;
+        task.printPage = function (encoded, n) {
+          self.pages.push(encoded);
+          return page.call(task, encoded, n);
+        };
+        return task;
+      }
+    };
+  }
   Client.prototype.connect = function (options) {
     connects.push(options || null);
     const name = nextName.length ? nextName.shift() : ((options && options.authorizedDevice && options.authorizedDevice.name) || '');
@@ -563,7 +581,6 @@ function bootPrint(opts) {
   Client.prototype.startHeartbeat = function () { this.beats += 1; };
   Client.prototype.getPrintTaskType = function () { return opts.found || ''; };
   Client.prototype.getPrinterInfo = function () { return { protocolVersion: opts.protocol == null ? 4 : opts.protocol }; };
-  Client.prototype.protocol = { newPrintTask: function (name) { return new Task(name); } };
   Client.prototype.getModelMetadata = function () {
     const model = nextModel.length ? nextModel.shift() : 'B31';
     return { model: model, printheadPixels: model === 'B31' ? 600 : 384, printDirection: 'top' };
@@ -1430,6 +1447,134 @@ drain().then(function () {
       const sent = neu.calls.filter(function (b) { return b.action === 'printEnqueue' || b.op === 'printEnqueue'; });
       eq(enq && enq.t === 400 && printed.length === 1 && printed[0].print_id === 'pq-serverrow1' && sent[0].print_id !== 'pq-serverrow1', 'enqueue finishes at 400ms and the existing row is the one marked printed');
       eq(marks.sendAt - 30 === 770 && marks.paper - 150 === 770, 'tap to printer is 800ms before and 30ms after; tap to paper is 920ms before and 150ms after');
+    });
+  });
+}).then(function () {
+  const onlyTag = { print_id: 'pq-only-tag', jo: '26-363', kind: 'jewelry_tag', status: 'queued', client: 'Ada' };
+  const slot2 = bootPrint({
+    drive: true,
+    models: ['B1'],
+    names: ['B1-HC17121009'],
+    queue: { ok: true, auto: true, items: [onlyTag] },
+    store: { oypPrint: JSON.stringify({ auto: true, task: 'B1' }) }
+  });
+  slot2.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+  return drain().then(function () {
+    eq(slot2.clients.length === 1 && slot2.clients[0].pages.length === 1 && !slot2.notes.some(function (t) { return t.indexOf('protocol') >= 0; }), 'slot 1 is null and the jewelry tag is written on the slot 2 B1');
+    const both = bootPrint({
+      drive: true,
+      models: ['B1', 'B1'],
+      names: ['B31-HB03011342', 'B1-HC17121009'],
+      queue: { ok: true, auto: false, items: [Object.assign({}, onlyTag)] },
+      store: { oypPrint: JSON.stringify({ auto: false, task: 'B1', kindsByModel: { B31: { jo_card: true, jewelry_tag: true }, B1: { jo_card: false, jewelry_tag: true } } }) }
+    });
+    both.sandbox.OYPPrint.connect('bluetooth');
+    both.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+    return drain().then(function () {
+      both.sandbox.OYPPrint.printQueued();
+      return drain();
+    }).then(function () {
+      const wroteB31 = both.logs.some(function (line) { return line.indexOf('[oyp-print] write') >= 0 && line.indexOf('name=B31-') >= 0; });
+      const wroteB1 = both.logs.some(function (line) { return line.indexOf('[oyp-print] write') >= 0 && line.indexOf('btId=') >= 0 && line.indexOf('name=B1-HC17121009') >= 0 && line.indexOf('client=') >= 0 && line.indexOf('model=B1') >= 0; });
+      eq(both.clients.length === 2 && both.clients[1].pages.length === 1 && both.clients[0].pages.length === 0 && wroteB1 && !wroteB31, 'with both connected, the tag bytes reach only the B1 mock');
+      const tap = bootPrint({
+        drive: true,
+        models: ['B1', 'B1'],
+        names: ['B31-HB03011342', 'B1-HC17121009'],
+        queue: { ok: true, auto: false, items: [] },
+        store: { oypPrint: JSON.stringify({ auto: false, task: 'B1' }) }
+      });
+      tap.sandbox.OYPPrint.connect('bluetooth');
+      tap.sandbox.OYPPrint.connectSlot(1, 'bluetooth');
+      return drain().then(function () {
+        tap.sandbox.OYPPrint.printJo('jewelry_tag', '26-370', { reprint: true });
+        return drain();
+      }).then(function () {
+        eq(tap.clients.length === 2 && tap.clients[1].pages.length === 1 && tap.clients[0].pages.length === 0, 'instant print writes the tag to the B1 client and not the B31');
+      });
+    });
+  });
+}).then(function () {
+  function armKind(env) {
+    const sheets = [];
+    env.sandbox.document.createElement = function () {
+      const el = { className: '', id: '', textContent: '', style: {}, children: [], attrs: {}, parentNode: null, onclick: null };
+      el.setAttribute = function (k, v) { el.attrs[k] = String(v); };
+      el.getAttribute = function (k) { return Object.prototype.hasOwnProperty.call(el.attrs, k) ? el.attrs[k] : null; };
+      el.appendChild = function (child) { el.children.push(child); child.parentNode = el; return child; };
+      el.remove = function () {
+        const p = el.parentNode;
+        if (p && p.children) {
+          const i = p.children.indexOf(el);
+          if (i >= 0) p.children.splice(i, 1);
+        }
+        const s = sheets.indexOf(el);
+        if (s >= 0) sheets.splice(s, 1);
+      };
+      return el;
+    };
+    env.sandbox.document.body.appendChild = function (el) { sheets.push(el); el.parentNode = env.sandbox.document.body; return el; };
+    env.sandbox.document.getElementById = function (id) {
+      function walk(n) {
+        if (!n) return null;
+        if (n.id === id) return n;
+        const kids = n.children || [];
+        for (let i = 0; i < kids.length; i++) { const found = walk(kids[i]); if (found) return found; }
+        return null;
+      }
+      for (let i = 0; i < sheets.length; i++) { const found = walk(sheets[i]); if (found) return found; }
+      return null;
+    };
+    env.sheets = sheets;
+    return env;
+  }
+  function press(env, kind) {
+    function walk(n) {
+      if (n && n.attrs && n.attrs['data-kind'] === kind) return n;
+      const kids = (n && n.children) || [];
+      for (let i = 0; i < kids.length; i++) { const found = walk(kids[i]); if (found) return found; }
+      return null;
+    }
+    const btn = walk(env.sheets[env.sheets.length - 1]);
+    btn.onclick({ stopPropagation: function () {} });
+  }
+  function batch(env) {
+    return env.calls.filter(function (b) { return b.op === 'printEnqueueBatch' || b.action === 'printEnqueueBatch'; }).pop();
+  }
+  const tag = armKind(bootPrint({}));
+  const pending = tag.sandbox.OYPPrint.askPrint(['26-287B', '26-288', '26-289']);
+  const primary = (function walk(n) {
+    if (n && n.attrs && n.attrs['aria-current'] === 'true') return n;
+    const kids = (n && n.children) || [];
+    for (let i = 0; i < kids.length; i++) { const found = walk(kids[i]); if (found) return found; }
+    return null;
+  })(tag.sheets[0]);
+  eq(!!primary && primary.attrs['data-kind'] === 'jewelry_tag' && primary.className === 'pill sm' && primary.textContent === 'Jewelry tag', 'Jewelry tag is the preselected primary');
+  press(tag, 'jewelry_tag');
+  return pending.then(function () {
+    const body = batch(tag);
+    const kinds = body && body.items.map(function (it) { return it.kind; }).join(',');
+    eq(body && body.items.length === 3 && kinds === 'jewelry_tag,jewelry_tag,jewelry_tag' && body.items[0].jo === '26-287B' && tag.notes.indexOf('Queued 3 jewelry tags') >= 0, 'choosing Jewelry tag queues only jewelry tags, and keeps the JO letter');
+    const card = armKind(bootPrint({}));
+    const cardPending = card.sandbox.OYPPrint.askPrint(['26-287B']);
+    press(card, 'jo_card');
+    return cardPending.then(function () {
+      const cardBody = batch(card);
+      eq(cardBody && cardBody.items.length === 1 && cardBody.items[0].kind === 'jo_card' && cardBody.items[0].jo === '26-287B' && card.notes.indexOf('Queued 1 JO sticker') >= 0 && !card.calls.some(function (b) { return (b.items || []).some(function (it) { return it.kind === 'jewelry_tag'; }); }), 'choosing JO sticker queues only that sticker');
+      const both = armKind(bootPrint({}));
+      const bothPending = both.sandbox.OYPPrint.askPrint(['26-287B', '26-288']);
+      press(both, 'both');
+      return bothPending.then(function () {
+        const bothBody = batch(both);
+        const got = bothBody && bothBody.items.map(function (it) { return it.jo + ':' + it.kind; }).join(',');
+        eq(got === '26-287B:jewelry_tag,26-287B:jo_card,26-288:jewelry_tag,26-288:jo_card' && both.notes.indexOf('Queued 2 jewelry tags and 2 JO stickers') >= 0, 'Both queues one jewelry tag and one JO sticker per JO');
+        const cancel = armKind(bootPrint({}));
+        const cancelPending = cancel.sandbox.OYPPrint.askPrint(['26-287B']);
+        press(cancel, 'cancel');
+        return cancelPending.then(function (r) {
+          eq(r == null && !batch(cancel) && cancel.notes.length === 0, 'Cancel queues nothing');
+        });
+      });
     });
   });
 }).then(function () {

@@ -144,10 +144,6 @@ function restoreAdd(main, draft) {
   }
   syncAdd(main);
 }
-function autoActs(esc, it) {
-  const go = it.open || (it.jo ? 'Open ' + it.jo : 'Open');
-  return `<div class="tdacts"><a class="pill sm" href="${esc(it.href || '#/dashboard')}" data-td="go" data-id="${esc(it.id)}">${esc(go)}</a><button type="button" class="pill sm outline" data-td="done" data-id="${esc(it.id)}">Done</button><span class="tdsnz"><span class="lab">Snooze</span><button type="button" class="fchip" data-td="snooze" data-until="tomorrow" data-id="${esc(it.id)}">Tomorrow</button><button type="button" class="fchip" data-td="snooze" data-until="3d" data-id="${esc(it.id)}">3 days</button><button type="button" class="fchip" data-td="snooze" data-until="7d" data-id="${esc(it.id)}">1 week</button></span></div>`;
-}
 function rowHtml(esc, it, o) {
   const day = o.today || today();
   const open = o.open ? ' open' : '';
@@ -164,8 +160,7 @@ function rowHtml(esc, it, o) {
     return `<div class="tdrow manual${late}${open}" data-id="${esc(it.id)}">${tick}<span class="chip tdtag${it.late ? ' gold' : ''}">${esc(label)}</span>${body}${del}</div>`;
   }
   const label = (it.flag ? it.flag + ' · ' : '') + (it.tag || '');
-  const acts = o.open ? autoActs(esc, it) : '';
-  return `<div class="tdrow${late}${it.sug ? ' sug' : ''}${open}" data-id="${esc(it.id)}"><span class="chip tdtag${it.late ? ' gold' : ''}">${esc(label)}</span><span class="tdtxt">${mark(esc, it.text)}</span><button type="button" class="tdmore" data-td="more" data-id="${esc(it.id)}" aria-label="More">⋯</button><span class="tdgo">›</span>${acts}</div>`;
+  return `<div class="tdrow${late}${it.sug ? ' sug' : ''}" data-id="${esc(it.id)}"><span class="chip tdtag${it.late ? ' gold' : ''}">${esc(label)}</span><span class="tdtxt">${mark(esc, it.text)}</span><button type="button" class="tdmore" data-td="more" data-id="${esc(it.id)}" aria-label="More" aria-haspopup="menu" aria-expanded="false">⋯</button><span class="tdgo">›</span></div>`;
 }
 function listHtml(esc, items, o) {
   const groups = ['today', 'week', 'idea'].map(b => items.filter(it => (it.bucket || 'week') === b)).filter(g => g.length);
@@ -345,6 +340,33 @@ async function remove(main, it) {
     draw(main);
   });
 }
+function todoMenu(main, anchor, it) {
+  if (!anchor || !it || !root.OYP || !root.OYP.popover) return;
+  const id = it.id;
+  const go = () => {
+    const href = it.href || '#/dashboard';
+    if (href === '#dMsgs') { const el = document.getElementById('dMsgs'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if (href.charAt(0) === '#') location.hash = href;
+  };
+  const finish = async (act, until) => {
+    const r = await root.OYP.call(act === 'done' ? 'todoDone' : 'todoSnooze', act === 'done' ? { id: id } : { id: id, until: until });
+    if (!r || !r.ok) return root.OYP.toast((r && r.error) || 'Could not save');
+    S.data.items = (S.data.items || []).filter(x => x.id !== id);
+    if (S.data.total > 0) S.data.total--;
+    if (act === 'done') { it.status = 'done'; S.data.done = (S.data.done || []).concat([it]); }
+    S.openId = '';
+    draw(main);
+    root.OYP.toast(act === 'done' ? 'Done' : 'Snoozed');
+  };
+  const items = [
+    { label: it.open || (it.jo ? 'Open ' + it.jo : 'Open'), run: go },
+    { label: 'Done', run: () => finish('done') }
+  ];
+  [{ label: 'Tomorrow', until: 'tomorrow' }, { label: '3 days', until: '3d' }, { label: '1 week', until: '7d' }].forEach(s => {
+    items.push({ label: s.label, run: () => finish('snooze', s.until) });
+  });
+  root.OYP.popover(anchor, items);
+}
 function wire(main) {
   const sec = main.querySelector('[data-tdpage]');
   if (!sec || sec.dataset.tdwire) return;
@@ -388,7 +410,7 @@ function wire(main) {
     const id = (btn && btn.dataset.id) || (row && row.dataset.id);
     const act = btn ? btn.dataset.td : 'go';
     const it = findItem(id);
-    if (act === 'more') { e.preventDefault(); S.openId = S.openId === id ? '' : id; S.editId = ''; draw(main); return; }
+    if (act === 'more') { e.preventDefault(); e.stopPropagation(); todoMenu(main, btn || (row && row.querySelector('.tdmore')), it); return; }
     if (act === 'tick') { e.preventDefault(); e.stopPropagation(); if (it && it.manual && String(it.id).indexOf('tmp-') !== 0) tick(main, it); return; }
     if (act === 'del') {
       e.preventDefault(); e.stopPropagation(); S.skip = false;
