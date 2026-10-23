@@ -10,7 +10,7 @@ var KEY = 'oypPrint';
 var DEV = 'oypDevice';
 var STALE = 180000;
 var POLL = 1000;
-var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, hot: {}, prepared: {}, preparing: {}, toldDown: false };
+var state = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, timer: 0, worker: null, workerUrl: '', pumping: false, busy: {}, open: '', armUntil: 0, chain: Promise.resolve(), rev: null, briefOk: null, ticks: 0, auto: null, printQueued: false, inflight: {}, cool: {}, done: {}, hot: {}, prepared: {}, preparing: {}, toldDown: false, edits: {} };
 /* Slot 0 is state. Slot 1 is the second printer on the same page. Each has its own link, chain, and device id. */
 var peer = { client: null, model: '', head: 0, dir: 'top', transport: '', connected: false, printing: false, reconnecting: false, userDisconnect: false, btId: '', linkDownAt: 0, linkBurst: 0, expected: false, chain: Promise.resolve() };
 var PAGE_MS = 20000;
@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 27;
+var PRINT_JS = 28;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -381,8 +381,32 @@ function markFailed(r, fallback) {
   return true;
 }
 
-/* Paper fields only. client is display text and is not copied onto the sticker. */
+/* Paper fields only. client is display text and is not copied onto the sticker.
+   Session edits from the preview sheet override the sheet for this print only. */
+var EDIT_PROPS = ['price', 'name', 'item_type', 'metal', 'karat', 'stones', 'weight', 'jo', 'sku', 'location'];
+function withEdits(item, kind) {
+  item = item || {};
+  var used = kind || item.kind || 'jo_card';
+  var edit = state.edits[stickerKey(used, item.jo || '')];
+  if (!edit) return item;
+  var out = Object.assign({}, item);
+  function has(k) { return Object.prototype.hasOwnProperty.call(edit, k); }
+  if (has('price')) out.price = edit.price;
+  if (has('name')) { out.name = edit.name; out.description = ''; }
+  if (has('item_type')) { out.item_type = edit.item_type; out.piece_type = ''; out.type = ''; }
+  if (has('metal')) out.metal = edit.metal;
+  if (has('karat')) out.karat = edit.karat;
+  if (has('stones')) { out.stones = edit.stones; out.stone_type = ''; out.stone = ''; out.stone_size = ''; out.grade = ''; }
+  if (has('weight')) { out.weight = edit.weight; out.weight_g = edit.weight; }
+  if (has('jo')) out.jo = edit.jo;
+  if (has('sku')) { out.sku = edit.sku; out.item_id = ''; }
+  if (has('location')) out.location = edit.location;
+  return out;
+}
 function labelOpts(item, kind, link) {
+  return plainOpts(withEdits(item, kind), kind, link);
+}
+function plainOpts(item, kind, link) {
   item = item || {};
   link = link || state;
   var model = item.model || link.model || 'B1';
@@ -700,10 +724,355 @@ function closeKind() {
   else if (el.parentNode) el.parentNode.removeChild(el);
   return true;
 }
-/* Jewelry tag is the filled primary. JO sticker and Both are the other choices. Cancel closes the sheet. */
+function closePreview() {
+  var el = document.getElementById('oypPrev');
+  if (!el) return false;
+  if (el.remove) el.remove();
+  else if (el.parentNode) el.parentNode.removeChild(el);
+  return true;
+}
+function setDisabled(el, on) {
+  if (!el) return;
+  el.disabled = !!on;
+  if (on) el.setAttribute('disabled', 'disabled');
+  else if (typeof el.removeAttribute === 'function') el.removeAttribute('disabled');
+  else if (el.attrs) delete el.attrs.disabled;
+}
+function clearAttr(el, name) {
+  if (!el) return;
+  if (typeof el.removeAttribute === 'function') el.removeAttribute(name);
+  else if (el.attrs) delete el.attrs[name];
+}
+function firstFilled() {
+  var i, v;
+  for (i = 0; i < arguments.length; i++) {
+    v = arguments[i];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+function mountCanvas(host, canvas, className) {
+  if (!host || !canvas || !host.appendChild) return;
+  canvas.className = className;
+  while (host.firstChild && host.removeChild) host.removeChild(host.firstChild);
+  host.appendChild(canvas);
+}
+function previewItem(sticker) {
+  return {
+    kind: sticker.kind,
+    jo: sticker.jo,
+    price: sticker.price,
+    name: sticker.name,
+    description: '',
+    item_type: sticker.item_type,
+    metal: sticker.metal,
+    karat: sticker.karat,
+    weight_g: sticker.weight,
+    weight: sticker.weight,
+    stones: sticker.stones,
+    sku: sticker.sku,
+    location: sticker.location,
+    due_date: sticker.due_date || '',
+    date: sticker.date || '',
+    current_stage: sticker.current_stage || '',
+    size: sticker.size || ''
+  };
+}
+function rememberEdits(sticker) {
+  if (!sticker) return;
+  var key = stickerKey(sticker.kind, sticker.sourceJo);
+  var bag = Object.assign({}, state.edits[key] || {});
+  var any = false, i, prop;
+  for (i = 0; i < EDIT_PROPS.length; i++) {
+    prop = EDIT_PROPS[i];
+    if (!sticker.dirty[prop]) continue;
+    bag[prop] = sticker[prop] == null ? '' : String(sticker[prop]);
+    any = true;
+  }
+  if (any) state.edits[key] = bag;
+}
+function fillFromSpec(sticker, spec) {
+  spec = spec || {};
+  function keep(prop, value) {
+    if (sticker.dirty[prop]) return;
+    sticker[prop] = value == null ? '' : String(value);
+  }
+  var stones = firstFilled(spec.stones);
+  if (!stones) {
+    var bits = [], stoneBit = firstFilled(spec.stone_type, spec.stone), sizeBit = firstFilled(spec.stone_size), gradeBit = firstFilled(spec.grade);
+    if (stoneBit) bits.push(stoneBit);
+    if (sizeBit) bits.push(sizeBit);
+    if (gradeBit) bits.push(gradeBit);
+    stones = bits.join(' ');
+  }
+  keep('price', firstFilled(spec.price));
+  keep('name', firstFilled(spec.name, spec.description));
+  keep('item_type', firstFilled(spec.item_type, spec.piece_type));
+  keep('metal', firstFilled(spec.metal));
+  keep('karat', firstFilled(spec.karat));
+  keep('stones', stones);
+  keep('weight', firstFilled(spec.weight_g, spec.weight));
+  keep('jo', firstFilled(spec.jo, sticker.sourceJo));
+  keep('sku', firstFilled(spec.sku, spec.item_id));
+  keep('location', firstFilled(spec.location));
+  if (!sticker.dirty.due) {
+    sticker.due_date = firstFilled(spec.due_date, spec.due);
+    sticker.date = firstFilled(spec.date, spec.given);
+    sticker.current_stage = firstFilled(spec.current_stage, spec.stage);
+    sticker.size = firstFilled(spec.size);
+  }
+  var prior = state.edits[stickerKey(sticker.kind, sticker.sourceJo)];
+  if (!prior) return;
+  EDIT_PROPS.forEach(function (prop) {
+    if (!Object.prototype.hasOwnProperty.call(prior, prop)) return;
+    sticker[prop] = prior[prop] == null ? '' : String(prior[prop]);
+    sticker.dirty[prop] = true;
+  });
+}
+function loadSpecs(stickers) {
+  var seen = {}, jobs = [];
+  stickers.forEach(function (s) {
+    if (!s.sourceJo || seen[s.sourceJo]) return;
+    seen[s.sourceJo] = 1;
+    jobs.push(s.sourceJo);
+  });
+  return Promise.all(jobs.map(function (jo) {
+    return callPrint('printQueue', { jo: jo }).then(function (r) {
+      var spec = Object.assign({}, (r && r.ok && r.spec) || {});
+      delete spec.client;
+      return { jo: jo, spec: spec };
+    }, function () { return { jo: jo, spec: {} }; });
+  })).then(function (rows) {
+    var map = {};
+    rows.forEach(function (row) { map[row.jo] = row.spec; });
+    return map;
+  });
+}
+function paintSticker(sticker, bigHost, miniHost) {
+  if (!sticker || !root.OYPLabel || !root.OYPLabel.render || !root.OYPLabel.preview) return;
+  try {
+    var rendered = root.OYPLabel.render(plainOpts(previewItem(sticker), sticker.kind, linkFor(sticker.kind)));
+    var view = root.OYPLabel.preview(rendered, { scale: 1, smooth: false });
+    if (bigHost && view && view.canvas) mountCanvas(bigHost, view.canvas, 'oyp-prevbig');
+    if (miniHost && view && view.canvas) {
+      var mini = root.OYPLabel.preview(rendered, { scale: 1, smooth: false });
+      if (mini && mini.canvas) mountCanvas(miniHost, mini.canvas, 'oyp-prevmini');
+    }
+  } catch (err) {}
+}
+/* One sheet for every sticker in the choice. Print all and Print this one queue.
+   Save to item stays off: no pasted action writes this whole field set. */
+function openPreview(list) {
+  var stickers = (list || []).map(function (it) {
+    var jo = String(it.jo || '');
+    return {
+      sourceJo: jo,
+      kind: it.kind === 'jo_card' ? 'jo_card' : 'jewelry_tag',
+      price: '', name: '', item_type: '', metal: '', karat: '', stones: '', weight: '',
+      jo: jo, sku: '', location: '',
+      due_date: '', date: '', current_stage: '', size: '',
+      dirty: {}
+    };
+  });
+  var index = 0, alive = true;
+  var FIELD_DEFS = [
+    ['price', 'Price', 'price'],
+    ['name', 'Name', 'name'],
+    ['type', 'Type', 'item_type'],
+    ['metal', 'Metal', 'metal'],
+    ['karat', 'Karat', 'karat'],
+    ['stones', 'Stones', 'stones'],
+    ['weight', 'Weight', 'weight'],
+    ['jo', 'JO', 'jo'],
+    ['sku', 'SKU', 'sku'],
+    ['location', 'Location', 'location']
+  ];
+  return new Promise(function (resolve) {
+    var sheet = document.createElement('div');
+    var box = document.createElement('div');
+    var stage = document.createElement('div');
+    var strip = document.createElement('div');
+    var prevBtn = document.createElement('button');
+    var nextBtn = document.createElement('button');
+    var thumbs = document.createElement('div');
+    var count = document.createElement('p');
+    var kindLine = document.createElement('p');
+    var fieldsWrap = document.createElement('div');
+    var save = document.createElement('label');
+    var toggle = document.createElement('input');
+    var saveText = document.createElement('span');
+    var note = document.createElement('p');
+    var acts = document.createElement('div');
+    var fieldEls = [], thumbBtns = [], allBtn;
+    sheet.id = 'oypPrev';
+    sheet.className = 'oyp-prev';
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-label', 'Print preview');
+    box.className = 'oyp-prevbox';
+    box.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); };
+    stage.className = 'oyp-prevstage';
+    stage.id = 'oypPrevStage';
+    strip.className = 'oyp-prevstrip';
+    prevBtn.type = 'button';
+    prevBtn.className = 'oyp-prevnav';
+    prevBtn.setAttribute('data-nav', 'prev');
+    prevBtn.setAttribute('aria-label', 'Previous');
+    prevBtn.textContent = '\u2039';
+    nextBtn.type = 'button';
+    nextBtn.className = 'oyp-prevnav';
+    nextBtn.setAttribute('data-nav', 'next');
+    nextBtn.setAttribute('aria-label', 'Next');
+    nextBtn.textContent = '\u203a';
+    thumbs.className = 'oyp-prevthumbs';
+    count.className = 'oyp-prevcount';
+    count.id = 'oypPrevCount';
+    kindLine.className = 'oyp-prevkind';
+    kindLine.setAttribute('data-sticker-kind', '1');
+    fieldsWrap.className = 'oyp-prevfields';
+    save.className = 'oyp-prevsave';
+    toggle.type = 'checkbox';
+    toggle.disabled = true;
+    toggle.setAttribute('disabled', 'disabled');
+    toggle.setAttribute('data-save', 'item');
+    toggle.setAttribute('aria-label', 'Save to item');
+    saveText.textContent = 'Save to item';
+    note.className = 'oyp-prevnote';
+    note.setAttribute('data-save-note', '1');
+    note.textContent = 'Saving onto the item needs a paste that is not in the script yet. These edits apply to this print only.';
+    acts.className = 'oyp-prevacts';
+    function act(name, label, primary) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'oyp-prevbtn' + (primary ? ' is-primary' : '');
+      b.setAttribute('data-print', name);
+      b.textContent = label;
+      b.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        finish(name === 'cancel' ? null : name);
+      };
+      acts.appendChild(b);
+      return b;
+    }
+    stickers.forEach(function (sticker, i) {
+      var b = document.createElement('button');
+      var host = document.createElement('div');
+      var num = document.createElement('span');
+      b.type = 'button';
+      b.className = 'oyp-prevthumb';
+      b.setAttribute('data-page', String(i + 1));
+      b.setAttribute('aria-label', 'Page ' + (i + 1));
+      host.className = 'oyp-prevmini';
+      num.className = 'oyp-prevnum';
+      num.textContent = String(i + 1);
+      b.appendChild(host);
+      b.appendChild(num);
+      b.onclick = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        show(i);
+      };
+      thumbs.appendChild(b);
+      thumbBtns.push({ button: b, host: host });
+    });
+    FIELD_DEFS.forEach(function (def) {
+      var row = document.createElement('label');
+      var cap = document.createElement('span');
+      var input = document.createElement('input');
+      row.className = 'oyp-prevfield';
+      cap.textContent = def[1];
+      input.type = 'text';
+      input.setAttribute('data-field', def[0]);
+      input.setAttribute('aria-label', def[1]);
+      input.setAttribute('autocomplete', 'off');
+      input.oninput = function () {
+        var sticker = stickers[index];
+        if (!sticker) return;
+        sticker[def[2]] = input.value;
+        sticker.dirty[def[2]] = true;
+        paintSticker(sticker, stage, thumbBtns[index] && thumbBtns[index].host);
+      };
+      row.appendChild(cap);
+      row.appendChild(input);
+      fieldsWrap.appendChild(row);
+      fieldEls.push({ input: input, prop: def[2] });
+    });
+    allBtn = act('all', 'Print all (' + stickers.length + ')', true);
+    act('one', 'Print this one', false);
+    act('cancel', 'Cancel', false);
+    prevBtn.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); show(index - 1); };
+    nextBtn.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); show(index + 1); };
+    function show(i) {
+      if (!alive || i < 0 || i >= stickers.length) return;
+      index = i;
+      sync();
+      paintSticker(stickers[index], stage, thumbBtns[index] && thumbBtns[index].host);
+    }
+    function sync() {
+      var sticker = stickers[index];
+      var label = (index + 1) + ' / ' + stickers.length;
+      fieldEls.forEach(function (f) {
+        f.input.value = sticker && sticker[f.prop] != null ? String(sticker[f.prop]) : '';
+      });
+      count.textContent = label;
+      count.setAttribute('data-count', label);
+      kindLine.textContent = sticker && sticker.kind === 'jo_card' ? 'JO sticker' : 'Jewelry tag';
+      allBtn.textContent = 'Print all (' + stickers.length + ')';
+      setDisabled(prevBtn, index <= 0);
+      setDisabled(nextBtn, index >= stickers.length - 1);
+      thumbBtns.forEach(function (t, i) {
+        t.button.className = 'oyp-prevthumb' + (i === index ? ' is-on' : '');
+        if (i === index) t.button.setAttribute('aria-current', 'true');
+        else clearAttr(t.button, 'aria-current');
+      });
+    }
+    function paintAll() {
+      var i;
+      for (i = 0; i < stickers.length; i++) paintSticker(stickers[i], i === index ? stage : null, thumbBtns[i] && thumbBtns[i].host);
+    }
+    function finish(which) {
+      if (!alive) return;
+      alive = false;
+      if (state.previewDone === finish) state.previewDone = null;
+      closePreview();
+      if (!which) { resolve(null); return; }
+      var chosen = which === 'one' ? [stickers[index]] : stickers.slice();
+      chosen.forEach(rememberEdits);
+      resolve(printStickers(chosen.map(function (s) { return { jo: s.sourceJo, kind: s.kind }; })));
+    }
+    state.previewDone = finish;
+    strip.appendChild(prevBtn);
+    strip.appendChild(thumbs);
+    strip.appendChild(nextBtn);
+    save.appendChild(toggle);
+    save.appendChild(saveText);
+    box.appendChild(stage);
+    box.appendChild(strip);
+    box.appendChild(count);
+    box.appendChild(kindLine);
+    box.appendChild(fieldsWrap);
+    box.appendChild(save);
+    box.appendChild(note);
+    box.appendChild(acts);
+    sheet.appendChild(box);
+    sheet.onclick = function () { finish(null); };
+    document.body.appendChild(sheet);
+    sync();
+    loadSpecs(stickers).then(function (map) {
+      if (!alive) return;
+      stickers.forEach(function (s) { fillFromSpec(s, map[s.sourceJo]); });
+      sync();
+      return labelReady();
+    }).then(function () {
+      if (!alive) return;
+      paintAll();
+    }).catch(function () {});
+  });
+}
+/* Jewelry tag is the filled primary. JO sticker and Both are the other choices. Cancel closes the sheet.
+   The choice opens a preview. Nothing is queued until Print all or Print this one. */
 function askPrint(jos) {
   jos = (jos || []).map(function (j) { return String(j || '').trim(); }).filter(Boolean);
   if (!jos.length) { toast('Select a sticker first'); return Promise.resolve(null); }
+  if (state.previewDone) state.previewDone(null);
   if (state.kindDone) state.kindDone('cancel');
   var done = false, finish = function () {};
   var sheet = document.createElement('div');
@@ -745,7 +1114,9 @@ function askPrint(jos) {
       if (state.kindDone === finish) state.kindDone = null;
       closeKind();
       if (!choice || choice === 'cancel') { resolve(null); return; }
-      resolve(printStickers(itemsForChoice(jos, choice)));
+      var list = itemsForChoice(jos, choice);
+      if (!list.length) { resolve(null); return; }
+      resolve(openPreview(list));
     };
     state.kindDone = finish;
   });
@@ -2320,7 +2691,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=17';
+  link.href = (base || '') + 'print.css?v=18';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -2376,7 +2747,7 @@ function start() {
       return;
     }
     if (!e.target.closest('#oypPrMenu')) toggleMenu(false);
-    if (panelOpen() && !e.target.closest('#oypPrintPanel') && !e.target.closest('#oypKind')) closePanel();
+    if (panelOpen() && !e.target.closest('#oypPrintPanel') && !e.target.closest('#oypKind') && !e.target.closest('#oypPrev')) closePanel();
     var ask = e.target.closest('[data-oyp-ask]');
     if (ask) { askPrint([ask.getAttribute('data-jo')]); return; }
     var b = e.target.closest('[data-oyp-print]');
@@ -2387,6 +2758,7 @@ function start() {
   });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (state.previewDone) { state.previewDone(); return; }
     if (state.kindDone) { state.kindDone('cancel'); return; }
     toggleMenu(false);
     closePanel();

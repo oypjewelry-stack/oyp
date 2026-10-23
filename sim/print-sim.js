@@ -332,9 +332,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=27') && index.includes('print-label.js?v=11') && index.includes('nav.js?v=58') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=17') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=17') && read('sim/swipe-preview.html').includes('print.css?v=17'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=11') && read('nav.js').includes('print.js?v=27') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=27') && read('staff/print-test.html').includes('print-label.js?v=11') && read('staff/print-test.html').includes('print.css?v=17') && read('staff/print-test.html').includes('nav.js?v=58') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=28') && index.includes('print-label.js?v=11') && index.includes('nav.js?v=59') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=18') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=18') && read('sim/swipe-preview.html').includes('print.css?v=18'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=11') && read('nav.js').includes('print.js?v=28') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=28') && read('staff/print-test.html').includes('print-label.js?v=11') && read('staff/print-test.html').includes('print.css?v=18') && read('staff/print-test.html').includes('nav.js?v=59') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -1459,8 +1459,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v27') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v27') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v28') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v28') >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
@@ -1689,7 +1689,39 @@ drain().then(function () {
   function batch(env) {
     return env.calls.filter(function (b) { return b.op === 'printEnqueueBatch' || b.action === 'printEnqueueBatch'; }).pop();
   }
-  const tag = armKind(bootPrint({}));
+  function find(env, attr, val) {
+    function walk(n) {
+      if (n && n.attrs && n.attrs[attr] === val) return n;
+      const kids = (n && n.children) || [];
+      for (let i = 0; i < kids.length; i++) { const found = walk(kids[i]); if (found) return found; }
+      return null;
+    }
+    for (let i = 0; i < env.sheets.length; i++) { const found = walk(env.sheets[i]); if (found) return found; }
+    return null;
+  }
+  function click(env, attr, val) {
+    const el = find(env, attr, val);
+    if (!el || typeof el.onclick !== 'function') throw new Error('missing ' + attr + '=' + val);
+    el.onclick({ stopPropagation: function () {} });
+    return el;
+  }
+  function fieldTexts(env) {
+    const out = [];
+    function walk(n) {
+      if (n && n.attrs && n.attrs['data-field']) out.push(n.attrs['data-field'] + '=' + (n.value || ''));
+      const kids = (n && n.children) || [];
+      for (let i = 0; i < kids.length; i++) walk(kids[i]);
+    }
+    env.sheets.forEach(walk);
+    return out;
+  }
+  const prevCss = (read('print.css').split('.oyp-prev{')[1] || '');
+  eq(prevCss.includes('.oyp-prevnav{') && prevCss.includes('.oyp-prevthumb{') && prevCss.includes('.oyp-prevfield input') && prevCss.includes('.oyp-prevbtn{') && prevCss.includes('.oyp-prevsave input') && prevCss.includes('min-height:44px') && prevCss.includes('min-width:34px') && prevCss.includes('min-height:34px'), 'preview controls are at least 34px');
+  eq(!read('print.js').includes('printItemSave') && !read('print.js').includes('jobReviewSave') && read('print.js').split('openPreview(').length === 3, 'the preview does not call a save action, and only the kind choice opens it');
+  eq(read('paste/PrintItemSave.gs').includes("action !== 'printItemSave'") && read('paste/PrintItemSave.gs').includes('jo is the row key') && read('paste/SETUP-print.txt').includes('PrintItemSave.gs'), 'the item save script is written for the next paste and is not wired');
+  const tag = armKind(bootPrint({
+    queue: { ok: true, items: [], spec: { client: 'Ada Lopez', price: '11500', description: 'Silver Necklace', item_type: 'Earring', metal: 'Gold', karat: '14K', stones: 'Cubic Zirconia', weight_g: '7', sku: '18-498', location: 'A.R3' } }
+  }));
   const pending = tag.sandbox.OYPPrint.askPrint(['26-287B', '26-288', '26-289']);
   const primary = (function walk(n) {
     if (n && n.attrs && n.attrs['aria-current'] === 'true') return n;
@@ -1699,28 +1731,81 @@ drain().then(function () {
   })(tag.sheets[0]);
   eq(!!primary && primary.attrs['data-kind'] === 'jewelry_tag' && primary.className === 'pill sm' && primary.textContent === 'Jewelry tag', 'Jewelry tag is the preselected primary');
   press(tag, 'jewelry_tag');
-  return pending.then(function () {
-    const body = batch(tag);
-    const kinds = body && body.items.map(function (it) { return it.kind; }).join(',');
-    eq(body && body.items.length === 3 && kinds === 'jewelry_tag,jewelry_tag,jewelry_tag' && body.items[0].jo === '26-287B' && tag.notes.indexOf('Queued 3 jewelry tags') >= 0, 'choosing Jewelry tag queues only jewelry tags, and keeps the JO letter');
-    const card = armKind(bootPrint({}));
-    const cardPending = card.sandbox.OYPPrint.askPrint(['26-287B']);
-    press(card, 'jo_card');
-    return cardPending.then(function () {
-      const cardBody = batch(card);
-      eq(cardBody && cardBody.items.length === 1 && cardBody.items[0].kind === 'jo_card' && cardBody.items[0].jo === '26-287B' && card.notes.indexOf('Queued 1 JO sticker') >= 0 && !card.calls.some(function (b) { return (b.items || []).some(function (it) { return it.kind === 'jewelry_tag'; }); }), 'choosing JO sticker queues only that sticker');
-      const both = armKind(bootPrint({}));
-      const bothPending = both.sandbox.OYPPrint.askPrint(['26-287B', '26-288']);
-      press(both, 'both');
-      return bothPending.then(function () {
-        const bothBody = batch(both);
-        const got = bothBody && bothBody.items.map(function (it) { return it.jo + ':' + it.kind; }).join(',');
-        eq(got === '26-287B:jewelry_tag,26-287B:jo_card,26-288:jewelry_tag,26-288:jo_card' && both.notes.indexOf('Queued 2 jewelry tags and 2 JO stickers') >= 0, 'Both queues one jewelry tag and one JO sticker per JO');
-        const cancel = armKind(bootPrint({}));
-        const cancelPending = cancel.sandbox.OYPPrint.askPrint(['26-287B']);
-        press(cancel, 'cancel');
-        return cancelPending.then(function (r) {
-          eq(r == null && !batch(cancel) && cancel.notes.length === 0, 'Cancel queues nothing');
+  eq(!batch(tag) && tag.sheets.some(function (s) { return s.id === 'oypPrev'; }), 'choosing Jewelry tag opens the preview and does not queue');
+  return drain().then(function () {
+    const save = find(tag, 'data-save', 'item');
+    const note = find(tag, 'data-save-note', '1');
+    const count = tag.sandbox.document.getElementById('oypPrevCount');
+    const fields = fieldTexts(tag).join(',');
+    const nums = [];
+    (function walk(n) {
+      if (n && n.className === 'oyp-prevnum') nums.push(n.textContent);
+      ((n && n.children) || []).forEach(walk);
+    })(tag.sheets[0]);
+    eq(!!find(tag, 'id', 'oypPrev') || tag.sheets.some(function (s) { return s.id === 'oypPrev'; }), 'the preview sheet is open');
+    eq(count && count.textContent === '1 / 3' && nums.join(',') === '1,2,3' && find(tag, 'data-print', 'all').textContent === 'Print all (3)' && find(tag, 'data-print', 'one').textContent === 'Print this one', 'the strip is numbered, the counter is 1 / 3, and both print buttons are there');
+    eq(save && save.disabled === true && save.attrs.disabled === 'disabled' && note && note.textContent.indexOf('this print only') >= 0, 'Save to item is disabled, and the note says this print only');
+    eq(fields.indexOf('price=11500') >= 0 && fields.indexOf('name=Silver Necklace') >= 0 && fields.indexOf('type=Earring') >= 0 && fields.indexOf('metal=Gold') >= 0 && fields.indexOf('karat=14K') >= 0 && fields.indexOf('stones=Cubic Zirconia') >= 0 && fields.indexOf('weight=7') >= 0 && fields.indexOf('jo=26-287B') >= 0 && fields.indexOf('sku=18-498') >= 0 && fields.indexOf('location=A.R3') >= 0 && fields.indexOf('Ada Lopez') < 0, 'the tag fields load from the item, and the client name is not one of them');
+    eq(find(tag, 'data-nav', 'prev').disabled === true, 'previous is disabled on the first tag');
+    eq(!batch(tag) && !tag.calls.some(function (b) { return b.action === 'printItemSave' || b.op === 'printItemSave' || b.action === 'jobReviewSave'; }), 'the kind choice still has not queued or saved');
+    click(tag, 'data-nav', 'next');
+    eq(count.textContent === '2 / 3' && find(tag, 'data-page', '2').attrs['aria-current'] === 'true' && fieldTexts(tag).join(',').indexOf('jo=26-288') >= 0, 'next moves to item 2 of 3');
+    const name = find(tag, 'data-field', 'name');
+    name.value = 'Pearl Stud';
+    name.oninput();
+    eq(name.value === 'Pearl Stud', 'the name field keeps the edit');
+    click(tag, 'data-print', 'all');
+    return pending.then(function () {
+      const body = batch(tag);
+      const kinds = body && body.items.map(function (it) { return it.kind; }).join(',');
+      const jos = body && body.items.map(function (it) { return it.jo; }).join(',');
+      const extra = body && body.items.some(function (it) { return it.price || it.name || it.client; });
+      const edited = tag.sandbox.OYPPrint.labelOpts({ jo: '26-288', kind: 'jewelry_tag', price: '1', description: 'Sheet name', client: 'Ada Lopez' });
+      const untouched = tag.sandbox.OYPPrint.labelOpts({ jo: '26-287B', kind: 'jewelry_tag', price: '9', description: 'Sheet name' });
+      const otherKind = tag.sandbox.OYPPrint.labelOpts({ jo: '26-288', kind: 'jo_card' });
+      eq(body && body.items.length === 3 && kinds === 'jewelry_tag,jewelry_tag,jewelry_tag' && jos === '26-287B,26-288,26-289' && !extra && tag.notes.indexOf('Queued 3 jewelry tags') >= 0, 'Print all queues only jewelry tags, and keeps the JO letter');
+      eq(edited.name === 'Pearl Stud' && edited.description === '' && String(edited.price) === '1' && !('client' in edited) && untouched.name === '' && untouched.description === 'Sheet name' && otherKind.jo === '26-288', 'the name edit applies to this tag only, and a JO sticker of the same JO is left alone');
+      const card = armKind(bootPrint({}));
+      const cardPending = card.sandbox.OYPPrint.askPrint(['26-287B']);
+      press(card, 'jo_card');
+      return drain().then(function () {
+        eq(!batch(card) && find(card, 'data-sticker-kind', '1').textContent === 'JO sticker' && fieldTexts(card).some(function (s) { return s.indexOf('jo=26-287B') === 0; }) && find(card, 'data-save', 'item').disabled === true, 'JO sticker opens the same preview and does not queue yet');
+        const joField = find(card, 'data-field', 'jo');
+        joField.value = '26-999';
+        joField.oninput();
+        click(card, 'data-print', 'one');
+        return cardPending.then(function () {
+          const cardBody = batch(card);
+          const printed = card.sandbox.OYPPrint.labelOpts({ jo: '26-287B', kind: 'jo_card', metal: 'Gold' });
+          const tagSame = card.sandbox.OYPPrint.labelOpts({ jo: '26-287B', kind: 'jewelry_tag', metal: 'Gold' });
+          eq(cardBody && cardBody.items.length === 1 && cardBody.items[0].kind === 'jo_card' && cardBody.items[0].jo === '26-287B' && card.notes.indexOf('Queued 1 JO sticker') >= 0 && printed.jo === '26-999' && tagSame.jo === '26-287B', 'Print this one queues the JO sticker, and the JO edit is print-only');
+          const both = armKind(bootPrint({}));
+          const bothPending = both.sandbox.OYPPrint.askPrint(['26-287B', '26-288']);
+          press(both, 'both');
+          return drain().then(function () {
+            eq(!batch(both) && both.sandbox.document.getElementById('oypPrevCount').textContent === '1 / 4', 'Both opens one page per sticker and does not queue yet');
+            click(both, 'data-print', 'all');
+            return bothPending.then(function () {
+              const bothBody = batch(both);
+              const got = bothBody && bothBody.items.map(function (it) { return it.jo + ':' + it.kind; }).join(',');
+              eq(got === '26-287B:jewelry_tag,26-287B:jo_card,26-288:jewelry_tag,26-288:jo_card' && both.notes.indexOf('Queued 2 jewelry tags and 2 JO stickers') >= 0, 'Both queues one jewelry tag and one JO sticker per JO');
+              const cancel = armKind(bootPrint({}));
+              const cancelPending = cancel.sandbox.OYPPrint.askPrint(['26-287B']);
+              press(cancel, 'cancel');
+              return cancelPending.then(function (r) {
+                eq(r == null && !batch(cancel) && cancel.notes.length === 0, 'Cancel queues nothing');
+                const back = armKind(bootPrint({}));
+                const backPending = back.sandbox.OYPPrint.askPrint(['26-287B']);
+                press(back, 'jewelry_tag');
+                return drain().then(function () {
+                  click(back, 'data-print', 'cancel');
+                  return backPending.then(function (closed) {
+                    eq(closed == null && !batch(back) && back.notes.length === 0, 'closing the preview queues nothing');
+                  });
+                });
+              });
+            });
+          });
         });
       });
     });

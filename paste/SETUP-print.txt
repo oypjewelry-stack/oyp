@@ -54,3 +54,13 @@ Site
   A connected printer checks printQueue about every 5 seconds. That check is only the oypPrintRev cache value. Until this PrintQueue.gs is pasted, the page stays on a full read every 15 seconds.
   The delta files are the same changes split, for a PrintQueue that was pasted from an older copy and should not be replaced whole. Apply them in this order, then the Code.gs patch: PrintQueue.gs.rev.patch.txt, PrintQueue.gs.auto.patch.txt, PrintQueue.gs.batch.patch.txt, PrintQueue.gs.kinds.patch.txt. Do not also paste the whole PrintQueue.gs on top of those.
   The device that saved the page, or moved the piece to the last step, prints at once when its printer is connected and allowed to print that kind, then marks the row printed.
+
+Not pasted yet — print preview edits
+  The print preview can change price, name, type, metal, karat, stones, weight, SKU, and location for this print only.
+  The page does not call a save action. Save to item stays off until this file is pasted and the page is changed to call it.
+  Do not add printItemSave to FAST.READS, FAST.CACHE, DCACHE.READS, or the client READS list. It is a write.
+  Do not rename a JO. The JO on the sticker is print-only. The row key stays the JO she opened.
+  paste/PrintItemSave.gs is the whole file. New script file named PrintItemSave. No new columns. No new OAuth scopes.
+  It writes only JobOrders headers that already exist, through jobSet_. A missing header is left alone. It does not clear the sheet.
+  Hook — one line, in Auth.gs handleAction_, on its own line immediately after the print hook, and only when the page is ready to call it:
+    if (typeof isPrintItemSaveAction_ === 'function' && isPrintItemSaveAction_(a)) return handlePrintItemSave_(req, s.user); // PrintItemSave.gs
