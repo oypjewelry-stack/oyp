@@ -74,6 +74,41 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .oyp-prevbox button:active{transform:scale(.97)}
 @media (prefers-reduced-motion:reduce){.oyp-prevbox button{transition:none}.oyp-prevbox button:active{transform:none;opacity:.72}}
 @media (min-width:760px){.oyp-prev{align-items:center}.oyp-prevacts{flex-direction:row}.oyp-prevacts .oyp-prevbtn{flex:1}}
+/* Layout editor. Above the preview. Dragging snaps to 0.5 mm; the controls are at least 34px. */
+.oyp-lay{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;padding:12px;box-sizing:border-box}
+.oyp-laybox{background:#fff;width:min(720px,100%);max-height:min(960px,calc(100vh - 24px));overflow:auto;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);box-sizing:border-box}
+.oyp-laytitle{margin:0;min-height:34px;display:flex;align-items:center;font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:22px;font-weight:500;color:#111}
+.oyp-layhint{margin:0;min-height:34px;display:flex;align-items:center;font-family:var(--label,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;line-height:1.4;color:#444}
+.oyp-laystage{background:#f3f3f3;border-radius:12px;padding:8px;overflow:auto;max-width:100%;box-sizing:border-box}
+.oyp-layframe{display:flex;flex-direction:column;width:max-content;max-width:100%}
+.oyp-layrow{display:flex;align-items:flex-start}
+.oyp-laycorner{width:28px;height:22px;flex:none;background:#f7f7f7}
+.oyp-layruler{display:block;flex:none;background:#f7f7f7}
+.oyp-laypaper{position:relative;background:#fff;line-height:0;box-shadow:0 0 0 1px #ddd;touch-action:none}
+.oyp-laycanvas{display:block;image-rendering:pixelated}
+.oyp-layhits{position:absolute;inset:0}
+.oyp-layhit{position:absolute;padding:0;margin:0;border:1px dashed transparent;background:transparent;box-sizing:border-box;min-width:34px;min-height:34px;touch-action:none}
+.oyp-layhit.is-on{border-color:#1a56d6;border-style:solid}
+.oyp-layhandle{position:absolute;z-index:5;width:34px;height:34px;min-width:34px;min-height:34px;border:1.5px solid #111;border-radius:8px;background:#fff;padding:0;box-sizing:border-box;touch-action:none;cursor:nwse-resize}
+.oyp-laypicks{display:flex;flex-wrap:wrap;gap:8px}
+.oyp-laypick{min-height:44px;min-width:44px;padding:0 12px;border:1.5px solid #111;border-radius:999px;background:#fff;color:#111;font-family:var(--label,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;cursor:pointer;box-sizing:border-box}
+.oyp-laypick.is-on{background:#111;color:#fff}
+.oyp-laypick.is-off{opacity:.45}
+.oyp-laytools{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.oyp-layfield{display:flex;flex-direction:column;gap:4px}
+.oyp-layfield span{font-family:var(--label,Inter,system-ui,sans-serif);font-size:12px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:#444}
+.oyp-layfield input{height:44px;min-height:44px;min-width:72px;width:96px;border:1.5px solid #111;border-radius:12px;padding:0 10px;font-family:var(--body,'Bodoni Moda',Georgia,serif);font-size:16px;background:#fff;color:#111;box-sizing:border-box}
+.oyp-laynudge{display:flex;flex-wrap:wrap;gap:8px}
+.oyp-laybtn{min-height:44px;min-width:44px;height:44px;padding:0 14px;border:1.5px solid #111;border-radius:999px;background:#fff;color:#111;font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:16px;font-weight:500;cursor:pointer;box-sizing:border-box}
+.oyp-laybtn.is-on,.oyp-laybtn.is-primary{background:#111;color:#fff}
+.oyp-layacts{display:flex;flex-direction:column;gap:8px}
+.oyp-laybox button,.oyp-laybox input{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.oyp-laybox button{transition:transform 50ms}
+.oyp-laybox button:active{transform:scale(.97)}
+button.pill.oyp-layopen{min-height:44px;height:44px;min-width:44px;box-sizing:border-box}
+@media (prefers-reduced-motion:reduce){.oyp-laybox button{transition:none}.oyp-laybox button:active{transform:none;opacity:.72}}
+@media (max-width:759px){.oyp-lay{padding:0;align-items:stretch}.oyp-laybox{width:100%;max-height:100vh;border-radius:0}}
+@media (min-width:760px){.oyp-lay{align-items:center}.oyp-layacts{flex-direction:row}.oyp-layacts .oyp-laybtn{flex:1}}
 
 :where(.oyp-pr .whomenu){position:absolute;background:#fff;border:1px solid #eee;border-radius:calc(12px * var(--rad,1));box-shadow:0 8px 24px rgba(0,0,0,.08);padding:calc(6px * var(--sp,1)) 0}
 :where(.oyp-pr .whomenu button){display:block;width:100%;text-align:left;background:none;border:0;padding:calc(12px * var(--sp,1)) calc(18px * var(--sp,1));font-family:var(--label,Inter,system-ui,sans-serif);font-weight:500;font-size:calc(12px * var(--fs,1));letter-spacing:.08em;text-transform:uppercase;color:#111;cursor:pointer}

@@ -64,3 +64,13 @@ Not pasted yet — print preview edits
   It writes only JobOrders headers that already exist, through jobSet_. A missing header is left alone. It does not clear the sheet.
   Hook — one line, in Auth.gs handleAction_, on its own line immediately after the print hook, and only when the page is ready to call it:
     if (typeof isPrintItemSaveAction_ === 'function' && isPrintItemSaveAction_(a)) return handlePrintItemSave_(req, s.user); // PrintItemSave.gs
+
+Not pasted yet — label layout
+  The layout editor saves each kind on this station immediately (localStorage key oypPrint, field layout).
+  It also calls printLayout on open and printLayoutSet on save. Until the paste below is in, those calls fail and the page keeps the local copy. Do not toast that failure.
+  Do not add printLayout or printLayoutSet to FAST.READS, FAST.CACHE, DCACHE.READS, or the client READS list.
+  Do not put them in PrintQueue.gs. This is its own file, so a PrintQueue paste does not have to ship it.
+  paste/PrintLayout.gs is the whole file. New script file named PrintLayout. No new columns. No new OAuth scopes. No sheet writes.
+  It stores one Script Property, print_layout. Any signed-in user can read and save it, so every station gets the same layout.
+  Hook — one line, in Auth.gs handleAction_, on its own line immediately after the print hook:
+    if (typeof isPrintLayoutAction_ === 'function' && isPrintLayoutAction_(a)) return handlePrintLayout_(req, s.user, a); // PrintLayout.gs

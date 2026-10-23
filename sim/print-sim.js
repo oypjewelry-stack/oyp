@@ -134,6 +134,32 @@ const noPrice = L.render({
   weight: 7, jo: '26-002', sku: '18-498', location: 'A.R3'
 });
 eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
+function packed(img) {
+  let bits = '';
+  for (let i = 0; i < img.data.length; i += 4) bits += img.data[i] < 128 ? '1' : '0';
+  return bits;
+}
+const layItem = { kind: 'jewelry_tag', model: 'B1', price: 11500, name: 'Silver Necklace', item_type: 'Earring', metal: 'Gold', karat: '14KWG', stones: 'Cubic Zirconia 1.25mm x 30', weight: 7, jo: '26-002', sku: '18-498', location: 'A.R3', client: 'Elena Tan' };
+const layBase = L.normalizeLayout('jewelry_tag', null);
+const lay0 = L.render(Object.assign({ layout: layBase }, layItem));
+const layPrice = JSON.parse(JSON.stringify(layBase));
+layPrice.price.x = 40;
+layPrice.price.y = 8;
+const lay1 = L.render(Object.assign({ layout: layPrice }, layItem));
+const layQr = JSON.parse(JSON.stringify(layBase));
+layQr.qr.x = 40;
+layQr.qr.y = 8;
+layQr.qr.qr = 12;
+const lay2 = L.render(Object.assign({ layout: layQr }, layItem));
+eq(packed(lay0) !== packed(lay1) && lay1.lines.indexOf('₱11,500.00') >= 0 && lay1.lines.indexOf('ELENA') < 0, 'the encoded bitmap changes when the layout moves the price');
+eq(packed(lay0) !== packed(lay2) && lay2.qrBox && lay0.qrBox && lay2.qrBox.size > lay0.qrBox.size && decode(lay2) === '26-002', 'the encoded bitmap changes when the layout enlarges the QR');
+eq(paperPx(lay0, 8, 120) === 0 && paperPx(lay0, 12, 120) === 255 && paperPx(lay0, 300, 40) === 255 && decode(lay0) === '26-002', 'the default layout keeps the NIIMBOT fold, a blank tail, and a scannable QR');
+const cardLay = L.normalizeLayout('jo_card', null);
+const cardA = L.render({ kind: 'jo_card', model: 'B31', jo: '26-002', due: '2026-10-27', layout: cardLay });
+const cardMoved = JSON.parse(JSON.stringify(cardLay));
+cardMoved.jo.y = 14;
+const cardB = L.render({ kind: 'jo_card', model: 'B31', jo: '26-002', due: '2026-10-27', layout: cardMoved });
+eq(packed(cardA) !== packed(cardB) && cardA.lines.indexOf('26-002') >= 0 && cardA.lines.indexOf('DUE 27 OCT') >= 0 && decode(cardA) === '26-002', 'the encoded JO bitmap changes when that layout moves the JO');
 eq(!noPrice.lines.some(s => s.indexOf('₱') >= 0 || s.indexOf('0.00') >= 0 || s.indexOf('11,500') >= 0) && noPrice.lines.indexOf('Silver Necklace') >= 0 && noPrice.lines.indexOf('26-002') >= 0, 'a missing price stays blank');
 const shiftedTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-002', shiftX: L.px(0.5), shiftY: L.px(-1) });
 const stillTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-002' });
@@ -332,9 +358,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=28') && index.includes('print-label.js?v=11') && index.includes('nav.js?v=59') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=18') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=18') && read('sim/swipe-preview.html').includes('print.css?v=18'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=11') && read('nav.js').includes('print.js?v=28') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=28') && read('staff/print-test.html').includes('print-label.js?v=11') && read('staff/print-test.html').includes('print.css?v=18') && read('staff/print-test.html').includes('nav.js?v=59') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=29') && index.includes('print-label.js?v=12') && index.includes('nav.js?v=60') && index.includes('app.js?v=36') && index.includes('settings.js?v=21') && index.includes('print.css?v=19') && index.includes('app.css?v=52') && index.includes('settings.css?v=11') && index.includes('inv.js?v=16') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=2') && index.includes('review.js?v=20') && index.includes('count.js?v=2') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=19') && read('sim/swipe-preview.html').includes('print.css?v=19'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=12') && read('nav.js').includes('print.js?v=29') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=29') && read('staff/print-test.html').includes('print-label.js?v=12') && read('staff/print-test.html').includes('print.css?v=19') && read('staff/print-test.html').includes('nav.js?v=60') && read('staff/print-test.html').includes('app.css?v=52'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -1459,8 +1485,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v28') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v28') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v29') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v29') >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
@@ -1717,8 +1743,12 @@ drain().then(function () {
   }
   const prevCss = (read('print.css').split('.oyp-prev{')[1] || '');
   eq(prevCss.includes('.oyp-prevnav{') && prevCss.includes('.oyp-prevthumb{') && prevCss.includes('.oyp-prevfield input') && prevCss.includes('.oyp-prevbtn{') && prevCss.includes('.oyp-prevsave input') && prevCss.includes('min-height:44px') && prevCss.includes('min-width:34px') && prevCss.includes('min-height:34px'), 'preview controls are at least 34px');
+  const layCss = (read('print.css').split('.oyp-lay{')[1] || '');
+  eq(layCss.includes('.oyp-layhandle{') && layCss.includes('min-width:34px') && layCss.includes('min-height:44px') && layCss.includes('.oyp-laybtn{') && layCss.includes('.oyp-laypick{'), 'layout editor controls are at least 34px');
+  eq(read('print.js').includes('Edit layout') && read('print.js').includes('printLayoutSet') && read('print.js').includes('id="prLayTag"') && read('print.js').includes('id="prLayCard"') && read('print.js').includes('o.layout'), 'the layout editor is on the preview and in Settings, and the print uses the saved layout');
   eq(!read('print.js').includes('printItemSave') && !read('print.js').includes('jobReviewSave') && read('print.js').split('openPreview(').length === 3, 'the preview does not call a save action, and only the kind choice opens it');
   eq(read('paste/PrintItemSave.gs').includes("action !== 'printItemSave'") && read('paste/PrintItemSave.gs').includes('jo is the row key') && read('paste/SETUP-print.txt').includes('PrintItemSave.gs'), 'the item save script is written for the next paste and is not wired');
+  eq(read('paste/PrintLayout.gs').includes("a !== 'printLayout' && a !== 'printLayoutSet'") && read('paste/PrintLayout.gs').includes('print_layout') && read('paste/SETUP-print.txt').includes('PrintLayout.gs') && !read('paste/PrintQueue.gs').includes('printLayoutSet'), 'the layout script is a separate paste and the queue file does not claim it');
   const tag = armKind(bootPrint({
     queue: { ok: true, items: [], spec: { client: 'Ada Lopez', price: '11500', description: 'Silver Necklace', item_type: 'Earring', metal: 'Gold', karat: '14K', stones: 'Cubic Zirconia', weight_g: '7', sku: '18-498', location: 'A.R3' } }
   }));

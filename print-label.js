@@ -142,14 +142,14 @@ function dashes(img, x, y, w) {
   }
 }
 /* Words wrap to maxLines. The last line ellipsizes when the rest does not fit. */
-function wrapLines(text, maxW, size, maxLines) {
+function wrapLines(text, maxW, size, maxLines, bold) {
   var words = text.split(' ').filter(Boolean), lines = [], cur = '', i, trial;
   if (!words.length || maxLines < 1) return lines;
   for (i = 0; i < words.length; i++) {
     trial = cur ? cur + ' ' + words[i] : words[i];
-    if (metricsOf(trial, size).w <= maxW) { cur = trial; continue; }
+    if (metricsOf(trial, size, bold).w <= maxW) { cur = trial; continue; }
     if (cur && lines.length < maxLines - 1) { lines.push(cur); cur = ''; i--; continue; }
-    lines.push(ellipsis(cur ? cur + ' ' + words.slice(i).join(' ') : words.slice(i).join(' '), maxW, size));
+    lines.push(ellipsis(cur ? cur + ' ' + words.slice(i).join(' ') : words.slice(i).join(' '), maxW, size, bold));
     return lines;
   }
   if (cur) lines.push(cur);
@@ -300,10 +300,13 @@ function measureCtx() {
   if (!scratch) scratch = makeCanvas(8, 8).getContext('2d');
   return scratch;
 }
-function fontCss(size) { return '700 ' + (size * SCALE) + 'px ' + FAMILY; }
-function metricsOf(text, size) {
+function fontCss(size, bold) {
+  var weight = (bold === 0 || bold === false) ? '400' : '700';
+  return weight + ' ' + (size * SCALE) + 'px ' + FAMILY;
+}
+function metricsOf(text, size, bold) {
   var ctx = measureCtx();
-  ctx.font = fontCss(size);
+  ctx.font = fontCss(size, bold);
   var m = ctx.measureText(text || 'H');
   return {
     w: m.width / SCALE,
@@ -316,13 +319,13 @@ function sizeThatFits(text, maxW, start, min) {
   while (size > min && metricsOf(text, size).w > maxW) size -= 1;
   return metricsOf(text, size).w <= maxW ? size : 0;
 }
-function ellipsis(text, maxW, size) {
-  if (metricsOf(text, size).w <= maxW) return text;
+function ellipsis(text, maxW, size, bold) {
+  if (metricsOf(text, size, bold).w <= maxW) return text;
   var cut = text;
-  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size).w > maxW) cut = cut.slice(0, -1);
+  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold).w > maxW) cut = cut.slice(0, -1);
   cut = cut.replace(/\s+$/, '');
   var out = (cut || text.charAt(0)) + '...';
-  while (out.length > 4 && metricsOf(out, size).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
+  while (out.length > 4 && metricsOf(out, size, bold).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
   return out;
 }
 /* One size for every spec line. Shrink until the longest fits, then ellipsis. */
@@ -409,7 +412,7 @@ function stampText(img, runs, box) {
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
   runs.forEach(function (run) {
-    ctx.font = fontCss(run.size);
+    ctx.font = fontCss(run.size, run.bold);
     var m = ctx.measureText(run.text);
     var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
     ctx.fillText(run.text, Math.round((run.x - box.offsetX) * SCALE), Math.round(run.y * SCALE + ascent));
@@ -439,7 +442,7 @@ function stampLocal(img, runs) {
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
   runs.forEach(function (run) {
-    ctx.font = fontCss(run.size);
+    ctx.font = fontCss(run.size, run.bold);
     var m = ctx.measureText(run.text);
     var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
     ctx.fillText(run.text, Math.round(run.x * SCALE), Math.round(run.y * SCALE + ascent));
@@ -457,8 +460,239 @@ function stampLocal(img, runs) {
     }
   }
 }
+/* Saved positions are millimetres from the top-left of the readable label.
+   No opts.layout keeps the built-in NIIMBOT drawer below. A layout draws each
+   element where it was saved, so the editor, the preview, and the print match. */
+var LAYOUT_FIELDS = [
+  { id: 'price', label: 'Price', kind: 'text' },
+  { id: 'logo', label: 'Logo', kind: 'logo' },
+  { id: 'name', label: 'Name', kind: 'text' },
+  { id: 'type', label: 'Type', kind: 'text' },
+  { id: 'metal', label: 'Metal', kind: 'text' },
+  { id: 'karat', label: 'Karat', kind: 'text' },
+  { id: 'fold', label: 'Fold line', kind: 'fold' },
+  { id: 'stones', label: 'Stones', kind: 'text' },
+  { id: 'weight', label: 'Weight', kind: 'text' },
+  { id: 'jo', label: 'JO', kind: 'text' },
+  { id: 'sku', label: 'SKU', kind: 'text' },
+  { id: 'location', label: 'Location', kind: 'text' },
+  { id: 'qr', label: 'QR', kind: 'qr' },
+  { id: 'line', label: 'Due line', kind: 'text', card: 1 }
+];
+var LAYOUT_BASE = {
+  jewelry_tag: {
+    price: { show: 1, x: 1, y: 0.8, size: 17, bold: 1, align: 'left', w: 14, wrap: 1 },
+    logo: { show: 1, x: 19.5, y: 1 },
+    name: { show: 1, x: 1, y: 4.1, size: 15, bold: 1, align: 'left', w: 23, wrap: 1 },
+    type: { show: 1, x: 1, y: 12.5, size: 12, bold: 1, align: 'left', w: 7, wrap: 1 },
+    metal: { show: 1, x: 9, y: 12.5, size: 12, bold: 1, align: 'center', w: 7, wrap: 1 },
+    karat: { show: 1, x: 16.5, y: 12.5, size: 12, bold: 1, align: 'right', w: 7.5, wrap: 1 },
+    fold: { show: 1, x: 1, y: 15, w: 23 },
+    stones: { show: 1, x: 1, y: 15.5, size: 10, bold: 1, align: 'left', w: 23, wrap: 3 },
+    weight: { show: 1, x: 1, y: 27.2, size: 9, bold: 1, align: 'left', w: 10, wrap: 1 },
+    jo: { show: 1, x: 8, y: 23.2, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
+    sku: { show: 1, x: 8, y: 24.6, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
+    location: { show: 1, x: 8, y: 26, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
+    qr: { show: 1, x: 17.8, y: 22.8, qr: 6.2 },
+    line: { show: 0, x: 1, y: 20, size: 9, bold: 1, align: 'left', w: 16, wrap: 1 }
+  },
+  jo_card: {
+    price: { show: 0, x: 1, y: 1, size: 12, bold: 1, align: 'left', w: 14, wrap: 1 },
+    logo: { show: 0, x: 24, y: 1 },
+    name: { show: 0, x: 1, y: 4, size: 12, bold: 1, align: 'left', w: 16, wrap: 1 },
+    type: { show: 0, x: 1, y: 7, size: 10, bold: 1, align: 'left', w: 8, wrap: 1 },
+    metal: { show: 0, x: 10, y: 7, size: 10, bold: 1, align: 'center', w: 8, wrap: 1 },
+    karat: { show: 0, x: 19, y: 7, size: 10, bold: 1, align: 'right', w: 8, wrap: 1 },
+    fold: { show: 0, x: 1, y: 10, w: 28 },
+    stones: { show: 0, x: 1, y: 11, size: 9, bold: 1, align: 'left', w: 16, wrap: 2 },
+    weight: { show: 0, x: 1, y: 16, size: 9, bold: 1, align: 'left', w: 8, wrap: 1 },
+    jo: { show: 1, x: 18.6, y: 4.2, size: 22, bold: 1, align: 'left', w: 10.4, wrap: 1 },
+    sku: { show: 0, x: 18.6, y: 13, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
+    location: { show: 0, x: 18.6, y: 15, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
+    qr: { show: 1, x: 1, y: 1.5, qr: 17 },
+    line: { show: 1, x: 18.6, y: 10.2, size: 12, bold: 1, align: 'left', w: 10.4, wrap: 1 }
+  }
+};
+function copyFields(src) {
+  var out = {}, k;
+  for (k in src) if (Object.prototype.hasOwnProperty.call(src, k)) out[k] = src[k];
+  return out;
+}
+function paperMm(kind) {
+  if (kind === 'jewelry_tag' || kind === 'cal_tag') return { w: 70, h: 30 };
+  return { w: 30, h: 20 };
+}
+function elementDefaults(kind) {
+  var src = LAYOUT_BASE[kind === 'jo_card' ? 'jo_card' : 'jewelry_tag'];
+  var out = {}, id;
+  for (id in src) if (Object.prototype.hasOwnProperty.call(src, id)) out[id] = copyFields(src[id]);
+  return out;
+}
+function layoutFields(kind) {
+  var card = kind === 'jo_card', out = [], i;
+  for (i = 0; i < LAYOUT_FIELDS.length; i++) if (card || !LAYOUT_FIELDS[i].card) out.push(LAYOUT_FIELDS[i]);
+  return out;
+}
+function clampMm(v, fallback, min, max) {
+  var n = Math.round(Number(v) * 10) / 10;
+  if (!isFinite(n)) n = fallback;
+  if (n < min) n = min;
+  if (n > max) n = max;
+  return n;
+}
+function alignOf(v) { return v === 'center' || v === 'right' ? v : 'left'; }
+function normalizeLayout(kind, saved) {
+  var base = elementDefaults(kind);
+  var paper = paperMm(kind);
+  var id, src, el;
+  saved = saved && typeof saved === 'object' ? saved : {};
+  for (id in base) {
+    if (!Object.prototype.hasOwnProperty.call(base, id)) continue;
+    src = saved[id] && typeof saved[id] === 'object' ? saved[id] : {};
+    el = base[id];
+    if (src.show === 0 || src.show === false) el.show = 0;
+    else if (src.show === 1 || src.show === true) el.show = 1;
+    el.x = clampMm(src.x != null ? src.x : el.x, el.x, 0, Math.max(0, paper.w - 2));
+    el.y = clampMm(src.y != null ? src.y : el.y, el.y, 0, Math.max(0, paper.h - 2));
+    if (el.size != null) {
+      el.size = Math.round(Number(src.size != null ? src.size : el.size));
+      if (!isFinite(el.size)) el.size = 12;
+      if (el.size < 6) el.size = 6;
+      if (el.size > 72) el.size = 72;
+    }
+    if (el.bold != null) el.bold = (src.bold === 0 || src.bold === false) ? 0 : 1;
+    if (el.align != null) el.align = alignOf(src.align != null ? src.align : el.align);
+    if (el.w != null) el.w = clampMm(src.w != null ? src.w : el.w, el.w, 1, paper.w);
+    if (el.wrap != null) {
+      el.wrap = Math.round(Number(src.wrap != null ? src.wrap : el.wrap));
+      if (!isFinite(el.wrap) || el.wrap < 1) el.wrap = 1;
+      if (el.wrap > 8) el.wrap = 8;
+    }
+    if (el.qr != null) el.qr = clampMm(src.qr != null ? src.qr : el.qr, el.qr, 2, Math.min(paper.w, paper.h));
+  }
+  return base;
+}
+/* Text for one element. The client name is not a field. */
+function elementText(id, opts) {
+  opts = opts || {};
+  if (id === 'price') return moneyText(opts.price);
+  if (id === 'name') return textOf(opts.name || opts.description);
+  if (id === 'type') return pieceType(opts);
+  if (id === 'metal') return upOf(opts.metal);
+  if (id === 'karat') return upOf(opts.karat);
+  if (id === 'stones') return stoneText(opts);
+  if (id === 'weight') return weightText(opts.weight != null && opts.weight !== '' ? opts.weight : opts.weight_g);
+  if (id === 'jo' || id === 'qr') return joCode(opts.jo) || textOf(opts.jo);
+  if (id === 'sku') return textOf(opts.sku || opts.item_id);
+  if (id === 'location') return textOf(opts.location);
+  if (id === 'line') return smallLine(opts);
+  return '';
+}
+function fitQrBox(mods, boxPx) {
+  var mod = 1, best = 1, size;
+  while (mod < 16) {
+    size = qrSize(mods, mod, 2);
+    if (size > boxPx) break;
+    best = mod;
+    mod++;
+  }
+  return { mod: best, quiet: 2, size: qrSize(mods, best, 2) };
+}
+function paintLayout(img, layout, opts, kind) {
+  var fields = layoutFields(kind);
+  var runs = [], placed = [], lines = [];
+  var specPx = 0, joPx = 0, qrInfo = null, i, field, el, text, x, y, w, size, wrapN, bold, block, cursor, li, m, tw, tx, lineH;
+  for (i = 0; i < fields.length; i++) {
+    field = fields[i];
+    el = layout[field.id];
+    if (!el || !el.show) continue;
+    if (field.kind === 'logo') {
+      x = px(el.x); y = px(el.y);
+      blitBits(img, LOGO_ROWS, x, y);
+      placed.push({ id: 'logo', x: x, y: y, w: LOGO_ROWS[0].length, h: LOGO_ROWS.length });
+      continue;
+    }
+    if (field.kind === 'fold') {
+      x = px(el.x); y = px(el.y); w = Math.max(1, px(el.w || 1));
+      dashes(img, x, y, w);
+      placed.push({ id: 'fold', x: x, y: y > 3 ? y - 3 : 0, w: w, h: 8 });
+      continue;
+    }
+    if (field.kind === 'qr') {
+      text = elementText('qr', opts);
+      x = px(el.x); y = px(el.y); w = Math.max(8, px(el.qr || 6));
+      if (text) {
+        var mods = makeQr(text), fit = fitQrBox(mods, w);
+        img.qr(mods, x, y, fit.mod, fit.quiet);
+        qrInfo = { x: x, y: y, size: fit.size, text: text };
+      }
+      placed.push({ id: 'qr', x: x, y: y, w: w, h: w });
+      continue;
+    }
+    text = elementText(field.id, opts);
+    x = px(el.x); y = px(el.y); w = Math.max(4, px(el.w || 4));
+    size = el.size | 0; wrapN = el.wrap | 0 || 1; bold = el.bold ? 1 : 0;
+    if (field.id === 'stones') specPx = size;
+    if (field.id === 'jo') joPx = size;
+    block = [];
+    if (text) block = wrapN <= 1 ? [ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
+    if (!block.length) {
+      placed.push({ id: field.id, x: x, y: y, w: w, h: Math.max(8, size) });
+      continue;
+    }
+    cursor = y;
+    for (li = 0; li < block.length; li++) {
+      m = metricsOf(block[li], size, bold);
+      tw = m.w;
+      if (el.align === 'right') tx = x + w - tw;
+      else if (el.align === 'center') tx = x + (w - tw) / 2;
+      else tx = x;
+      lineH = Math.ceil(m.ascent + m.descent);
+      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold });
+      lines.push(block[li]);
+      cursor += lineH + 2;
+    }
+    placed.push({ id: field.id, x: x, y: y, w: w, h: Math.max(8, cursor - y) });
+  }
+  stampLocal(img, runs);
+  return { lines: lines, placed: placed, specPx: specPx, joPx: joPx, qr: qrInfo };
+}
+function rotatePaper(img, box, paper) {
+  var contentH = box.labelW, dy, dx, pi;
+  for (dy = 0; dy < paper.h; dy++) {
+    for (dx = 0; dx < paper.w; dx++) {
+      pi = (dy * paper.w + dx) * 4;
+      if (paper.d[pi] !== 0) continue;
+      img.set(box.offsetX + (contentH - 1 - dy), dx);
+    }
+  }
+}
+function drawJewelryLayout(img, box, opts) {
+  var contentW = box.labelH, contentH = box.labelW;
+  var paper = new Img(contentW + box.tail, contentH);
+  var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag');
+  var qrBox = null;
+  if (drawn.qr) qrBox = { x: box.offsetX + (contentH - drawn.qr.y - drawn.qr.size), y: drawn.qr.x, size: drawn.qr.size };
+  rotatePaper(img, box, paper);
+  return { lines: drawn.lines, specPx: drawn.specPx, joPx: drawn.joPx, qr: drawn.qr ? drawn.qr.text : '', qrBox: qrBox, paper: paper, sheet: paper, placed: drawn.placed };
+}
+function drawCardLayout(img, box, opts) {
+  var sheet = new Img(box.labelW, box.labelH);
+  var drawn = paintLayout(sheet, normalizeLayout('jo_card', opts.layout), opts, 'jo_card');
+  var dy, dx, pi, qrBox = null;
+  for (dy = 0; dy < sheet.h; dy++) {
+    for (dx = 0; dx < sheet.w; dx++) {
+      pi = (dy * sheet.w + dx) * 4;
+      if (sheet.d[pi] !== 0) continue;
+      img.set(box.offsetX + dx, dy);
+    }
+  }
+  if (drawn.qr) qrBox = { x: box.offsetX + drawn.qr.x, y: drawn.qr.y, size: drawn.qr.size };
+  return { lines: drawn.lines, specPx: drawn.specPx, joPx: drawn.joPx, qr: drawn.qr ? drawn.qr.text : '', qrBox: qrBox, sheet: sheet, placed: drawn.placed };
+}
 /* Readable cable label: 25×30 mm flag, tail to the right, then rotated into the print bitmap. */
 function drawJewelry(img, box, opts) {
+  if (opts && opts.layout) return drawJewelryLayout(img, box, opts);
   var contentW = box.labelH, contentH = box.labelW;
   var paper = new Img(contentW + box.tail, contentH);
   var pad = px(1);
@@ -653,6 +887,8 @@ function render(opts) {
   var joPx = 0;
   var qrBox = null;
   var paperOut = null;
+  var sheetOut = null;
+  var placed = [];
   var x0 = box.offsetX;
   var pad = px(1); // ~1 mm, so type does not touch the 30 mm edges
 
@@ -669,6 +905,17 @@ function render(opts) {
     qrText = tag.qr;
     qrBox = tag.qrBox;
     paperOut = tag.paper;
+    sheetOut = tag.sheet || null;
+    placed = tag.placed || [];
+  } else if (opts && opts.layout) {
+    var cardLay = drawCardLayout(img, box, opts);
+    lines = cardLay.lines;
+    specPx = cardLay.specPx;
+    joPx = cardLay.joPx;
+    qrText = cardLay.qr;
+    qrBox = cardLay.qrBox;
+    sheetOut = cardLay.sheet;
+    placed = cardLay.placed || [];
   } else {
     /* QR stays the size that fills the 20 mm height. Its left ink margin is
        repeated on the right, and the JO shrinks into the width that is left. */
@@ -730,10 +977,31 @@ function render(opts) {
     offsetX: box.offsetX, labelW: box.labelW, labelH: box.labelH, tail: box.tail,
     shiftX: shiftX, shiftY: shiftY,
     specPx: specPx, joPx: joPx, preset: box.preset, kind: kind, head: head, qrBox: qrBox,
-    paper: paperOut ? paperOut.d : null, paperW: paperOut ? paperOut.w : 0, paperH: paperOut ? paperOut.h : 0
+    paper: paperOut ? paperOut.d : null, paperW: paperOut ? paperOut.w : 0, paperH: paperOut ? paperOut.h : 0,
+    sheet: sheetOut ? sheetOut.d : null, sheetW: sheetOut ? sheetOut.w : 0, sheetH: sheetOut ? sheetOut.h : 0,
+    placed: placed || []
   };
 }
 
+/* The label itself, 1:1, with no grey pad. Jewelry is the readable cable label.
+   A JO card is the sticker. Printer offsets stay on the print bitmap. */
+function labelCanvas(rendered) {
+  var w, h, data, src;
+  if (rendered.sheetW && rendered.sheet) {
+    w = rendered.sheetW; h = rendered.sheetH; data = rendered.sheet;
+  } else if (rendered.paperW && rendered.paper) {
+    w = rendered.paperW; h = rendered.paperH; data = rendered.paper;
+  } else {
+    src = stickerPixels(rendered);
+    w = src.width; h = src.height; data = src.data;
+  }
+  var c = makeCanvas(w, h);
+  var ctx = c.getContext('2d');
+  var image = ctx.createImageData(w, h);
+  image.data.set(data);
+  ctx.putImageData(image, 0, 0);
+  return c;
+}
 function toCanvas(rendered) {
   if (typeof document === 'undefined') return null;
   var c = document.createElement('canvas');
@@ -830,7 +1098,8 @@ function preview(rendered, opts) {
 }
 
 root.OYPLabel = {
-  render: render, toCanvas: toCanvas, preview: preview, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
+  render: render, toCanvas: toCanvas, preview: preview, labelCanvas: labelCanvas, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
+  normalizeLayout: normalizeLayout, elementDefaults: elementDefaults, layoutFields: layoutFields, paperMm: paperMm,
   ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPLabel;
