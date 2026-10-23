@@ -31,9 +31,9 @@ async function net(action, data) {
    asked again in the background, and the page redraws if the answer changed (unless the user already started using it).
    Cleared on log in, log out, session expiry and after any change (save / move / confirm ...), so a save always re-reads. */
 const CACHED = { dashboard: 1, todoList: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1,
-  pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1, consignList: 1 };
+  pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1, consignList: 1, joInboxList: 1 };
 const READS = Object.assign({ me: 1, admCustAudit: 1, apptClients: 1, costQuotes: 1, dashDrill: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1,
-  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, photoThumbs: 1, photoFile: 1, portalSteps: 1, consignSearch: 1, printQueue: 1, countLoad: 1 }, CACHED); // countLoad, printQueue, photoThumbs, and photoFile are fresh (not in CACHED). linkEpc and countFinish stay writes. printMark, printEnqueue, and printReprint stay writes.
+  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, photoThumbs: 1, photoFile: 1, portalSteps: 1, consignSearch: 1, printQueue: 1, countLoad: 1, joInboxPhoto: 1, joInboxStatus: 1 }, CACHED); // countLoad, printQueue, photoThumbs, photoFile, joInboxPhoto, and joInboxStatus are fresh (not in CACHED). linkEpc and countFinish stay writes. printMark, printEnqueue, and printReprint stay writes. joInboxConfirm, joInboxFix, joInboxDiscard, and joInboxPush stay writes.
 const C = { mem: new Map(), fly: new Map(), gen: 0, servedStale: 0, touched: 0, redraw: 0, busy: 0 };
 const FRESH = 20e3, MAX_AGE = 12 * 36e5, CP = 'oypC1:';
 const ns = () => { const t = localStorage.getItem(K.s) || ''; let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return CP + (h >>> 0).toString(36) + ':'; };
@@ -160,8 +160,8 @@ document.addEventListener('click', e => {
 /* ---------- role menus ---------- */
 const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.OFFICE_NAV || window.OYPNav.NAV; // nav.js: same menu in the scanner, minus back-office-only pages (Production)
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
-const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, count: true,
-  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do; count.js: inventory count
+const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, look: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, count: true,
+  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do; count.js: inventory count; joinbox.js: needs a look
 // Menu order on this device, per signed-in name. Empty = today's menu. The scanner keeps the shared list in nav.js.
 const navKey = u => 'oypNavOrder:' + (u && u.username || 'device');
 function readNavOrder(u) {
@@ -198,8 +198,14 @@ function writeNavOrder(u, keys, canon) {
 }
 function orderedNav(u) { return window.OYPNav.ordered(u); }
 function navLink(k, t, page) {
+  const count = k === 'look' ? '<span class="ncount" data-ncount="look" hidden></span>' : '';
   if (k === 'scanner') return `<a href="${scanUrl()}" data-nkey="scanner">${esc(t)}</a>`;
-  return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
+  return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}${count}</a>`;
+}
+function navLabel(a) {
+  const t = [];
+  a.childNodes.forEach(n => { if (n.nodeType === 3) t.push(n.textContent); });
+  return t.join('').replace(/\s*soon\s*$/i, '').trim();
 }
 function whoBlock(u) {
   return `<div class="who"><div id="whoMenu" class="whomenu hidden" role="menu"><button role="menuitem" data-logout>Log out</button></div>
@@ -223,6 +229,7 @@ function renderNav(u, page) {
   finishNav($('sideNav'), u);
   const m = $('menu');
   if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); finishNav(m, u); }
+  if (window.OYPJoInbox) window.OYPJoInbox.paintBadge();
 }
 function finishNav(box, u) {
   if (!box || !u) return;
@@ -237,7 +244,7 @@ function decorateNav(box, u) {
     const row = document.createElement('div');
     row.className = 'nrow';
     row.dataset.nkey = a.dataset.nkey;
-    const name = (a.textContent || '').replace(/\s*soon\s*$/i, '').trim();
+    const name = navLabel(a);
     a.parentNode.insertBefore(row, a);
     row.appendChild(a);
     const grip = document.createElement('span');
@@ -334,8 +341,9 @@ function route() {
   const want = canon.some(n => n[0] === cur) ? cur : ALIAS[cur] && canon.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
   const page = want || canon[0][0]; // opening a page still starts at today's first item when the link is not a menu item
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  $('title').textContent = page === 'todo' ? 'TO DO' : page === 'count' ? 'INVENTORY COUNT' : 'Back office';
+  $('title').textContent = page === 'todo' ? 'TO DO' : page === 'count' ? 'INVENTORY COUNT' : page === 'look' ? 'NEEDS A LOOK' : 'Back office';
   renderNav(u, page); // desktop sidebar: items scroll; the name block stays at the bottom
+  if (window.OYPJoInbox && (u.role === 'admin' || u.role === 'production_manager')) window.OYPJoInbox.refreshBadge();
   const title = canon.find(n => n[0] === page)[1];
   schedulePrefetch(canon, page);
   // nothing saved for this page yet (first visit, or just after a change): a light placeholder, not the last page's content
@@ -347,6 +355,7 @@ function route() {
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'todo' && window.OYPTodo) return window.OYPTodo.render($('main'), u);
   if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
+  if (page === 'look' && window.OYPJoInbox) return window.OYPJoInbox.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
   if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
   if (page === 'jos' && window.OYPInv) return window.OYPInv.renderJos($('main'), u); // inv.js: Inventory (all JOs / pieces)
@@ -398,6 +407,7 @@ $('btnMenu').onclick = () => {
   if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
   m.innerHTML = phoneInner(u);
   finishNav(m, u);
+  if (window.OYPJoInbox) window.OYPJoInbox.paintBadge();
   m.classList.remove('hidden');
 };
 document.addEventListener('click', e => { if (!e.target.closest('#menu,#btnMenu')) $('menu').classList.add('hidden'); });
