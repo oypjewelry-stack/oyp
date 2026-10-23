@@ -2,13 +2,16 @@
    canvas height is the feed. The 30 mm label is centred. Text is Inter Bold (OFL), drawn with
    fillText at 4x and reduced to the 1-bit label. QR modules stay crisp rectangles.
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
-   Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs it 25 mm wide by
-   30 mm high, Direction ←, with a 45 mm tail to the right. The top 15 mm and the
-   bottom 15 mm are the two flaps, and the dashed line is the fold between them.
-   That picture is drawn upright, then turned so direction "top" matches Direction ←:
-   the top of the design points left, so the flaps sit side by side (15 mm each
-   across the head, 25 mm down the feed) and the blank tail follows. The liner gap
-   is not in the bitmap. WithGaps starts the next label on the next pair of flaps.
+   Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs the flag upright,
+   25 mm wide by 30 mm high, with the 45 mm tail to the right of that picture.
+   The B1 prints direction "top": bitmap x increases to the right across the head,
+   bitmap y is the feed, and row 0 is the flap end. Seen from the printed side,
+   flaps on top and the tail below, that bitmap is the paper. The upright design
+   is turned 90° clockwise onto it, a rotation rather than a mirror. The top of
+   the design lands on the right flap. The right edge of the design, where the
+   tail sits in the app, runs into the blank tail. Turn the paper so the tail is
+   on the right and every word reads with the NIIMBOT picture. The liner gap is
+   not in the bitmap. WithGaps starts the next label on the next pair of flaps.
    B1 and B31 print direction is "top", so x on the bitmap is across the head.
    The printer draws columns 0..width-1 and does not centre a narrow bitmap,
    so the image stays the full head. A 30 mm label centred on the B31's 600 px
@@ -660,14 +663,16 @@ function paintLayout(img, layout, opts, kind) {
   stampLocal(img, runs);
   return { lines: lines, placed: placed, specPx: specPx, joPx: joPx, qr: qrInfo };
 }
-/* Direction ←: the top of the design (small dy) is the left flap. Feed starts at the left of the design, so the tail prints after the flaps. */
+/* 90° clockwise onto the print. Top of the design (small dy) becomes the right flap.
+   Feed follows design x, so the tail drawn to the right of the flag prints after the flaps.
+   One axis is flipped, so the glyphs stay a rotation and not a mirror. */
 function rotatePaper(img, box, paper) {
-  var dy, dx, pi;
+  var dy, dx, pi, contentH = paper.h;
   for (dy = 0; dy < paper.h; dy++) {
     for (dx = 0; dx < paper.w; dx++) {
       pi = (dy * paper.w + dx) * 4;
       if (paper.d[pi] !== 0) continue;
-      img.set(box.offsetX + dy, dx);
+      img.set(box.offsetX + (contentH - 1 - dy), dx);
     }
   }
 }
@@ -676,7 +681,7 @@ function drawJewelryLayout(img, box, opts) {
   var paper = new Img(contentW + box.tail, contentH);
   var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag');
   var qrBox = null;
-  if (drawn.qr) qrBox = { x: box.offsetX + drawn.qr.y, y: drawn.qr.x, size: drawn.qr.size };
+  if (drawn.qr) qrBox = { x: box.offsetX + (contentH - drawn.qr.y - drawn.qr.size), y: drawn.qr.x, size: drawn.qr.size };
   rotatePaper(img, box, paper);
   return { lines: drawn.lines, specPx: drawn.specPx, joPx: drawn.joPx, qr: drawn.qr ? drawn.qr.text : '', qrBox: qrBox, paper: paper, sheet: paper, placed: drawn.placed };
 }
@@ -851,7 +856,7 @@ function drawJewelry(img, box, opts) {
   if (mods) {
     var qx = right - qpix, qy = bottom - qpix;
     paper.qr(mods, qx, qy, mod, quiet);
-    qrBox = { x: box.offsetX + qy, y: qx, size: qpix };
+    qrBox = { x: box.offsetX + (contentH - qy - qpix), y: qx, size: qpix };
   }
   rotatePaper(img, box, paper);
   return { lines: lines, specPx: specPx, joPx: joPx, qr: jo, qrBox: qrBox, paper: paper };
@@ -1085,6 +1090,15 @@ function stickerPixels(rendered) {
   }
   return { width: w, height: h, data: data };
 }
+/* Printed side, flaps at the top, tail below. B1 direction "top" lays bitmap x to the right
+   and bitmap y down the feed, and row 0 is the flap end. This is that label, without the head margin. */
+function paperView(rendered) {
+  var src = stickerPixels(rendered);
+  return {
+    width: src.width, height: src.height, data: src.data,
+    labelW: rendered.labelW, labelH: rendered.labelH, tail: rendered.tail || 0
+  };
+}
 function preview(rendered, opts) {
   opts = opts || {};
   var scale = opts.scale > 0 ? opts.scale : 4;
@@ -1096,17 +1110,19 @@ function preview(rendered, opts) {
   var srcH = readable ? rendered.paperH : labelH + tail;
   var pad = px(4), radius = px(2);
   var src = readable ? { width: srcW, height: srcH, data: rendered.paper } : stickerPixels(rendered);
+  var showH = srcH;
+  if (jewelry && !opts.full) showH = Math.min(srcH, labelH + px(8));
   var srcCanvas = makeCanvas(srcW, srcH);
   var sctx = srcCanvas.getContext('2d');
   var id = sctx.createImageData(srcW, srcH);
   id.data.set(src.data);
   sctx.putImageData(id, 0, 0);
-  var outW = (srcW + pad * 2) * scale, outH = (srcH + pad * 2) * scale;
+  var outW = (srcW + pad * 2) * scale, outH = (showH + pad * 2) * scale;
   var canvas = makeCanvas(outW, outH);
   var ctx = canvas.getContext('2d');
   ctx.fillStyle = PREVIEW_GRAY;
   ctx.fillRect(0, 0, outW, outH);
-  var x = pad * scale, y = pad * scale, w = srcW * scale, h = srcH * scale, rad = radius * scale;
+  var x = pad * scale, y = pad * scale, w = srcW * scale, h = showH * scale, rad = radius * scale;
   ctx.save();
   if (jewelry) {
     ctx.beginPath();
@@ -1122,7 +1138,7 @@ function preview(rendered, opts) {
   }
   ctx.imageSmoothingEnabled = !!smooth;
   if (smooth && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(srcCanvas, x, y, w, h);
+  ctx.drawImage(srcCanvas, 0, 0, srcW, showH, x, y, w, h);
   ctx.restore();
   if (jewelry) {
     ctx.beginPath();
@@ -1149,7 +1165,7 @@ function preview(rendered, opts) {
 root.OYPLabel = {
   render: render, toCanvas: toCanvas, preview: preview, labelCanvas: labelCanvas, exitCanvas: exitCanvas, tagOutline: tagOutline, flapRects: flapRects, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
   normalizeLayout: normalizeLayout, elementDefaults: elementDefaults, layoutFields: layoutFields, paperMm: paperMm,
-  ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias
+  ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias, paperView: paperView
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPLabel;
 })(typeof window !== 'undefined' ? window : globalThis);

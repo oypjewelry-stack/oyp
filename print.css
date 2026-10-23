@@ -45,16 +45,16 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 @media (prefers-reduced-motion:reduce){.oyp-kindbox button{transition:none}.oyp-kindbox button:active,.oyp-kindbox button.is-down{transform:none;opacity:.72}}
 @media (min-width:760px){.oyp-kind{align-items:center}}
 /* Preview sheet. Every control is at least 34px; the ones she taps are 44px. */
-.oyp-prev{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:12px}
-.oyp-prevbox{background:#fff;width:min(560px,100%);max-height:min(920px,calc(100vh - 24px));overflow:auto;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);box-sizing:border-box}
-.oyp-prevstage{background:#8e8e8e;border-radius:12px;display:flex;align-items:center;justify-content:center;overflow:auto;min-height:120px;max-height:42vh}
-.oyp-prevstage canvas,.oyp-prevbig{max-width:100%;max-height:42vh;width:auto;height:auto;display:block}
+.oyp-prev{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.35);display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow:auto;box-sizing:border-box}
+.oyp-prevbox{background:#fff;width:min(560px,100%);max-height:none;overflow:visible;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);box-sizing:border-box}
+.oyp-prevstage{background:#8e8e8e;border-radius:12px;display:block;overflow:visible;min-height:0;max-height:none}
+.oyp-prevstage canvas,.oyp-prevbig{width:100%;max-width:100%;max-height:none;height:auto;display:block}
 .oyp-prevstrip{display:flex;align-items:center;gap:8px}
 .oyp-prevthumbs{display:flex;gap:8px;overflow-x:auto;flex:1;min-width:0}
 .oyp-prevthumb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:44px;min-height:44px;padding:4px;border:1.5px solid transparent;border-radius:10px;background:#fff;color:#111;cursor:pointer;flex:none;box-sizing:border-box}
 .oyp-prevthumb.is-on{border-color:#111}
 .oyp-prevnum{font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:14px;line-height:1}
-.oyp-prevmini,.oyp-prevthumb canvas{width:72px;max-width:72px;height:auto;display:block;background:#8e8e8e;border-radius:6px;pointer-events:none}
+.oyp-prevmini,.oyp-prevthumb canvas{width:96px;max-width:96px;max-height:none;height:auto;display:block;background:#8e8e8e;border-radius:6px;pointer-events:none}
 .oyp-prevnav{width:44px;height:44px;min-width:44px;min-height:44px;border:1.5px solid #111;border-radius:999px;background:#fff;color:#111;font-size:22px;line-height:1;padding:0;flex:none;cursor:pointer;box-sizing:border-box}
 .oyp-prevnav:disabled{opacity:.35;cursor:default}
 .oyp-prevcount{margin:0;min-height:34px;display:flex;align-items:center;justify-content:center;font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:18px;font-weight:500;color:#111}
@@ -79,7 +79,7 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .oyp-laybox{background:#fff;width:min(720px,100%);max-height:min(960px,calc(100vh - 24px));overflow:auto;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);box-sizing:border-box}
 .oyp-laytitle{margin:0;min-height:34px;display:flex;align-items:center;font-family:var(--head,'Libre Bodoni',Georgia,serif);font-size:22px;font-weight:500;color:#111}
 .oyp-layhint{margin:0;min-height:34px;display:flex;align-items:center;font-family:var(--label,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;line-height:1.4;color:#444}
-.oyp-laystage{background:#f3f3f3;border-radius:12px;padding:8px;overflow:auto;max-width:100%;box-sizing:border-box}
+.oyp-laystage{background:#f3f3f3;border-radius:12px;padding:8px;overflow:visible;max-width:100%;box-sizing:border-box}
 .oyp-layframe{display:flex;flex-direction:column;width:max-content;max-width:100%}
 .oyp-layrow{display:flex;align-items:flex-start}
 .oyp-laycorner{width:28px;height:22px;flex:none;background:#f7f7f7}
@@ -88,7 +88,7 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .oyp-laycanvas{display:block;image-rendering:pixelated}
 .oyp-layhits{position:absolute;inset:0}
 .oyp-layhit{position:absolute;padding:0;margin:0;border:1px dashed transparent;background:transparent;box-sizing:border-box;min-width:34px;min-height:34px;touch-action:none}
-.oyp-layhit.is-on{border-color:#1a56d6;border-style:solid}
+.oyp-layhit.is-on{border-color:#1a56d6;border-style:solid;border-width:2px}
 .oyp-layhandle{position:absolute;z-index:5;width:34px;height:34px;min-width:34px;min-height:34px;border:1.5px solid #111;border-radius:8px;background:#fff;padding:0;box-sizing:border-box;touch-action:none;cursor:nwse-resize}
 .oyp-laypicks{display:flex;flex-wrap:wrap;gap:8px}
 .oyp-laypick{min-height:44px;min-width:44px;padding:0 12px;border:1.5px solid #111;border-radius:999px;background:#fff;color:#111;font-family:var(--label,Inter,system-ui,sans-serif);font-size:13px;font-weight:500;cursor:pointer;box-sizing:border-box}
@@ -103,11 +103,12 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .oyp-laybtn.is-on,.oyp-laybtn.is-primary{background:#111;color:#fff}
 .oyp-layacts{display:flex;flex-direction:column;gap:8px}
 .oyp-laybox button,.oyp-laybox input{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.oyp-laybox .oyp-layhit,.oyp-laybox .oyp-layhandle{touch-action:none}
 .oyp-laybox button{transition:transform 50ms}
 .oyp-laybox button:active{transform:scale(.97)}
 button.pill.oyp-layopen{min-height:44px;height:44px;min-width:44px;box-sizing:border-box}
 @media (prefers-reduced-motion:reduce){.oyp-laybox button{transition:none}.oyp-laybox button:active{transform:none;opacity:.72}}
-@media (max-width:759px){.oyp-lay{padding:0;align-items:stretch}.oyp-laybox{width:100%;max-height:100vh;border-radius:0}}
+@media (max-width:759px){.oyp-prev{padding:0}.oyp-prevbox{width:100%;border-radius:0}.oyp-lay{padding:0;align-items:stretch}.oyp-laybox{width:100%;max-height:100vh;border-radius:0;overflow:auto}}
 @media (min-width:760px){.oyp-lay{align-items:center}.oyp-layacts{flex-direction:row}.oyp-layacts .oyp-laybtn{flex:1}}
 
 :where(.oyp-pr .whomenu){position:absolute;background:#fff;border:1px solid #eee;border-radius:calc(12px * var(--rad,1));box-shadow:0 8px 24px rgba(0,0,0,.08);padding:calc(6px * var(--sp,1)) 0}

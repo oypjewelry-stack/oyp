@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 30;
+var PRINT_JS = 31;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -906,10 +906,10 @@ function paintSticker(sticker, bigHost, miniHost) {
   if (!sticker || !root.OYPLabel || !root.OYPLabel.render || !root.OYPLabel.preview) return;
   try {
     var rendered = root.OYPLabel.render(plainOpts(previewItem(sticker), sticker.kind, linkFor(sticker.kind)));
-    var view = root.OYPLabel.preview(rendered, { scale: 1, smooth: false });
+    var view = root.OYPLabel.preview(rendered, { scale: 2, smooth: false });
     if (bigHost && view && view.canvas) mountCanvas(bigHost, view.canvas, 'oyp-prevbig');
     if (miniHost && view && view.canvas) {
-      var mini = root.OYPLabel.preview(rendered, { scale: 1, smooth: false });
+      var mini = root.OYPLabel.preview(rendered, { scale: 2, smooth: false });
       if (mini && mini.canvas) mountCanvas(miniHost, mini.canvas, 'oyp-prevmini');
     }
   } catch (err) {}
@@ -1046,9 +1046,11 @@ function openLayout(kind, item, onSave) {
     }
   }
   function fit() {
-    var max = stage.clientWidth || 320;
+    var max = stage.clientWidth || 340;
     if (max > 40) max -= 36;
-    var scale = canvas.width ? Math.min(1, max / canvas.width) : 1;
+    if (kind === 'jewelry_tag' && max > 460) max = 460;
+    var scale = canvas.width ? max / canvas.width : 1;
+    if (kind !== 'jewelry_tag') scale = Math.min(1, scale);
     if (!(scale > 0)) scale = 1;
     canvas.style.width = Math.max(1, Math.round(canvas.width * scale)) + 'px';
     canvas.style.height = Math.max(1, Math.round(canvas.height * scale)) + 'px';
@@ -1067,7 +1069,7 @@ function openLayout(kind, item, onSave) {
     var seen = {}, i, p, b, dw, dh, id, qr = null;
     for (i = 0; i < placed.length; i++) {
       p = placed[i];
-      if (kind === 'jewelry_tag') p = { id: p.id, x: p.y, y: p.x, w: p.h, h: p.w };
+      if (kind === 'jewelry_tag') p = { id: p.id, x: canvas.width - p.y - p.h, y: p.x, w: p.h, h: p.w };
       seen[p.id] = 1;
       b = boxMap[p.id];
       if (!b) {
@@ -1094,10 +1096,16 @@ function openLayout(kind, item, onSave) {
       delete boxMap[id];
     }
     markHits();
-    if (qr && working.qr && working.qr.show) {
+    var sel = boxMap[current];
+    var selBox = null;
+    if (sel) selBox = { left: parseFloat(sel.style.left) || 0, top: parseFloat(sel.style.top) || 0, w: parseFloat(sel.style.width) || 0, h: parseFloat(sel.style.height) || 0 };
+    if (current === 'qr' && qr && working.qr && working.qr.show) selBox = { left: qr.left, top: qr.top, w: qr.w, h: qr.h };
+    if (selBox && working[current] && working[current].show) {
       handle.style.display = 'block';
-      handle.style.left = Math.round(qr.left + qr.w - 17) + 'px';
-      handle.style.top = Math.round(qr.top + qr.h - 17) + 'px';
+      handle.style.left = Math.round(selBox.left + selBox.w - 17) + 'px';
+      handle.style.top = Math.round(selBox.top + selBox.h - 17) + 'px';
+      handle.setAttribute('data-for', current);
+      handle.setAttribute('aria-label', current === 'qr' ? 'QR size' : 'Move ' + ((fieldBy(current) || { label: current }).label));
     } else handle.style.display = 'none';
   }
   function redraw() {
@@ -1105,8 +1113,10 @@ function openLayout(kind, item, onSave) {
       var rendered = L.render(optsFor());
       var view = kind === 'jewelry_tag' && L.exitCanvas ? L.exitCanvas(rendered) : L.labelCanvas(rendered);
       placed = rendered.placed || [];
+      var showH = view.height;
+      if (kind === 'jewelry_tag') showH = Math.min(view.height, (rendered.labelH || view.height) + L.px(6));
       canvas.width = view.width;
-      canvas.height = view.height;
+      canvas.height = showH;
       var ctx = canvas.getContext('2d');
       ctx.imageSmoothingEnabled = false;
       if (kind === 'jewelry_tag' && L.tagOutline) {
@@ -1116,14 +1126,14 @@ function openLayout(kind, item, onSave) {
         ctx.beginPath();
         L.tagOutline(ctx, 0, 0, 1);
         ctx.clip();
-        ctx.drawImage(view, 0, 0);
+        ctx.drawImage(view, 0, 0, view.width, showH, 0, 0, view.width, showH);
         ctx.restore();
         ctx.beginPath();
         L.tagOutline(ctx, 0, 0, 1);
         ctx.strokeStyle = '#222';
         ctx.lineWidth = 1;
         ctx.stroke();
-      } else ctx.drawImage(view, 0, 0);
+      } else ctx.drawImage(view, 0, 0, view.width, showH, 0, 0, view.width, showH);
     } catch (err) {
       placed = [];
     }
@@ -1153,7 +1163,7 @@ function openLayout(kind, item, onSave) {
         var d = dragDelta(start, ev2);
         if (kind === 'jewelry_tag') {
           el.x = snapHalf(start.x + d.y);
-          el.y = snapHalf(start.y + d.x);
+          el.y = snapHalf(start.y - d.x);
         } else {
           el.x = snapHalf(start.x + d.x);
           el.y = snapHalf(start.y + d.y);
@@ -1175,10 +1185,40 @@ function openLayout(kind, item, onSave) {
   }
   handle.onpointerdown = function (ev) {
     if (ev && ev.button) return;
-    if (!working.qr || !working.qr.show) return;
+    var moving = working[current];
+    if (!moving || !moving.show) return;
     if (ev && ev.preventDefault) ev.preventDefault();
     if (ev && ev.stopPropagation) ev.stopPropagation();
-    current = 'qr';
+    if (current !== 'qr') {
+      markPicks();
+      fillTools();
+      var origin = { x: moving.x, y: moving.y, cx: ev.clientX, cy: ev.clientY };
+      if (handle.setPointerCapture && ev.pointerId != null) { try { handle.setPointerCapture(ev.pointerId); } catch (eMove) {} }
+      function moveEl(ev2) {
+        var d = dragDelta(origin, ev2);
+        if (kind === 'jewelry_tag') {
+          moving.x = snapHalf(origin.x + d.y);
+          moving.y = snapHalf(origin.y - d.x);
+        } else {
+          moving.x = snapHalf(origin.x + d.x);
+          moving.y = snapHalf(origin.y + d.y);
+        }
+        clampPos(moving);
+        redraw();
+      }
+      function upEl(ev2) {
+        handle.removeEventListener('pointermove', moveEl);
+        handle.removeEventListener('pointerup', upEl);
+        handle.removeEventListener('pointercancel', upEl);
+        if (ev2) moveEl(ev2);
+        fillTools();
+      }
+      handle.addEventListener('pointermove', moveEl);
+      handle.addEventListener('pointerup', upEl);
+      handle.addEventListener('pointercancel', upEl);
+      return;
+    }
+    if (!working.qr || !working.qr.show) return;
     markPicks();
     fillTools();
     var start = { qr: working.qr.qr, cx: ev.clientX, cy: ev.clientY };
@@ -1267,7 +1307,8 @@ function openLayout(kind, item, onSave) {
     tools.textContent = '';
     if (!field || !el) return;
     var across = kind === 'jewelry_tag';
-    var xShown = across ? el.y : el.x;
+    var acrossH = across ? L.paperMm(kind).h : 0;
+    var xShown = across ? tenth(acrossH - el.y) : el.x;
     var yShown = across ? el.x : el.y;
     tools.setAttribute('data-mm', current + ' ' + mmText(xShown) + ' ' + mmText(yShown));
     var show = addBtn(tools, el.show ? 'Shown' : 'Hidden', 'show', function () {
@@ -1278,7 +1319,7 @@ function openLayout(kind, item, onSave) {
     });
     show.setAttribute('aria-pressed', el.show ? 'true' : 'false');
     numField(tools, 'X mm', mmText(xShown), 0.1, 0, across ? 40 : 80, function (raw) {
-      if (across) el.y = tenth(raw);
+      if (across) el.y = tenth(acrossH - Number(raw));
       else el.x = tenth(raw);
       clampPos(el);
       redraw();
@@ -1354,7 +1395,7 @@ function openLayout(kind, item, onSave) {
     var el = working[current];
     if (!el) return;
     if (kind === 'jewelry_tag') {
-      el.y = tenth(el.y + dx * 0.1);
+      el.y = tenth(el.y - dx * 0.1);
       el.x = tenth(el.x + dy * 0.1);
     } else {
       el.x = tenth(el.x + dx * 0.1);
@@ -3273,7 +3314,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=19';
+  link.href = (base || '') + 'print.css?v=20';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
