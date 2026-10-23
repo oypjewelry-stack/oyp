@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><title>OYP · Needs a look</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../app.css?v=52">
+<link rel="stylesheet" href="../joinbox.css?v=1">
+<link rel="icon" type="image/png" href="../favicon.png">
+</head><body>
+<header class="top">
+  <button id="btnMenu" class="icon" aria-label="Menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
+  <span id="title" class="title">Needs a look</span>
+  <span class="topend"><img class="logo" src="../logo.png" alt="OYP Jewelry"></span>
+</header>
+<div id="menu" class="menu hidden"></div>
+<section class="office" id="vOffice">
+  <nav id="side" class="side"></nav>
+  <main id="main" class="main"></main>
+</section>
+<div id="toast" class="toast hidden"></div>
+<script src="../nav.js?v=63"></script>
+<script src="../joinbox.js?v=1"></script>
+<script>
+(async function () {
+  if (document.fonts && document.fonts.ready) {
+    await Promise.race([document.fonts.ready, new Promise(function (ok) { setTimeout(ok, 2500); })]);
+  }
+  const q = new URLSearchParams(location.search);
+  const role = q.get('role') === 'production_manager' ? 'production_manager' : 'admin';
+  const mode = q.get('state') || 'list';
+  const USER = { role: role, username: 'ada', display_name: 'Ada' };
+  const PRICE = ['tag_price', 'retail_price', 'replacement_cost', 'sold_price', 'sp_total', 'material_lines', 'labor_lines'];
+  const COST_HIDE = ['jc_tag_price', 'jc_retail_price', 'jc_raw_material_notes'];
+
+  function paper(g, w, h) {
+    g.fillStyle = '#f6f0e4';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#d9c7a2';
+    g.lineWidth = 10;
+    g.strokeRect(12, 12, w - 24, h - 24);
+    g.strokeStyle = '#111';
+    g.lineWidth = 2;
+    g.strokeRect(28, 28, w - 56, h - 56);
+  }
+  function joBox(g, jo, x, y, w, h) {
+    g.fillStyle = '#fff';
+    g.fillRect(x, y, w, h);
+    g.strokeStyle = '#111';
+    g.lineWidth = 3;
+    g.strokeRect(x, y, w, h);
+    g.fillStyle = '#888';
+    g.font = '600 13px Inter, sans-serif';
+    g.fillText('JO #', x + 12, y + 22);
+    g.fillStyle = '#1d2b4a';
+    g.font = '600 46px "Segoe Script", "Brush Script MT", cursive';
+    g.fillText(jo, x + 24, y + h - 22);
+  }
+  function line(g, lab, val, y) {
+    g.fillStyle = '#888';
+    g.font = '600 13px Inter, sans-serif';
+    g.fillText(lab, 48, y);
+    g.fillStyle = '#111';
+    g.font = '500 22px "Libre Bodoni", serif';
+    g.fillText(val, 210, y);
+  }
+  function shot(draw) {
+    const c = document.createElement('canvas');
+    c.width = 1000; c.height = 620;
+    const g = c.getContext('2d');
+    paper(g, 1000, 620);
+    draw(g);
+    return c.toDataURL('image/jpeg', 0.86);
+  }
+  const IM = {
+    a1: shot(function (g) {
+      g.fillStyle = '#111';
+      g.font = '600 26px "Libre Bodoni", serif';
+      g.fillText('OYP JEWELRY', 48, 78);
+      joBox(g, '26-246', 340, 36, 320, 100);
+      line(g, 'CLIENT', 'Ana Cruz', 190);
+      line(g, 'ITEM', 'Ring · 18K yellow gold', 240);
+      line(g, 'STONE', 'Kyanite oval 11.655ct × 1', 290);
+      line(g, 'WEIGHT', '7.11 g', 340);
+      line(g, 'DATE', '10-2-26', 390);
+      line(g, 'TAG', '₱85,000', 460);
+      line(g, 'RETAIL', '₱92,000', 510);
+      line(g, 'ACTUAL', '₱41,000', 560);
+    }),
+    b1: shot(function (g) {
+      g.fillStyle = '#111';
+      g.font = '600 26px "Libre Bodoni", serif';
+      g.fillText('BACK · 26-246', 48, 80);
+      g.font = '500 22px "Libre Bodoni", serif';
+      g.fillText('Size 6. Notes: client wants a lower setting.', 48, 160);
+      g.fillText('Phone 0917 123 4567', 48, 210);
+      g.fillText('Prepared by Rosa', 48, 260);
+    }),
+    a2: shot(function (g) {
+      g.fillStyle = '#111';
+      g.font = '600 26px "Libre Bodoni", serif';
+      g.fillText('OYP JEWELRY', 48, 70);
+      g.font = '600 54px "Segoe Script", "Brush Script MT", cursive';
+      g.fillStyle = '#1d2b4a';
+      g.textAlign = 'center';
+      g.fillText('26-301', 500, 150);
+      g.textAlign = 'left';
+      line(g, 'CLIENT', 'Ken Uy', 240);
+      line(g, 'ITEM', 'Earrings · platinum', 300);
+      line(g, 'STONE', 'Diamond round 0.42ct × 2', 360);
+      line(g, 'WEIGHT', '4.80 g', 420);
+      line(g, 'DATE', '10-18-26', 480);
+    }),
+    a3: shot(function (g) {
+      g.fillStyle = '#111';
+      g.font = '600 26px "Libre Bodoni", serif';
+      g.fillText('OYP JEWELRY', 48, 70);
+      g.fillStyle = 'rgba(29,43,74,.35)';
+      g.font = '600 54px "Segoe Script", "Brush Script MT", cursive';
+      g.textAlign = 'center';
+      g.fillText('26-118', 500, 148);
+      g.strokeStyle = 'rgba(80,60,40,.45)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(430, 100); g.bezierCurveTo(470, 170, 540, 90, 590, 160);
+      g.stroke();
+      g.textAlign = 'left';
+      g.fillStyle = '#111';
+      line(g, 'ITEM', 'Pendant', 250);
+      line(g, 'METAL', 'Silver', 310);
+    }),
+    b3: shot(function (g) {
+      g.fillStyle = '#fbfbfb';
+      g.fillRect(40, 40, 920, 540);
+      g.fillStyle = '#bbb';
+      g.font = '500 18px Inter, sans-serif';
+      g.textAlign = 'center';
+      g.fillText('blank back', 500, 320);
+      g.textAlign = 'left';
+    })
+  };
+
+  const SEED = [
+    {
+      card_id: 'ji-1024103000-bdi-0-4', run_id: 'ji-1024103000-bdi', logged_at: '2026-10-24 10:30:00',
+      status: 'check', decision: 'disagree', jo: '', suggested_jo: '26-246', card: 1,
+      ocr: { read: '27-240', confidence: 'low' },
+      gemini: { read: '26-246', confidence: 'medium', model: 'gemini-3.8-flash' },
+      jo_box: [58, 340, 219, 660], jo_box_side: 'a',
+      flags: ['readers disagree: Drive OCR "27-240", Gemini "26-246" (medium)'],
+      notes: [],
+      pages: [
+        { side: 'a', file_id: 'a1', name: 'CHECK-26-246-1a.jpg', source_name: '20261024101530_006.jpg', blank: false },
+        { side: 'b', file_id: 'b1', name: 'CHECK-26-246-1b.jpg', source_name: '20261024101531_007.jpg', blank: false }
+      ],
+      fields: {
+        description: 'Kyanite ring', jewelry_type: 'RING', quantity: 1, jo_date_written: '10-2-26', jo_date_iso: '2026-10-02',
+        metal: 'GOLD', karat: '18K', metal_color: 'yellow', metal_spec: null, weight_g: 7.11,
+        stones: [{ type: 'Kyanite', shape: 'oval', count: 1, carat_total: 11.655, size: null, color: null }],
+        material_lines: [], labor_lines: [], actual_cost: 41000, retail_price: 92000, replacement_cost: 78000, tag_price: 85000,
+        material_cost_total: 28000, labor_cost_total: 13000, sp_total: null, client_name: 'Ana Cruz', client_phone: '09171234567',
+        sold_date: null, sold_price: null, prepared_by: 'Rosa', notes: null, back_notes: 'Size 6'
+      },
+      costs: { jc_name: 'Ana Cruz', jc_type: 'RING', jc_tag_price: 85000, jc_retail_price: 92000, jc_total_cost: 41000, jc_weight: '7.11g', jc_jo_date: '10-2-26' },
+      client_name: 'Ana Cruz', client_phone: '09171234567', auto: true,
+      confirmed_by: '', fixed_at: '', pushed_at: '', scan_id: ''
+    },
+    {
+      card_id: 'ji-1024103000-bdi-1-2', run_id: 'ji-1024103000-bdi', logged_at: '2026-10-24 10:41:12',
+      status: 'check', decision: 'agree_low', jo: '', suggested_jo: '26-301', card: 2,
+      ocr: { read: '26-301', confidence: 'low' },
+      gemini: { read: '26-301', confidence: 'low', model: 'gemini-3.8-flash' },
+      jo_box: null, jo_box_side: null,
+      flags: ['both reads are low confidence'],
+      notes: [],
+      pages: [{ side: 'a', file_id: 'a2', name: 'CHECK-26-301-2a.jpg', source_name: '20261024104002_011.jpg', blank: false }],
+      fields: {
+        description: 'Diamond earrings', jewelry_type: 'EARRINGS', quantity: 1, jo_date_written: '10-18-26', jo_date_iso: '2026-10-18',
+        metal: 'PLATINUM', karat: null, metal_color: 'white', metal_spec: null, weight_g: 4.8,
+        stones: [{ type: 'Diamond', shape: 'round', count: 2, carat_total: 0.42, size: null, color: 'G' }],
+        material_lines: [], labor_lines: [], actual_cost: 22000, retail_price: null, replacement_cost: null, tag_price: null,
+        material_cost_total: null, labor_cost_total: null, sp_total: null, client_name: 'Ken Uy', client_phone: null,
+        sold_date: null, sold_price: null, prepared_by: null, notes: null, back_notes: null
+      },
+      costs: null, client_name: 'Ken Uy', client_phone: '', auto: true,
+      confirmed_by: '', fixed_at: '', pushed_at: '', scan_id: ''
+    },
+    {
+      card_id: 'ji-1024110000-bdi-2-1', run_id: 'ji-1024110000-bdi', logged_at: '2026-10-24 11:05:44',
+      status: 'check', decision: 'ocr_only', jo: '', suggested_jo: '', card: 3,
+      ocr: { read: '26-118', confidence: 'low' },
+      gemini: { read: '', confidence: 'error', model: 'gemini-3.8-flash' },
+      jo_box: null, jo_box_side: 'a',
+      flags: ['Gemini could not read this card'],
+      notes: [],
+      pages: [
+        { side: 'a', file_id: 'a3', name: 'CHECK-3a.jpg', source_name: '20261024110501_014.jpg', blank: false },
+        { side: 'b', file_id: 'b3', name: 'CHECK-3b-blank.jpg', source_name: '20261024110502_015.jpg', blank: true }
+      ],
+      fields: null, costs: null, client_name: '', client_phone: '', auto: true,
+      confirmed_by: '', fixed_at: '', pushed_at: '', scan_id: ''
+    }
+  ];
+  let cards = JSON.parse(JSON.stringify(SEED));
+  let unpushed = 2;
+
+  function counts() {
+    const c = { check: 0, filed: 0, confirmed: 0, fixed: 0, discarded: 0, unpushed: unpushed };
+    cards.forEach(function (card) { if (c[card.status] != null) c[card.status]++; });
+    c.unpushed = unpushed;
+    return c;
+  }
+  function view(card) {
+    const o = JSON.parse(JSON.stringify(card));
+    if (role !== 'admin') {
+      delete o.client_phone;
+      if (o.fields) {
+        delete o.fields.client_phone;
+        PRICE.forEach(function (k) { delete o.fields[k]; });
+      }
+      if (o.costs) COST_HIDE.forEach(function (k) { delete o.costs[k]; });
+    }
+    return o;
+  }
+  function held() { return cards.filter(function (c) { return c.status === 'check'; }); }
+
+  window.__toasts = [];
+  window.OYP = {
+    esc: function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); },
+    here: function () { return function () { return true; }; },
+    user: function () { return USER; },
+    toast: function (t) {
+      window.__toasts.push(String(t));
+      const el = document.getElementById('toast');
+      el.textContent = t;
+      el.classList.remove('hidden');
+    },
+    call: async function (action, data) {
+      data = data || {};
+      await new Promise(function (ok) { setTimeout(ok, 40); });
+      if (mode === 'missing') return { ok: false, error: 'Unknown action' };
+      if (mode === 'empty' && (action === 'joInboxList' || action === 'joInboxStatus')) {
+        return action === 'joInboxStatus'
+          ? { ok: true, inbox_waiting: 0, counts: { check: 0, filed: 0, confirmed: 0, fixed: 0, discarded: 0, unpushed: 0 }, record: 'off', paused: false, gemini: { key_set: true, model: 'gemini-3.8-flash', calls_today: 0, blocked_today: [], last_status: '' } }
+          : { ok: true, status: 'check', total: 0, offset: 0, cards: [], counts: { check: 0, filed: 0, confirmed: 0, fixed: 0, discarded: 0, unpushed: 0 } };
+      }
+      if (action === 'joInboxStatus') {
+        return { ok: true, inbox_waiting: held().length, counts: counts(), record: 'off', paused: false, gemini: { key_set: true, model: 'gemini-3.8-flash', calls_today: 4, blocked_today: [], last_status: 'ok' } };
+      }
+      if (action === 'joInboxList') {
+        const status = data.status || 'check';
+        const all = cards.filter(function (c) { return status === 'all' || c.status === status; }).map(view);
+        const offset = data.offset || 0;
+        return { ok: true, status: status, total: all.length, offset: offset, cards: all.slice(offset, offset + (data.limit || 50)), counts: counts() };
+      }
+      if (action === 'joInboxPhoto') {
+        const card = cards.find(function (c) { return c.card_id === data.card_id; });
+        const page = card && (card.pages || []).find(function (p) { return p.side === data.side; });
+        if (!page) return { ok: true, card_id: data.card_id, side: data.side, src: '', error: 'Photo not found in Drive' };
+        return { ok: true, card_id: data.card_id, side: data.side, src: IM[page.file_id] || '' };
+      }
+      if (action === 'joInboxConfirm' || action === 'joInboxFix') {
+        const card = cards.find(function (c) { return c.card_id === data.card_id; });
+        if (!card) return { ok: false, error: 'Unknown card', code: 'NOT_FOUND' };
+        const jo = data.jo || card.suggested_jo || '';
+        if (!jo) return { ok: false, error: 'Type the JO number', code: 'NEED_JO' };
+        if (!/^\d{2}-\d{3,4}[A-Z]?$/.test(jo)) return { ok: false, error: 'JO number should look like 26-287', code: 'BAD_JO' };
+        card.status = (action === 'joInboxFix' && jo !== card.suggested_jo) ? 'fixed' : 'confirmed';
+        card.jo = jo;
+        unpushed++;
+        const next = held()[0];
+        return { ok: true, card_id: card.card_id, jo: jo, card: card.card, status: card.status, files: [], next: next ? next.card_id : '' };
+      }
+      if (action === 'joInboxDiscard') {
+        const card = cards.find(function (c) { return c.card_id === data.card_id; });
+        if (!card) return { ok: false, error: 'Unknown card', code: 'NOT_FOUND' };
+        card.status = 'discarded';
+        return { ok: true, card_id: card.card_id, status: 'discarded' };
+      }
+      if (action === 'joInboxPush') {
+        const n = Math.min(20, unpushed);
+        unpushed = 0;
+        return { ok: true, pushed: n, more: false, results: [] };
+      }
+      return { ok: false, error: 'Unknown action' };
+    }
+  };
+
+  document.getElementById('side').innerHTML = OYPNav.sideHtml(USER, 'look', '');
+  document.getElementById('btnMenu').onclick = function (e) {
+    e.stopPropagation();
+    const m = document.getElementById('menu');
+    if (!m.classList.contains('hidden')) { m.classList.add('hidden'); return; }
+    m.innerHTML = OYPNav.menuHtml(USER, 'look', '');
+    OYPJoInbox.paintBadge();
+    m.classList.remove('hidden');
+  };
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#menu,#btnMenu')) document.getElementById('menu').classList.add('hidden');
+  });
+  OYPJoInbox.render(document.getElementById('main'), USER);
+  window.__ready = function () {
+    const main = document.getElementById('main');
+    if (mode === 'missing') return !!main.querySelector('h3') && /Scanner backend not set up yet/.test(main.textContent);
+    if (mode === 'empty') return /No cards waiting/.test(main.textContent);
+    const imgs = main.querySelectorAll('.jicrop img');
+    return imgs.length >= 3 && !!document.querySelector('[data-ncount="look"]:not([hidden])');
+  };
+})();
+</script>
+</body></html>
