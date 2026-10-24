@@ -5,7 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Bodoni+Moda:opsz,wght@6..96,400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../app.css?v=52">
-<link rel="stylesheet" href="../joinbox.css?v=1">
+<link rel="stylesheet" href="../joinbox.css?v=2">
 <link rel="icon" type="image/png" href="../favicon.png">
 </head><body>
 <header class="top">
@@ -20,7 +20,7 @@
 </section>
 <div id="toast" class="toast hidden"></div>
 <script src="../nav.js?v=63"></script>
-<script src="../joinbox.js?v=1"></script>
+<script src="../joinbox.js?v=2"></script>
 <script>
 (async function () {
   if (document.fonts && document.fonts.ready) {
@@ -243,6 +243,24 @@
         return action === 'joInboxStatus'
           ? { ok: true, inbox_waiting: 0, counts: { check: 0, filed: 0, confirmed: 0, fixed: 0, discarded: 0, unpushed: 0 }, record: 'off', paused: false, gemini: { key_set: true, model: 'gemini-3.8-flash', calls_today: 0, blocked_today: [], last_status: '' } }
           : { ok: true, status: 'check', total: 0, offset: 0, cards: [], counts: { check: 0, filed: 0, confirmed: 0, fixed: 0, discarded: 0, unpushed: 0 } };
+      }
+      if (action === 'joInboxRun') { // ?run=ok|none|more|waiting|busy|forbidden|net|error|old|hang (a mocked answer: nothing is filed for real)
+        const m = q.get('run') || 'ok';
+        window.__runs = (window.__runs || 0) + 1;
+        if (m === 'hang') return new Promise(function () {});
+        await new Promise(function (ok) { setTimeout(ok, Number(q.get('delay')) || 600); });
+        if (m === 'none') return { ok: true, filed: 0, check: 0, blank: 0, problem: 0, more: false, waiting: false, fields: { done: 0, left: 0, stuck: 0 } };
+        if (m === 'more') return { ok: true, filed: 6, check: 0, blank: 4, problem: 0, more: true, waiting: false, fields: { done: 0, left: 12, stuck: 0 } };
+        if (m === 'waiting') return { ok: true, filed: 0, check: 0, blank: 0, problem: 0, more: false, waiting: true, fields: { done: 0, left: 0, stuck: 0 }, message: 'The scanner is still sending pages. Try again in a few seconds.' };
+        if (m === 'busy') return { ok: false, code: 'BUSY', error: 'A check is already running, try again in a minute' };
+        if (m === 'forbidden') return { ok: false, code: 'FORBIDDEN', error: 'Not allowed' };
+        if (m === 'net') return { ok: false, code: 'NET', error: 'No connection. Check the internet and try again.' };
+        if (m === 'error') return { ok: false, error: 'No JO Inbox folder: run setupJoInbox' };
+        if (m === 'old') return { ok: false, error: 'Unknown action' };
+        cards.push({ card_id: 'ji-1024120000-new-0-1', run_id: 'ji-1024120000-new', logged_at: '2026-10-24 12:00:10', status: 'check', decision: 'gemini_only', jo: '', suggested_jo: '26-420', card: 2,
+          ocr: { read: '', confidence: 'none' }, gemini: { read: '26-420', confidence: 'high', model: 'gemini-3.5-flash-lite' }, jo_box: null, jo_box_side: 'a', flags: ['only Gemini read a JO number'], notes: [],
+          pages: [{ side: 'a', file_id: 'a2', name: 'CHECK-26-420-2a.jpg', source_name: '20261024120001_002.jpg', blank: false }], fields: null, costs: null, client_name: '', client_phone: '', auto: false, confirmed_by: '', fixed_at: '', pushed_at: '', scan_id: '' });
+        return { ok: true, filed: 3, check: 1, blank: 2, problem: 0, more: false, waiting: false, fields: { done: 0, left: 0, stuck: 0 } };
       }
       if (action === 'joInboxStatus') {
         return { ok: true, inbox_waiting: held().length, counts: counts(), record: 'off', paused: false, gemini: { key_set: true, model: 'gemini-3.8-flash', calls_today: 4, blocked_today: [], last_status: 'ok' } };
