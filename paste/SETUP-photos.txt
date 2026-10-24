@@ -1,3 +1,25 @@
+JO photos, the page-2 sketch, and drawings — Oct 24, 2026
+
+PhotoFast is already a script file. Replace that file. Do not add a second PhotoFast.
+
+1. Apps Script: open PhotoFast, select all, paste paste/PhotoFast.gs, save.
+2. Deploy > Manage deployments > pencil > New version > Deploy.
+   Do not use New deployment.
+
+No Auth.gs change. No Fast.gs change. No new scope. photoThumbs and photoFile stay the same actions.
+
+The staff site (photos.js, inv.js, review.js, app.css) ships on GitHub Pages.
+Until this paste is deployed, a JO with no product photo still says No photo.
+
+What the same actions now return
+  photoThumbs piece may include sketch:true. That image is <JO>-2a (page 2 front) and only when the JO has no product photo.
+  fallback: [JO, ...] asks for that stand-in. Page 1 is never used. Cost roles only (admin, production manager, and an executive when isExec_ says so).
+  cards: [JO, ...] lists <JO>-<page><a|b> files in the JO folder root. The file name does not say a back is blank, so every side is listed. Cost roles only.
+  drawing: [JO, ...] lists images in the cad folder and the drawings folder. Those are not the profile photo, and they are not card scans.
+  photoFile kind card reads one of those card files. kind drawing reads a cad or drawings file. kind piece still refuses a card scan.
+
+---
+
 PASTE_STEPS
 
 Staff photos (Inventory tiles, Production board, To review, and the photo you open).
