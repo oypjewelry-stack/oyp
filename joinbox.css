@@ -61,3 +61,23 @@ html.ji-zoom,html.ji-zoom body{overflow:hidden}
   .jireads,.jigrid{grid-template-columns:1fr}
   .jizcap{flex-basis:100%}
 }
+/* Check for scans: top right of the page, near the title */
+.jipage .jihd{align-items:flex-start;gap:calc(14px*var(--sp));flex-wrap:wrap}
+.jirun{display:flex;flex-direction:column;align-items:flex-end;gap:calc(8px*var(--sp));max-width:100%}
+.jirunbtn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;white-space:nowrap}
+.jirunbtn:disabled{opacity:.7;cursor:progress}
+.jispin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;animation:jispin .8s linear infinite;flex:none}
+@keyframes jispin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.jispin{animation-duration:2.4s}}
+.jirunmsg{margin:0;max-width:340px;text-align:right;font-family:var(--label);font-weight:500;font-size:calc(14px*var(--fs));line-height:1.4;color:#111}
+.jirunmsg[hidden]{display:none!important}
+.jirunmsg.ok{color:#1b6b3a}
+.jirunmsg.none{color:#555}
+.jirunmsg.info{color:#7a5a00}
+.jirunmsg.err{color:#b3261e}
+@media (max-width:520px){
+  .jipage .jihd{flex-direction:column;align-items:stretch}
+  .jirun{align-items:stretch;width:100%}
+  .jirunbtn{width:100%}
+  .jirunmsg{max-width:none;text-align:left;margin-bottom:calc(10px*var(--sp))}
+}

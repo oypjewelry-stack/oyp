@@ -30,7 +30,7 @@ eq(menu.indexOf('Needs a look') > menu.indexOf('To review') && menu.indexOf('Nee
 eq(app.includes("page === 'look'") && app.includes('OYPJoInbox.render') && app.includes('OYPJoInbox.refreshBadge') && app.includes("page === 'look' ? 'NEEDS A LOOK'"), 'the back office routes Needs a look');
 eq(app.includes('joInboxList: 1') && app.includes('joInboxPhoto: 1') && app.includes('joInboxStatus: 1'), 'list, photo, and status are reads');
 eq(!/joInboxConfirm\s*:/.test(app) && !/joInboxFix\s*:/.test(app) && !/joInboxDiscard\s*:/.test(app) && !/joInboxPush\s*:/.test(app), 'confirm, fix, discard, and push stay writes so the page cache clears');
-eq(index.includes('joinbox.js?v=1') && index.includes('joinbox.css?v=1') && index.includes('nav.js?v=63') && index.includes('app.js?v=37'), 'the new page and nav.js are cache-busted');
+eq(index.includes('joinbox.js?v=2') && index.includes('joinbox.css?v=2') && index.includes('nav.js?v=63') && index.includes('app.js?v=37'), 'the new page and nav.js are cache-busted');
 eq(read('staff/print-test.html').includes('nav.js?v=63') && scanHtml.includes('https://oypjewelry.com/nav.js?v=63'), 'print test and the scanner load the same nav.js');
 eq(scanApp.includes("grp('Needs a look', bad)") && scanApp.includes('class="jocrop"') && scanApp.includes('function openJoView'), 'the scanner Needs a look rows, crop, and zoom viewer are unchanged');
 
@@ -79,5 +79,48 @@ eq(J.pageHtml({ missing: true }).includes('Scanner backend not set up yet'), 'a 
 eq(J.pageHtml({ cards: [], counts: { check: 0, unpushed: 0 }, total: 0 }).includes('No cards waiting'), 'an empty queue has its own state');
 eq(J.pageHtml({ error: 'No connection. Check the internet and try again.' }).includes('Try again') && J.pageHtml({ error: 'No connection. Check the internet and try again.' }).indexOf('Unknown action') < 0, 'a network error can be retried');
 
-if (failed) { console.error(failed + ' failed'); process.exit(1); }
-console.log('ok');
+// Check for scans (joInboxRun)
+eq(J.runText({ ok: true, filed: 3, check: 1, blank: 2, problem: 0, more: false, waiting: false, fields: { left: 0 } }).text === 'Filed 3 pages, 1 needs a look, 2 blank backs', 'a run says what it filed, held, and sorted as blank backs');
+eq(J.runText({ ok: true, filed: 1, check: 2, blank: 0 }).text === 'Filed 1 page, 2 need a look', 'singular and plural are right');
+eq(J.runText({ ok: true, filed: 0, check: 0, blank: 0, problem: 0, more: false, fields: { left: 0 } }).text === 'No new scans', 'nothing to file says No new scans');
+eq(J.runText({ ok: true, filed: 6, check: 0, blank: 4, more: true, fields: { left: 0 } }).text === 'Filed 6 pages, 4 blank backs. More cards waiting, click again.', 'cards still waiting say so');
+eq(J.runText({ ok: true, filed: 0, check: 0, blank: 0, more: true }).text === 'More cards waiting, click again.', 'more with nothing filed yet still says click again');
+eq(J.runText({ ok: true, filed: 2, check: 0, blank: 0, more: false, fields: { left: 16 } }).text === 'Filed 2 pages. Still reading the details of 16 cards.', 'cards still waiting for their details are mentioned');
+eq(J.runText({ ok: true, waiting: true, message: 'The scanner is still sending pages. Try again in a few seconds.' }).text.includes('still sending'), 'the scanner still sending shows the server message');
+eq(J.runText({ ok: true, problem: 2 }).text.includes('2 files could not be read'), 'files that are not JPEG are named');
+eq(J.runError({ ok: false, code: 'BUSY', error: 'A check is already running, try again in a minute' }).text === 'A check is already running. Try again in a minute.', 'BUSY is plain');
+eq(J.runError({ ok: false, code: 'FORBIDDEN', error: 'Not allowed' }).text.includes('admins and production managers'), 'FORBIDDEN is plain');
+eq(J.runError({ ok: false, error: 'Unknown action' }).text === 'Needs the latest script paste' && J.runError({ ok: false, code: 'UNKNOWN_ACTION' }).text === 'Needs the latest script paste', 'an old deployment says Needs the latest script paste');
+eq(J.runError({ ok: false, error: 'No connection. Check the internet and try again.', code: 'NET' }).text.includes('No connection') && J.runError(null).text === 'Could not check for scans', 'other errors show their message');
+const page = J.pageHtml({ cards: [], counts: { check: 0 }, total: 0 });
+eq(page.includes('id="jiRunBtn"') && page.includes('data-act="run"') && page.includes('>Check for scans<') && page.indexOf('jiRunBtn') < page.indexOf('Scanned cards the scanner'), 'the button sits in the page header, before the list');
+eq(!J.pageHtml({ forbidden: true }).includes('jiRunBtn') && J.pageHtml({ missing: true }).includes('jiRunBtn'), 'no button for a role that is not allowed; a missing backend still lets the button explain it');
+eq(index.includes('joinbox.js?v=2') && read('sim/joinbox-preview.html').includes('joinbox.js?v=2'), 'joinbox.js and joinbox.css are cache-busted (v=2)');
+eq(!/joInboxRun\s*:/.test(app), 'joInboxRun stays a write: the page cache clears after a run');
+(async function () {
+  const calls = [];
+  let answer = { ok: true, filed: 3, check: 1, blank: 2, problem: 0, more: false, waiting: false, fields: { left: 0 } }, gate = null;
+  globalThis.OYP = { call: async function (a, d) {
+    calls.push(a);
+    if (a === 'joInboxRun') { if (gate) await gate; return answer; }
+    if (a === 'joInboxList') return { ok: true, cards: [], counts: { check: 1 }, total: 0 };
+    if (a === 'joInboxStatus') return { ok: true, counts: { check: 1 } };
+    return { ok: false };
+  }, user: function () { return { role: 'admin' }; }, esc: function (x) { return String(x); }, toast: function () {} };
+  let open; gate = new Promise(function (ok) { open = ok; });
+  const first = J.runScans(), second = J.runScans();
+  open(); await first; await second;
+  eq(calls.filter(a => a === 'joInboxRun').length === 1, 'a second click while a check runs does not send a second request');
+  eq(calls.join() === 'joInboxRun,joInboxList,joInboxStatus', 'after a run the list and the badge are refreshed: ' + calls.join());
+  calls.length = 0; gate = null; answer = { ok: false, code: 'BUSY', error: 'busy' };
+  await J.runScans();
+  eq(calls.join() === 'joInboxRun', 'BUSY does not reload the list');
+  calls.length = 0; answer = { ok: true, waiting: true, message: 'The scanner is still sending pages.', filed: 0 };
+  await J.runScans();
+  eq(calls.join() === 'joInboxRun', 'scanner still sending: nothing to reload');
+  calls.length = 0; answer = { ok: true, filed: 0, check: 0, blank: 0, problem: 0, more: false, fields: { left: 0 } };
+  await J.runScans();
+  eq(calls.join() === 'joInboxRun,joInboxList,joInboxStatus', 'a run is allowed again once the last one is done');
+  if (failed) { console.error(failed + ' failed'); process.exit(1); }
+  console.log('ok');
+})();

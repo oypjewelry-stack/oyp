@@ -4,7 +4,7 @@
 (function (root) {
 'use strict';
 const PRICE = [['tag_price', 'Tag price'], ['retail_price', 'Retail'], ['replacement_cost', 'Replacement'], ['sold_price', 'Sold'], ['actual_cost', 'Actual cost'], ['material_cost_total', 'Materials'], ['labor_cost_total', 'Labor'], ['sp_total', 'SP total']];
-const S = { cards: [], counts: {}, notices: [], user: null, io: null, busy: {} };
+const S = { cards: [], counts: {}, notices: [], user: null, io: null, busy: {}, run: { busy: false, msg: '', kind: '' } };
 const badge = { n: null, at: 0, missing: false };
 const shots = {};
 const shotFly = {};
@@ -180,7 +180,7 @@ function cardHtml(card) {
 }
 function pageHtml(m) {
   m = m || {};
-  const head = '<div class="jipage"><div class="dhead"><h2>Needs a look <span class="ncount" data-ncount="look" hidden></span></h2></div>';
+  const head = '<div class="jipage"><div class="dhead jihd"><h2>Needs a look <span class="ncount" data-ncount="look" hidden></span></h2>' + (m.forbidden ? '' : runBoxHtml()) + '</div>';
   if (m.loading) return head + '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i></div></div>';
   if (m.missing) return head + '<div class="dcard jibanner"><h3>Scanner backend not set up yet</h3><p class="muted">Scanned cards will show here once JoInbox is pasted into Apps Script. The rest of the back office still works.</p></div></div>';
   if (m.forbidden) return head + '<div class="dcard jibanner"><h3>Not allowed</h3><p class="muted">Needs a look is for admins and production managers.</p></div></div>';
@@ -194,6 +194,91 @@ function pageHtml(m) {
     + pushHtml(m.counts) + '<div id="jiNotices">' + notes + '</div>'
     + '<div class="dtitle"><h3>Scanned cards</h3><span class="lab" id="jiWaiting">' + esc(waitingText(n)) + '</span></div>'
     + '<div id="jiList">' + list + '</div></div>';
+}
+
+/* Check for scans: files what is in JO Inbox now (joInboxRun). A manual backup for the 5-minute auto run. */
+function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+function runText(r) {
+  if (r.waiting && r.message) return { kind: 'info', text: String(r.message) };
+  const bits = [];
+  const n = function (k) { return Number(r[k]) || 0; };
+  if (n('filed')) bits.push('Filed ' + plural(n('filed'), 'page', 'pages'));
+  if (n('check')) bits.push(n('check') === 1 ? '1 needs a look' : n('check') + ' need a look');
+  if (n('blank')) bits.push(plural(n('blank'), 'blank back', 'blank backs'));
+  if (n('problem')) bits.push(plural(n('problem'), 'file', 'files') + ' could not be read (set the scanner to JPEG)');
+  let text = bits.join(', ');
+  if (r.more) text = (text ? text + '. ' : '') + 'More cards waiting, click again.';
+  else if (!text) text = 'No new scans';
+  const left = r.fields && Number(r.fields.left) || 0;
+  if (left) text += (/[.]$/.test(text) ? ' ' : '. ') + 'Still reading the details of ' + plural(left, 'card', 'cards') + '.';
+  return { kind: r.more ? 'info' : (bits.length ? 'ok' : 'none'), text: text };
+}
+function runError(r) {
+  const code = String(r && r.code || '').toUpperCase();
+  if (isMissing(r)) return { kind: 'err', text: 'Needs the latest script paste' };
+  if (code === 'BUSY') return { kind: 'info', text: 'A check is already running. Try again in a minute.' };
+  if (code === 'FORBIDDEN') return { kind: 'err', text: 'Only admins and production managers can check for scans.' };
+  return { kind: 'err', text: (r && r.error) || 'Could not check for scans' };
+}
+function runBoxHtml() {
+  const b = S.run.busy;
+  return '<div class="jirun"><button type="button" class="pill jirunbtn" id="jiRunBtn" data-act="run"' + (b ? ' disabled aria-busy="true"' : '') + '>'
+    + (b ? '<span class="jispin" aria-hidden="true"></span>Checking…' : 'Check for scans') + '</button>'
+    + '<p class="jirunmsg ' + (S.run.kind || '') + '" id="jiRunMsg" role="status" aria-live="polite"' + (S.run.msg ? '' : ' hidden') + '>' + esc(S.run.msg) + '</p></div>';
+}
+function paintRun() {
+  const doc = root.document;
+  if (!doc) return;
+  const btn = doc.getElementById('jiRunBtn'), msg = doc.getElementById('jiRunMsg');
+  if (btn) {
+    btn.disabled = !!S.run.busy;
+    if (S.run.busy) btn.setAttribute('aria-busy', 'true'); else btn.removeAttribute('aria-busy');
+    btn.innerHTML = S.run.busy ? '<span class="jispin" aria-hidden="true"></span>Checking…' : 'Check for scans';
+  }
+  if (msg) {
+    msg.textContent = S.run.msg || '';
+    msg.className = 'jirunmsg ' + (S.run.kind || '');
+    msg.hidden = !S.run.msg;
+  }
+}
+/* New held cards are added under the ones on screen. Nothing already there is redrawn, so a JO number being typed is never lost. */
+async function addNewCards() {
+  const doc = root.document;
+  let r;
+  try { r = await api().call('joInboxList', { status: 'check', limit: 50 }); } catch (e) { return; }
+  if (!r || !r.ok) return;
+  if (r.counts) S.counts = r.counts;
+  const have = {};
+  S.cards.forEach(function (c) { have[c.card_id] = true; });
+  const add = (r.cards || []).filter(function (c) { return !have[c.card_id]; });
+  S.cards = S.cards.concat(add);
+  const list = doc && doc.getElementById('jiList');
+  if (list && add.length) {
+    const empty = list.querySelector('.jiempty');
+    if (empty) empty.remove();
+    const more = list.querySelector('.jimore');
+    const html = add.map(cardHtml).join('');
+    if (more) more.insertAdjacentHTML('beforebegin', html); else list.insertAdjacentHTML('beforeend', html);
+    list.querySelectorAll('.jicrop').forEach(function (b) { if (!b.querySelector('img') && !b.querySelector('.jimiss')) fillCrop(b); });
+    list.querySelectorAll('.jicard').forEach(syncGo);
+  }
+  countBox();
+  redrawPush();
+}
+async function runScans() {
+  if (S.run.busy) return;
+  S.run = { busy: true, msg: 'This can take up to a minute.', kind: 'none' };
+  paintRun();
+  let r;
+  try { r = await api().call('joInboxRun', {}); } catch (e) { r = { ok: false, error: 'No connection. Check the internet and try again.', code: 'NET' }; }
+  if (r && r.code === 'NO_SESSION') { S.run = { busy: false, msg: '', kind: '' }; return; }
+  const res = r && r.ok ? runText(r) : runError(r);
+  S.run = { busy: false, msg: res.text, kind: res.kind };
+  paintRun();
+  if (r && r.ok && !r.waiting) {
+    await addNewCards();
+    refreshBadge({ force: true });
+  }
 }
 function articleOf(node) {
   return node && node.closest ? node.closest('.jicard') : null;
@@ -579,6 +664,7 @@ function wire(main) {
     if (!t || !main.contains(t)) return;
     const act = t.getAttribute('data-act');
     if (act === 'retry') { render(main, S.user); return; }
+    if (act === 'run') { runScans(); return; }
     if (act === 'push') { pushNow(t); return; }
     if (act === 'more') { showMore(t); return; }
     const article = articleOf(t);
@@ -607,6 +693,7 @@ async function render(main, user) {
   S.user = user || S.user;
   closeZoom();
   if (!main) return;
+  if (!S.run.busy) S.run = { busy: false, msg: '', kind: '' }; // a message belongs to the visit it was made in
   const token = liveToken();
   main.innerHTML = pageHtml({ loading: true });
   let r;
@@ -645,7 +732,7 @@ if (root.document && root.document.addEventListener) {
 }
 root.OYPJoInbox = {
   render: render, refreshBadge: refreshBadge, paintBadge: paintBadge, cropRect: cropRect, actionFor: actionFor,
-  normJo: normJo, isMissing: isMissing, fieldRows: fieldRows, pageHtml: pageHtml, cardHtml: cardHtml
+  normJo: normJo, isMissing: isMissing, fieldRows: fieldRows, pageHtml: pageHtml, cardHtml: cardHtml, runText: runText, runError: runError, runScans: runScans
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPJoInbox;
 })(typeof window !== 'undefined' ? window : globalThis);
