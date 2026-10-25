@@ -341,7 +341,7 @@ function printBatchJobs_(req) {
       it = items[i] || {};
       jo = printNormJo_(typeof it === 'string' ? it : it.jo);
       kind = printKind_((it && it.kind) || req.kind);
-      if (jo && kind) list.push({ jo: jo, kind: kind });
+      if (jo && kind) list.push({ jo: jo, kind: kind, print_id: it && it.print_id, device_id: it && it.device_id });
     }
   } else if (req.from || req.to) {
     kind = printKind_(req.kind);
@@ -371,10 +371,15 @@ function printBatchJobs_(req) {
   if (uniq.length > PRINT_BATCH_CAP) return { ok: false, error: 'Queue up to 200 stickers at a time', code: 'CAP', count: uniq.length };
   return { ok: true, jobs: uniq };
 }
-function printBatchOne_(rows, jo, kind, by, now) {
+function printBatchOne_(rows, jo, kind, by, now, printId, device) {
   jo = printNormJo_(jo);
   kind = printKind_(kind);
   if (!jo || !kind) return null;
+  var clientId = printIdOk_(printId) ? String(printId) : '';
+  if (clientId) {
+    var replay = printFindRow_(rows, clientId);
+    if (replay) return { item: replay, created: false, replay: true };
+  }
   var queued = null, failed = null, i, row;
   for (i = 0; i < rows.length; i++) {
     row = rows[i];
@@ -383,11 +388,19 @@ function printBatchOne_(rows, jo, kind, by, now) {
     else if (row.status === 'failed' && !failed) failed = row;
   }
   if (queued) return { item: queued, created: false, duplicate: true };
-  if (failed) return { item: printRowReset_(failed), created: false, requeued: true };
+  if (failed) {
+    var again = printRowReset_(failed);
+    if (clientId && device) {
+      again.device_id = String(device);
+      again.printed_at = String(now || '');
+    }
+    return { item: again, created: false, requeued: true };
+  }
   var item = {
-    print_id: 'pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + rows.length + '-' + Math.floor(Math.random() * 1000000),
+    print_id: clientId || ('pq-' + String(now || '').replace(/\W/g, '').slice(-12) + '-' + rows.length + '-' + Math.floor(Math.random() * 1000000)),
     jo: jo, kind: kind, status: 'queued', created_at: String(now || ''), created_by: String(by || ''),
-    printed_at: '', printed_by: '', device_id: '', error: ''
+    printed_at: clientId && device ? String(now || '') : '', printed_by: '',
+    device_id: clientId && device ? String(device) : '', error: ''
   };
   rows.push(item);
   return { item: item, created: true };
@@ -416,10 +429,11 @@ function printEnqueueBatch_(req, user) {
   }
   return printLock_(function () {
     var pack = printReadRows_(), now = new Date().toISOString(), by = user.username;
-    var fresh = [], re = [], skipped = 0, i, one;
+    var fresh = [], re = [], logged = [], skipped = 0, i, one;
     for (i = 0; i < plan.jobs.length; i++) {
-      one = printBatchOne_(pack.rows, plan.jobs[i].jo, plan.jobs[i].kind, by, now);
+      one = printBatchOne_(pack.rows, plan.jobs[i].jo, plan.jobs[i].kind, by, now, plan.jobs[i].print_id, plan.jobs[i].device_id);
       if (!one) continue;
+      if (one.item) logged.push({ print_id: one.item.print_id, jo: one.item.jo, kind: one.item.kind, status: one.item.status || '' });
       if (one.created) fresh.push(one.item);
       else if (one.requeued) re.push(one.item);
       else skipped++;
@@ -427,7 +441,7 @@ function printEnqueueBatch_(req, user) {
     if (fresh.length) printWriteRows_(pack, fresh);
     for (i = 0; i < re.length; i++) printWriteRow_(pack, re[i]);
     if (fresh.length || re.length) printRevBump_();
-    return { ok: true, queued: fresh.length + re.length, skipped: skipped, auto: printAutoMap_() };
+    return { ok: true, queued: fresh.length + re.length, skipped: skipped, items: logged, auto: printAutoMap_() };
   });
 }
 function printEnqueue_(jo, kind, actor, opts) {
