@@ -152,11 +152,20 @@ function sketchBox(rgba, w, h) {
   if (ow < 8 || oh < 8) return null;
   return { x: ox, y: oy, w: ow, h: oh };
 }
-/* The detail frame is sized to this crop. Do not grow into the page around the ink:
-   that paper is the form, and it showed up as beige bands on the sides. */
+/* The detail frame shows the cleaned canvas, which already has white margins.
+   sketchBox is only the fallback box passed into sketchClean. It is not drawn. */
 function sketchFrame(box) {
   const x = box.x, y = box.y, w = box.w, h = box.h;
   return { x: x, y: y, w: w, h: h, cw: w, ch: h, dx: 0, dy: 0 };
+}
+function whiteStandIn() {
+  const blank = document.createElement('canvas');
+  blank.width = 4;
+  blank.height = 3;
+  const bg = blank.getContext('2d');
+  bg.fillStyle = '#fff';
+  bg.fillRect(0, 0, 4, 3);
+  return blank.toDataURL('image/jpeg', 0.92);
 }
 function cropSketch(src) {
   if (!src || typeof document === 'undefined' || !document.createElement) return Promise.resolve('');
@@ -165,24 +174,26 @@ function cropSketch(src) {
     img.onload = () => {
       try {
         const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
-        if (!sw || !sh) { resolve(''); return; }
+        if (!sw || !sh) { resolve(whiteStandIn()); return; }
         const c = document.createElement('canvas');
         c.width = sw; c.height = sh;
         const g = c.getContext('2d', { willReadFrequently: true });
         g.fillStyle = '#fff';
         g.fillRect(0, 0, sw, sh);
         g.drawImage(img, 0, 0);
-        const box = sketchBox(g.getImageData(0, 0, sw, sh).data, sw, sh);
-        if (!box) { resolve(''); return; }
-        const frame = sketchFrame(box);
-        const out = document.createElement('canvas');
-        out.width = frame.cw; out.height = frame.ch;
-        const og = out.getContext('2d');
-        og.fillStyle = '#fff';
-        og.fillRect(0, 0, frame.cw, frame.ch);
-        og.drawImage(c, frame.x, frame.y, frame.w, frame.h, frame.dx, frame.dy, frame.w, frame.h);
-        resolve(out.toDataURL('image/jpeg', 0.92));
-      } catch (e) { resolve(''); }
+        const data = g.getImageData(0, 0, sw, sh).data;
+        const res = typeof sketchClean === 'function' ? sketchClean(data, sw, sh, sketchBox) : { confident: false };
+        if (res && res.confident && res.out) {
+          const out = document.createElement('canvas');
+          out.width = res.out.w;
+          out.height = res.out.h;
+          out.getContext('2d').putImageData(new ImageData(res.out.data, res.out.w, res.out.h), 0, 0);
+          resolve(out.toDataURL('image/jpeg', 0.92));
+          return;
+        }
+        // Text-only cards (no drawing) stay white. Not the old ink crop, and not the raw page.
+        resolve(whiteStandIn());
+      } catch (e) { resolve(whiteStandIn()); }
     };
     img.onerror = () => resolve('');
     img.src = src;
@@ -192,6 +203,7 @@ function presentSketch(jo, src) {
   const prev = SKETCH_CROP.get(jo);
   if (prev && prev.len >= src.length && prev.src) return Promise.resolve(prev.src);
   return cropSketch(src).then(out => {
+    // A white stand-in is a real result and is cached, so a text-only card is not shown raw.
     const use = out || src;
     const again = SKETCH_CROP.get(jo);
     if (!again || src.length >= again.len) SKETCH_CROP.set(jo, { len: src.length, src: use });
@@ -248,7 +260,8 @@ function finish(w, src) {
     w.resolve(s || '');
     FLY.delete(w.key || flyKey(w.item));
   };
-  if (src && w.item && w.item.sketch && w.item.jo) {
+  // Page 1 is never sketch. Open original (size original) stays the page scan.
+  if (src && w.item && w.item.sketch && w.item.jo && w.item.size !== 'original') {
     presentSketch(w.item.jo, src).then(done).catch(() => done(src));
     return;
   }
@@ -435,7 +448,7 @@ function stage(el, o) {
     }
     if (base.fallback && typeof o.noted === 'function') o.noted(base);
   };
-  // A page-2 stand-in is cropped to the design sketch before it is shown. Page 1 is not a stand-in.
+  // A page-2 stand-in is cleaned before it is shown. Page 1 is not a stand-in.
   load(thumbItem).then(src => {
     if (src) show(src, true);
     if (base.fallback && base.kind === 'piece') {
