@@ -278,7 +278,7 @@ function ivSheet(j, edit) { // details, and the review form when this JO is stil
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
     <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${inline ? 'Review' : edit ? 'Details' : 'View only'}</span></div>
     ${pending ? '<p class="ivtag"><span class="chip gold tbr">REVIEW</span></p>' : ''}
-    <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''} ${sketch ? 'sketch' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}></div>
+    <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''} ${sketch ? 'sketch' : ''}"></div>
     <div class="ivdraw" id="ivDraw" hidden><span class="lab">Drawings</span><div class="shots" id="ivDraws"></div></div>
     ${can.cost ? `<div class="ivjoph" id="ivJoPh" hidden><span class="lab">JO photos</span><div class="shots" id="ivShots"></div></div>` : ''}
     ${inline ? '<div class="ivrev" id="ivRev"><p class="muted">Loading the review…</p></div>' : facts}
@@ -531,16 +531,19 @@ function ivPhotos(main, j) {
   if (!j || !window.OYPPhotos) return;
   const can = (IV.r && IV.r.can) || {};
   const big = main.querySelector('#ivSheet .ivph.big');
-  if (big && (j.has_photo || can.cost || IV.sketch[j.jo])) {
+  if (big && (j.has_photo || can.cost || IV.sketch[j.jo] || ivEdit())) {
     window.OYPPhotos.stage(big, {
       jo: j.jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: '', fallback: !!can.cost,
       noted: item => {
         big.classList.toggle('sketch', !!item.sketch);
         IV.sketch[j.jo] = !!item.sketch;
+        const btn = big.querySelector('.ivadd');
+        if (btn && !btn.disabled) btn.textContent = (item && item.sketch) || !(big.querySelector('img') && big.querySelector('img').src) ? 'Add photo' : 'Change photo';
       }
     });
+    ivAddPhoto(main, j, big);
     big.onclick = e => {
-      if (e.target.closest('.phorig, .phtools, button, a')) return;
+      if (e.target.closest('.phorig, .phtools, button, a, .ivaddmsg')) return;
       const img = big.querySelector('img');
       if (!img || !img.src) return;
       const items = ivGallery(j.jo);
@@ -549,10 +552,73 @@ function ivPhotos(main, j) {
         items.unshift({ key: 'piece', src: img.src, alt: img.alt || j.jo, sketch: big.classList.contains('sketch') });
         index = 0;
       }
-      ivOpenViewer({ items, index, sketch: !!items[index].sketch });
+      ivOpenViewer({ items, index, sketch: !!items[index].sketch, jo: j.jo });
     };
   }
   ivFillExtra(main, j);
+}
+function ivAddPhoto(main, j, big) {
+  if (!ivEdit() || !big || !j) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ivadd';
+  btn.textContent = IV.thumbs[j.jo] && !IV.sketch[j.jo] ? 'Change photo' : 'Add photo';
+  const file = document.createElement('input');
+  file.type = 'file';
+  file.accept = 'image/*';
+  file.hidden = true;
+  file.tabIndex = -1;
+  file.setAttribute('aria-hidden', 'true');
+  const sheet = big.closest('.ivsbox') || big.parentNode;
+  let msg = sheet && sheet.querySelector('.ivaddmsg');
+  if (!msg && sheet) {
+    msg = document.createElement('p');
+    msg.className = 'ivaddmsg';
+    msg.setAttribute('role', 'status');
+    big.insertAdjacentElement('afterend', msg);
+  }
+  const say = (text, bad) => {
+    if (!msg) return;
+    msg.textContent = text || '';
+    msg.classList.toggle('err', !!bad);
+    msg.hidden = !text;
+  };
+  big.appendChild(file);
+  big.appendChild(btn);
+  btn.onclick = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!btn.disabled) file.click();
+  };
+  file.onchange = async () => {
+    const picked = file.files && file.files[0];
+    file.value = '';
+    if (!picked || !window.OYPPhotos || !window.OYPPhotos.setPhoto) return;
+    if (picked.type && picked.type.indexOf('image/') !== 0) { say('Choose a photo', true); return; }
+    btn.disabled = true;
+    const r = await window.OYPPhotos.setPhoto(j.jo, picked, { progress: t => { btn.textContent = 'Uploading…'; say(t, false); } });
+    btn.disabled = false;
+    if (!r || !r.ok) {
+      btn.textContent = IV.thumbs[j.jo] && !IV.sketch[j.jo] ? 'Change photo' : 'Add photo';
+      say((r && r.error) || 'Could not save the photo', true);
+      return;
+    }
+    say('', false);
+    ivApplyProfile(j.jo, r.src);
+    if (main.querySelector('#ivSheet')) ivPhotos(main, j);
+  };
+}
+function ivApplyProfile(jo, src) {
+  IV.thumbs[jo] = src || '';
+  IV.sketch[jo] = false;
+  const sel = '[data-th="' + String(jo).replace(/"/g, '') + '"]';
+  document.querySelectorAll(sel).forEach(el => {
+    if (src) el.style.backgroundImage = 'url("' + String(src).replace(/"/g, '') + '")';
+    el.classList.add('has');
+    el.classList.remove('sketch');
+  });
+  const view = document.getElementById('ivView');
+  if (view && view._jo === jo && view._setProfile) view._setProfile(src);
 }
 /* Profile, then drawings, then JO pages, in the order the sheet shows them.
    Page scans live only in the cost-role strip, so a non-cost role never gets page 1. */
@@ -616,7 +682,7 @@ function ivShots(box, jo, pages, kind) {
         });
         index = items.length - 1;
       }
-      ivOpenViewer({ items, index, sketch: false });
+      ivOpenViewer({ items, index, sketch: false, jo: jo });
     };
   });
 }
@@ -633,6 +699,7 @@ function ivOpenViewer(o) {
   let index = Math.max(0, Math.min(items.length - 1, o.index | 0));
   const root = document.createElement('div');
   root.id = 'ivView';
+  root._jo = o.jo || '';
   root.className = 'iview' + (o.sketch ? ' sketch' : '');
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
@@ -681,6 +748,18 @@ function ivOpenViewer(o) {
     pos.setAttribute('aria-label', 'Photo ' + (index + 1) + ' of ' + n);
     root.classList.toggle('sketch', !!item.sketch);
     root.setAttribute('aria-label', item.sketch ? 'Sketch from JO card' : 'Photo');
+  };
+  root._setProfile = src => {
+    const piece = items.find(it => it.key === 'piece');
+    if (!piece || !src) return;
+    piece.src = src;
+    piece.sketch = false;
+    piece.full = () => Promise.resolve(src);
+    if (items[index] === piece) {
+      root.classList.remove('sketch');
+      root.setAttribute('aria-label', 'Photo');
+      img.src = src;
+    }
   };
   const showAt = () => {
     const item = items[index], mine = ++seq;

@@ -20,7 +20,7 @@ eq(photos.includes('openCursor') && photos.includes("'sk:'") && photos.includes(
 eq(photos.includes('14 * 24 * 60 * 60 * 1000') && photos.includes('sketchStale') && photos.includes('dropStandIn'), 'stand-ins expire after 14 days and a real photo drops the stand-in');
 eq(photos.includes("rootMargin: '800px'") && photos.includes('i < 16') && photos.includes("img.decoding = 'async'") && photos.includes('queueMicrotask'), 'the first tiles start on a microtask, look 800px ahead, and decode async');
 eq(photos.includes("MEM.set('sketch:'") && photos.includes('!item.sketch') && photos.includes("MEM.set('jo:'"), 'a stand-in stays off the profile key');
-eq(index.includes('photos.js?v=10'), 'photos.js cache number is bumped');
+eq(index.includes('photos.js?v=13'), 'photos.js cache number is bumped');
 eq(photos.includes('PRE_WAIT = 300') && photos.includes('function preReady'), 'a stuck IndexedDB open releases the list after 300ms');
 eq(fast.includes('return n >= 1000 ? PF.MED : PF.TILE') && fast.includes('if (!px) px = PF.TILE'), 'PhotoFast still serves the 300px tile for a list stand-in');
 

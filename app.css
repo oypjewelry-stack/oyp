@@ -307,6 +307,11 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivdraw .lab,.ivjoph .lab{display:block;margin-bottom:calc(6px*var(--sp))}
 .ivdraw .shot .ph,.ivjoph .shot .ph{width:120px;height:90px}
 .ivph.big.phstage.sketch>img{position:static;inset:auto;width:100%;height:auto;object-fit:contain;background:#fff}
+.ivph.big.phstage.sketch{padding-bottom:52px}
+.ivadd{position:absolute;z-index:4;right:8px;bottom:8px;min-height:36px;min-width:36px;padding:0 10px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));white-space:nowrap;cursor:pointer}
+.ivadd:disabled{opacity:.6}
+.ivaddmsg{margin:-4px 0 calc(12px*var(--sp));font-family:var(--label);font-size:calc(12px*var(--fs));color:#555}
+.ivaddmsg.err{color:#8a1f11}
 .ivph.big.phstage{cursor:zoom-in}
 .kf .chip.tbr,.ivtag .chip.tbr{font-size:calc(12px*var(--fs));white-space:nowrap;letter-spacing:.02em;padding:calc(3px*var(--sp)) calc(8px*var(--sp))}
 .ivtag{margin:0 0 calc(8px*var(--sp))}

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../app.css?v=59">
+<title>Add photo layout</title>
+</head>
+<body>
+<div id="main"></div>
+<script>
+window.OYP = {
+  call(action, body) {
+    if (action === 'invList') return Promise.resolve(window.__LIST);
+    if (action === 'photoThumbs') {
+      const piece = {};
+      (body.piece || []).forEach(jo => { piece[jo] = window.__PHOTO[jo]; });
+      return Promise.resolve({ ok: true, size: body.size, piece: piece, scan: {}, cards: {}, drawing: {} });
+    }
+    return Promise.resolve({ ok: false, error: 'Unknown action' });
+  },
+  esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  },
+  piece(name, jo) {
+    const n = String(name || '').trim(), id = String(jo || '').trim(), bits = [];
+    if (n) bits.push('<span class="pname">' + this.esc(n) + '</span>');
+    if (n && id) bits.push('<span class="psep"> · </span>');
+    if (id) bits.push('<span class="pjo">' + this.esc(id) + '</span>');
+    return '<span class="piece">' + bits.join('') + '</span>';
+  },
+  here() { return () => true; },
+  locLabel(key) { return key === 'vault' ? 'Vault' : (key || ''); },
+  popover() {},
+  closePopover() {},
+  toast() {},
+  swipe() {}
+};
+const fileClick = HTMLInputElement.prototype.click;
+HTMLInputElement.prototype.click = function () {
+  if (this.type === 'file') { this.dataset.opened = '1'; return; }
+  return fileClick.apply(this, arguments);
+};
+</script>
+<script src="../sketchclean.js?v=1"></script>
+<script src="../photos.js?v=13"></script>
+<script src="../inv.js?v=26"></script>
+<script>
+const ROI = { x: 0.578, y: 0.150, w: 0.377, h: 0.815 };
+function paper(W, H) {
+  const rgba = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = 248; rgba[i + 1] = 246; rgba[i + 2] = 240; rgba[i + 3] = 255;
+  }
+  return rgba;
+}
+function setPx(rgba, W, x, y, r, g, b) {
+  x = x | 0; y = y | 0;
+  if (x < 0 || y < 0 || x >= W) return;
+  const o = (y * W + x) * 4;
+  if (o < 0 || o + 3 >= rgba.length) return;
+  rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 255;
+}
+function strokeEllipse(rgba, W, cx, cy, rx, ry, thick, col) {
+  for (let y = Math.floor(cy - ry - thick); y <= cy + ry + thick; y++) {
+    for (let x = Math.floor(cx - rx - thick); x <= cx + rx + thick; x++) {
+      const nx = (x - cx) / rx, ny = (y - cy) / ry;
+      const d = Math.sqrt(nx * nx + ny * ny);
+      if (Math.abs(d - 1) <= thick / Math.min(rx, ry)) setPx(rgba, W, x, y, col[0], col[1], col[2]);
+    }
+  }
+}
+function fillEllipse(rgba, W, cx, cy, rx, ry, col) {
+  for (let y = Math.floor(cy - ry); y <= cy + ry; y++) {
+    for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+      const nx = (x - cx) / rx, ny = (y - cy) / ry;
+      if (nx * nx + ny * ny <= 1) setPx(rgba, W, x, y, col[0], col[1], col[2]);
+    }
+  }
+}
+function line(rgba, W, x0, y0, x1, y1, thick, col) {
+  const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0));
+  for (let i = 0; i <= steps; i++) {
+    const x = x0 + (x1 - x0) * i / steps, y = y0 + (y1 - y0) * i / steps;
+    for (let dy = -thick; dy <= thick; dy++) for (let dx = -thick; dx <= thick; dx++) {
+      if (dx * dx + dy * dy <= thick * thick) setPx(rgba, W, Math.round(x + dx), Math.round(y + dy), col[0], col[1], col[2]);
+    }
+  }
+}
+function roiOf(W, H) {
+  return { x: Math.round(W * ROI.x), y: Math.round(H * ROI.y), w: Math.round(W * ROI.w), h: Math.round(H * ROI.h) };
+}
+function toUrl(rgba, W, H) {
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  c.getContext('2d').putImageData(new ImageData(rgba, W, H), 0, 0);
+  return c.toDataURL('image/png');
+}
+function tallPage() {
+  const W = 1100, H = 1700, rgba = paper(W, H), R = roiOf(W, H);
+  const cx = R.x + Math.round(R.w * 0.5);
+  const top = R.y + 160, bot = R.y + R.h - 180;
+  const ink = [28, 28, 32], gem = [70, 150, 200];
+  strokeEllipse(rgba, W, cx, top + 40, 46, 70, 7, ink);
+  fillEllipse(rgba, W, cx, top + 28, 22, 28, gem);
+  line(rgba, W, cx, top + 110, cx, bot - 40, 4, ink);
+  strokeEllipse(rgba, W, cx, bot - 10, 70, 90, 8, ink);
+  fillEllipse(rgba, W, cx, bot - 20, 26, 34, gem);
+  line(rgba, W, 80, 400, 420, 430, 2, ink);
+  return toUrl(rgba, W, H);
+}
+function widePage() {
+  const W = 1800, H = 1100, rgba = paper(W, H), R = roiOf(W, H);
+  const cy = R.y + Math.round(R.h * 0.48);
+  const x0 = R.x + 70, x1 = R.x + R.w - 70;
+  const ink = [28, 28, 32], gem = [70, 150, 200];
+  line(rgba, W, x0, cy - 36, x1, cy - 36, 5, ink);
+  line(rgba, W, x0, cy + 36, x1, cy + 36, 5, ink);
+  line(rgba, W, x0, cy - 36, x0, cy + 36, 5, ink);
+  line(rgba, W, x1, cy - 36, x1, cy + 36, 5, ink);
+  for (let i = 0; i < 5; i++) {
+    const x = x0 + (x1 - x0) * (i + 0.5) / 5;
+    fillEllipse(rgba, W, x, cy, 18, 24, gem);
+    strokeEllipse(rgba, W, x, cy, 18, 24, 3, ink);
+  }
+  line(rgba, W, 60, 200, 500, 240, 2, ink);
+  return toUrl(rgba, W, H);
+}
+function squarePage() {
+  const W = 1400, H = 1200, rgba = paper(W, H), R = roiOf(W, H);
+  const cx = R.x + R.w / 2, cy = R.y + R.h / 2;
+  const ink = [28, 28, 32], gem = [70, 150, 200];
+  strokeEllipse(rgba, W, cx, cy, 150, 150, 8, ink);
+  fillEllipse(rgba, W, cx, cy - 20, 36, 36, gem);
+  return toUrl(rgba, W, H);
+}
+function whitePage() {
+  const W = 1200, H = 800, rgba = paper(W, H), R = roiOf(W, H);
+  for (let y = R.y + 80; y < R.y + 82; y++) {
+    for (let x = R.x + 30; x < R.x + 120; x++) setPx(rgba, W, x, y, 20, 20, 20);
+  }
+  return toUrl(rgba, W, H);
+}
+function realPhoto() {
+  const c = document.createElement('canvas');
+  c.width = 900; c.height = 675;
+  const g = c.getContext('2d');
+  g.fillStyle = '#cfc8bc';
+  g.fillRect(0, 0, 900, 675);
+  g.strokeStyle = '#b8860b';
+  g.lineWidth = 46;
+  g.beginPath();
+  g.ellipse(450, 330, 150, 170, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.strokeStyle = '#f3e2a4';
+  g.lineWidth = 10;
+  g.beginPath();
+  g.ellipse(450, 330, 150, 170, 0, 0, Math.PI * 2);
+  g.stroke();
+  return c.toDataURL('image/jpeg', 0.9);
+}
+function job(jo, desc) {
+  return { jo: jo, description: desc, client: '', location: 'vault', item_type: 'ring', metal: 'Yellow gold', karat: '18', cost: 1200, on_hand: true, has_photo: false };
+}
+window.__LIST = {
+  ok: true,
+  can: { cost: true, price: true },
+  stages: [['bench', 'Bench']],
+  locations: [['vault', 'Vault']],
+  item_types: [['ring', 'Ring']],
+  jobs: [job('26-441', 'Tall pendant'), job('26-442', 'Wide cuff'), job('26-444', 'Square setting'), job('26-443', 'No drawing'), job('26-500', 'Gold ring')]
+};
+window.__PHOTO = {
+  '26-441': { id: 'p441', src: tallPage(), found: false, sketch: true },
+  '26-442': { id: 'p442', src: widePage(), found: false, sketch: true },
+  '26-444': { id: 'p444', src: squarePage(), found: false, sketch: true },
+  '26-443': { id: 'p443', src: whitePage(), found: false, sketch: true },
+  '26-500': { id: 'real500', src: realPhoto(), found: true }
+};
+function box(el) {
+  const r = el.getBoundingClientRect();
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
+}
+function hit(a, b) {
+  return !(a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5);
+}
+window.__measure = function () {
+  const frame = document.querySelector('#ivSheet .ivph.big');
+  const imgs = frame ? [...frame.querySelectorAll('img')] : [];
+  const img = imgs[0] || null;
+  const btn = frame && frame.querySelector('.ivadd');
+  const orig = frame && frame.querySelector('.phorig');
+  const cs = frame ? getComputedStyle(frame) : null;
+  const ib = img ? box(img) : null, bb = btn ? box(btn) : null, ob = orig ? box(orig) : null, fb = frame ? box(frame) : null;
+  const pad = cs ? parseFloat(cs.paddingBottom) || 0 : 0;
+  const nw = img ? img.naturalWidth : 0, nh = img ? img.naturalHeight : 0;
+  const dw = ib ? ib.width : 0, dh = ib ? ib.height : 0;
+  const nat = nh ? nw / nh : 0, shown = dh ? dw / dh : 0;
+  return {
+    label: btn ? btn.textContent : '',
+    sketch: !!(frame && frame.classList.contains('sketch')),
+    imgs: imgs.length,
+    bg: cs ? cs.backgroundImage : '',
+    imgBg: img ? getComputedStyle(img).backgroundImage : '',
+    imgPos: img ? getComputedStyle(img).position : '',
+    overlap: ib && bb ? hit(ib, bb) : null,
+    origOverlap: ib && ob ? hit(ib, ob) : null,
+    gap: ib && bb ? Math.round((bb.top - ib.bottom) * 10) / 10 : null,
+    origGap: ib && ob ? Math.round((ob.top - ib.bottom) * 10) / 10 : null,
+    imgH: ib ? Math.round(ib.height * 10) / 10 : 0,
+    frameH: fb ? Math.round(fb.height * 10) / 10 : 0,
+    pad: pad,
+    nw: nw, nh: nh,
+    aspectDelta: Math.abs(shown - nat)
+  };
+};
+window.__open = async function (jo) {
+  const back = document.querySelector('#ivSX');
+  if (back) back.click();
+  const card = document.querySelector('.ivcard[data-jo="' + jo + '"]');
+  if (!card) return 'no card';
+  card.click();
+  for (let i = 0; i < 120; i++) {
+    const img = document.querySelector('#ivSheet .ivph.big img');
+    const btn = document.querySelector('#ivSheet .ivadd');
+    const one = document.querySelectorAll('#ivSheet .ivph.big img').length === 1;
+    if (img && btn && one && img.complete && img.naturalWidth > 0 && !img.classList.contains('phblur') && btn.textContent) {
+      const box = document.querySelector('#ivSheet .ivsbox');
+      if (box) box.scrollTop = 0;
+      return 'ready';
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return 'timeout';
+};
+window.OYPInv.renderJos(document.getElementById('main'), { username: 'a', role: 'admin' }).then(() => { window.__ready = true; });
+</script>
+</body>
+</html>

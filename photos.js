@@ -651,6 +651,8 @@ function stage(el, o) {
     img.src = s;
     img.classList.toggle('phblur', !!blur);
     lab.hidden = true;
+    // The sheet used to keep the list thumb as a CSS background. Under a wide stand-in that paints a second, cropped copy of the drawing, and the button sits on it.
+    el.style.backgroundImage = 'none';
   };
   const base = { jo: o.jo, id: o.id || '', kind: o.kind || 'scan', legacy: o.legacy || 'prod', fallback: !!o.fallback, sketch: false };
   const thumbItem = Object.assign({}, base, { size: 300 });
@@ -675,11 +677,23 @@ function stage(el, o) {
     if (base.fallback && typeof o.noted === 'function') o.noted(base);
   };
   // A page-2 stand-in is cleaned before it is shown. Page 1 is not a stand-in.
+  // The list may already be fetching this JO. That shared promise marks its own item, so peek again before deciding the frame.
   load(thumbItem).then(src => {
+    if (!thumbItem.sketch) peek(thumbItem);
     if (src) show(src, true);
     if (base.fallback && base.kind === 'piece') {
       mark();
-      return load(Object.assign({}, base, { size: 1600 })).then(sharpen);
+      const med = Object.assign({}, base, { size: 1600 });
+      return load(med).then(src2 => {
+        if (med.sketch && !el.classList.contains('sketch')) {
+          base.sketch = true;
+          base.id = med.id || base.id;
+          base.kind = 'card';
+          el.classList.add('sketch');
+          if (typeof o.noted === 'function') o.noted(base);
+        }
+        return sharpen(src2);
+      });
     }
   });
   if (!(base.fallback && base.kind === 'piece')) load(Object.assign({}, base, { size: 1600 })).then(sharpen);
@@ -716,6 +730,91 @@ function extras(jo, opt) {
     return { drawing: drawing.filter(d => d && d.id), cards };
   }).catch(() => ({ drawing: [], cards: [] }));
 }
+const PHOTO_MAX = 1600;
+const PHOTO_PART = 80000;
+function photoBox(w, h) {
+  w = w | 0; h = h | 0;
+  if (w < 1 || h < 1) return { w: 0, h: 0 };
+  const scale = Math.min(1, PHOTO_MAX / Math.max(w, h));
+  return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
+}
+function photoParts(data, size) {
+  const step = size || PHOTO_PART;
+  const src = String(data || '');
+  const out = [];
+  for (let i = 0; i < src.length; i += step) out.push(src.slice(i, i + step));
+  return out;
+}
+function shrinkUpload(file) {
+  if (file && typeof file.data === 'string') {
+    const box = photoBox(file.width, file.height);
+    if (!box.w || file.data.indexOf('data:image/jpeg') !== 0) return Promise.reject(new Error('That file is not a photo'));
+    return Promise.resolve(file.data);
+  }
+  if (typeof file === 'string') {
+    if (file.indexOf('data:image/jpeg') !== 0) return Promise.reject(new Error('That file is not a photo'));
+    return Promise.resolve(file);
+  }
+  if (!file || typeof document === 'undefined' || !document.createElement) return Promise.reject(new Error('That file is not a photo'));
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => {
+      try {
+        const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+        const box = photoBox(sw, sh);
+        if (!box.w) { URL.revokeObjectURL(url); reject(new Error('That file is not a photo')); return; }
+        const c = document.createElement('canvas');
+        c.width = box.w; c.height = box.h;
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, box.w, box.h);
+        g.drawImage(img, 0, 0, box.w, box.h);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      } catch (e) { URL.revokeObjectURL(url); reject(new Error('That file is not a photo')); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a photo')); };
+    img.src = url;
+  });
+}
+function uploadId() {
+  let s = '';
+  for (let i = 0; i < 16; i++) s += Math.floor(Math.random() * 36).toString(36);
+  return s;
+}
+/* Save a real profile photo. A stand-in is dropped only after photoSet accepts the file. */
+async function setPhoto(jo, file, hooks) {
+  hooks = hooks || {};
+  const say = t => { if (typeof hooks.progress === 'function') hooks.progress(t); };
+  say('Preparing…');
+  let dataUrl = '';
+  try { dataUrl = await shrinkUpload(file); }
+  catch (e) { return { ok: false, error: (e && e.message) || 'That file is not a photo' }; }
+  const comma = dataUrl.indexOf(',');
+  const data = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+  const parts = photoParts(data);
+  if (!parts.length) return { ok: false, error: 'That file is not a photo' };
+  const upload = parts.length > 1 ? uploadId() : '';
+  const name = String(jo || '') + '-photo.jpg';
+  for (let i = 0; i < parts.length; i++) {
+    say(parts.length > 1 ? ('Uploading ' + (i + 1) + '/' + parts.length) : 'Uploading…');
+    let r = null;
+    try {
+      r = await window.OYP.call('photoSet', { jo: jo, name: name, mime: 'image/jpeg', data: parts[i], part: i, parts: parts.length, upload: upload });
+    } catch (e) { r = null; }
+    if (!r || r.error === 'Unknown action') return { ok: false, error: "Photo upload isn't switched on yet" };
+    if (!r.ok) return { ok: false, error: (r && r.error) || 'Could not save the photo' };
+    if (i < parts.length - 1) continue;
+    if (!r.id) return { ok: false, error: 'Could not save the photo' };
+    dropStandIn(jo);
+    remember({ id: r.id, jo: jo, kind: 'piece', size: 300, sketch: false }, dataUrl);
+    remember({ id: r.id, jo: jo, kind: 'piece', size: 1600, sketch: false }, dataUrl);
+    return { ok: true, id: r.id, src: dataUrl };
+  }
+  return { ok: false, error: 'Could not save the photo' };
+}
 prime();
-window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, ready: PRE.p };
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, ready: PRE.p, photoBox, photoParts, setPhoto };
 })();
