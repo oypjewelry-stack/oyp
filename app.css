@@ -274,11 +274,12 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:calc(14px*var(--sp))}
 .ivcard{position:relative;border:1px solid #eee;border-radius:calc(14px*var(--rad));overflow:hidden;cursor:pointer;background:#fff;display:flex;flex-direction:column}.ivcard:hover{border-color:#111}
 .ivcard.on{border-color:#111;box-shadow:inset 0 0 0 1px #111}
-.ivph{position:relative;aspect-ratio:4/3;background:#f4f2ec center/cover no-repeat;display:flex;align-items:center;justify-content:center}.ivph span{font-family:var(--label);font-size:calc(10px*var(--fs));letter-spacing:.08em;text-transform:uppercase;color:#b9b2a0}
+.ivph{position:relative;aspect-ratio:4/3;background:#f7f7f7 center/cover no-repeat;display:flex;align-items:center;justify-content:center}
 .ivck,.ivmore{position:absolute;z-index:2}
 .ivck{top:8px;left:8px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.94);border-radius:6px;opacity:0;pointer-events:none}
 .ivck input{width:20px;height:20px;margin:0;accent-color:#111;cursor:pointer}
-.ivmore{top:8px;right:8px;width:28px;height:28px;border:0;border-radius:6px;background:rgba(255,255,255,.94);color:#111;font-size:18px;line-height:1;cursor:pointer;opacity:0;pointer-events:none}
+.ivmore{top:auto;right:4px;bottom:4px;width:36px;height:36px;min-width:36px;min-height:36px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;font-size:22px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;pointer-events:none}
+.ivcard:has(>.ivmore){padding-bottom:44px}
 .ivcard:hover .ivmore,.ivmore[aria-expanded="true"],.iv.choose .ivmore,html.iv-coarse .ivmore{opacity:1;pointer-events:auto}
 .iv.choose .ivck,.ivck:focus-within{opacity:1;pointer-events:auto}
 .ivall{display:inline-flex;align-items:center;gap:8px;margin:0 12px 12px 0;font-family:var(--label);font-size:calc(12px*var(--fs));letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
@@ -301,9 +302,7 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivsbox .dback{background:none;border:0;cursor:pointer;margin-bottom:calc(12px*var(--sp));padding:0}.ivph.big{border-radius:calc(12px*var(--rad));margin:calc(10px*var(--sp)) 0 calc(12px*var(--sp))}
 .ivph.sketch{background-color:#fff;background-size:contain;background-repeat:no-repeat;background-position:center}
 .ivph.big.sketch{aspect-ratio:auto;height:auto;display:block;background:#fff}
-.ivph span.ivsk{position:absolute;left:4px;right:4px;bottom:4px;text-align:center;background:rgba(255,255,255,.92);color:#333;letter-spacing:.04em;padding:2px 3px;border-radius:6px;line-height:1.2}
-.ivsknote{margin:0 0 calc(10px*var(--sp));font-family:var(--label);font-size:calc(11px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#555}
-.ivsknote[hidden],.ivdraw[hidden],.ivjoph[hidden]{display:none}
+.ivdraw[hidden],.ivjoph[hidden]{display:none}
 .ivdraw,.ivjoph{margin:0 0 calc(12px*var(--sp))}
 .ivdraw .lab,.ivjoph .lab{display:block;margin-bottom:calc(6px*var(--sp))}
 .ivdraw .shot .ph,.ivjoph .shot .ph{width:120px;height:90px}
@@ -320,7 +319,6 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivopenrev{margin:calc(8px*var(--sp)) 0 calc(4px*var(--sp))}
 .iview{position:fixed;inset:0;z-index:300;background:rgba(17,17,17,.92);touch-action:none}
 .iview.sketch{background:#fff}
-.iview.sketch .ivcap{color:#111}
 .iview.sketch .ivx,.iview.sketch .ivz{box-shadow:0 0 0 1px #111}
 .iview .ivframe{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden}
 .iview .ivpan{transform-origin:center center}
@@ -328,11 +326,11 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .iview .ivx{position:absolute;z-index:2;top:12px;right:12px;width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;font-size:28px;line-height:1;cursor:pointer}
 .iview .ivtools{position:absolute;z-index:2;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:10px}
 .iview .ivz{width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;font-size:26px;line-height:1;cursor:pointer}
-.iview .ivcap{position:absolute;z-index:2;top:18px;left:16px;margin:0;color:#fff;font-family:var(--label);font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase}
 .ivfs{display:grid;grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp)) calc(14px*var(--sp));margin:calc(12px*var(--sp)) 0}.ivf b{font-family:var(--head);font-weight:500;font-size:calc(16px*var(--hs));display:block;margin-top:calc(2px*var(--sp))}
 @media (max-width:760px){.ivgrid{grid-template-columns:1fr;gap:0;border-top:1px solid #eee}.ivcard{flex-direction:row;border:0;border-bottom:1px solid #eee;border-radius:0;padding:calc(10px*var(--sp)) calc(2px*var(--sp));gap:calc(12px*var(--sp))}
   .ivcard .ivph{width:76px;height:76px;aspect-ratio:auto;border-radius:calc(10px*var(--rad));flex-shrink:0}.ivb{padding:0;min-width:0;flex:1}.ivsel{min-width:0;flex:1 1 30%}.ivsel select{width:100%;font-size:calc(14px*var(--fs));padding:calc(8px*var(--sp))}
   .ivck,.ivmore{opacity:1;pointer-events:auto}
+  .ivcard:has(>.ivmore){padding-bottom:44px}
   .ivsheet{background:#fff}.ivsbox{width:100%}}
 .mats .rvchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.mats .fchip{white-space:nowrap}
 .rvrow.mrow{grid-template-columns:1fr auto}.mrow .kd{white-space:normal}.mq{text-align:right}.mq b{font-family:var(--head);font-weight:500;font-size:calc(22px*var(--hs));display:block;line-height:1}
@@ -449,7 +447,7 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
    Phones (no hover, or a coarse pointer) keep swipe only. Select hides it.
    Text rows reserve 34px so the glyph clears the words. That gap is not part
    of the swipe tray. A full-width photo stays full width: the × sits on the
-   photo, on a small round white chip, and the inventory ⋯ moves left of it. */
+   photo, on a small round white chip. The inventory ⋯ is on the card, not the photo. */
 .swx{display:none;position:absolute;top:0;right:0;z-index:3;width:34px;height:34px;min-width:34px;min-height:34px;box-sizing:border-box;margin:0;padding:0;border:0;background:transparent;color:#777;cursor:pointer;align-items:center;justify-content:center;line-height:0}
 .swx svg{display:block;width:14px;height:14px}
 .swclip.swphoto .swx::before{content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:rgba(255,255,255,.92);box-shadow:0 1px 3px rgba(0,0,0,.28)}
@@ -459,8 +457,6 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
   .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:calc(var(--swx-base, 0px) + 34px)}
   .swsel .swclip.hasx .swx{display:none}
   .swsel .swclip.hasx:not(.swphoto)>.swface>:first-child{padding-right:var(--swx-base, 0px)}
-  .ivph.hasx>.ivmore{right:42px}
-  .swsel .ivph.hasx>.ivmore{right:8px}
   .swx:hover,.swx:focus-visible{color:#111}
 }
 /* Inventory tiles are grid items. A flex clip sized to the tray's max-content

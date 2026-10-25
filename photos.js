@@ -384,9 +384,11 @@ function stage(el, o) {
   const img = document.createElement('img');
   img.alt = o.alt || '';
   img.className = 'phblur';
+  const quiet = o.empty === '';
   const lab = document.createElement('span');
   lab.className = 'lab phlab';
-  lab.textContent = 'Loading photo…';
+  lab.textContent = quiet ? '' : 'Loading photo…';
+  lab.hidden = quiet;
   const orig = document.createElement('button');
   orig.type = 'button';
   orig.className = 'lnk phorig';
@@ -419,7 +421,7 @@ function stage(el, o) {
     if (src) return show(src, false);
     sharp = true;
     if (img.parentNode) img.classList.remove('phblur');
-    else { lab.hidden = false; lab.textContent = o.empty || 'Photo not found'; }
+    else if (!quiet) { lab.hidden = false; lab.textContent = o.empty || 'Photo not found'; }
   };
   const mark = () => {
     if (thumbItem.sketch) {

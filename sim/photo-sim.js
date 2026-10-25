@@ -34,14 +34,16 @@ eq(photos.includes('indexedDB') && photos.includes('localStorage') && photos.inc
 eq(app.includes('photoThumbs: 1') && app.includes('photoFile: 1'), 'photo reads do not clear the page cache');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(!/photoThumbs|photoFile/.test(cached), 'photo answers are not stored with the page cache');
-eq(index.includes('photos.js?v=6') && index.includes('inv.js?v=22') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=40') && index.includes('app.css?v=56') && index.includes('nav.js?v=66'), 'changed files are cache-busted');
+eq(index.includes('photos.js?v=7') && index.includes('inv.js?v=23') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=40') && index.includes('app.css?v=57') && index.includes('nav.js?v=66'), 'changed files are cache-busted');
 eq(fast.includes('photoThumbs: 1, photoFile: 1') && fast.includes('NOT added to FAST.CACHE'), 'Fast.gs keeps the new actions as fresh reads');
 eq(steps.includes('PASTE_STEPS') && steps.includes('Manage deployments') && steps.includes('New version'), 'paste steps tell the owner to deploy a new version');
 eq(steps.includes('Replace that file') && steps.includes('Page 1 is never') && steps.includes('drawings folder'), 'the new paste steps replace PhotoFast and describe the stand-in');
 eq(gs.includes("['cad', 'drawings']") && gs.includes("['product', 'photos', 'piece']"), 'drawings sit beside cad, and the profile walks product, photos, and piece');
 eq(gs.includes('pfj2:') && gs.includes('pfc2:') && gs.includes('CARD: 90') && gs.includes('MISS: 600'), 'a missing product photo is cached for 10 minutes and a card list for 90 seconds');
 eq(gs.includes("cards[i].page === 2 && cards[i].side === 'a'"), 'the stand-in is page 2 front');
-eq(/\$\{can\.cost \? `<div class="ivjoph"[^`]*JO photos/.test(inv) && inv.includes('Sketch from JO card') && inv.includes('fallback: !!can.cost'), 'JO photos and the stand-in follow the cost gate');
+const cardFn = inv.slice(inv.indexOf('function ivCard'), inv.indexOf('function ivSheet'));
+eq(/\$\{can\.cost \? `<div class="ivjoph"[^`]*JO photos/.test(inv) && inv.includes('fallback: !!can.cost') && inv.includes("aria-label', o.sketch ? 'Sketch from JO card'") && !inv.includes('No photo') && !inv.includes('SKETCH FROM JO CARD') && !inv.includes('class="ivsk') && !inv.includes('ivsknote') && !inv.includes('class="ivcap') && cardFn.includes('class="ivmore"') && cardFn.includes('${ck}</div>') && cardFn.includes('</div>${more}</div>'), 'JO photos follow the cost gate, captions stay off the photos, and the menu sits on the card');
+eq(read('app.css').includes('.ivmore{top:auto;right:4px;bottom:4px;width:36px;height:36px;min-width:36px;min-height:36px') && read('app.css').includes('.ivcard:has(>.ivmore){padding-bottom:44px}') && !read('app.css').includes('.ivph.hasx>.ivmore'), 'the menu is a 36px control in the card corner and does not sit on the photo');
 eq(photos.includes("MEM.set('sketch:'") && photos.includes('!item.sketch'), 'a stand-in is kept for this visit and is not stored as the profile');
 eq(review.includes('id="rvJoPh"') && review.includes("kind: 'card'") && review.includes('Open original') === false, 'the JO card lists Drive scans without an OcrLog row');
 eq(read('app.css').includes('.ivph.big.sketch{aspect-ratio:auto;height:auto;display:block;background:#fff}') && read('app.css').includes('.ivph.big.phstage.sketch>img{position:static;inset:auto;width:100%;height:auto;object-fit:contain;background:#fff}') && read('app.css').includes('.iview.sketch{background:#fff}'), 'the sketch frame follows the crop on white, and the viewer matches');
