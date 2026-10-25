@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 32;
+var PRINT_JS = 33;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -1753,7 +1753,7 @@ function mountOne(el) {
   el.setAttribute('data-wired', '1');
   el.innerHTML = '<div class="setrow"><div class="setl"><span class="lab">Print one</span><span class="muted">One JO. The preview opens first. Nothing is queued until you confirm.</span></div>'
     + '<div class="setv pr-range"><input id="prOneJo" placeholder="26-287" aria-label="JO number" autocomplete="off" autocapitalize="characters" spellcheck="false">'
-    + '<select id="prOneKind" aria-label="Sticker type"><option value="jo_card">JO card</option><option value="jewelry_tag">Jewelry tag</option><option value="both">Both</option></select>'
+    + '<select id="prOneKind" aria-label="Sticker type"><option value="jewelry_tag">Jewelry tag</option><option value="jo_card">JO sticker</option><option value="both" selected>Both</option></select>'
     + '<button type="button" class="pill sm" id="prOneGo">Print</button></div></div>'
     + '<p class="muted" id="prOneN"></p>';
   var input = document.getElementById('prOneJo');
@@ -1778,8 +1778,8 @@ function mountOne(el) {
       var jos = r.jos, found = Array.isArray(jos) ? jos.indexOf(jo) >= 0 : (r.count || 0) > 0;
       if (!found) { note.textContent = 'No JO with that number.'; return; }
       note.textContent = '';
-      var kind = (document.getElementById('prOneKind') || {}).value || 'jo_card';
-      if (kind !== 'jo_card' && kind !== 'jewelry_tag' && kind !== 'both') kind = 'jo_card';
+      var kind = (document.getElementById('prOneKind') || {}).value || 'both';
+      if (kind !== 'jo_card' && kind !== 'jewelry_tag' && kind !== 'both') kind = 'both';
       openPreview(itemsForChoice([jo], kind));
     });
   };

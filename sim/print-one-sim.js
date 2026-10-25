@@ -19,7 +19,7 @@ const testPage = read('staff/print-test.html');
 const printSrc = read('print.js');
 eq(settings.indexOf('id="printOne"') > 0 && settings.indexOf('id="printOne"') < settings.indexOf('id="printRange"'), 'Settings puts Print one above Print a range');
 eq(testPage.indexOf('id="printOne"') > 0 && testPage.indexOf('id="printOne"') < testPage.indexOf('id="printRange"'), 'the print test page puts Print one above Print a range');
-eq(printSrc.includes('>Print one<') && printSrc.includes('>JO card<') && printSrc.includes('>Jewelry tag<') && printSrc.includes('>Both<') && printSrc.includes('openPreview(itemsForChoice([jo], kind))') && printSrc.includes('No JO with that number.') && printSrc.includes('preview: 1') && !printSrc.includes("id=\"prOneGo\">Queue"), 'Print one reuses the preview and does not queue from its own button');
+eq(printSrc.includes('>Print one<') && printSrc.includes('<option value="jewelry_tag">Jewelry tag</option><option value="jo_card">JO sticker</option><option value="both" selected>Both</option>') && printSrc.includes('openPreview(itemsForChoice([jo], kind))') && printSrc.includes('No JO with that number.') && printSrc.includes('preview: 1') && !printSrc.includes("id=\"prOneGo\">Queue"), 'Print one offers Jewelry tag, JO sticker, and Both, and does not queue from its own button');
 eq(read('paste/PrintQueue.gs').includes('jos: names') && read('paste/PrintQueue.gs').includes('preview: true'), 'the range preview names the JOs it found and still does not queue them');
 
 function get(url) {
@@ -192,7 +192,9 @@ async function chrome(origin, batches) {
     const order = await evalJson(`document.getElementById('printOne').compareDocumentPosition(document.getElementById('printRange')) & 4 ? 'above' : 'below'`);
     eq(order === 'above', 'Print one is above Print a range');
     const opts = await evalJson(`[...document.querySelectorAll('#prOneKind option')].map(o => o.value + '=' + o.textContent).join(',')`);
-    eq(opts === 'jo_card=JO card,jewelry_tag=Jewelry tag,both=Both', 'the sticker choices match Print a range, plus Both (' + opts + ')');
+    const picked = await evalJson(`document.getElementById('prOneKind').value`);
+    eq(opts === 'jewelry_tag=Jewelry tag,jo_card=JO sticker,both=Both', 'the sticker choices are Jewelry tag, JO sticker, and Both (' + opts + ')');
+    eq(picked === 'both', 'Both is the default sticker type (' + picked + ')');
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await snap(390, 'print_one_390.png');
     await snap(1024, 'print_one_1024.png');
@@ -205,9 +207,9 @@ async function chrome(origin, batches) {
     eq(miss === 'yes', 'a JO that is not on the list is a plain error');
     eq(batches.every(b => b.preview === 1), 'checking a JO does not queue it (' + batches.length + ' previews)');
     const before = batches.length;
-    await evalJson(`document.getElementById('prOneKind').value = 'both'; document.getElementById('prOneJo').value = '26-287B'; document.getElementById('prOneGo').click(); 'go'`);
+    await evalJson(`document.getElementById('prOneJo').value = '26-287B'; document.getElementById('prOneGo').click(); 'go'`);
     const opened = await waitFor(`document.getElementById('oypPrev') && /Print all \\(2\\)/.test(document.body.innerText) ? 'yes' : ''`);
-    eq(opened === 'yes', 'an existing JO opens the preview for Both before anything is queued');
+    eq(opened === 'yes', 'the default Both opens a preview of the jewelry tag and the JO sticker before anything is queued');
     eq(batches.length === before + 1 && batches[batches.length - 1].preview === 1 && batches.every(b => b.preview === 1), 'opening the preview still has not queued a sticker');
     await evalJson(`document.querySelector('#oypPrev [data-print="cancel"]').click(); 'go'`);
     const closed = await waitFor(`!document.getElementById('oypPrev') ? 'yes' : ''`);
@@ -215,14 +217,15 @@ async function chrome(origin, batches) {
     await evalJson(`document.getElementById('prOneGo').click(); 'go'`);
     const again = await waitFor(`document.querySelector('#oypPrev [data-print="one"]') ? 'yes' : ''`);
     eq(again === 'yes', 'Print opens the preview again');
-    await evalJson(`document.querySelector('#oypPrev [data-print="one"]').click(); 'go'`);
+    await evalJson(`document.querySelector('#oypPrev [data-print="all"]').click(); 'go'`);
     let saw = false;
     for (let i = 0; i < 30; i++) {
       const real = batches.filter(b => b.preview !== 1 && b.preview !== true);
-      if (real.length === 1 && real[0].items && real[0].items.length === 1 && real[0].items[0].jo === '26-287B') { saw = true; break; }
+      const items = real.length === 1 && real[0].items;
+      if (items && items.length === 2 && items[0].jo === '26-287B' && items[0].kind === 'jewelry_tag' && items[1].jo === '26-287B' && items[1].kind === 'jo_card') { saw = true; break; }
       await sleep(100);
     }
-    eq(saw, 'Print this one is the first queue, for the JO she confirmed (' + JSON.stringify(batches.filter(b => !b.preview).map(b => b.items)) + ')');
+    eq(saw, 'Print all queues the jewelry tag and the JO sticker for that JO (' + JSON.stringify(batches.filter(b => !b.preview).map(b => b.items)) + ')');
   } finally {
     try { if (ws) ws.close(); } catch (e) {}
     try { chromeProc.kill('SIGKILL'); } catch (e) {}

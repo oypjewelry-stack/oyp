@@ -257,7 +257,7 @@ eq(read('app.css').includes('transition:transform 50ms') && read('app.css').incl
 eq(src.includes('id="icWedge"') && src.includes('inputmode="none"') && src.includes('applyRead(ST.session, raw)'), 'a hidden field takes the wedge, and the read is applied on the phone');
 eq(src.includes("call('countFinish'") && src.includes("call('linkEpc'") && src.split("call('countFinish'").length === 2 && src.split("call('linkEpc'").length === 2, 'Finish and Link tag are the only writes');
 eq(src.includes('decideFinish(') && src.includes('confirm(msg)') && src.includes('linkConfirm(jo)'), 'every save asks first');
-eq(index.includes('count.js?v=3') && index.includes('count.css?v=2') && index.includes('nav.js?v=69') && index.includes('app.css?v=65') && index.indexOf('count.js?v=3') < index.indexOf('app.js?v=43'), 'the count page is loaded with the staff app');
+eq(index.includes('count.js?v=3') && index.includes('count.css?v=2') && index.includes('nav.js?v=70') && index.includes('app.css?v=65') && index.indexOf('count.js?v=3') < index.indexOf('app.js?v=43'), 'the count page is loaded with the staff app');
 eq(src.includes('\\u00a0\\u00b7\\u00a0') && css.includes('.ic .piece .psep{display:inline-block;white-space:pre}') && css.includes('.ic .piece{flex-direction:row'), 'a card title keeps spaces around the dot');
 eq(app.includes("sessionStorage.setItem('oypInvView', 'count')") && app.includes('countLoad: 1') && app.includes("cur0 === 'count'") && app.includes("history.replaceState(null, '', '#/jos')"), 'an old #/count link opens Inventory, and countLoad does not clear the page cache');
 const staffMenu = nav.menuHtml({ role: 'staff', username: 'thea', display_name: 'Thea' }, 'appts', '');

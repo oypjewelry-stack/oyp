@@ -403,9 +403,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=32') && index.includes('print-label.js?v=14') && index.includes('nav.js?v=69') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=21') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=21') && read('sim/swipe-preview.html').includes('print.css?v=21'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=14') && read('nav.js').includes('print.js?v=32') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=32') && read('staff/print-test.html').includes('print-label.js?v=14') && read('staff/print-test.html').includes('print.css?v=21') && read('staff/print-test.html').includes('nav.js?v=69') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=33') && index.includes('print-label.js?v=14') && index.includes('nav.js?v=70') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=21') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=21') && read('sim/swipe-preview.html').includes('print.css?v=21'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=14') && read('nav.js').includes('print.js?v=33') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=33') && read('staff/print-test.html').includes('print-label.js?v=14') && read('staff/print-test.html').includes('print.css?v=21') && read('staff/print-test.html').includes('nav.js?v=70') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -1534,8 +1534,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v32') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v32') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v33') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v33') >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
