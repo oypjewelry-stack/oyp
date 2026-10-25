@@ -24,10 +24,12 @@ const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see
 const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, sketch: {}, open: null, at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [], extra: 0 };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, sketch: {}, open: null, at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [], extra: 0, dropped: new Set(), revSeq: 0, want: '', dbgSeq: 0 };
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
+  review: ['REVIEW', j => !!(j.review || j.pending_review)],
+  debug: ['DEBUG', () => false],
   making: ['In production', j => MAKING[j.location]],
   finished: ['Finished pieces', j => j.on_hand && !MAKING[j.location]],
   sold: ['Sold', j => j.location === 'sold'],
@@ -47,7 +49,8 @@ const locLab = k => window.OYP.locLabel(k, ((IV.r && IV.r.locations || []).find(
 const typeLab = k => ((IV.r && IV.r.item_types || []).find(t => t[0] === k) || [k, k])[1];
 function ivHay(j) {
   return [j.jo, j.parent_jo, j.description, j.client, j.metal, kar(j.karat), j.karat, j.stone_type, j.stone_size, j.grade, j.material, j.size,
-    j.item_type && typeLab(j.item_type), j.location && locLab(j.location), stageLabel(j.stage), j.type === 'repair' ? 'repair' : ''].join(' ').toLowerCase();
+    j.item_type && typeLab(j.item_type), j.location && locLab(j.location), stageLabel(j.stage), j.type === 'repair' ? 'repair' : '',
+    (j.review || j.pending_review) ? 'review' : ''].join(' ').toLowerCase();
 }
 function ivShown() {
   const toks = IV.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -65,6 +68,87 @@ function ivShown() {
   return pinned.length ? pinned.concat(list.filter(j => !used.has(j.jo))) : list;
 }
 function ivEdit() { const u = IV.u; return !!(u && (u.role === 'admin' || u.role === 'production_manager')); }
+function ivClientName(v) { if (!v) return ''; return typeof v === 'string' ? v : (v.name || ''); }
+function ivFromReview(j) {
+  return {
+    jo: j.jo, parent_jo: j.parent_jo || '', description: j.description || '', client: ivClientName(j.client),
+    metal: j.metal || '', karat: j.karat || '', stone_type: j.stone_type || '', stone_size: j.stone_size || '',
+    grade: j.grade || '', material: j.material || '', size: j.size || '', weight_g: j.weight_g || '',
+    item_type: j.item_type || '', location: j.location || '', stage: '', col: '', type: j.type || '',
+    due: j.due_date || '', review: true, pending_review: true, late: false,
+    has_photo: !!(j.pages && j.pages.length), on_hand: false, version: j.version || ''
+  };
+}
+function ivCopyReview(row, job) {
+  if (!row || !job) return;
+  const name = ivClientName(job.client);
+  if (name) row.client = name;
+  ['description', 'location', 'item_type', 'type', 'metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade', 'material', 'weight_g'].forEach(k => {
+    if (job[k] != null) row[k] = job[k];
+  });
+  if (job.due_date) row.due = job.due_date;
+}
+function ivMergeDrafts(jobs) {
+  if (!IV.r || !Array.isArray(jobs)) return;
+  const skip = { reviewed: 1, discarded: 1, deleted: 1, replaced: 1 };
+  const pending = new Set();
+  jobs.forEach(src => {
+    if (!src || !src.jo || IV.dropped.has(src.jo) || skip[src.review_state]) return;
+    pending.add(src.jo);
+    if (!IV.r.jobs.some(j => j.jo === src.jo)) IV.r.jobs.push(ivFromReview(src));
+  });
+  IV.r.jobs.forEach(j => {
+    const on = pending.has(j.jo);
+    j.review = on;
+    j.pending_review = on;
+  });
+}
+function ivReviewCount() { return IV.r && IV.r.jobs ? IV.r.jobs.filter(j => j.review || j.pending_review).length : 0; }
+function ivDebugCount() { return window.OYPJoInbox && window.OYPJoInbox.count ? window.OYPJoInbox.count() : 0; }
+function ivChipKeys() { return Object.keys(IVIEWS).filter(k => k !== 'debug' || ivEdit()); }
+function ivChipCount(k) { return k === 'debug' ? ivDebugCount() : (IV.r && IV.r.jobs ? IV.r.jobs.filter(IVIEWS[k][1]).length : 0); }
+function ivPaintNav() {
+  if (typeof document === 'undefined') return;
+  const onInv = !!document.querySelector('.ivchips');
+  const queued = window.OYPReview && window.OYPReview.navPending ? window.OYPReview.navPending() : 0;
+  const reviewN = onInv ? ivReviewCount() : (queued || ivReviewCount());
+  const lookN = ivDebugCount();
+  const show = reviewN + lookN;
+  document.querySelectorAll('[data-ncount="review"]').forEach(el => {
+    el.textContent = show ? (show > 99 ? '99+' : String(show)) : '';
+    el.hidden = !show;
+  });
+  document.querySelectorAll('[data-ivcount="debug"]').forEach(el => { el.textContent = String(lookN); });
+}
+function ivApplyReview(main, jo, mark, job) {
+  const row = IV.r && IV.r.jobs.find(x => x.jo === jo);
+  ivCopyReview(row, job);
+  if (mark) {
+    IV.dropped.add(jo);
+    if (row) { row.review = false; row.pending_review = false; }
+    if (window.OYPReview && window.OYPReview.drop) window.OYPReview.drop(jo);
+  }
+  ivDraw(main);
+}
+async function ivMountReview(main, j) {
+  const host = main.querySelector('#ivRev');
+  if (!host || !j || !window.OYPReview || !window.OYPReview.mount) return;
+  const seq = ++IV.revSeq, jo = j.jo;
+  try {
+    await window.OYPReview.mount(host, jo, {
+      onDone: (mark, job) => { if (seq !== IV.revSeq || !window.OYP.here()()) return; ivApplyReview(main, jo, mark, job); },
+      onMissing: () => {
+        IV.dropped.add(jo);
+        const row = IV.r && IV.r.jobs.find(x => x.jo === jo);
+        if (row) { row.review = false; row.pending_review = false; }
+        if (seq !== IV.revSeq || !window.OYP.here()()) return;
+        ivDraw(main);
+      }
+    });
+  } catch (e) {
+    if (host.isConnected) host.innerHTML = '<p class="muted">The review form could not be loaded.</p>';
+  }
+}
 function ivMoveLocs() { return ((IV.r && IV.r.locations) || []).filter(l => l[0] && l[0] !== 'archived'); }
 async function renderJos(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); IV.u = u; // live(): still on this route (app.js)
@@ -73,18 +157,62 @@ async function renderJos(main, u) {
     const r = await call('invList'); if (!live()) return;
     if ((!r || !r.ok) && !IV.r) { main.innerHTML = `<h2>Inventory</h2><p class="muted">${esc(oldBackend(r) ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
     if (r && r.ok) { IV.r = r; IV.at = Date.now(); }
+    if (IV.r && ivEdit() && window.OYPReview && window.OYPReview.drafts) {
+      try {
+        const drafts = await window.OYPReview.drafts();
+        if (!live()) return;
+        if (drafts) ivMergeDrafts(drafts);
+      } catch (e) {}
+    }
+    if (IV.want && IV.r && IV.r.jobs.some(j => j.jo === IV.want)) { IV.view = 'review'; IV.open = IV.want; }
+    IV.want = '';
+    if (IV.view === 'debug' && !ivEdit()) IV.view = 'all';
   }
   ivDraw(main);
 }
+function ivChipsHtml(esc) {
+  return `<div class="rvchips ivchips">${ivChipKeys().map(k => {
+    const n = ivChipCount(k);
+    const mark = (k === 'review' || k === 'debug') && n ? ' tbr' : '';
+    const attr = k === 'debug' ? ' data-ivcount="debug"' : '';
+    return `<button class="fchip tap ${IV.view === k ? 'on' : ''}${mark}" data-iv="${k}">${esc(IVIEWS[k][0])} <b${attr}>${n}</b></button>`;
+  }).join('')}</div>`;
+}
+function ivDrawDebug(main) {
+  const { esc } = window.OYP, title = IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
+  if (window.OYPJoInbox && window.OYPJoInbox.closeZoom) window.OYPJoInbox.closeZoom();
+  main.innerHTML = `<div class="iv">
+    <div class="dhead"><h2>${esc(title)}</h2></div>
+    <p class="muted">Scanned cards the scanner was not sure about. Check the JO number, then confirm, fix, or discard.</p>
+    ${ivChipsHtml(esc)}
+    <div id="ivDebug"></div>
+  </div>`;
+  ivWire(main);
+  ivMountDebug(main);
+}
+async function ivMountDebug(main) {
+  const host = main.querySelector('#ivDebug');
+  if (!host || !window.OYPJoInbox || !window.OYPJoInbox.render) return;
+  const seq = ++IV.dbgSeq;
+  try { await window.OYPJoInbox.render(host, IV.u, { embed: true }); }
+  catch (e) { if (host.isConnected) host.innerHTML = '<p class="muted">Scanned cards could not be loaded.</p>'; }
+  if (seq !== IV.dbgSeq || !host.isConnected) return;
+  ivPaintNav();
+}
 function ivDraw(main) {
   if (window.OYP.popover) window.OYP.closePopover();
+  if (IV.view === 'debug') {
+    if (!ivEdit()) IV.view = 'all';
+    else { ivDrawDebug(main); return; }
+  }
+  if (window.OYPJoInbox && window.OYPJoInbox.closeZoom) window.OYPJoInbox.closeZoom();
   const { esc } = window.OYP, r = IV.r, can = r.can || {}, L = ivShown(), title = IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
   if (IV.offer) { const hid = ivById(IV.offer); if (!hid || L.some(j => j.jo === hid.jo)) IV.offer = ''; }
   const liveIds = new Set(r.jobs.map(j => j.jo));
   [...IV.sel].forEach(id => { if (!liveIds.has(id)) IV.sel.delete(id); });
   IV.scanned = IV.scanned.filter(id => liveIds.has(id) && IV.sel.has(id));
   if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('iv-coarse');
-  const cnt = k => r.jobs.filter(IVIEWS[k][1]).length;
+  const cnt = k => ivChipCount(k);
   const onHand = r.jobs.filter(j => j.on_hand && !MAKING[j.location]);
   const sumC = onHand.reduce((t, j) => t + (Number(j.cost) || 0), 0), sumP = onHand.reduce((t, j) => t + (Number(j.price) || 0), 0);
   const sum = [plural(onHand.length, 'finished piece') + ' on hand', plural(cnt('making'), 'job') + ' in production'];
@@ -103,9 +231,9 @@ function ivDraw(main) {
     </div>` : '';
   main.innerHTML = `<div class="iv${IV.choose ? ' choose' : ''}${n ? ' hasbar' : ''}">
     <div class="dhead"><h2>${esc(title)}</h2><span class="dheadacts"><span class="lab">${esc(plural(L.length, 'item'))}</span><button type="button" class="pill sm outline" id="ivChoose">${IV.choose ? 'Done' : 'Select'}</button></span></div>
-    <p class="muted">Every JO and finished piece. ${can.open ? 'Tap one to open its JO card.' : 'View only: tap one to see its details.'}</p>
+    <p class="muted">${IV.view === 'review' ? 'Items marked REVIEW. Approve one here and it leaves this list.' : 'Every JO and finished piece. Tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
-    <div class="rvchips ivchips">${Object.keys(IVIEWS).map(k => `<button class="fchip tap ${IV.view === k ? 'on' : ''}" data-iv="${k}">${esc(IVIEWS[k][0])} <b>${cnt(k)}</b></button>`).join('')}</div>
+    ${ivChipsHtml(esc)}
     <input id="ivQ" class="rvq" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire">
     ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
     <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
@@ -124,7 +252,7 @@ function ivCard(j, can, edit) {
   if (MAKING[j.location] && j.stage) c.push(`<span class="chip">${esc(stageLabel(j.stage))}</span>`);
   if (j.late) c.push('<span class="chip gold">Late</span>');
   if (j.type === 'repair') c.push('<span class="chip">Repair</span>');
-  if (j.review) c.push('<span class="chip">To review</span>');
+  if (j.review || j.pending_review) c.push('<span class="chip gold tbr">REVIEW</span>');
   const money = [];
   if (can.cost) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
   if (can.price) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
@@ -136,21 +264,24 @@ function ivCard(j, can, edit) {
     <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}
     <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div></div>`;
 }
-function ivSheet(j, edit) { // details only. Actions stay on the floating ⋯ menu.
+function ivSheet(j, edit) { // details, and the review form when this JO is still waiting. Actions stay on the floating ⋯ menu.
   if (!j) return ''; const { esc } = window.OYP;
   const f = (lab, v) => v ? `<div class="ivf"><span class="lab">${esc(lab)}</span><b>${esc(v)}</b></div>` : '';
   const can = (IV.r && IV.r.can) || {}, sketch = !!IV.sketch[j.jo];
+  const pending = !!(j.review || j.pending_review), inline = pending && edit;
+  const facts = `<p class="kd">${esc(j.description || 'No details')}</p>
+    <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}
+      ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('Job', j.type === 'repair' ? 'Repair' : j.type === 'revision' ? 'Revision' : j.type ? 'New job' : '')}
+      ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
+      ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>`;
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
-    <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${edit ? 'Details' : 'View only'}</span></div>
+    <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${inline ? 'Review' : edit ? 'Details' : 'View only'}</span></div>
+    ${pending ? '<p class="ivtag"><span class="chip gold tbr">REVIEW</span></p>' : ''}
     <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''} ${sketch ? 'sketch' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
     <p class="ivsknote" id="ivSkNote" ${sketch ? '' : 'hidden'}>Sketch from JO card</p>
     <div class="ivdraw" id="ivDraw" hidden><span class="lab">Drawings</span><div class="shots" id="ivDraws"></div></div>
     ${can.cost ? `<div class="ivjoph" id="ivJoPh" hidden><span class="lab">JO photos</span><div class="shots" id="ivShots"></div></div>` : ''}
-    <p class="kd">${esc(j.description || 'No details')}</p>
-    <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}
-      ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('Job', j.type === 'repair' ? 'Repair' : j.type === 'revision' ? 'Revision' : j.type ? 'New job' : '')}
-      ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
-      ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>
+    ${inline ? '<div class="ivrev" id="ivRev"><p class="muted">Loading the review…</p></div>' : facts}
     </div></div>`;
 }
 function ivRange(jo, shift) {
@@ -230,8 +361,8 @@ function ivWire(main) {
   const $ = s => main.querySelector(s);
   const stop = e => e.stopPropagation();
   main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; ivDraw(main); });
-  $('#ivQ').oninput = e => { IV.q = e.target.value; const pos = e.target.selectionStart; ivDraw(main); const q = $('#ivQ'); q.focus(); q.setSelectionRange(pos, pos); };
-  $('#ivQ').onkeydown = e => {
+  if ($('#ivQ')) $('#ivQ').oninput = e => { IV.q = e.target.value; const pos = e.target.selectionStart; ivDraw(main); const q = $('#ivQ'); q.focus(); q.setSelectionRange(pos, pos); };
+  if ($('#ivQ')) $('#ivQ').onkeydown = e => {
     if (e.isComposing) return;
     if (e.key === 'Backspace' || e.key === 'Delete') { ivQReset(); return; }
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) ivQNote();
@@ -243,9 +374,9 @@ function ivWire(main) {
     ivQReset();
     ivScanCommit(raw, true);
   };
-  $('#ivStage').onchange = e => { IV.stage = e.target.value; if (IV.stage && IV.view !== 'all' && IV.view !== 'making') IV.view = 'all'; ivDraw(main); };
-  $('#ivLoc').onchange = e => { IV.loc = e.target.value; if (IV.loc) IV.view = IV.loc === 'archived' ? 'archived' : 'all'; ivDraw(main); };
-  $('#ivType').onchange = e => { IV.type = e.target.value; ivDraw(main); };
+  if ($('#ivStage')) $('#ivStage').onchange = e => { IV.stage = e.target.value; if (IV.stage && IV.view !== 'all' && IV.view !== 'making') IV.view = 'all'; ivDraw(main); };
+  if ($('#ivLoc')) $('#ivLoc').onchange = e => { IV.loc = e.target.value; if (IV.loc) IV.view = IV.loc === 'archived' ? 'archived' : 'all'; ivDraw(main); };
+  if ($('#ivType')) $('#ivType').onchange = e => { IV.type = e.target.value; ivDraw(main); };
   if ($('#ivClr')) $('#ivClr').onclick = () => { IV.stage = IV.loc = IV.type = ''; IV.offer = ''; ivDraw(main); };
   if ($('#ivUnfilter')) $('#ivUnfilter').onclick = () => ivReveal(main);
   if ($('#ivAll')) $('#ivAll').onclick = e => {
@@ -298,8 +429,8 @@ function ivWire(main) {
       if (IV.suppress) { IV.suppress = false; return; }
       const j = IV.r.jobs.find(x => x.jo === el.dataset.jo); if (!j) return;
       if (ivEdit() && e.shiftKey) { ivRange(j.jo, true); IV.picking = IV.sel.size > 0; ivDraw(main); return; }
-      if (!(IV.r.can || {}).open) { IV.open = j.jo; ivMountSheet(main); return; }
-      ivOpenCard(j);
+      IV.open = j.jo;
+      ivMountSheet(main);
     };
   });
   ivWireSheet(main);
@@ -323,12 +454,15 @@ function ivWire(main) {
     }
   });
   const on = main.querySelector('.ivchips .fchip.on'); if (on && innerWidth < 760) on.parentNode.scrollLeft = on.offsetLeft - on.parentNode.offsetLeft - 20;
+  ivPaintNav();
 }
 function ivCloseSheet(main) {
   IV.open = null;
   IV.extra++;
+  IV.revSeq++;
   const el = main.querySelector('#ivSheet');
   if (el) el.remove();
+  ivCloseView();
   const big = document.getElementById('ivBig');
   if (big) big.classList.add('hidden');
 }
@@ -343,11 +477,6 @@ function ivMountSheet(main) {
   ivWireSheet(main);
   ivPhotos(main, j);
 }
-function ivOpenCard(j) {
-  try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'BACK',
-    row: { description: j.description, client: j.client, location: j.location, stage_label: stageLabel(j.stage), due: j.due, late: j.late } })); } catch (_) {}
-  location.hash = '#/review';
-}
 function ivWireSheet(main) {
   const $ = s => main.querySelector(s);
   const sheet = $('#ivSheet');
@@ -356,6 +485,8 @@ function ivWireSheet(main) {
   if (box) box.onclick = e => e.stopPropagation();
   if ($('#ivSX')) $('#ivSX').onclick = () => ivCloseSheet(main);
   sheet.onclick = e => { if (e.target.id === 'ivSheet') ivCloseSheet(main); };
+  const pending = IV.open && IV.r && IV.r.jobs.find(x => x.jo === IV.open);
+  if (pending && (pending.review || pending.pending_review) && ivEdit()) ivMountReview(main, pending);
 }
 function ivOpenMenu(main, btn) {
   const j = IV.r && IV.r.jobs.find(x => x.jo === btn.dataset.more);
@@ -409,6 +540,23 @@ function ivPhotos(main, j) {
         IV.sketch[j.jo] = !!item.sketch;
       }
     });
+    big.onclick = e => {
+      if (e.target.closest('.phorig, .phtools, button, a')) return;
+      const img = big.querySelector('img');
+      if (!img || !img.src) return;
+      const sketch = big.classList.contains('sketch');
+      const P = window.OYPPhotos;
+      ivOpenViewer({
+        src: img.src, alt: img.alt || j.jo, sketch,
+        full: () => {
+          if (sketch && P.peek) {
+            const hit = P.peek({ jo: j.jo, sketch: true, size: 1600, kind: 'card' });
+            if (hit) return Promise.resolve(hit);
+          }
+          return P.load({ jo: j.jo, kind: 'piece', size: 1600, legacy: 'inv', fallback: !!can.cost });
+        }
+      });
+    };
   }
   ivFillExtra(main, j);
 }
@@ -418,20 +566,142 @@ function ivShots(box, jo, pages, kind) {
   box.querySelectorAll('.shot').forEach((b, i) => {
     const src = pages[i].src;
     if (src) b.querySelector('.ph').style.backgroundImage = `url("${src}")`;
-    b.onclick = ev => { ev.stopPropagation(); ivZoom(jo, pages[i].id, kind, pages[i].label); };
+    b.onclick = ev => {
+      ev.stopPropagation();
+      const ph = b.querySelector('.ph');
+      const bg = ph && ph.style.backgroundImage || '';
+      const m = bg.match(/url\(["']?([^"')]+)/);
+      const src = pages[i].src || (m && m[1]) || '';
+      ivOpenViewer({
+        src, alt: pages[i].label || '', sketch: false,
+        full: () => window.OYPPhotos.load({ jo, id: pages[i].id, kind: kind || 'card', size: 1600, legacy: 'job', sketch: false })
+      });
+    };
   });
 }
-function ivZoom(jo, id, kind, alt) {
-  let big = document.getElementById('ivBig');
-  if (!big) {
-    big = document.createElement('div');
-    big.id = 'ivBig';
-    big.className = 'rvbig hidden';
-    document.body.appendChild(big);
-  }
-  big.classList.remove('hidden');
-  big.onclick = e => { if (e.target.closest && e.target.closest('.phorig')) return; big.classList.add('hidden'); };
-  window.OYPPhotos.stage(big, { jo, id, kind: kind || 'card', legacy: 'job', alt: alt || '', empty: 'Photo not found' });
+function ivCloseView() {
+  const el = document.getElementById('ivView');
+  if (!el) return;
+  if (el._esc) document.removeEventListener('keydown', el._esc, true);
+  el.remove();
+}
+function ivOpenViewer(o) {
+  o = o || {};
+  ivCloseView();
+  const root = document.createElement('div');
+  root.id = 'ivView';
+  root.className = 'iview';
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-modal', 'true');
+  root.setAttribute('aria-label', o.sketch ? 'Sketch from JO card' : 'Photo');
+  root.innerHTML = `<button type="button" class="ivx" aria-label="Close">×</button>
+    <div class="ivtools"><button type="button" class="ivz" data-z="out" aria-label="Zoom out">−</button><button type="button" class="ivz" data-z="in" aria-label="Zoom in">+</button></div>
+    <div class="ivframe"><div class="ivpan"><img alt="${window.OYP.esc(o.alt || '')}" draggable="false"></div></div>
+    ${o.sketch ? '<p class="ivcap">Sketch from JO card</p>' : ''}`;
+  document.body.appendChild(root);
+  const frame = root.querySelector('.ivframe');
+  const pan = root.querySelector('.ivpan');
+  const img = root.querySelector('img');
+  let scale = 1, x = 0, y = 0, moved = false, lastTap = 0, lastX = 0, lastY = 0;
+  const arm = Date.now() + 350;
+  const pts = new Map();
+  let pinch = null;
+  const apply = () => { pan.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + scale + ')'; };
+  const clamp = () => {
+    if (scale <= 1) { scale = 1; x = 0; y = 0; return; }
+    const fr = frame.getBoundingClientRect();
+    const maxX = Math.max(40, (img.offsetWidth * scale - fr.width) / 2 + 48);
+    const maxY = Math.max(40, (img.offsetHeight * scale - fr.height) / 2 + 48);
+    x = Math.max(-maxX, Math.min(maxX, x));
+    y = Math.max(-maxY, Math.min(maxY, y));
+  };
+  const zoomAt = (next, clientX, clientY) => {
+    next = Math.max(1, Math.min(6, next));
+    const rect = frame.getBoundingClientRect();
+    const cx = clientX - (rect.left + rect.width / 2);
+    const cy = clientY - (rect.top + rect.height / 2);
+    const k = scale ? next / scale : 1;
+    x = cx * (1 - k) + x * k;
+    y = cy * (1 - k) + y * k;
+    scale = next;
+    clamp();
+    apply();
+  };
+  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ivCloseView(); } };
+  root._esc = onKey;
+  document.addEventListener('keydown', onKey, true);
+  root.querySelector('.ivx').onclick = e => { e.stopPropagation(); ivCloseView(); };
+  root.querySelector('[data-z="in"]').onclick = e => {
+    e.stopPropagation();
+    const r = frame.getBoundingClientRect();
+    zoomAt(scale * 1.25, r.left + r.width / 2, r.top + r.height / 2);
+  };
+  root.querySelector('[data-z="out"]').onclick = e => {
+    e.stopPropagation();
+    const r = frame.getBoundingClientRect();
+    zoomAt(scale / 1.25, r.left + r.width / 2, r.top + r.height / 2);
+  };
+  frame.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : (1 / 1.15);
+    zoomAt(scale * factor, e.clientX, e.clientY);
+  }, { passive: false });
+  frame.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    try { frame.setPointerCapture(e.pointerId); } catch (err) {}
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: 0 });
+    if (pts.size === 2) {
+      const arr = [...pts.values()];
+      pinch = { d: Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y) || 1, s: scale };
+    }
+  });
+  frame.addEventListener('pointermove', e => {
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    p.moved += Math.hypot(dx, dy);
+    if (pts.size >= 2 && pinch) {
+      const arr = [...pts.values()];
+      const d = Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y) || 1;
+      const mx = (arr[0].x + arr[1].x) / 2, my = (arr[0].y + arr[1].y) / 2;
+      zoomAt(pinch.s * (d / pinch.d), mx, my);
+      moved = true;
+      return;
+    }
+    if (pts.size === 1 && scale > 1 && p.moved > 4) {
+      x += dx; y += dy; clamp(); apply();
+      moved = true;
+    }
+  });
+  frame.addEventListener('pointerup', e => {
+    const p = pts.get(e.pointerId);
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (!p || p.moved > 8) return;
+    const now = Date.now();
+    if (now - lastTap < 300 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 36) {
+      lastTap = 0;
+      zoomAt(scale > 1.05 ? 1 : 2.5, e.clientX, e.clientY);
+      moved = true;
+      return;
+    }
+    lastTap = now; lastX = e.clientX; lastY = e.clientY;
+  });
+  frame.addEventListener('pointercancel', e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; });
+  frame.addEventListener('click', e => {
+    if (Date.now() < arm) return;
+    if (moved) { moved = false; return; }
+    if (e.target.closest('img')) return;
+    ivCloseView();
+  });
+  root.addEventListener('click', e => {
+    if (Date.now() < arm) return;
+    if (e.target === root) ivCloseView();
+  });
+  const show = src => { if (src && root.isConnected) img.src = src; };
+  if (o.src) show(o.src);
+  if (o.full) Promise.resolve().then(o.full).then(show).catch(() => {});
 }
 function ivFillExtra(main, j) {
   const P = window.OYPPhotos;
@@ -600,7 +870,21 @@ function mWire(main) {
   const med = $('.medit'); if (med) med.ontoggle = () => { MS.editing = med.open; };
 }
 // a fresh visit (menu / link) on a phone starts on the list; on a desktop the last item stays open
-window.OYPInv = { renderJos: (m, u) => { IV.open = null; IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.offer = ''; return renderJos(m, u); }, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); } };
+window.OYPInv = { renderJos: (m, u) => {
+  IV.open = null; ivCloseView(); IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.offer = ''; IV.want = '';
+  try {
+    const askView = sessionStorage.getItem('oypInvView');
+    if (askView === 'review' || askView === 'debug') IV.view = askView;
+    sessionStorage.removeItem('oypInvView');
+    const raw = sessionStorage.getItem('oypReviewOpen');
+    if (raw) {
+      sessionStorage.removeItem('oypReviewOpen');
+      const ask = JSON.parse(raw);
+      if (ask && ask.jo) { IV.view = 'review'; IV.want = ask.jo; }
+    }
+  } catch (e) {}
+  return renderJos(m, u);
+}, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); }, openViewer: ivOpenViewer, paintNav: ivPaintNav };
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
    The search box takes the same scan when it is focused: a fast wedge, or a full JO and Enter.
@@ -730,6 +1014,7 @@ function ivReveal(main) {
   if (!IVIEWS[IV.view][1](job)) IV.view = job.location === 'archived' ? 'archived' : 'all';
   ivTake(main, job, job.jo, false);
 }
+window.addEventListener('hashchange', () => { ivCloseView(); });
 document.addEventListener('keydown', e => {
   if (!ivScanOn() || ivField(document.activeElement) || e.isComposing) return;
   if (e.key === 'Enter') {

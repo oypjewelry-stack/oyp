@@ -15,23 +15,23 @@ const scanApp = read('scan/app.js');
 const scanHtml = read('scan/index.html');
 
 function keys(role) { return (nav.OFFICE_NAV[role] || []).map(n => n[0]).join(','); }
-eq(keys('admin').includes('review,look,scanner'), 'Needs a look sits between To review and Scanner for admin');
-eq(keys('production_manager').includes('review,look,scanner'), 'a production manager gets Needs a look in the same place');
+eq(keys('admin').includes('consignment,scanner') && keys('admin').indexOf('look') < 0 && keys('admin').indexOf('review') < 0, 'Needs a look and To review are not their own pages');
+eq(keys('production_manager').includes('consignment,scanner') && keys('production_manager').indexOf('look') < 0 && keys('production_manager').indexOf('review') < 0, 'a production manager has the same menu, without a Needs a look page');
 eq(keys('accounting').indexOf('look') < 0 && keys('staff').indexOf('look') < 0, 'accounting and staff do not get the page');
-eq(nav.NAV.admin.some(n => n[0] === 'look' && n[1] === 'Needs a look'), 'the shared scanner menu links to the same page');
+eq(!nav.NAV.admin.some(n => n[0] === 'look'), 'the shared scanner menu has no Needs a look page');
 const ada = { role: 'admin', username: 'ada', display_name: 'Ada' };
-const menu = nav.menuHtml(ada, 'look', '');
-const side = nav.sideHtml(ada, 'look', '');
-eq(menu.includes('>Needs a look') && menu.includes('href="#/look"') && menu.includes('data-ncount="look"') && menu.includes('class="on"'), 'the phone menu names Needs a look and reserves a count');
-eq(side.includes('Needs a look') && side.includes('data-ncount="look"'), 'the desktop menu reserves the same count');
+const menu = nav.menuHtml(ada, 'jos', '');
+const side = nav.sideHtml(ada, 'jos', '');
+eq(menu.indexOf('Needs a look') < 0 && menu.indexOf('href="#/look"') < 0 && menu.includes('data-ncount="review"') && menu.includes('href="#/jos"') && menu.includes('class="on"'), 'the phone menu count sits on Inventory');
+eq(side.indexOf('Needs a look') < 0 && side.includes('data-ncount="review"'), 'the desktop menu count sits on Inventory');
 eq(nav.menuHtml({ role: 'staff', username: 'ann', display_name: 'Ann' }, '', '').indexOf('Needs a look') < 0, 'staff menu stays without Needs a look');
-eq(menu.indexOf('Needs a look') > menu.indexOf('To review') && menu.indexOf('Needs a look') < menu.indexOf('>Scanner<'), 'Needs a look is after To review');
+eq(menu.indexOf('Consignment') < menu.indexOf('>Scanner<') && menu.indexOf('>To review<') < 0, 'Consignment stays before Scanner and To review is gone');
 
-eq(app.includes("page === 'look'") && app.includes('OYPJoInbox.render') && app.includes('OYPJoInbox.refreshBadge') && app.includes("page === 'look' ? 'NEEDS A LOOK'"), 'the back office routes Needs a look');
+eq(app.includes("cur0 === 'look'") && !app.includes("page === 'look'") && app.includes('OYPJoInbox.refreshBadge') && !app.includes('OYPJoInbox.render'), 'old Needs a look links leave the menu and the badge still refreshes');
 eq(app.includes('joInboxList: 1') && app.includes('joInboxPhoto: 1') && app.includes('joInboxStatus: 1'), 'list, photo, and status are reads');
 eq(!/joInboxConfirm\s*:/.test(app) && !/joInboxFix\s*:/.test(app) && !/joInboxDiscard\s*:/.test(app) && !/joInboxPush\s*:/.test(app), 'confirm, fix, discard, and push stay writes so the page cache clears');
-eq(index.includes('joinbox.js?v=2') && index.includes('joinbox.css?v=2') && index.includes('nav.js?v=63') && index.includes('app.js?v=37'), 'the new page and nav.js are cache-busted');
-eq(read('staff/print-test.html').includes('nav.js?v=63') && scanHtml.includes('https://oypjewelry.com/nav.js?v=63'), 'print test and the scanner load the same nav.js');
+eq(index.includes('joinbox.js?v=3') && index.includes('joinbox.css?v=2') && index.includes('nav.js?v=65') && index.includes('app.js?v=39'), 'the new page and nav.js are cache-busted');
+eq(read('staff/print-test.html').includes('nav.js?v=65') && scanHtml.includes('https://oypjewelry.com/nav.js?v=65'), 'print test and the scanner load the same nav.js');
 eq(scanApp.includes("grp('Needs a look', bad)") && scanApp.includes('class="jocrop"') && scanApp.includes('function openJoView'), 'the scanner Needs a look rows, crop, and zoom viewer are unchanged');
 
 eq(J.isMissing({ ok: false, error: 'Unknown action' }) && J.isMissing({ ok: false, error: 'Unknown action: joInboxList' }) && !J.isMissing({ ok: false, error: 'Not allowed', code: 'FORBIDDEN' }) && !J.isMissing({ ok: true }), 'an unknown action is the missing backend, and a refusal is not');
@@ -95,7 +95,7 @@ eq(J.runError({ ok: false, error: 'No connection. Check the internet and try aga
 const page = J.pageHtml({ cards: [], counts: { check: 0 }, total: 0 });
 eq(page.includes('id="jiRunBtn"') && page.includes('data-act="run"') && page.includes('>Check for scans<') && page.indexOf('jiRunBtn') < page.indexOf('Scanned cards the scanner'), 'the button sits in the page header, before the list');
 eq(!J.pageHtml({ forbidden: true }).includes('jiRunBtn') && J.pageHtml({ missing: true }).includes('jiRunBtn'), 'no button for a role that is not allowed; a missing backend still lets the button explain it');
-eq(index.includes('joinbox.js?v=2') && read('sim/joinbox-preview.html').includes('joinbox.js?v=2'), 'joinbox.js and joinbox.css are cache-busted (v=2)');
+eq(index.includes('joinbox.js?v=3') && read('sim/joinbox-preview.html').includes('joinbox.js?v=3'), 'joinbox.js and joinbox.css are cache-busted');
 eq(!/joInboxRun\s*:/.test(app), 'joInboxRun stays a write: the page cache clears after a run');
 (async function () {
   const calls = [];

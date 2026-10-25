@@ -34,7 +34,7 @@ eq(photos.includes('indexedDB') && photos.includes('localStorage') && photos.inc
 eq(app.includes('photoThumbs: 1') && app.includes('photoFile: 1'), 'photo reads do not clear the page cache');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(!/photoThumbs|photoFile/.test(cached), 'photo answers are not stored with the page cache');
-eq(index.includes('photos.js?v=3') && index.includes('inv.js?v=17') && index.includes('production.js?v=15') && index.includes('review.js?v=21') && index.includes('app.js?v=37') && index.includes('app.css?v=53'), 'changed files are cache-busted');
+eq(index.includes('photos.js?v=4') && index.includes('inv.js?v=20') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=39') && index.includes('app.css?v=54') && index.includes('nav.js?v=65'), 'changed files are cache-busted');
 eq(fast.includes('photoThumbs: 1, photoFile: 1') && fast.includes('NOT added to FAST.CACHE'), 'Fast.gs keeps the new actions as fresh reads');
 eq(steps.includes('PASTE_STEPS') && steps.includes('Manage deployments') && steps.includes('New version'), 'paste steps tell the owner to deploy a new version');
 eq(steps.includes('Replace that file') && steps.includes('Page 1 is never') && steps.includes('drawings folder'), 'the new paste steps replace PhotoFast and describe the stand-in');
@@ -45,6 +45,12 @@ eq(/\$\{can\.cost \? `<div class="ivjoph"[^`]*JO photos/.test(inv) && inv.includ
 eq(photos.includes("MEM.set('sketch:'") && photos.includes('!item.sketch'), 'a stand-in is kept for this visit and is not stored as the profile');
 eq(review.includes('id="rvJoPh"') && review.includes("kind: 'card'") && review.includes('Open original') === false, 'the JO card lists Drive scans without an OcrLog row');
 eq(read('app.css').includes('.ivph.sketch') && read('app.css').includes('.ivph.big.phstage.sketch>img{object-fit:contain'), 'the stand-in is shown whole');
+eq(photos.includes('function sketchBox') && photos.includes('presentSketch') && photos.includes('SKETCH_ROI'), 'a page-2 stand-in is cropped to the design panel');
+const cardClick = inv.slice(inv.indexOf('el.onclick = e =>'), inv.indexOf('ivWireSheet(main);'));
+eq(cardClick.includes('ivMountSheet(main)') && !cardClick.includes('ivOpenCard'), 'tapping an inventory item stays on Inventory');
+eq(inv.includes('>REVIEW<') && inv.includes('function ivOpenViewer') && inv.includes('OYPReview.mount') && inv.includes("review: ['REVIEW'") && inv.includes("debug: ['DEBUG'"), 'a pending JO is reviewed in Inventory and a photo opens large');
+eq(read('app.js').includes("cur0 === 'review'") && read('app.js').includes("cur0 === 'look'") && read('nav.js').includes('data-ncount="review"') && !read('nav.js').includes("['review', 'To review']") && !read('nav.js').includes("['look', 'Needs a look']"), 'old review and look links open Inventory and the menu count sits on Inventory');
+eq(review.includes('function bindJob') && review.includes('mark_reviewed: mark') && review.includes('async function mount(host'), 'inline review uses the review page save');
 eq(!read('count.js').includes('fallback'), 'inventory count does not ask for a card scan');
 ['track.js', 'my/my.js', 'shop/shop.js'].forEach(f => eq(!read(f).includes('photoThumbs'), f + ' does not ask for staff photos'));
 
@@ -253,6 +259,41 @@ ctx.window.OYP = {
 vm.createContext(ctx);
 vm.runInContext(photos, ctx, { filename: 'photos.js' });
 const P = ctx.window.OYPPhotos;
+function paintSketch(w, h, blobs) {
+  const px = new Uint8Array(w * h * 4);
+  px.fill(255);
+  blobs.forEach(b => {
+    const [x, y, bw, bh, r, g, bl] = b;
+    for (let yy = y; yy < y + bh && yy < h; yy++) {
+      for (let xx = x; xx < x + bw && xx < w; xx++) {
+        if (xx < 0 || yy < 0) continue;
+        const i = (yy * w + xx) * 4;
+        px[i] = r; px[i + 1] = g; px[i + 2] = bl; px[i + 3] = 255;
+      }
+    }
+  });
+  return px;
+}
+eq(P.sketchBox(paintSketch(200, 200, []), 200, 200) === null, 'a blank page-2 panel has no sketch');
+{
+  const roi = P.SKETCH_ROI;
+  const W = 400, H = 300;
+  const x0 = Math.round(W * roi.x), y0 = Math.round(H * roi.y);
+  const blank = P.sketchBox(paintSketch(W, H, [
+    [x0 + 8, 4, 80, 8, 10, 10, 10],
+    [x0 + 4, y0 + 90, 2, 2, 0, 0, 0]
+  ]), W, H);
+  eq(blank === null, 'a header above the design panel and a speck are not a sketch');
+  const ink = P.sketchBox(paintSketch(W, H, [
+    [x0 + 8, 4, 90, 10, 10, 10, 10],
+    [x0 + 12, y0 + 18, 36, 12, 20, 20, 20],
+    [x0 + 48, y0 + 70, 16, 16, 230, 190, 30],
+    [x0 + 6, y0 + 120, 2, 2, 0, 0, 0]
+  ]), W, H);
+  const inside = ink && ink.x >= x0 && ink.y >= y0 && ink.x + ink.w <= Math.round(W * (roi.x + roi.w)) + 1 && ink.y + ink.h <= Math.round(H * (roi.y + roi.h)) + 1;
+  const covers = ink && ink.x <= x0 + 12 && ink.y <= y0 + 18 && ink.x + ink.w >= x0 + 64 && ink.y + ink.h >= y0 + 86;
+  eq(!!ink && inside && covers, 'the crop keeps the handwriting and the yellow bead and drops the header and the speck');
+}
 eq(P.pageLabel([{ page: 1, side: 'a' }, { page: 1, side: 'b' }, { page: 2, side: 'a' }], { page: 1, side: 'b' }) === 'Page 1 back', 'two sides name the back');
 eq(P.pageLabel([{ page: 1, side: 'a' }, { page: 1, side: 'b' }, { page: 2, side: 'a' }], { page: 2, side: 'a' }) === 'Page 2', 'a single side is just the page');
 const rootEl = { isConnected: true, querySelectorAll: () => els };

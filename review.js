@@ -33,7 +33,8 @@ function headJo(j) {
   const p = joBits(S.open), jo = j ? j.jo : '';
   return p && p.letter && (jo === p.base || jo === p.text) ? p.text : jo;
 }
-let S = { steps: null, stepsState: 'old', ext: null, back: null, jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {} };
+let S = { steps: null, stepsState: 'old', ext: null, back: null, jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {}, embed: false };
+const gone = new Set(); // marked reviewed this visit, so a stale list cannot put the JO back in the queue
 // Client phone/email live on the client linked to the JO (JobContact.gs). Before that paste, contactList is unknown and the section just explains.
 const noContact = jo => !!(S.contact && S.contact[jo] && !S.contact[jo].has_contact && S.contact[jo].location !== 'archived');
 const fmtPhone = v => { const t = String(v || '').trim(), d = t.replace(/\D/g, ''); let m = /^63\d{10}$/.test(d) ? d.slice(2) : /^0\d{10}$/.test(d) ? d.slice(1) : d;
@@ -130,6 +131,7 @@ const views = {
 
 async function render(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); // live(): still on this route (app.js)
+  S.embed = false;
   main.innerHTML = '<h2>To review</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
   const [r, cc, ps] = await Promise.all([call('jobReviewList'), call('contactList'), call('portalSteps')]);
   if (!live()) return;
@@ -142,7 +144,7 @@ async function render(main, u) {
   if (!r || !r.ok) {
     main.innerHTML = `<h2>To review</h2><p class="muted">${esc(r && r.error === 'Unknown action' ? 'The server has not been updated for card reviews yet.' : (r && r.error) || 'Could not load')}</p>`; return;
   }
-  S.jobs = r.jobs; S.locations = r.locations; S.itemTypes = r.item_types || []; S.canPhone = r.can_see_phone; S.u = u;
+  S.jobs = (r.jobs || []).filter(j => j && !gone.has(j.jo)); S.locations = r.locations; S.itemTypes = r.item_types || []; S.canPhone = r.can_see_phone; S.u = u;
   let ask = null; try { const o = sessionStorage.getItem('oypReviewOpen'); if (o) { sessionStorage.removeItem('oypReviewOpen'); ask = JSON.parse(o); } } catch (_) {}
   if (ask && ask.jo) { S.open = ask.jo; S.back = ask.back ? { hash: ask.back, label: ask.label || 'Back' } : null; S.ext = { jo: ask.jo, stub: true, row: ask.row || {} }; S.conflicts = {}; }
   if (S.ext && S.ext.jo === S.open && !S.jobs.some(j => j.jo === S.open)) { // not a draft: fetch the full JO (needs DashboardDrill.gs)
@@ -211,7 +213,7 @@ function draw(main) {
   wire(main);
 }
 
-function backBtn() { return S.back ? '<button class="lnk rvback dback" data-dback>‹ BACK</button>' : '<button class="lnk rvback" data-back>‹ BACK</button>'; } // same target as before (drill list / all cards), one label everywhere
+function backBtn() { if (S.embed) return ''; return S.back ? '<button class="lnk rvback dback" data-dback>‹ BACK</button>' : '<button class="lnk rvback" data-back>‹ BACK</button>'; } // same target as before (drill list / all cards), one label everywhere
 function stubPanel(j) { // pre-paste: what the dashboard knew, read-only
   const { esc } = window.OYP, r = j.row || {};
   return `<div class="rvp">${backBtn()}<div class="dhead"><h2>JO ${esc(headJo(j))}${j.version ? ` <span class="chip big">Version ${esc(j.version)}</span>` : ''}</h2><span class="lab">From the dashboard</span></div>
@@ -261,7 +263,7 @@ function panel(j) {
     <datalist id="dlMetal"><option>Gold</option><option>Silver</option><option>Platinum</option><option>Palladium</option><option>Two-tone</option><option>Other</option></datalist>
     <datalist id="dlKarat"><option>24k</option><option>22k</option><option>18k</option><option>14k</option><option>10k</option><option>925</option><option>999</option></datalist>
     <div id="rvCost"></div>
-    <div class="fbtns">${ext && j.review_state !== 'draft' ? '' : '<button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button>'}<button class="pill outline" id="fSave">SAVE</button>${ext ? '' : '<button class="lnk" id="fNext">Next card ›</button>'}</div>
+    <div class="fbtns">${ext && j.review_state !== 'draft' ? '' : '<button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button>'}<button class="pill outline" id="fSave">SAVE</button>${S.embed || ext ? '' : '<button class="lnk" id="fNext">Next card ›</button>'}</div>
     <p class="muted fnote">${j.scanned_at ? 'Scanned ' + esc(new Date(j.scanned_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + ' PHT · ' : ''}Saving never replaces something another person changed in the meantime.</p>
   </div>`;
 }
@@ -277,6 +279,7 @@ function setLabel(x) {
   return v + (x.set ? d : 'Earlier scan' + (d ? ' · ' + d : '')) + nth;
 }
 function shotsHtml(j) {
+  if (S.embed) return ''; // the inventory sheet already shows the photos; the form below is the fields and the save
   const { esc } = window.OYP;
   const row = (jo, pages) => `<div class="shots">${pages.map(p => `<button class="shot" data-big="${esc(p.file_id)}"><span class="ph" data-ph="${esc(jo)}|${esc(p.file_id)}"></span><span class="lab">Page ${p.page}</span></button>`).join('') || '<span class="muted">No photos</span>'}</div>`;
   let pages = j.pages || [], meta = { set: j.pages_set || '', date: j.pages_date, version: j.pages_version || '' }, H = (j.history || []).slice(), swapped = false;
@@ -343,61 +346,78 @@ function costBox(main, jo) {
   costCache[jo].then(r => { const el = main.querySelector('#rvCost'); const open = cur(); if (!live() || !el || !open || open.jo !== jo) return;
     el.innerHTML = r && r.ok ? window.OYPPrices.lockedHtml(r, { exec: r.exec }) : ''; });
 }
-function wire(main) {
-  const { call, esc, toast } = window.OYP, $ = s => main.querySelector(s), live = window.OYP.here();
-  const rerender = async () => { if (live()) await render(main, S.u); }; // after a save: redraw only if the user is still here
-  main.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; draw(main); });
-  $('#rvQ').oninput = e => { S.q = e.target.value; searchAll(main); const pos = e.target.selectionStart; draw(main); const q = main.querySelector('#rvQ'); q.focus(); q.setSelectionRange(pos, pos); };
-  $('#rvQ').onkeydown = e => {
-    if (e.key !== 'Enter') return;
-    const p = joBits(e.target.value); if (!p) return;
-    e.preventDefault();
-    const exact = S.jobs.find(j => j.jo === p.text) || (S.ext && S.ext.jo === p.text ? S.ext : null);
-    const base = S.jobs.find(j => j.jo === p.base) || (S.ext && S.ext.jo === p.base ? S.ext : null);
-    const job = exact || base;
-    if (!job) return toast('JO ' + p.text + ' is not in this list');
-    if (!views[S.filter][1](job)) S.filter = 'all';
-    S.back = null; S.open = exact ? exact.jo : (p.letter ? p.text : job.jo); S.q = ''; S.conflicts = {};
-    draw(main);
-  };
-  main.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); draw(main); });
-  $('#rvAll').onchange = e => { shown().forEach(j => e.target.checked ? S.sel.add(j.jo) : S.sel.delete(j.jo)); draw(main); };
-  $('#rvBulk').onclick = async () => {
-    const loc = $('#rvBulkLoc').value; if (!loc) return toast('Pick a location first');
-    const jos = [...S.sel]; let r = await call('jobBulkLocation', { jos, location: loc });
-    if (!r.ok) return toast(r.error);
-    if (r.kept.length && confirm(r.kept.length + ' of these already have another location (' + r.kept.slice(0, 5).map(k => k.jo + ': ' + locLabel(k.location)).join(', ') + (r.kept.length > 5 ? '…' : '') + '). Change them to ' + locLabel(loc) + ' too?')) {
-      const r2 = await call('jobBulkLocation', { jos: r.kept.map(k => k.jo), location: loc, overwrite: true }); if (r2.ok) r.set = r.set.concat(r2.set);
-    }
-    toast(r.set.length + ' set to ' + locLabel(loc)); S.sel.clear(); rerender();
-  };
-  main.querySelectorAll('.rvrow').forEach(row => row.onclick = () => { if (!row.dataset.jo) return; S.back = null; S.open = row.dataset.jo; S.conflicts = {}; draw(main); if (innerWidth < 900) scrollTo(0, 0); });
-  const rows = main.querySelector('.rvrows');
-  if (rows && window.OYP.swipe) window.OYP.swipe(rows, {
-    item: '.rvrow[data-jo]',
-    ignore: '.ck',
-    actions: function (row) {
-      const jo = row.getAttribute('data-jo');
-      const j = S.jobs.find(x => x.jo === jo);
-      if (!j || j.stub) return [];
-      const arch = j.location === 'archived';
-      const prev = j.location || '';
-      return [{ label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
-        if (!window.OYP.archiveJos) return;
-        window.OYP.archiveJos([jo], arch ? '' : 'archived', { word: arch ? 'Unarchived' : 'Archived', after: function (undone) {
-          j.location = undone ? prev : (arch ? '' : 'archived');
-          rerender();
-        } });
-      } }];
-    }
+let navCount = null;
+function queueCount() {
+  return (S.jobs || []).filter(j => j && !['reviewed', 'discarded', 'deleted', 'replaced'].includes(j.review_state)).length;
+}
+function navPending() { return navCount || 0; }
+function paintNav(n) {
+  if (typeof n === 'number') navCount = n;
+  if (typeof document === 'undefined') return;
+  if (window.OYPInv && window.OYPInv.paintNav) { window.OYPInv.paintNav(); return; }
+  const show = navCount || 0;
+  document.querySelectorAll('[data-ncount="review"]').forEach(el => {
+    el.textContent = show ? (show > 99 ? '99+' : String(show)) : '';
+    el.hidden = !show;
   });
-  // lazy thumbnails
-  const io = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; io.unobserve(e.target);
-    const [jo, fid] = (e.target.dataset.th || e.target.dataset.ph).split('|'); if (!fid) return;
-    photo(jo, fid).then(src => { if (src) e.target.style.backgroundImage = `url("${src}")`; }); }), { rootMargin: '200px' });
-  main.querySelectorAll('[data-th],[data-ph]').forEach(el => io.observe(el));
-  const db = $('[data-dback]'); if (db) db.onclick = () => { const h = S.back.hash; S.back = null; S.ext = null; S.open = null; location.hash = h; };
-  const j = cur(); if (!j || j.stub) return;
+}
+async function refreshNav() {
+  const jobs = await drafts();
+  if (!jobs) return;
+  paintNav(jobs.length);
+}
+function drop(jo) {
+  if (!jo) return;
+  gone.add(jo);
+  S.jobs = (S.jobs || []).filter(j => j.jo !== jo);
+  paintNav(queueCount());
+}
+async function drafts() {
+  const r = await window.OYP.call('jobReviewList');
+  if (!r || !r.ok || !Array.isArray(r.jobs)) return null;
+  S.jobs = r.jobs.filter(j => j && !gone.has(j.jo));
+  if (r.locations) S.locations = r.locations;
+  if (r.item_types) S.itemTypes = r.item_types;
+  S.canPhone = r.can_see_phone;
+  return S.jobs.filter(j => !['reviewed', 'discarded', 'deleted', 'replaced'].includes(j.review_state));
+}
+async function ensureReview() {
+  const { call } = window.OYP;
+  const [r, cc, ps] = await Promise.all([call('jobReviewList'), call('contactList'), call('portalSteps')]);
+  if (r && r.ok && Array.isArray(r.jobs)) {
+    S.jobs = r.jobs.filter(j => j && !gone.has(j.jo));
+    S.locations = r.locations || [];
+    S.itemTypes = r.item_types || [];
+    S.canPhone = r.can_see_phone;
+  }
+  S.steps = ps && ps.ok && ps.portal ? ps : null;
+  S.stepsState = S.steps ? 'on' : ps && ps.code === 'FORBIDDEN' ? 'forbidden' : 'old';
+  S.cc = cc && cc.ok ? cc : null;
+  S.contact = S.cc ? Object.fromEntries((cc.jobs || []).map(x => [x.jo, x])) : (S.contact || null);
+  S.ccState = S.cc ? 'on' : cc && cc.code === 'FORBIDDEN' ? 'forbidden' : 'old';
+  return r;
+}
+async function mount(host, jo, hooks) {
+  hooks = hooks || {};
+  const r = await ensureReview();
+  if (!host || host.isConnected === false) return;
+  if (!r || !r.ok) { host.innerHTML = '<p class="muted">The review form could not be loaded.</p>'; return; }
+  const j = (S.jobs || []).find(x => x.jo === jo);
+  if (!j) {
+    host.innerHTML = '<p class="muted">This JO is not in the review queue.</p>';
+    if (hooks.onMissing) hooks.onMissing();
+    return;
+  }
+  S.embed = true;
+  S.open = jo;
+  host.innerHTML = panel(j);
+  bindJob(host, j, { embedded: true, onDone: hooks.onDone, redraw: () => mount(host, jo, hooks) });
+}
+function bindJob(main, j, opt) {
+  opt = opt || {};
+  const { call, esc, toast } = window.OYP, $ = s => main.querySelector(s);
+  const live = window.OYP.here();
+  const rerender = async () => { if (opt.embedded) { if (opt.redraw) await opt.redraw(); return; } if (live()) await render(main, S.u); };
   if (window.OYPPhotos && j.pages && j.pages.length) window.OYPPhotos.prefetch(j.jo, j.pages.map(p => p.file_id), 'scan', 'job');
   costBox(main, j.jo);
   const isExt = S.ext && S.ext.jo === j.jo;
@@ -493,12 +513,78 @@ function wire(main) {
     }
     S.conflicts = {}; const idx = S.jobs.findIndex(x => x.jo === j.jo);
     toast(mark ? 'JO ' + j.jo + ' reviewed' : 'Saved');
+    if (mark) gone.add(j.jo);
+    if (opt.embedded) {
+      if (mark) S.jobs = (S.jobs || []).filter(x => x.jo !== j.jo);
+      else if (r.job && idx >= 0) S.jobs[idx] = r.job;
+      if (opt.onDone) opt.onDone(!!mark, r.job || null);
+      return;
+    }
     if (isExt) S.ext = r.job; // opened from the dashboard: stay on it
     else if (mark) { const nx = shown().filter(x => x.jo !== j.jo)[0]; S.open = nx ? nx.jo : null; } else S.jobs[idx] = r.job;
     rerender();
   };
   if ($('#fDone')) $('#fDone').onclick = () => save(true); $('#fSave').onclick = () => save(false);
   if ($('#fNext')) $('#fNext').onclick = () => { const L = shown(), i = L.findIndex(x => x.jo === j.jo); const nx = L[i + 1] || L[0]; if (nx) { S.open = nx.jo; S.conflicts = {}; draw(main); } };
+
 }
-window.OYPReview = { render: (main, u) => { Object.keys(costCache).forEach(k => delete costCache[k]); S.back = null; S.ext = null; return render(main, u); } }; // a fresh visit forgets a dashboard JO (dash.js hands one over via sessionStorage)
+
+function wire(main) {
+  const { call, esc, toast } = window.OYP, $ = s => main.querySelector(s), live = window.OYP.here();
+  const rerender = async () => { if (live()) await render(main, S.u); }; // after a save: redraw only if the user is still here
+  main.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.filter = b.dataset.f; draw(main); });
+  $('#rvQ').oninput = e => { S.q = e.target.value; searchAll(main); const pos = e.target.selectionStart; draw(main); const q = main.querySelector('#rvQ'); q.focus(); q.setSelectionRange(pos, pos); };
+  $('#rvQ').onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    const p = joBits(e.target.value); if (!p) return;
+    e.preventDefault();
+    const exact = S.jobs.find(j => j.jo === p.text) || (S.ext && S.ext.jo === p.text ? S.ext : null);
+    const base = S.jobs.find(j => j.jo === p.base) || (S.ext && S.ext.jo === p.base ? S.ext : null);
+    const job = exact || base;
+    if (!job) return toast('JO ' + p.text + ' is not in this list');
+    if (!views[S.filter][1](job)) S.filter = 'all';
+    S.back = null; S.open = exact ? exact.jo : (p.letter ? p.text : job.jo); S.q = ''; S.conflicts = {};
+    draw(main);
+  };
+  main.querySelectorAll('[data-sel]').forEach(c => c.onchange = () => { c.checked ? S.sel.add(c.dataset.sel) : S.sel.delete(c.dataset.sel); draw(main); });
+  $('#rvAll').onchange = e => { shown().forEach(j => e.target.checked ? S.sel.add(j.jo) : S.sel.delete(j.jo)); draw(main); };
+  $('#rvBulk').onclick = async () => {
+    const loc = $('#rvBulkLoc').value; if (!loc) return toast('Pick a location first');
+    const jos = [...S.sel]; let r = await call('jobBulkLocation', { jos, location: loc });
+    if (!r.ok) return toast(r.error);
+    if (r.kept.length && confirm(r.kept.length + ' of these already have another location (' + r.kept.slice(0, 5).map(k => k.jo + ': ' + locLabel(k.location)).join(', ') + (r.kept.length > 5 ? '…' : '') + '). Change them to ' + locLabel(loc) + ' too?')) {
+      const r2 = await call('jobBulkLocation', { jos: r.kept.map(k => k.jo), location: loc, overwrite: true }); if (r2.ok) r.set = r.set.concat(r2.set);
+    }
+    toast(r.set.length + ' set to ' + locLabel(loc)); S.sel.clear(); rerender();
+  };
+  main.querySelectorAll('.rvrow').forEach(row => row.onclick = () => { if (!row.dataset.jo) return; S.back = null; S.open = row.dataset.jo; S.conflicts = {}; draw(main); if (innerWidth < 900) scrollTo(0, 0); });
+  const rows = main.querySelector('.rvrows');
+  if (rows && window.OYP.swipe) window.OYP.swipe(rows, {
+    item: '.rvrow[data-jo]',
+    ignore: '.ck',
+    actions: function (row) {
+      const jo = row.getAttribute('data-jo');
+      const j = S.jobs.find(x => x.jo === jo);
+      if (!j || j.stub) return [];
+      const arch = j.location === 'archived';
+      const prev = j.location || '';
+      return [{ label: arch ? 'Unarchive' : 'Archive', undoable: true, run: function () {
+        if (!window.OYP.archiveJos) return;
+        window.OYP.archiveJos([jo], arch ? '' : 'archived', { word: arch ? 'Unarchived' : 'Archived', after: function (undone) {
+          j.location = undone ? prev : (arch ? '' : 'archived');
+          rerender();
+        } });
+      } }];
+    }
+  });
+  // lazy thumbnails
+  const io = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; io.unobserve(e.target);
+    const [jo, fid] = (e.target.dataset.th || e.target.dataset.ph).split('|'); if (!fid) return;
+    photo(jo, fid).then(src => { if (src) e.target.style.backgroundImage = `url("${src}")`; }); }), { rootMargin: '200px' });
+  main.querySelectorAll('[data-th],[data-ph]').forEach(el => io.observe(el));
+  const db = $('[data-dback]'); if (db) db.onclick = () => { const h = S.back.hash; S.back = null; S.ext = null; S.open = null; location.hash = h; };
+  const j = cur(); if (!j || j.stub) return;
+  bindJob(main, j);
+}
+window.OYPReview = { render: (main, u) => { Object.keys(costCache).forEach(k => delete costCache[k]); S.back = null; S.ext = null; S.embed = false; return render(main, u); }, drafts, drop, mount, paintNav, refreshNav, navPending }; // a fresh visit forgets a dashboard JO (dash.js hands one over via sessionStorage)
 })();

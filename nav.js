@@ -8,8 +8,8 @@ const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
 const SCANNER = 'https://oypjewelry.com/scan/';
 // Default order with nothing saved on this device, and the order Reset returns to. A role still only sees the items it already had.
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['count', 'Inventory count'], ['consignment', 'Consignment'], ['review', 'To review'], ['look', 'Needs a look'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it
-  production_manager: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['count', 'Inventory count'], ['consignment', 'Consignment'], ['review', 'To review'], ['look', 'Needs a look'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
+  admin: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['count', 'Inventory count'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it. REVIEW and DEBUG live inside Inventory.
+  production_manager: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['count', 'Inventory count'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['prices', 'Material prices'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
   staff: [['home', 'Home'], ['todo', 'To do'], ['appts', 'Appointments'], ['count', 'Inventory count'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments and Inventory count open in the back office. No Production (Susan + admins only)
 };
@@ -69,7 +69,7 @@ function navParts(user, page, home) {
   home = home || '';
   function link(k, t) {
     if (k === 'scanner') return '<a href="' + scannerLink(user && user.role) + '" data-nkey="scanner">' + escNav(t) + '</a>';
-    var count = k === 'look' ? '<span class="ncount" data-ncount="look" hidden></span>' : '';
+    var count = k === 'jos' ? '<span class="ncount" data-ncount="review" hidden></span>' : '';
     return '<a href="' + home + '#/' + k + '"' + (k === page ? ' class="on"' : '') + ' data-nkey="' + escNav(k) + '">' + escNav(t) + (DONE[k] ? '' : '<small>soon</small>') + count + '</a>';
   }
   if (!user) return '<a href="' + SCANNER + '">Card scanner</a>';
