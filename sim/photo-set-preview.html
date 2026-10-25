@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../app.css?v=61">
+<link rel="stylesheet" href="../app.css?v=62">
 <title>Add photo layout</title>
 </head>
 <body>
@@ -54,7 +54,7 @@ HTMLInputElement.prototype.click = function () {
 </script>
 <script src="../sketchclean.js?v=1"></script>
 <script src="../photos.js?v=16"></script>
-<script src="../inv.js?v=28"></script>
+<script src="../inv.js?v=29"></script>
 <script>
 const ROI = { x: 0.578, y: 0.150, w: 0.377, h: 0.815 };
 function paper(W, H) {
@@ -208,21 +208,36 @@ window.__measure = function () {
   const frame = document.querySelector('#ivSheet .ivph.big');
   const imgs = frame ? [...frame.querySelectorAll('img')] : [];
   const img = imgs[0] || null;
-  const btn = frame && frame.querySelector('.ivadd');
-  const del = frame && frame.querySelector('.ivdel');
+  const pen = frame && frame.querySelector('.ivpencil');
+  const svg = pen && pen.querySelector('svg');
+  const menu = document.querySelector('#ivSheet .ivphmenu');
+  const add = menu && menu.querySelector('.ivadd');
+  const del = menu && menu.querySelector('.ivdel');
   const ask = document.querySelector('#ivSheet .ivdelask');
   const msg = document.querySelector('#ivSheet .ivaddmsg');
   const orig = frame && frame.querySelector('.phorig');
   const cs = frame ? getComputedStyle(frame) : null;
-  const ib = img ? box(img) : null, bb = btn ? box(btn) : null, ob = orig ? box(orig) : null, fb = frame ? box(frame) : null;
+  const ib = img ? box(img) : null, pb = pen ? box(pen) : null, sb = svg ? box(svg) : null, ob = orig ? box(orig) : null, fb = frame ? box(frame) : null;
   const pad = cs ? parseFloat(cs.paddingBottom) || 0 : 0;
   const nw = img ? img.naturalWidth : 0, nh = img ? img.naturalHeight : 0;
   const dw = ib ? ib.width : 0, dh = ib ? ib.height : 0;
   const nat = nh ? nw / nh : 0, shown = dh ? dw / dh : 0;
+  const dx = pb && sb ? (sb.left + sb.width / 2) - (pb.left + pb.width / 2) : null;
+  const dy = pb && sb ? (sb.top + sb.height / 2) - (pb.top + pb.height / 2) : null;
+  const danger = del ? getComputedStyle(del).color : '';
   return {
-    label: btn ? btn.textContent : '',
+    label: add ? add.textContent : '',
     removeLabel: del ? del.textContent : '',
     removeHidden: !del || !!del.hidden || getComputedStyle(del).display === 'none',
+    menuOn: !!(menu && !menu.hidden),
+    pencil: !!pen,
+    dx: dx == null ? null : Math.round(dx * 100) / 100,
+    dy: dy == null ? null : Math.round(dy * 100) / 100,
+    pw: pb ? Math.round(pb.width * 10) / 10 : 0,
+    ph: pb ? Math.round(pb.height * 10) / 10 : 0,
+    sw: sb ? Math.round(sb.width * 10) / 10 : 0,
+    sh: sb ? Math.round(sb.height * 10) / 10 : 0,
+    danger: danger,
     askOn: !!(ask && !ask.hidden),
     askText: ask ? (ask.querySelector('p') ? ask.querySelector('p').textContent : ask.textContent) : '',
     msg: msg ? msg.textContent : '',
@@ -231,9 +246,9 @@ window.__measure = function () {
     bg: cs ? cs.backgroundImage : '',
     imgBg: img ? getComputedStyle(img).backgroundImage : '',
     imgPos: img ? getComputedStyle(img).position : '',
-    overlap: ib && bb ? hit(ib, bb) : null,
+    overlap: ib && pb ? hit(ib, pb) : null,
     origOverlap: ib && ob ? hit(ib, ob) : null,
-    gap: ib && bb ? Math.round((bb.top - ib.bottom) * 10) / 10 : null,
+    gap: ib && pb ? Math.round((pb.top - ib.bottom) * 10) / 10 : null,
     origGap: ib && ob ? Math.round((ob.top - ib.bottom) * 10) / 10 : null,
     imgH: ib ? Math.round(ib.height * 10) / 10 : 0,
     frameH: fb ? Math.round(fb.height * 10) / 10 : 0,
@@ -251,25 +266,47 @@ window.__open = async function (jo, opt) {
   card.click();
   for (let i = 0; i < 120; i++) {
     const img = document.querySelector('#ivSheet .ivph.big img');
-    const btn = document.querySelector('#ivSheet .ivadd');
-    const del = document.querySelector('#ivSheet .ivdel');
+    const pen = document.querySelector('#ivSheet .ivpencil');
+    const add = document.querySelector('#ivSheet .ivphmenu .ivadd');
     const one = document.querySelectorAll('#ivSheet .ivph.big img').length === 1;
-    const delOk = opt.staff ? (!btn && !del) : (btn && (!opt.remove || (del && !del.hidden)));
-    if (img && delOk && one && img.complete && img.naturalWidth > 0 && !img.classList.contains('phblur') && (opt.staff || btn.textContent)) {
-      const box = document.querySelector('#ivSheet .ivsbox');
-      if (box) box.scrollTop = 0;
+    const ready = opt.staff ? (!pen && !add) : (pen && add && add.textContent && (!opt.label || add.textContent === opt.label));
+    if (img && ready && one && img.complete && img.naturalWidth > 0 && !img.classList.contains('phblur')) {
+      const scroller = document.querySelector('#ivSheet .ivsbox');
+      if (scroller) scroller.scrollTop = 0;
       return 'ready';
     }
     await new Promise(r => setTimeout(r, 100));
   }
   return 'timeout';
 };
+window.__menu = function () {
+  const pen = document.querySelector('#ivSheet .ivpencil');
+  const menu = document.querySelector('#ivSheet .ivphmenu');
+  if (!pen || !menu) return 'no button';
+  if (menu.hidden) pen.click();
+  const scroller = document.querySelector('#ivSheet .ivsbox');
+  if (scroller && !menu.hidden) menu.scrollIntoView({ block: 'nearest' });
+  return menu.hidden ? 'closed' : 'open';
+};
+window.__esc = function () {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  const menu = document.querySelector('#ivSheet .ivphmenu');
+  return !menu || menu.hidden;
+};
+window.__outside = function () {
+  const frame = document.querySelector('#ivSheet .ivph.big');
+  if (frame) frame.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+  const menu = document.querySelector('#ivSheet .ivphmenu');
+  return !menu || menu.hidden;
+};
 window.__ask = function () {
-  const del = document.querySelector('#ivSheet .ivdel');
+  window.__menu();
+  const del = document.querySelector('#ivSheet .ivphmenu .ivdel');
   if (!del || del.hidden) return 'no button';
   del.click();
   const ask = document.querySelector('#ivSheet .ivdelask');
-  return ask && !ask.hidden ? 'open' : 'closed';
+  const menu = document.querySelector('#ivSheet .ivphmenu');
+  return ask && !ask.hidden && menu && menu.hidden ? 'open' : 'closed';
 };
 window.__cancel = function () {
   const before = window.__setCalls;
@@ -286,7 +323,7 @@ window.__failRemove = async function () {
   const before = window.__setCalls;
   const img = document.querySelector('#ivSheet .ivph.big img');
   const src = img ? img.src : '';
-  const del = document.querySelector('#ivSheet .ivdel');
+  const del = document.querySelector('#ivSheet .ivphmenu .ivdel');
   if (del) del.click();
   const go = document.querySelector('#ivSheet .ivdelgo');
   if (go) go.click();
@@ -315,7 +352,7 @@ window.__viewerRemove = async function () {
   if (!view) return { ok: false, step: 'no view' };
   const before = view.querySelector('img').src;
   const hadSketch = view.classList.contains('sketch');
-  const del = document.querySelector('#ivSheet .ivdel');
+  const del = document.querySelector('#ivSheet .ivphmenu .ivdel');
   if (del) del.click();
   const go = document.querySelector('#ivSheet .ivdelgo');
   if (go) go.click();
@@ -324,7 +361,7 @@ window.__viewerRemove = async function () {
     const vimg = view && view.querySelector('img');
     const tile = document.querySelector('[data-th="26-500"]');
     const frame = document.querySelector('#ivSheet .ivph.big');
-    const add = frame && frame.querySelector('.ivadd');
+    const add = document.querySelector('#ivSheet .ivphmenu .ivadd');
     if (view && view.classList.contains('sketch') && vimg && vimg.src && vimg.src !== before && tile && tile.classList.contains('sketch') && frame && frame.classList.contains('sketch') && add && add.textContent === 'Add photo') {
       const x = view.querySelector('.ivx');
       if (x) x.click();
