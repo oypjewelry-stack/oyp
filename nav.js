@@ -70,7 +70,7 @@ function withPrinter(parts) {
 function navParts(user, page, home) {
   home = home || '';
   function link(k, t) {
-    if (k === 'scanner') return '<a href="' + scannerLink(user && user.role) + '" data-nkey="scanner">' + escNav(t) + '</a>';
+    if (k === 'scanner') return '<a href="' + home + '#/scanner"' + (page === 'scanner' ? ' class="on"' : '') + ' data-nkey="scanner">' + escNav(t) + '</a>';
     var count = k === 'jos' ? '<span class="ncount" data-ncount="review" hidden></span>' : '';
     return '<a href="' + home + '#/' + k + '"' + (k === page ? ' class="on"' : '') + ' data-nkey="' + escNav(k) + '">' + escNav(t) + (DONE[k] ? '' : '<small>soon</small>') + count + '</a>';
   }

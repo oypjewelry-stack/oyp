@@ -1,0 +1,9 @@
+JoInbox.gs — one line. Do not replace the file.
+
+The ScanSnap path files a JO from the Drive JO Inbox (the function that runs on the 5-minute trigger and on joInboxRun, after a new JO is saved). recordScan_ itself does not queue stickers. Add the line below once, on the success path, after that JO exists and you still have its Drive file id.
+
+Use the JO string just filed (26-287 or 26-287B) and that scan's Drive file id. A second run with the same JO, tag, and file id does not queue again.
+
+    try { if (typeof snapPrintAfterFile_ === 'function') snapPrintAfterFile_(JO, FILE_ID); } catch (eSnap) {}
+
+Replace JO with the variable that holds the filed job number. Replace FILE_ID with the variable that holds the scan's Drive file id. Leave the try/catch so a missing paste cannot fail the file.

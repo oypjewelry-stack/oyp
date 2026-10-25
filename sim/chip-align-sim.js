@@ -15,8 +15,8 @@ function eq(cond, msg) {
 }
 const css = read('app.css');
 const index = read('staff/index.html');
-eq(index.includes('app.css?v=64') && read('staff/print-test.html').includes('app.css?v=64'), 'staff pages load the new css');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=64'), 'the customer page stays on app.css?v=29');
+eq(index.includes('app.css?v=65') && read('staff/print-test.html').includes('app.css?v=65'), 'staff pages load the new css');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=65'), 'the customer page stays on app.css?v=29');
 eq(css.includes('display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;line-height:1') && css.includes('letter-spacing:.04em;text-indent:.04em'), 'chips are a centered flex line and the letter-spacing indent matches');
 eq(css.includes('.ivcard .kf .chip{white-space:nowrap}') && !css.includes('.kf .chip.tbr'), 'a card pill, including REVIEW, uses the row size');
 eq(css.includes('.ivtag .chip.tbr{font-size:calc(12px*var(--fs));line-height:1;white-space:nowrap;letter-spacing:.02em;text-indent:.02em'), 'the detail REVIEW badge keeps its size and its own indent');

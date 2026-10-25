@@ -510,3 +510,14 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
 .oyp-popi{box-sizing:border-box;height:34px;min-height:34px;width:100%;margin:0;padding:0 12px;border:0;border-radius:8px;background:#fff;color:#111;font-family:var(--body);font-size:15px;line-height:1;text-align:left;white-space:nowrap;cursor:pointer;display:flex;align-items:center}
 .oyp-popi.is-danger{color:#b3261e}
 .oyp-popi:hover,.oyp-popi:focus-visible{background:#faf8f1}
+/* Scanner: Scan snap (default) and Mobile, same chip row as Materials Stock / Prices. */
+.snappage{max-width:calc(760px*var(--cw));min-width:0}
+.snappage .mattabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-bottom:calc(16px*var(--sp))}
+.snappage .fchip{white-space:nowrap}
+.snapchecks{display:flex;flex-direction:column;align-items:flex-start;gap:calc(14px*var(--sp));margin:0 0 calc(14px*var(--sp))}
+.snapchecks .settog{min-height:44px}
+.snapnote{font-family:var(--label);font-size:calc(14px*var(--fs));color:#555;margin:0 0 calc(14px*var(--sp))}
+.snapnote[hidden]{display:none}
+.snaphint{margin:calc(12px*var(--sp)) 0 0}
+.snapresult{font-family:var(--label);font-size:calc(15px*var(--fs));margin:calc(10px*var(--sp)) 0 0;min-height:1.2em}
+.scanframe{display:block;width:100%;min-height:70vh;height:calc(100vh - 220px);border:0;background:#fff}

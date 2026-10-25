@@ -1,0 +1,11 @@
+Auth.gs — one line in handleAction_, so the Scan snap page can read and save the two checkboxes.
+Do not replace the file. Do not add snapPrintGet or snapPrintSet to FAST.CACHE, FAST.READS, or DCACHE.READS.
+snapPrintGet stays a fresh read. snapPrintSet is a write.
+
+Put this line on its own, before the unknown-action error. If the JobSync hook is still the last hook, put it immediately after that line.
+
+FIND
+  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);
+
+ADD AFTER IT
+  if (typeof isSnapPrintAction_ === 'function' && isSnapPrintAction_(a)) return handleSnapPrint_(req, s.user); // ScanSnapPrint.gs
