@@ -512,6 +512,10 @@ function ivThumbs(main, L) { // piece photos, or a page-2 stand-in when this rol
     paint(el, src, item) {
       const k = el.dataset.th; IV.thumbs[k] = src || '';
       IV.sketch[k] = !!(src && item && item.sketch);
+      if (src && item && !item.sketch && item.id && IV.r) {
+        const job = IV.r.jobs.find(x => x.jo === k);
+        if (job) job.product_photo_file_id = item.id;
+      }
       const cap = el.querySelector(':scope > span');
       if (cap) cap.remove();
       if (src) {
@@ -537,13 +541,17 @@ function ivPhotos(main, j) {
       noted: item => {
         big.classList.toggle('sketch', !!item.sketch);
         IV.sketch[j.jo] = !!item.sketch;
+        if (item && !item.sketch && item.id) j.product_photo_file_id = item.id;
         const btn = big.querySelector('.ivadd');
-        if (btn && !btn.disabled) btn.textContent = (item && item.sketch) || !(big.querySelector('img') && big.querySelector('img').src) ? 'Add photo' : 'Change photo';
+        const real = ivHasRealPhoto(j, item);
+        if (btn && !btn.disabled) btn.textContent = real ? 'Change photo' : 'Add photo';
+        const del = big.querySelector('.ivdel');
+        if (del && !del.disabled) del.hidden = !real;
       }
     });
     ivAddPhoto(main, j, big);
     big.onclick = e => {
-      if (e.target.closest('.phorig, .phtools, button, a, .ivaddmsg')) return;
+      if (e.target.closest('.phorig, .phtools, button, a, .ivaddmsg, .ivdelask, .ivacts')) return;
       const img = big.querySelector('img');
       if (!img || !img.src) return;
       const items = ivGallery(j.jo);
@@ -557,12 +565,28 @@ function ivPhotos(main, j) {
   }
   ivFillExtra(main, j);
 }
+function ivHasRealPhoto(j, item) {
+  if (!j || !j.product_photo_file_id) return false;
+  if (item && item.sketch) return false;
+  if (IV.sketch[j.jo] && !(item && item.id && !item.sketch)) return false;
+  return true;
+}
 function ivAddPhoto(main, j, big) {
   if (!ivEdit() || !big || !j) return;
+  const realNow = ivHasRealPhoto(j) && !!IV.thumbs[j.jo] && !IV.sketch[j.jo];
+  const acts = document.createElement('div');
+  acts.className = 'ivacts';
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'ivdel';
+  del.textContent = 'Remove photo';
+  del.hidden = !realNow;
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'ivadd';
-  btn.textContent = IV.thumbs[j.jo] && !IV.sketch[j.jo] ? 'Change photo' : 'Add photo';
+  btn.textContent = realNow ? 'Change photo' : 'Add photo';
+  acts.appendChild(del);
+  acts.appendChild(btn);
   const file = document.createElement('input');
   file.type = 'file';
   file.accept = 'image/*';
@@ -583,13 +607,72 @@ function ivAddPhoto(main, j, big) {
     msg.classList.toggle('err', !!bad);
     msg.hidden = !text;
   };
+  let ask = sheet && sheet.querySelector('.ivdelask');
+  if (!ask && sheet) {
+    ask = document.createElement('div');
+    ask.className = 'ivdelask';
+    ask.hidden = true;
+    const q = document.createElement('p');
+    q.textContent = 'Remove this photo? The drawing from the JO card comes back. The file stays in Drive.';
+    const row = document.createElement('div');
+    row.className = 'row';
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'ivdelgo';
+    go.textContent = 'Remove';
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'ivdelno';
+    no.textContent = 'Cancel';
+    row.appendChild(go);
+    row.appendChild(no);
+    ask.appendChild(q);
+    ask.appendChild(row);
+    if (msg) msg.insertAdjacentElement('afterend', ask);
+    else big.insertAdjacentElement('afterend', ask);
+  } else if (ask) ask.hidden = true;
   big.appendChild(file);
-  big.appendChild(btn);
+  big.appendChild(acts);
   btn.onclick = e => {
     e.preventDefault();
     e.stopPropagation();
     if (!btn.disabled) file.click();
   };
+  del.onclick = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!del.disabled && ask) ask.hidden = false;
+  };
+  if (ask) {
+    const no = ask.querySelector('.ivdelno');
+    const go = ask.querySelector('.ivdelgo');
+    if (no) no.onclick = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      ask.hidden = true;
+    };
+    if (go) go.onclick = async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (del.disabled || !window.OYPPhotos || !window.OYPPhotos.removePhoto) return;
+      del.disabled = true;
+      btn.disabled = true;
+      const r = await window.OYPPhotos.removePhoto(j.jo);
+      del.disabled = false;
+      btn.disabled = false;
+      if (!r || r.removed !== true) {
+        ask.hidden = true;
+        if (r && r.ok === true && r.removed === false) return;
+        say((r && r.error) || "Photo removal isn't switched on yet", true);
+        return;
+      }
+      ask.hidden = true;
+      j.product_photo_file_id = '';
+      say('', false);
+      ivApplySketch(j.jo, r.src || '');
+      if (main.querySelector('#ivSheet')) ivPhotos(main, j);
+    };
+  }
   file.onchange = async () => {
     const picked = file.files && file.files[0];
     file.value = '';
@@ -604,9 +687,26 @@ function ivAddPhoto(main, j, big) {
       return;
     }
     say('', false);
+    if (r.id) j.product_photo_file_id = r.id;
     ivApplyProfile(j.jo, r.src);
     if (main.querySelector('#ivSheet')) ivPhotos(main, j);
   };
+}
+function ivApplySketch(jo, src) {
+  IV.thumbs[jo] = src || '';
+  IV.sketch[jo] = !!src;
+  const sel = '[data-th="' + String(jo).replace(/"/g, '') + '"]';
+  document.querySelectorAll(sel).forEach(el => {
+    if (src) {
+      el.style.backgroundImage = 'url("' + String(src).replace(/"/g, '') + '")';
+      el.classList.add('has', 'sketch');
+    } else {
+      el.style.backgroundImage = '';
+      el.classList.remove('has', 'sketch');
+    }
+  });
+  const view = document.getElementById('ivView');
+  if (view && view._jo === jo && view._setSketch) view._setSketch(src);
 }
 function ivApplyProfile(jo, src) {
   IV.thumbs[jo] = src || '';
@@ -760,6 +860,26 @@ function ivOpenViewer(o) {
       root.classList.remove('sketch');
       root.setAttribute('aria-label', 'Photo');
       img.src = src;
+    }
+  };
+  root._setSketch = src => {
+    const piece = items.find(it => it.key === 'piece');
+    if (!piece) return;
+    piece.src = src || '';
+    piece.sketch = true;
+    piece.full = () => {
+      const P = window.OYPPhotos;
+      if (P && P.peek) {
+        const hit = P.peek({ jo: root._jo, sketch: true, size: 1600, kind: 'card' });
+        if (hit) return Promise.resolve(hit);
+      }
+      return Promise.resolve(src || '');
+    };
+    if (items[index] === piece) {
+      root.classList.add('sketch');
+      root.setAttribute('aria-label', 'Sketch from JO card');
+      if (src) img.src = src;
+      else img.removeAttribute('src');
     }
   };
   const showAt = () => {

@@ -38,3 +38,14 @@ What photoSet does
   drive_folder_id is filled in only when it was empty.
   The previous Drive file stays. No other cell is changed.
   Cached thumbnails for that JO are cleared. AuditLog gets the new file id.
+
+Update (Remove photo)
+  You already pasted PhotoSet. Replace the whole PhotoSet file with paste/PhotoSet.gs.
+  Do not edit Auth.gs. Remove photo uses the same photoSet action.
+  Do not add a new action name.
+  Deploy > Manage deployments > pencil > New version > Deploy.
+  Do not use New deployment.
+  Until that version is deployed, Remove photo shows "Photo removal isn't switched on yet" and changes nothing.
+  Removal clears only product_photo_file_id, plus updated_at and updated_by.
+  The Drive file stays. It is not deleted or trashed.
+  AuditLog action photoRemove stores the old file id, so it can be restored by pasting the id back.

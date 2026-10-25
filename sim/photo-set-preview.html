@@ -9,6 +9,8 @@
 <body>
 <div id="main"></div>
 <script>
+window.__photoMode = 'new';
+window.__setCalls = 0;
 window.OYP = {
   call(action, body) {
     if (action === 'invList') return Promise.resolve(window.__LIST);
@@ -16,6 +18,14 @@ window.OYP = {
       const piece = {};
       (body.piece || []).forEach(jo => { piece[jo] = window.__PHOTO[jo]; });
       return Promise.resolve({ ok: true, size: body.size, piece: piece, scan: {}, cards: {}, drawing: {} });
+    }
+    if (action === 'photoSet' && body && body.remove === true) {
+      window.__setCalls += 1;
+      if (window.__photoMode === 'old') return Promise.resolve({ ok: false, error: 'That file is not a photo' });
+      if (window.__photoMode === 'ignore') return Promise.resolve({ ok: true, id: 'real500', jo: body.jo });
+      const cur = window.__PHOTO[body.jo];
+      window.__PHOTO[body.jo] = { id: 'page-' + body.jo, src: window.__STAND || (cur && cur.src) || '', found: false, sketch: true };
+      return Promise.resolve({ ok: true, removed: true, jo: body.jo, old_id: (cur && cur.id) || '' });
     }
     return Promise.resolve({ ok: false, error: 'Unknown action' });
   },
@@ -43,8 +53,8 @@ HTMLInputElement.prototype.click = function () {
 };
 </script>
 <script src="../sketchclean.js?v=1"></script>
-<script src="../photos.js?v=15"></script>
-<script src="../inv.js?v=27"></script>
+<script src="../photos.js?v=16"></script>
+<script src="../inv.js?v=28"></script>
 <script>
 const ROI = { x: 0.578, y: 0.150, w: 0.377, h: 0.815 };
 function paper(W, H) {
@@ -159,23 +169,33 @@ function realPhoto() {
   g.stroke();
   return c.toDataURL('image/jpeg', 0.9);
 }
-function job(jo, desc) {
-  return { jo: jo, description: desc, client: '', location: 'vault', item_type: 'ring', metal: 'Yellow gold', karat: '18', cost: 1200, on_hand: true, has_photo: false };
+function job(jo, desc, extra) {
+  const row = { jo: jo, description: desc, client: '', location: 'vault', item_type: 'ring', metal: 'Yellow gold', karat: '18', cost: 1200, on_hand: true, has_photo: false };
+  return Object.assign(row, extra || {});
 }
+window.__STAND = squarePage();
 window.__LIST = {
   ok: true,
   can: { cost: true, price: true },
   stages: [['bench', 'Bench']],
   locations: [['vault', 'Vault']],
   item_types: [['ring', 'Ring']],
-  jobs: [job('26-441', 'Tall pendant'), job('26-442', 'Wide cuff'), job('26-444', 'Square setting'), job('26-443', 'No drawing'), job('26-500', 'Gold ring')]
+  jobs: [
+    job('26-441', 'Tall pendant'),
+    job('26-442', 'Wide cuff'),
+    job('26-444', 'Square setting'),
+    job('26-443', 'No drawing'),
+    job('26-500', 'Gold ring', { product_photo_file_id: 'real500' }),
+    job('26-501', 'Staff ring', { product_photo_file_id: 'real501' })
+  ]
 };
 window.__PHOTO = {
   '26-441': { id: 'p441', src: tallPage(), found: false, sketch: true },
   '26-442': { id: 'p442', src: widePage(), found: false, sketch: true },
-  '26-444': { id: 'p444', src: squarePage(), found: false, sketch: true },
+  '26-444': { id: 'p444', src: window.__STAND, found: false, sketch: true },
   '26-443': { id: 'p443', src: whitePage(), found: false, sketch: true },
-  '26-500': { id: 'real500', src: realPhoto(), found: true }
+  '26-500': { id: 'real500', src: realPhoto(), found: true },
+  '26-501': { id: 'real501', src: realPhoto(), found: true }
 };
 function box(el) {
   const r = el.getBoundingClientRect();
@@ -189,6 +209,9 @@ window.__measure = function () {
   const imgs = frame ? [...frame.querySelectorAll('img')] : [];
   const img = imgs[0] || null;
   const btn = frame && frame.querySelector('.ivadd');
+  const del = frame && frame.querySelector('.ivdel');
+  const ask = document.querySelector('#ivSheet .ivdelask');
+  const msg = document.querySelector('#ivSheet .ivaddmsg');
   const orig = frame && frame.querySelector('.phorig');
   const cs = frame ? getComputedStyle(frame) : null;
   const ib = img ? box(img) : null, bb = btn ? box(btn) : null, ob = orig ? box(orig) : null, fb = frame ? box(frame) : null;
@@ -198,6 +221,11 @@ window.__measure = function () {
   const nat = nh ? nw / nh : 0, shown = dh ? dw / dh : 0;
   return {
     label: btn ? btn.textContent : '',
+    removeLabel: del ? del.textContent : '',
+    removeHidden: !del || !!del.hidden || getComputedStyle(del).display === 'none',
+    askOn: !!(ask && !ask.hidden),
+    askText: ask ? (ask.querySelector('p') ? ask.querySelector('p').textContent : ask.textContent) : '',
+    msg: msg ? msg.textContent : '',
     sketch: !!(frame && frame.classList.contains('sketch')),
     imgs: imgs.length,
     bg: cs ? cs.backgroundImage : '',
@@ -214,7 +242,8 @@ window.__measure = function () {
     aspectDelta: Math.abs(shown - nat)
   };
 };
-window.__open = async function (jo) {
+window.__open = async function (jo, opt) {
+  opt = opt || {};
   const back = document.querySelector('#ivSX');
   if (back) back.click();
   const card = document.querySelector('.ivcard[data-jo="' + jo + '"]');
@@ -223,8 +252,10 @@ window.__open = async function (jo) {
   for (let i = 0; i < 120; i++) {
     const img = document.querySelector('#ivSheet .ivph.big img');
     const btn = document.querySelector('#ivSheet .ivadd');
+    const del = document.querySelector('#ivSheet .ivdel');
     const one = document.querySelectorAll('#ivSheet .ivph.big img').length === 1;
-    if (img && btn && one && img.complete && img.naturalWidth > 0 && !img.classList.contains('phblur') && btn.textContent) {
+    const delOk = opt.staff ? (!btn && !del) : (btn && (!opt.remove || (del && !del.hidden)));
+    if (img && delOk && one && img.complete && img.naturalWidth > 0 && !img.classList.contains('phblur') && (opt.staff || btn.textContent)) {
       const box = document.querySelector('#ivSheet .ivsbox');
       if (box) box.scrollTop = 0;
       return 'ready';
@@ -232,6 +263,83 @@ window.__open = async function (jo) {
     await new Promise(r => setTimeout(r, 100));
   }
   return 'timeout';
+};
+window.__ask = function () {
+  const del = document.querySelector('#ivSheet .ivdel');
+  if (!del || del.hidden) return 'no button';
+  del.click();
+  const ask = document.querySelector('#ivSheet .ivdelask');
+  return ask && !ask.hidden ? 'open' : 'closed';
+};
+window.__cancel = function () {
+  const before = window.__setCalls;
+  const img = document.querySelector('#ivSheet .ivph.big img');
+  const src = img ? img.src : '';
+  const no = document.querySelector('#ivSheet .ivdelno');
+  if (no) no.click();
+  const ask = document.querySelector('#ivSheet .ivdelask');
+  const now = document.querySelector('#ivSheet .ivph.big img');
+  return { calls: window.__setCalls, grew: window.__setCalls !== before, askOn: !!(ask && !ask.hidden), same: !!(now && now.src === src) };
+};
+window.__failRemove = async function () {
+  window.__photoMode = 'old';
+  const before = window.__setCalls;
+  const img = document.querySelector('#ivSheet .ivph.big img');
+  const src = img ? img.src : '';
+  const del = document.querySelector('#ivSheet .ivdel');
+  if (del) del.click();
+  const go = document.querySelector('#ivSheet .ivdelgo');
+  if (go) go.click();
+  for (let i = 0; i < 40; i++) {
+    const msg = document.querySelector('#ivSheet .ivaddmsg');
+    const now = document.querySelector('#ivSheet .ivph.big img');
+    if (msg && msg.textContent.indexOf("isn't switched on yet") >= 0) {
+      window.__photoMode = 'new';
+      return { msg: msg.textContent, same: !!(now && now.src === src), calls: window.__setCalls - before, sketch: document.querySelector('#ivSheet .ivph.big').classList.contains('sketch') };
+    }
+    await new Promise(r => setTimeout(r, 50));
+  }
+  window.__photoMode = 'new';
+  return { msg: '', same: false, calls: window.__setCalls - before, sketch: false };
+};
+window.__viewerRemove = async function () {
+  const img = document.querySelector('#ivSheet .ivph.big img');
+  if (!img) return { ok: false };
+  img.click();
+  let view = null;
+  for (let i = 0; i < 40; i++) {
+    view = document.querySelector('#ivView');
+    if (view && view.querySelector('img') && view.querySelector('img').src) break;
+    await new Promise(r => setTimeout(r, 50));
+  }
+  if (!view) return { ok: false, step: 'no view' };
+  const before = view.querySelector('img').src;
+  const hadSketch = view.classList.contains('sketch');
+  const del = document.querySelector('#ivSheet .ivdel');
+  if (del) del.click();
+  const go = document.querySelector('#ivSheet .ivdelgo');
+  if (go) go.click();
+  for (let i = 0; i < 80; i++) {
+    view = document.querySelector('#ivView');
+    const vimg = view && view.querySelector('img');
+    const tile = document.querySelector('[data-th="26-500"]');
+    const frame = document.querySelector('#ivSheet .ivph.big');
+    const add = frame && frame.querySelector('.ivadd');
+    if (view && view.classList.contains('sketch') && vimg && vimg.src && vimg.src !== before && tile && tile.classList.contains('sketch') && frame && frame.classList.contains('sketch') && add && add.textContent === 'Add photo') {
+      const x = view.querySelector('.ivx');
+      if (x) x.click();
+      return { ok: true, hadSketch: hadSketch, changed: true, tile: true, label: add.textContent };
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return { ok: false, hadSketch: hadSketch, step: 'timeout' };
+};
+window.__asStaff = async function () {
+  const back = document.querySelector('#ivSX');
+  if (back) back.click();
+  document.getElementById('main').innerHTML = '';
+  await window.OYPInv.renderJos(document.getElementById('main'), { username: 's', role: 'staff' });
+  return 'ready';
 };
 window.OYPInv.renderJos(document.getElementById('main'), { username: 'a', role: 'admin' }).then(() => { window.__ready = true; });
 </script>

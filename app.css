@@ -309,9 +309,18 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivph.big.phstage.sketch>img{position:static;inset:auto;width:100%;height:auto;object-fit:contain;background:#fff}
 .ivph.big.phstage.sketch{padding-bottom:52px}
 .ivadd{position:absolute;z-index:4;right:8px;bottom:8px;min-height:36px;min-width:36px;padding:0 10px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));white-space:nowrap;cursor:pointer}
-.ivadd:disabled{opacity:.6}
+.ivacts{position:absolute;z-index:4;right:8px;bottom:8px;display:flex;gap:6px;align-items:center;justify-content:flex-end;max-width:calc(100% - 120px)}
+.ivacts .ivadd,.ivacts .ivdel{position:static}
+.ivdel{min-height:36px;padding:0 10px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));white-space:nowrap;cursor:pointer}
+.ivadd:disabled,.ivdel:disabled{opacity:.6}
+.ivdel[hidden],.ivdelask[hidden]{display:none}
 .ivaddmsg{margin:-4px 0 calc(12px*var(--sp));font-family:var(--label);font-size:calc(12px*var(--fs));color:#555}
 .ivaddmsg.err{color:#8a1f11}
+.ivdelask{margin:-4px 0 calc(12px*var(--sp));padding:10px 12px;border:1px solid #ddd;border-radius:10px;background:#fff;font-family:var(--label);font-size:calc(13px*var(--fs));color:#111;line-height:1.35}
+.ivdelask p{margin:0 0 8px}
+.ivdelask .row{display:flex;gap:8px}
+.ivdelask button{min-height:36px;padding:0 12px;border-radius:8px;border:1px solid #ddd;background:#fff;color:#111;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));cursor:pointer}
+.ivdelask .ivdelgo{background:#111;color:#fff;border-color:#111}
 .ivph.big.phstage{cursor:zoom-in}
 /* Inventory card pills share the .kf size. A 12px REVIEW pill stretched the row and left the other labels high. The detail badge stays 12px, with its own letter-spacing indent. */
 .ivcard .kf .chip{white-space:nowrap}

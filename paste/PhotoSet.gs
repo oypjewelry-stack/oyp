@@ -1,12 +1,13 @@
 /**
- * OYP staff: save a JO profile photo from Inventory (Add photo / Change photo).
- * Paste as a NEW script file named PhotoSet. Do not paste this over PhotoFast.gs,
- * InventoryPages.gs, JobSync.gs, or Auth.gs.
+ * OYP staff: save or clear a JO profile photo from Inventory (Add photo / Change photo / Remove photo).
+ * Paste as a NEW script file named PhotoSet, or replace the whole PhotoSet file on an update.
+ * Do not paste this over PhotoFast.gs, InventoryPages.gs, JobSync.gs, or Auth.gs.
  *
- * Auth.gs handleAction_, on its own line immediately UNDER the PhotoFast hook:
+ * Auth.gs handleAction_, on its own line immediately UNDER the PhotoFast hook (already there after the first paste):
  *   if (typeof isPhotoSetAction_ === 'function' && isPhotoSetAction_(a)) return handlePhotoSet_(req, s.user); // PhotoSet.gs
  *
  * photoSet is a write. Do not add it to Fast.gs FAST.READS or FAST.CACHE.
+ * Remove photo uses the same photoSet action (req.remove === true). No new Auth.gs line.
  * Full steps: paste/SETUP-photo-set.txt
  * Editor: https://script.google.com/home/projects/17TdK0I66eGV_3XpM8OSPw9L7BlEbknYvJKI8JEMecrSCxLh4bhdihCXJ/edit
  * Then Deploy > Manage deployments > pencil > New version > Deploy. Do not use New deployment.
@@ -15,6 +16,8 @@
  * or Job Order Cards/<JO> when that cell is empty). Sets product_photo_file_id,
  * updated_at, and updated_by. Writes drive_folder_id only when the cell was empty.
  * Does not delete the previous Drive file and does not change any other cell.
+ * Remove photo clears only product_photo_file_id (plus updated_at and updated_by).
+ * The Drive file stays. AuditLog action photoRemove stores the old file id.
  */
 var PHOTO_SET_ROLES = { admin: true, production_manager: true };
 var PHOTO_SET_PART = 90000;
@@ -66,6 +69,16 @@ function photoSet_(req, user) {
   if (!row || !row._row) return { ok: false, error: 'Not found' };
   var joName = psStr_(row.jo);
   if (!psJoOk_(joName)) return { ok: false, error: 'Missing JO' };
+
+  if (req.remove === true) {
+    var oldOnly = psStr_(row.product_photo_file_id);
+    if (!oldOnly) return { ok: true, removed: false, jo: joName };
+    var tRem = (typeof now_ === 'function') ? now_() : new Date().toISOString();
+    jobSet_('JobOrders', row._row, { product_photo_file_id: '', updated_at: tRem, updated_by: user.username });
+    psCacheClear_(key, [oldOnly, psStr_(row.photo_file_id), psStr_(row.piece_photo_file_id)]);
+    psAudit_(user.username, 'photoRemove', joName, req.device_id, oldOnly);
+    return { ok: true, removed: true, jo: joName, old_id: oldOnly };
+  }
 
   var parts = psInt_(req.parts);
   if (isNaN(parts) || parts < 1) parts = 1;

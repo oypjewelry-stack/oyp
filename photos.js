@@ -736,6 +736,8 @@ function persistSketch(jo, id, src) {
 }
 function remember(item, src) {
   if (!src) return;
+  // A removal already won. Do not put the real photo back over the stand-in.
+  if (item.kind === 'piece' && item.jo && !item.sketch && MEM.get('removed:' + item.jo)) return;
   const size = item.size;
   // A page-2 stand-in is not the JO's profile. The cleaned image (or the white card) is stored on its own key.
   if (item.sketch && item.jo) {
@@ -766,7 +768,17 @@ function peek(item) {
   const size = item.size;
   if (item.sketch && item.jo && MEM.has('sketch:' + item.jo + '|' + size)) return MEM.get('sketch:' + item.jo + '|' + size);
   if (item.id && MEM.has(memKey(item.id, size))) return MEM.get(memKey(item.id, size));
-  if (item.kind === 'piece' && size === 300 && item.jo && MEM.has('jo:' + item.jo + '|300')) return MEM.get('jo:' + item.jo + '|300');
+  if (item.kind === 'piece' && size === 300 && item.jo && MEM.has('jo:' + item.jo + '|300')) {
+    const pid = MEM.get('photoid:' + item.jo);
+    if (pid && !item.id) item.id = pid;
+    return MEM.get('jo:' + item.jo + '|300');
+  }
+  if (item.kind === 'piece' && item.jo && MEM.get('removed:' + item.jo) && MEM.has('sketch:' + item.jo + '|' + size) && !MEM.has('jo:' + item.jo + '|300')) {
+    item.sketch = true;
+    const sid = MEM.get('sketchid:' + item.jo);
+    if (sid && !item.id) item.id = sid;
+    return MEM.get('sketch:' + item.jo + '|' + size);
+  }
   if (size === 300) {
     let id = item.id;
     const s = ls();
@@ -791,6 +803,7 @@ function peek(item) {
 }
 function finish(w, src) {
   const done = s => {
+    if (s && w.item && w.item.kind === 'piece' && w.item.jo && !w.item.sketch && MEM.get('removed:' + w.item.jo)) s = '';
     if (s) remember(w.item, s);
     w.resolve(s || '');
     FLY.delete(w.key || flyKey(w.item));
@@ -851,6 +864,10 @@ async function send(size, ws) {
   ws.forEach(w => {
     if (w.item.kind === 'piece') {
       const row = r.piece && r.piece[w.item.jo];
+      if (row && row.src && !row.sketch && MEM.get('removed:' + w.item.jo)) {
+        finish(w, '');
+        return;
+      }
       if (row && row.src && !row.sketch) {
         w.item.sketch = false;
         dropStandIn(w.item.jo);
@@ -988,6 +1005,14 @@ function watch(root, opt) {
     for (let i = 0; i < nodes.length; i++) list.push(nodes[i]);
     const startLoad = (el, item) => load(item).then(src => {
       if (el.isConnected === false) return;
+      // A late empty answer must not wipe the stand-in that removal just painted.
+      if (!src && item.jo && MEM.get('removed:' + item.jo) && MEM.has('sketch:' + item.jo + '|300')) {
+        item.sketch = true;
+        const sid = MEM.get('sketchid:' + item.jo);
+        if (sid) item.id = sid;
+        opt.paint(el, MEM.get('sketch:' + item.jo + '|300'), item);
+        return;
+      }
       // load() copies the item, so the sketch flag is applied there. Peek copies it back onto the tile's item.
       if (src && !item.sketch) peek(item);
       opt.paint(el, src || '', item);
@@ -1085,6 +1110,7 @@ function stage(el, o) {
       el.classList.add('sketch');
     } else if (base.fallback) {
       base.sketch = false;
+      if (thumbItem.id) base.id = thumbItem.id;
       el.classList.remove('sketch');
     }
     if (base.fallback && typeof o.noted === 'function') o.noted(base);
@@ -1221,6 +1247,7 @@ async function setPhoto(jo, file, hooks) {
     if (!r.ok) return { ok: false, error: (r && r.error) || 'Could not save the photo' };
     if (i < parts.length - 1) continue;
     if (!r.id) return { ok: false, error: 'Could not save the photo' };
+    MEM.delete('removed:' + jo);
     dropStandIn(jo);
     remember({ id: r.id, jo: jo, kind: 'piece', size: 300, sketch: false }, dataUrl);
     remember({ id: r.id, jo: jo, kind: 'piece', size: 1600, sketch: false }, dataUrl);
@@ -1228,6 +1255,47 @@ async function setPhoto(jo, file, hooks) {
   }
   return { ok: false, error: 'Could not save the photo' };
 }
+/* Drop a real profile from memory, IndexedDB, and localStorage. The Drive file is left alone. */
+function dropRealPhoto(jo) {
+  if (!jo) return;
+  const ids = [];
+  const seen = {};
+  const add = id => { if (id && !seen[id]) { seen[id] = 1; ids.push(id); } };
+  add(MEM.get('photoid:' + jo));
+  const s = ls();
+  if (s) { try { add(s.getItem('oypPhJ:' + jo) || ''); } catch (e) {} }
+  ids.forEach(id => {
+    [300, 1600, 'original'].forEach(size => {
+      MEM.delete(memKey(id, size));
+      idbDel(id + '|' + size);
+      FLY.delete(id + '|piece|' + size);
+      FLY.delete(id + '|card|' + size);
+    });
+  });
+  [300, 1600, 'original'].forEach(size => {
+    FLY.delete('piece:' + jo + '|piece|' + size);
+    FLY.delete(jo + '|piece|' + size);
+  });
+  MEM.delete('photoid:' + jo);
+  forgetProfile(jo);
+  dropRealSharp(jo);
+}
+/* Clear the profile cell. Success is only {ok:true, removed:true}. Anything else leaves the photo where it is.
+   An updated server with an empty cell returns {ok:true, removed:false} and also changes nothing. */
+async function removePhoto(jo) {
+  let r = null;
+  try { r = await window.OYP.call('photoSet', { jo: jo, remove: true }); }
+  catch (e) { r = null; }
+  if (!r || r.ok !== true || r.removed !== true) {
+    if (r && r.ok === true && r.removed === false) return { ok: true, removed: false, jo: jo };
+    return { ok: false, error: "Photo removal isn't switched on yet" };
+  }
+  MEM.set('removed:' + jo, 1);
+  dropRealPhoto(jo);
+  const src = await load({ jo: jo, kind: 'piece', size: 300, legacy: 'inv', fallback: true });
+  load({ jo: jo, kind: 'piece', size: 1600, legacy: 'inv', fallback: true });
+  return { ok: true, removed: true, jo: r.jo || jo, old_id: r.old_id || '', src: src || '' };
+}
 prime();
-window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, ready: PRE.p, photoBox, photoParts, setPhoto, sharpTier };
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, ready: PRE.p, photoBox, photoParts, setPhoto, removePhoto, sharpTier };
 })();
