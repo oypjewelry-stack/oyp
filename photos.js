@@ -66,7 +66,6 @@ function idbPut(id, size, src) {
    DESIGN heading and inside the box rules. Tuned on a landscape 26-425 page-2 scan.
    Page 1 is never passed here: only a stand-in (sketch:true, page 2 front) is cropped. */
 const SKETCH_ROI = { x: 0.613, y: 0.242, w: 0.347, h: 0.490 };
-const SKETCH_FRAME = 4 / 3; // the profile frame (.ivph is 4/3). The crop is padded out to this with white.
 const SKETCH_CROP = new Map();
 function sketchLuma(r, g, b) { return 0.299 * r + 0.587 * g + 0.114 * b; }
 /* rgba: Uint8Array or array of r,g,b,a. Returns {x,y,w,h} in source pixels, or null when the panel has no ink. */
@@ -153,43 +152,11 @@ function sketchBox(rgba, w, h) {
   if (ow < 8 || oh < 8) return null;
   return { x: ox, y: oy, w: ow, h: oh };
 }
-function sketchLimit(sw, sh) {
-  const x0 = Math.max(0, Math.min(sw - 2, Math.round(sw * SKETCH_ROI.x)));
-  const y0 = Math.max(0, Math.min(sh - 2, Math.round(sh * SKETCH_ROI.y)));
-  const x1 = Math.max(x0 + 2, Math.min(sw, Math.round(sw * (SKETCH_ROI.x + SKETCH_ROI.w))));
-  const y1 = Math.max(y0 + 2, Math.min(sh, Math.round(sh * (SKETCH_ROI.y + SKETCH_ROI.h))));
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-/* Grow the ink box toward the 4/3 profile frame, staying inside the design panel.
-   Whatever is still short is white on the canvas, so the frame has no empty band and the ink is not clipped. */
-function sketchFrame(box, limit) {
-  const A = SKETCH_FRAME;
-  let x = box.x, y = box.y, w = box.w, h = box.h;
-  const L = limit && limit.w > 0 && limit.h > 0 ? limit : { x: 0, y: 0, w: x + w, h: y + h };
-  const right = L.x + L.w, bottom = L.y + L.h;
-  if (w > 0 && h > 0 && w / h < A) {
-    const want = Math.min(L.w, Math.round(h * A));
-    const grow = Math.max(0, want - w);
-    let left = Math.min(Math.max(0, x - L.x), Math.floor(grow / 2));
-    let extra = Math.min(Math.max(0, right - (x + w)), grow - left);
-    if (left + extra < grow) left = Math.min(Math.max(0, x - L.x), grow - extra);
-    x -= left;
-    w += left + extra;
-  } else if (w > 0 && h > 0 && w / h > A) {
-    const want = Math.min(L.h, Math.round(w / A));
-    const grow = Math.max(0, want - h);
-    let up = Math.min(Math.max(0, y - L.y), Math.floor(grow / 2));
-    let down = Math.min(Math.max(0, bottom - (y + h)), grow - up);
-    if (up + down < grow) up = Math.min(Math.max(0, y - L.y), grow - down);
-    y -= up;
-    h += up + down;
-  }
-  let cw = w, ch = h, dx = 0, dy = 0;
-  if (w > 0 && h > 0 && Math.abs(w / h - A) > 0.001) {
-    if (w / h < A) { cw = Math.max(w, Math.round(h * A)); dx = Math.floor((cw - w) / 2); }
-    else { ch = Math.max(h, Math.round(w / A)); dy = Math.floor((ch - h) / 2); }
-  }
-  return { x: x, y: y, w: w, h: h, cw: cw, ch: ch, dx: dx, dy: dy };
+/* The detail frame is sized to this crop. Do not grow into the page around the ink:
+   that paper is the form, and it showed up as beige bands on the sides. */
+function sketchFrame(box) {
+  const x = box.x, y = box.y, w = box.w, h = box.h;
+  return { x: x, y: y, w: w, h: h, cw: w, ch: h, dx: 0, dy: 0 };
 }
 function cropSketch(src) {
   if (!src || typeof document === 'undefined' || !document.createElement) return Promise.resolve('');
@@ -207,7 +174,7 @@ function cropSketch(src) {
         g.drawImage(img, 0, 0);
         const box = sketchBox(g.getImageData(0, 0, sw, sh).data, sw, sh);
         if (!box) { resolve(''); return; }
-        const frame = sketchFrame(box, sketchLimit(sw, sh));
+        const frame = sketchFrame(box);
         const out = document.createElement('canvas');
         out.width = frame.cw; out.height = frame.ch;
         const og = out.getContext('2d');
@@ -443,15 +410,6 @@ function stage(el, o) {
     img.src = s;
     img.classList.toggle('phblur', !!blur);
     lab.hidden = true;
-    const place = () => {
-      if (!el.classList.contains('sketch') || !img.naturalWidth || !img.naturalHeight) return;
-      const box = el.getBoundingClientRect();
-      const frame = box.width > 0 && box.height > 0 ? box.width / box.height : SKETCH_FRAME;
-      const aspect = img.naturalWidth / img.naturalHeight;
-      img.style.objectFit = Math.abs(aspect - frame) < 0.012 ? 'cover' : 'contain';
-    };
-    if (img.complete) place();
-    else img.addEventListener('load', place, { once: true });
   };
   const base = { jo: o.jo, id: o.id || '', kind: o.kind || 'scan', legacy: o.legacy || 'prod', fallback: !!o.fallback, sketch: false };
   const thumbItem = Object.assign({}, base, { size: 300 });
@@ -517,5 +475,5 @@ function extras(jo, opt) {
     return { drawing: drawing.filter(d => d && d.id), cards };
   }).catch(() => ({ drawing: [], cards: [] }));
 }
-window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, SKETCH_FRAME };
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI };
 })();

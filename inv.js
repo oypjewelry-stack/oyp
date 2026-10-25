@@ -591,7 +591,7 @@ function ivOpenViewer(o) {
   ivCloseView();
   const root = document.createElement('div');
   root.id = 'ivView';
-  root.className = 'iview';
+  root.className = 'iview' + (o.sketch ? ' sketch' : '');
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', o.sketch ? 'Sketch from JO card' : 'Photo');
