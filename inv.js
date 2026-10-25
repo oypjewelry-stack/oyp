@@ -543,21 +543,57 @@ function ivPhotos(main, j) {
       if (e.target.closest('.phorig, .phtools, button, a')) return;
       const img = big.querySelector('img');
       if (!img || !img.src) return;
-      const sketch = big.classList.contains('sketch');
-      const P = window.OYPPhotos;
-      ivOpenViewer({
-        src: img.src, alt: img.alt || j.jo, sketch,
-        full: () => {
-          if (sketch && P.peek) {
-            const hit = P.peek({ jo: j.jo, sketch: true, size: 1600, kind: 'card' });
-            if (hit) return Promise.resolve(hit);
-          }
-          return P.load({ jo: j.jo, kind: 'piece', size: 1600, legacy: 'inv', fallback: !!can.cost });
-        }
-      });
+      const items = ivGallery(j.jo);
+      let index = items.findIndex(it => it.key === 'piece');
+      if (index < 0) {
+        items.unshift({ key: 'piece', src: img.src, alt: img.alt || j.jo, sketch: big.classList.contains('sketch') });
+        index = 0;
+      }
+      ivOpenViewer({ items, index, sketch: !!items[index].sketch });
     };
   }
   ivFillExtra(main, j);
+}
+/* Profile, then drawings, then JO pages, in the order the sheet shows them.
+   Page scans live only in the cost-role strip, so a non-cost role never gets page 1. */
+function ivGallery(jo) {
+  const P = window.OYPPhotos, can = (IV.r && IV.r.can) || {};
+  const sheet = document.querySelector('#ivSheet');
+  const items = [];
+  const big = sheet && sheet.querySelector('.ivph.big');
+  const img = big && big.querySelector('img');
+  if (img && img.src) {
+    const sketch = big.classList.contains('sketch');
+    items.push({
+      key: 'piece', src: img.src, alt: img.alt || jo, sketch,
+      full: () => {
+        if (sketch && P.peek) {
+          const hit = P.peek({ jo, sketch: true, size: 1600, kind: 'card' });
+          if (hit) return Promise.resolve(hit);
+        }
+        return P.load({ jo, kind: 'piece', size: 1600, legacy: 'inv', fallback: !!can.cost });
+      }
+    });
+  }
+  const addStrip = (box, kind) => {
+    if (!box) return;
+    box.querySelectorAll('.shot').forEach(b => {
+      const id = b.getAttribute('data-id') || '';
+      const lab = b.querySelector('.lab');
+      const ph = b.querySelector('.ph');
+      const bg = (ph && ph.style.backgroundImage) || '';
+      const m = bg.match(/url\(["']?([^"')]+)/);
+      items.push({
+        key: kind + ':' + id, src: (m && m[1]) || '', alt: (lab && lab.textContent) || '', sketch: false,
+        full: () => P.load({ jo, id, kind, size: 1600, legacy: 'job', sketch: false })
+      });
+    });
+  };
+  if (sheet) {
+    addStrip(sheet.querySelector('#ivDraws'), 'drawing');
+    if (can.cost) addStrip(sheet.querySelector('#ivShots'), 'card');
+  }
+  return items;
 }
 function ivShots(box, jo, pages, kind) {
   const { esc } = window.OYP;
@@ -567,14 +603,20 @@ function ivShots(box, jo, pages, kind) {
     if (src) b.querySelector('.ph').style.backgroundImage = `url("${src}")`;
     b.onclick = ev => {
       ev.stopPropagation();
-      const ph = b.querySelector('.ph');
-      const bg = ph && ph.style.backgroundImage || '';
-      const m = bg.match(/url\(["']?([^"')]+)/);
-      const src = pages[i].src || (m && m[1]) || '';
-      ivOpenViewer({
-        src, alt: pages[i].label || '', sketch: false,
-        full: () => window.OYPPhotos.load({ jo, id: pages[i].id, kind: kind || 'card', size: 1600, legacy: 'job', sketch: false })
-      });
+      const key = (kind || 'card') + ':' + pages[i].id;
+      const items = ivGallery(jo);
+      let index = items.findIndex(it => it.key === key);
+      if (index < 0) {
+        const ph = b.querySelector('.ph');
+        const bg = ph && ph.style.backgroundImage || '';
+        const m = bg.match(/url\(["']?([^"')]+)/);
+        items.push({
+          key, src: pages[i].src || (m && m[1]) || '', alt: pages[i].label || '', sketch: false,
+          full: () => window.OYPPhotos.load({ jo, id: pages[i].id, kind: kind || 'card', size: 1600, legacy: 'job', sketch: false })
+        });
+        index = items.length - 1;
+      }
+      ivOpenViewer({ items, index, sketch: false });
     };
   });
 }
@@ -587,6 +629,8 @@ function ivCloseView() {
 function ivOpenViewer(o) {
   o = o || {};
   ivCloseView();
+  const items = (o.items && o.items.length) ? o.items.slice() : [{ src: o.src || '', alt: o.alt || '', sketch: !!o.sketch, full: o.full || null }];
+  let index = Math.max(0, Math.min(items.length - 1, o.index | 0));
   const root = document.createElement('div');
   root.id = 'ivView';
   root.className = 'iview' + (o.sketch ? ' sketch' : '');
@@ -594,13 +638,17 @@ function ivOpenViewer(o) {
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', o.sketch ? 'Sketch from JO card' : 'Photo');
   root.innerHTML = `<button type="button" class="ivx" aria-label="Close">×</button>
+    <button type="button" class="ivprev" aria-label="Previous photo">‹</button>
+    <button type="button" class="ivnext" aria-label="Next photo">›</button>
+    <p class="ivpos" aria-live="polite"></p>
     <div class="ivtools"><button type="button" class="ivz" data-z="out" aria-label="Zoom out">−</button><button type="button" class="ivz" data-z="in" aria-label="Zoom in">+</button></div>
-    <div class="ivframe"><div class="ivpan"><img alt="${window.OYP.esc(o.alt || '')}" draggable="false"></div></div>`;
+    <div class="ivframe"><div class="ivpan"><img alt="" draggable="false"></div></div>`;
   document.body.appendChild(root);
   const frame = root.querySelector('.ivframe');
   const pan = root.querySelector('.ivpan');
   const img = root.querySelector('img');
-  let scale = 1, x = 0, y = 0, moved = false, lastTap = 0, lastX = 0, lastY = 0;
+  const pos = root.querySelector('.ivpos');
+  let scale = 1, x = 0, y = 0, moved = false, lastTap = 0, lastX = 0, lastY = 0, seq = 0, pinched = false;
   const arm = Date.now() + 350;
   const pts = new Map();
   let pinch = null;
@@ -625,10 +673,48 @@ function ivOpenViewer(o) {
     clamp();
     apply();
   };
-  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ivCloseView(); } };
+  const paint = () => {
+    const n = items.length, item = items[index];
+    root.querySelector('.ivprev').hidden = n < 2 || index === 0;
+    root.querySelector('.ivnext').hidden = n < 2 || index === n - 1;
+    pos.textContent = (index + 1) + ' / ' + n;
+    pos.setAttribute('aria-label', 'Photo ' + (index + 1) + ' of ' + n);
+    root.classList.toggle('sketch', !!item.sketch);
+    root.setAttribute('aria-label', item.sketch ? 'Sketch from JO card' : 'Photo');
+  };
+  const showAt = () => {
+    const item = items[index], mine = ++seq;
+    paint();
+    img.alt = item.alt || '';
+    if (item.src) img.src = item.src;
+    else img.removeAttribute('src');
+    apply();
+    if (!item.full) return;
+    Promise.resolve().then(item.full).then(src => {
+      if (mine !== seq || !src || !root.isConnected) return;
+      img.src = src;
+    }).catch(() => {});
+  };
+  // No wrap. A change drops back to fit zoom.
+  const step = dir => {
+    const next = index + dir;
+    if (next < 0 || next >= items.length) return;
+    index = next;
+    scale = 1; x = 0; y = 0; apply();
+    showAt();
+  };
+  const onKey = e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ivCloseView(); return; }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault(); e.stopPropagation();
+      step(e.key === 'ArrowLeft' ? -1 : 1);
+    }
+  };
   root._esc = onKey;
   document.addEventListener('keydown', onKey, true);
   root.querySelector('.ivx').onclick = e => { e.stopPropagation(); ivCloseView(); };
+  root.querySelector('.ivprev').onclick = e => { e.stopPropagation(); step(-1); };
+  root.querySelector('.ivnext').onclick = e => { e.stopPropagation(); step(1); };
   root.querySelector('[data-z="in"]').onclick = e => {
     e.stopPropagation();
     const r = frame.getBoundingClientRect();
@@ -646,11 +732,13 @@ function ivOpenViewer(o) {
   }, { passive: false });
   frame.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!pts.size) pinched = false;
     try { frame.setPointerCapture(e.pointerId); } catch (err) {}
-    pts.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: 0 });
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: 0 });
     if (pts.size === 2) {
       const arr = [...pts.values()];
       pinch = { d: Math.hypot(arr[0].x - arr[1].x, arr[0].y - arr[1].y) || 1, s: scale };
+      pinched = true;
     }
   });
   frame.addEventListener('pointermove', e => {
@@ -676,7 +764,17 @@ function ivOpenViewer(o) {
     const p = pts.get(e.pointerId);
     pts.delete(e.pointerId);
     if (pts.size < 2) pinch = null;
-    if (!p || p.moved > 8) return;
+    if (!p) return;
+    // Fit zoom: a horizontal swipe moves to the next photo. Zoomed in, that drag already panned.
+    if (!pinched && scale <= 1) {
+      const dx = e.clientX - p.x0, dy = e.clientY - p.y0;
+      if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy)) {
+        moved = true;
+        step(dx < 0 ? 1 : -1);
+        return;
+      }
+    }
+    if (p.moved > 8) return;
     const now = Date.now();
     if (now - lastTap < 300 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 36) {
       lastTap = 0;
@@ -697,9 +795,7 @@ function ivOpenViewer(o) {
     if (Date.now() < arm) return;
     if (e.target === root) ivCloseView();
   });
-  const show = src => { if (src && root.isConnected) img.src = src; };
-  if (o.src) show(o.src);
-  if (o.full) Promise.resolve().then(o.full).then(show).catch(() => {});
+  showAt();
 }
 function ivFillExtra(main, j) {
   const P = window.OYPPhotos;
