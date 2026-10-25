@@ -295,7 +295,7 @@ function ivDraw(main) {
   </div>${IV.open ? ivSheet(r.jobs.find(j => j.jo === IV.open), edit) : ''}`;
   const all = main.querySelector('#ivAll');
   if (all) all.indeterminate = n > 0 && !allOn && ids.some(id => IV.sel.has(id));
-  ivWire(main); ivThumbs(main, L);
+  ivWire(main); ivThumbs(main, L); ivFitPills(main);
 }
 function ivCard(j, can, edit) {
   const { esc } = window.OYP, c = [];
@@ -310,10 +310,76 @@ function ivCard(j, can, edit) {
   const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo);
   const ck = IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '';
   const more = edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="false">⋯</button>` : '';
-  return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${ck}</div>
+  const desc = j.description || '';
+  const tip = desc ? ` title="${esc(desc)}"` : '';
+  return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}${IV.sketch[j.jo] ? ' sketch' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${ck}</div>
     <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
-    <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}
-    <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div>${more}</div>`;
+    <div class="kd"${tip}>${esc(desc || 'No details yet')}</div><div class="ivsp">${esc(sp)}</div>
+    <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : '<div class="ivmoney"></div>'}</div>${more}</div>`;
+}
+/* One pill line. A pill that does not fit is counted in +N, so the row never cuts a word in half. */
+function ivFitPills(root) {
+  if (!root || !root.querySelectorAll) return;
+  root.querySelectorAll('.ivcard .kf').forEach(row => {
+    const old = row.querySelector('.ivplus');
+    if (old) old.remove();
+    const chips = [];
+    let i, el;
+    for (i = 0; i < row.children.length; i++) {
+      el = row.children[i];
+      if (el.classList && el.classList.contains('chip')) chips.push(el);
+    }
+    chips.forEach(ch => { ch.hidden = false; ch.style.display = ''; ch.style.maxWidth = ''; });
+    const room = () => {
+      if (row.clientWidth <= 0) return false;
+      const edge = row.getBoundingClientRect().right;
+      let k, node, last = null;
+      for (k = 0; k < row.children.length; k++) {
+        node = row.children[k];
+        if (node.hidden || node.style.display === 'none') continue;
+        last = node;
+      }
+      if (!last) return true;
+      return last.getBoundingClientRect().right <= edge + 0.5;
+    };
+    const mark = n => {
+      let badge = row.querySelector('.ivplus');
+      chips.forEach((ch, idx) => {
+        const hide = idx >= chips.length - n;
+        ch.hidden = hide;
+        ch.style.display = hide ? 'none' : '';
+      });
+      if (n > 0) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'chip ivplus';
+          row.appendChild(badge);
+        }
+        badge.textContent = '+' + n;
+        badge.hidden = false;
+      } else if (badge) badge.remove();
+      return room();
+    };
+    if (room() || chips.length < 2) {
+      if (!room() && chips[0]) chips[0].style.maxWidth = '100%';
+      return;
+    }
+    let n = 0, ok = false;
+    while (n < chips.length - 1) {
+      n++;
+      ok = mark(n);
+      if (ok) return;
+    }
+    chips.forEach((ch, idx) => {
+      ch.hidden = idx > 0;
+      ch.style.display = idx > 0 ? 'none' : '';
+      ch.style.maxWidth = '';
+    });
+    if (mark(chips.length - 1)) return;
+    const badge = row.querySelector('.ivplus');
+    const badgeW = badge ? badge.getBoundingClientRect().width : 0;
+    if (chips[0]) chips[0].style.maxWidth = Math.max(24, row.clientWidth - badgeW - 4) + 'px';
+  });
 }
 function ivSheet(j, edit) { // details, and the review form when this JO is still waiting. Actions stay on the floating ⋯ menu.
   if (!j) return ''; const { esc } = window.OYP;
@@ -1444,6 +1510,11 @@ function ivReveal(main) {
   ivTake(main, job, job.jo, false);
 }
 window.addEventListener('hashchange', () => { ivCloseView(); });
+let ivFitTimer = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(ivFitTimer);
+  ivFitTimer = setTimeout(() => { const grid = document.getElementById('ivGrid'); if (grid) ivFitPills(grid); }, 60);
+});
 document.addEventListener('keydown', e => {
   if (!ivScanOn() || ivField(document.activeElement) || e.isComposing) return;
   if (e.key === 'Enter') {

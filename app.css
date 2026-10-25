@@ -280,7 +280,7 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivck{top:8px;left:8px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.94);border-radius:6px;opacity:0;pointer-events:none}
 .ivck input{width:20px;height:20px;margin:0;accent-color:#111;cursor:pointer}
 .ivmore{top:auto;right:4px;bottom:4px;width:36px;height:36px;min-width:36px;min-height:36px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;font-size:22px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;pointer-events:none}
-.ivcard:has(>.ivmore){padding-bottom:44px}
+.ivcard:has(>.ivmore) .ivmoney{padding-right:40px}
 .ivcard:hover .ivmore,.ivmore[aria-expanded="true"],.iv.choose .ivmore,html.iv-coarse .ivmore{opacity:1;pointer-events:auto}
 .iv.choose .ivck,.ivck:focus-within{opacity:1;pointer-events:auto}
 .ivall{display:inline-flex;align-items:center;gap:8px;margin:0 12px 12px 0;font-family:var(--label);font-size:calc(12px*var(--fs));letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
@@ -298,6 +298,16 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivbar .pill.outline,.ivbar .pill.sm.outline{background:transparent;color:#fff;border-color:#fff}
 .ivbar .lnk{background:none;border:0;color:#fff;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer}
 .ivb{padding:calc(10px*var(--sp)) calc(12px*var(--sp)) calc(12px*var(--sp))}.ivb .kd{color:#333}.ivsp{font-family:var(--label);font-size:calc(12px*var(--fs));color:#555;margin:calc(2px*var(--sp)) 0}
+/* One card height. The photo box stays put, the description is two lines, and the price sits on the bottom. */
+.ivcard .ivb{display:flex;flex-direction:column;min-width:0;box-sizing:border-box;height:180px}
+.ivcard .ivph{flex:none;width:100%}
+.ivcard .kd{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.3;min-height:2.6em;max-height:2.6em;margin:calc(3px*var(--sp)) 0 calc(2px*var(--sp))}
+.ivcard .ivsp{height:calc(16px*var(--fs));line-height:calc(16px*var(--fs));margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ivcard .kf{flex-wrap:nowrap;overflow:hidden;align-items:center;min-width:0;height:calc(18px*var(--fs));margin-top:calc(7px*var(--sp))}
+.ivcard .kf .chip{flex:none;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.ivcard .kf .chip[hidden]{display:none!important}
+.ivcard .ivmoney{margin-top:auto;flex-wrap:nowrap;overflow:hidden;align-items:center;min-height:calc(28px*var(--fs))}
+.ivcard .ivmoney:empty{border-top:0;padding-top:0}
 .ivmoney{display:flex;gap:calc(10px*var(--sp));flex-wrap:wrap;font-family:var(--label);font-size:calc(12px*var(--fs));color:#555;margin-top:calc(8px*var(--sp));padding-top:calc(7px*var(--sp));border-top:1px solid #f1f1f1}.ivmoney b{font-weight:500;color:#111}.ivm{color:#a8861c}
 .ivsheet{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:25;display:flex;justify-content:flex-end}.ivsbox{background:#fff;width:min(calc(460px*var(--pw)),100%);height:100%;overflow:auto;padding:calc(20px*var(--sp)) calc(22px*var(--sp))}
 .ivsbox .dback{background:none;border:0;cursor:pointer;margin-bottom:calc(12px*var(--sp));padding:0}.ivph.big{border-radius:calc(12px*var(--rad));margin:calc(10px*var(--sp)) 0 calc(12px*var(--sp))}
@@ -362,10 +372,10 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .iview .ivz{display:grid;place-items:center;padding:0;margin:0;width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;cursor:pointer}
 .iview .ivprev svg,.iview .ivnext svg,.iview .ivx svg,.iview .ivz svg{display:block;width:24px;height:24px}
 .ivfs{display:grid;grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp)) calc(14px*var(--sp));margin:calc(12px*var(--sp)) 0}.ivf b{font-family:var(--head);font-weight:500;font-size:calc(16px*var(--hs));display:block;margin-top:calc(2px*var(--sp))}
-@media (max-width:760px){.ivgrid{grid-template-columns:1fr;gap:0;border-top:1px solid #eee}.ivcard{flex-direction:row;border:0;border-bottom:1px solid #eee;border-radius:0;padding:calc(10px*var(--sp)) calc(2px*var(--sp));gap:calc(12px*var(--sp))}
-  .ivcard .ivph{width:76px;height:76px;aspect-ratio:auto;border-radius:calc(10px*var(--rad));flex-shrink:0}.ivb{padding:0;min-width:0;flex:1}.ivsel{min-width:0;flex:1 1 30%}.ivsel select{width:100%;font-size:calc(14px*var(--fs));padding:calc(8px*var(--sp))}
+@media (max-width:760px){.ivgrid{grid-template-columns:1fr;gap:0;border-top:1px solid #eee}.ivcard{flex-direction:row;align-items:flex-start;border:0;border-bottom:1px solid #eee;border-radius:0;padding:calc(10px*var(--sp)) calc(2px*var(--sp));gap:calc(12px*var(--sp));height:196px;box-sizing:border-box}
+  .ivcard .ivph{width:76px;height:76px;aspect-ratio:auto;border-radius:calc(10px*var(--rad));flex-shrink:0}.ivcard .ivb{padding:0;min-width:0;flex:1;height:auto;align-self:stretch}.ivsel{min-width:0;flex:1 1 30%}.ivsel select{width:100%;font-size:calc(14px*var(--fs));padding:calc(8px*var(--sp))}
   .ivck,.ivmore{opacity:1;pointer-events:auto}
-  .ivcard:has(>.ivmore){padding-bottom:44px}
+  .ivcard:has(>.ivmore){padding-bottom:calc(10px*var(--sp))}
   .ivsheet{background:#fff}.ivsbox{width:100%}}
 .mats .rvchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.mats .fchip{white-space:nowrap}
 .rvrow.mrow{grid-template-columns:1fr auto}.mrow .kd{white-space:normal}.mq{text-align:right}.mq b{font-family:var(--head);font-weight:500;font-size:calc(22px*var(--hs));display:block;line-height:1}
