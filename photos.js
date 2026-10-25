@@ -10,7 +10,8 @@ const FLY = new Map();
 const WAIT = [];
 const REV = [];
 const OBS = [];
-const PRE = { p: null, done: false };
+const PRE = { p: null, done: false, gate: null };
+const PRE_WAIT = 300;
 const SKETCH_AGE = 14 * 24 * 60 * 60 * 1000;
 const SKETCH_MAX_W = 480;
 let timer = 0, mode = '', firstBatch = true, revSoon = false;
@@ -113,6 +114,19 @@ function prime() {
     } catch (e) { done(); }
   })).catch(() => { PRE.done = true; });
   return PRE.p;
+}
+/* A stuck IndexedDB open must not hold the list. The cursor may still fill memory after this returns. */
+function preReady() {
+  if (PRE.done) return Promise.resolve();
+  if (!PRE.p) { PRE.done = true; return Promise.resolve(); }
+  if (PRE.gate) return PRE.gate;
+  PRE.gate = new Promise(res => {
+    let settled = false;
+    const finish = () => { if (settled) return; settled = true; PRE.done = true; res(); };
+    const t = setTimeout(finish, PRE_WAIT);
+    PRE.p.then(() => { clearTimeout(t); finish(); }, () => { clearTimeout(t); finish(); });
+  });
+  return PRE.gate;
 }
 /* Page 2 front of the JO card. The design sketch is the right-hand DESIGN panel, below the
    DESIGN heading and inside the box rules. Tuned on a landscape 26-425 page-2 scan.
@@ -475,6 +489,7 @@ async function send(size, ws) {
   if (missed.length) await legacy(size, missed);
 }
 async function flush() {
+  await preReady();
   const batch = WAIT.splice(0, WAIT.length);
   if (!batch.length) return;
   const pending = [];
@@ -594,8 +609,7 @@ function watch(root, opt) {
       else io.observe(el);
     });
   };
-  if (PRE.p) PRE.p.then(go).catch(go);
-  else go();
+  preReady().then(go).catch(go);
 }
 function prefetch(jo, ids, kind, legacy) {
   (Array.isArray(ids) ? ids : [ids]).forEach(id => { if (id) load({ jo, id, kind: kind || 'scan', size: 1600, legacy: legacy || 'prod' }); });

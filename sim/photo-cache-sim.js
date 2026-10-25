@@ -20,7 +20,8 @@ eq(photos.includes('openCursor') && photos.includes("'sk:'") && photos.includes(
 eq(photos.includes('14 * 24 * 60 * 60 * 1000') && photos.includes('sketchStale') && photos.includes('dropStandIn'), 'stand-ins expire after 14 days and a real photo drops the stand-in');
 eq(photos.includes("rootMargin: '800px'") && photos.includes('i < 16') && photos.includes("img.decoding = 'async'") && photos.includes('queueMicrotask'), 'the first tiles start on a microtask, look 800px ahead, and decode async');
 eq(photos.includes("MEM.set('sketch:'") && photos.includes('!item.sketch') && photos.includes("MEM.set('jo:'"), 'a stand-in stays off the profile key');
-eq(index.includes('photos.js?v=9'), 'photos.js cache number is bumped');
+eq(index.includes('photos.js?v=10'), 'photos.js cache number is bumped');
+eq(photos.includes('PRE_WAIT = 300') && photos.includes('function preReady'), 'a stuck IndexedDB open releases the list after 300ms');
 eq(fast.includes('return n >= 1000 ? PF.MED : PF.TILE') && fast.includes('if (!px) px = PF.TILE'), 'PhotoFast still serves the 300px tile for a list stand-in');
 
 const data = new Map();
@@ -189,7 +190,90 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   eq(coldMs >= 0 && coldMs < 20, 'the first batch does not wait 30ms (' + coldMs.toFixed(2) + 'ms)');
   eq(gets === 0, 'a warm preload never does a per-tile IndexedDB read');
 
-  console.log('MEASURE preloadMs=' + preloadMs.toFixed(2) + ' peekMs=' + peekMs.toFixed(3) + ' loadMs=' + loadMs.toFixed(3) + ' loadCalls=0 revMs=' + revMs.toFixed(2) + ' revCalls=1 coldMs=' + coldMs.toFixed(2) + ' coldCalls=1 cursors=' + cursors + ' gets=' + gets);
+  const stuckCalls = [];
+  let openReq = null;
+  const sctx = {
+    setTimeout, clearTimeout, Promise, Map, queueMicrotask, performance, Date,
+    indexedDB: { open() { openReq = {}; return openReq; } },
+    IntersectionObserver: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  };
+  sctx.window = sctx;
+  sctx.window.OYP = {
+    call(action, body) {
+      stuckCalls.push({ action: action, data: body, at: performance.now() });
+      const piece = {};
+      (body.piece || []).forEach(jo => { piece[jo] = { id: 'f-' + jo, src: 'data:image/jpeg;base64,' + jo, found: true }; });
+      return Promise.resolve({ ok: true, size: body.size, piece: piece, scan: {}, cards: {}, drawing: {} });
+    }
+  };
+  vm.createContext(sctx);
+  vm.runInContext(photos, sctx, { filename: 'photos.js' });
+  const S = sctx.window.OYPPhotos;
+  const stuckTiles = [];
+  for (let i = 0; i < 16; i++) stuckTiles.push({ dataset: { th: 's' + i }, isConnected: true });
+  const tStuck = performance.now();
+  S.watch({ isConnected: true, querySelectorAll: () => stuckTiles }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint() {}
+  });
+  let hungMs = -1;
+  for (let i = 0; i < 24; i++) {
+    if (stuckCalls.length) { hungMs = stuckCalls[0].at - tStuck; break; }
+    await wait(25);
+  }
+  const hung = stuckCalls.filter(c => c.action === 'photoThumbs');
+  eq(openReq && !openReq.result && hung.length === 1 && hung[0].data.piece.length === 16 && hung[0].data.piece[0] === 's0' && hungMs >= 250 && hungMs < 350, 'a stuck IndexedDB open still requests the first 16 tiles within 350ms (' + hungMs.toFixed(0) + 'ms)');
+  const laterTiles = [];
+  for (let i = 0; i < 16; i++) laterTiles.push({ dataset: { th: 'm' + i }, isConnected: true });
+  const tLater = performance.now();
+  const beforeLater = stuckCalls.length;
+  S.watch({ isConnected: true, querySelectorAll: () => laterTiles }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint() {}
+  });
+  let laterMs = -1;
+  for (let i = 0; i < 12; i++) {
+    if (stuckCalls.length > beforeLater) { laterMs = stuckCalls[beforeLater].at - tLater; break; }
+    await wait(20);
+  }
+  const later = stuckCalls.slice(beforeLater).filter(c => c.action === 'photoThumbs');
+  eq(later.length === 1 && later[0].data.piece.length === 16 && laterMs >= 0 && laterMs < 80, 'later tiles do not wait on the stuck open again (' + laterMs.toFixed(0) + 'ms)');
+  const lateSrc = 'data:image/jpeg;base64,LATE777';
+  openReq.result = {
+    objectStoreNames: { contains: () => true },
+    transaction() {
+      return {
+        objectStore() {
+          return {
+            openCursor() {
+              const req = {};
+              const rows = [{ key: 'sk:26-777|p777', value: { src: lateSrc, jo: '26-777', id: 'p777', at: Date.now(), sketch: true, size: 300 } }];
+              let n = 0;
+              const step = () => {
+                if (n >= rows.length) { req.result = null; if (req.onsuccess) req.onsuccess(); return; }
+                const row = rows[n++];
+                req.result = { key: row.key, value: row.value, continue() { queueMicrotask(step); } };
+                if (req.onsuccess) req.onsuccess();
+              };
+              queueMicrotask(step);
+              return req;
+            }
+          };
+        }
+      };
+    }
+  };
+  if (openReq.onsuccess) openReq.onsuccess();
+  await wait(30);
+  eq(S.peek({ jo: '26-777', kind: 'piece', size: 300, fallback: true }) === lateSrc, 'a late preload still fills memory');
+
+  console.log('MEASURE preloadMs=' + preloadMs.toFixed(2) + ' peekMs=' + peekMs.toFixed(3) + ' loadMs=' + loadMs.toFixed(3) + ' loadCalls=0 revMs=' + revMs.toFixed(2) + ' revCalls=1 coldMs=' + coldMs.toFixed(2) + ' coldCalls=1 cursors=' + cursors + ' gets=' + gets + ' hungMs=' + hungMs.toFixed(0) + ' laterMs=' + laterMs.toFixed(0));
   if (failed) { console.error(failed + ' failed'); process.exit(1); }
   console.log('photo-cache-sim passed');
 })().catch(err => { console.error(err); process.exit(1); });
