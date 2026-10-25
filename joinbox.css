@@ -45,7 +45,7 @@
 .jierr[hidden]{display:none!important}
 .jifields{margin-top:calc(14px*var(--sp));border-top:1px solid #eee;padding-top:calc(12px*var(--sp))}
 .jifields .dtitle{margin-bottom:calc(8px*var(--sp))}
-.jifields .chip{letter-spacing:.08em}
+.jifields .chip{letter-spacing:.08em;text-indent:.08em}
 .jigrid{display:grid;grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp)) calc(14px*var(--sp))}
 .jigrid b{display:block;font-family:var(--body);font-weight:500;font-size:calc(16px*var(--fs));white-space:pre-line;margin-top:2px}
 .jimore{margin:0 0 calc(16px*var(--sp))}
