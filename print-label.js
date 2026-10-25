@@ -34,6 +34,14 @@ var SPEC_MIN = 14;
 var JO_MAX = 40;
 var SCALE = 4;
 var FAMILY = 'OYPLabel, Inter, "Helvetica Neue", Arial, sans-serif';
+/* Small jewelry lines only (stone, JO, SKU, location, weight). Inter Bold is the
+   only face shipped; a requested Black would be a synthetic bold and look muddy.
+   A sub-pixel stroke under the fill, a little letter-spacing, and a higher
+   coverage cut keep the 1-bit stems solid instead of a gray halo. Price, the
+   description, and the metal row stay on the lighter pass. */
+var CRISP_TRACK = 0.55;
+var CRISP_STROKE = 0.8;
+var CRISP_THRESH = 9;
 
 function joCode(s) {
   var m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})([A-Z])?/);
@@ -148,23 +156,23 @@ function dashes(img, x, y, w) {
   }
 }
 /* Words wrap to maxLines. The last line ellipsizes when the rest does not fit. */
-function wrapLines(text, maxW, size, maxLines, bold) {
+function wrapLines(text, maxW, size, maxLines, bold, track) {
   var words = text.split(' ').filter(Boolean), lines = [], cur = '', i, trial;
   if (!words.length || maxLines < 1) return lines;
   for (i = 0; i < words.length; i++) {
     trial = cur ? cur + ' ' + words[i] : words[i];
-    if (metricsOf(trial, size, bold).w <= maxW) { cur = trial; continue; }
+    if (metricsOf(trial, size, bold, track).w <= maxW) { cur = trial; continue; }
     if (cur && lines.length < maxLines - 1) { lines.push(cur); cur = ''; i--; continue; }
-    lines.push(ellipsis(cur ? cur + ' ' + words.slice(i).join(' ') : words.slice(i).join(' '), maxW, size, bold));
+    lines.push(ellipsis(cur ? cur + ' ' + words.slice(i).join(' ') : words.slice(i).join(' '), maxW, size, bold, track));
     return lines;
   }
   if (cur) lines.push(cur);
   return lines;
 }
-function blockHeight(lines, size, bold) {
+function blockHeight(lines, size, bold, track) {
   var tall = 0, i, m;
   for (i = 0; i < lines.length; i++) {
-    m = metricsOf(lines[i], size, bold);
+    m = metricsOf(lines[i], size, bold, track);
     tall += Math.ceil(m.ascent + m.descent) + (i ? 2 : 0);
   }
   return tall;
@@ -318,12 +326,20 @@ function fontCss(size, bold) {
   var weight = (bold === 0 || bold === false) ? '400' : '700';
   return weight + ' ' + (size * SCALE) + 'px ' + FAMILY;
 }
-function metricsOf(text, size, bold) {
+/* The scratch context is reused, so letter-spacing is set on every measure.
+   A crisp stroke is centered on the outline; its width is added so a tracked
+   line still wraps before it meets the QR. */
+function setTrack(ctx, track) {
+  var value = ((+track || 0) * SCALE) + 'px';
+  try { ctx.letterSpacing = value; } catch (e) {}
+}
+function metricsOf(text, size, bold, track) {
   var ctx = measureCtx();
   ctx.font = fontCss(size, bold);
+  setTrack(ctx, track);
   var m = ctx.measureText(text || 'H');
   return {
-    w: m.width / SCALE,
+    w: m.width / SCALE + (track ? CRISP_STROKE : 0),
     ascent: (m.actualBoundingBoxAscent || size * SCALE * 0.72) / SCALE,
     descent: (m.actualBoundingBoxDescent || size * SCALE * 0.05) / SCALE
   };
@@ -333,13 +349,13 @@ function sizeThatFits(text, maxW, start, min) {
   while (size > min && metricsOf(text, size).w > maxW) size -= 1;
   return metricsOf(text, size).w <= maxW ? size : 0;
 }
-function ellipsis(text, maxW, size, bold) {
-  if (metricsOf(text, size, bold).w <= maxW) return text;
+function ellipsis(text, maxW, size, bold, track) {
+  if (metricsOf(text, size, bold, track).w <= maxW) return text;
   var cut = text;
-  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold).w > maxW) cut = cut.slice(0, -1);
+  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold, track).w > maxW) cut = cut.slice(0, -1);
   cut = cut.replace(/\s+$/, '');
   var out = (cut || text.charAt(0)) + '...';
-  while (out.length > 4 && metricsOf(out, size, bold).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
+  while (out.length > 4 && metricsOf(out, size, bold, track).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
   return out;
 }
 /* One size for every spec line. Shrink until the longest fits, then ellipsis. */
@@ -444,35 +460,59 @@ function stampText(img, runs, box) {
     }
   }
 }
-/* Same 4× threshold as stampText, in the image's own pixels. run.y is the top of the line. */
+/* Same 4× sample as stampText, in the image's own pixels. run.y is the top of the line.
+   Plain runs (price, name, metal) keep the old 6-of-16 cut. Crisp runs stroke then
+   fill, and a pixel is black only when CRISP_THRESH of 16 samples are dark, so the
+   gray fringe stays white and the stem stays one solid width. */
 function stampLocal(img, runs) {
   if (!runs.length) return;
   var tw = img.w * SCALE, th = img.h * SCALE;
   var canvas = makeCanvas(tw, th);
   var ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, tw, th);
-  ctx.fillStyle = '#000000';
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
-  runs.forEach(function (run) {
-    ctx.font = fontCss(run.size, run.bold);
-    var m = ctx.measureText(run.text);
-    var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
-    ctx.fillText(run.text, Math.round(run.x * SCALE), Math.round(run.y * SCALE + ascent));
-  });
-  var data = ctx.getImageData(0, 0, tw, th).data;
-  var y, x, dy, dx, dark, si;
-  for (y = 0; y < img.h; y++) {
-    for (x = 0; x < img.w; x++) {
-      dark = 0;
-      for (dy = 0; dy < SCALE; dy++) for (dx = 0; dx < SCALE; dx++) {
-        si = ((y * SCALE + dy) * tw + (x * SCALE + dx)) * 4;
-        if (data[si] < 150) dark++;
+  var anyPlain = false, anyCrisp = false, i;
+  for (i = 0; i < runs.length; i++) {
+    if (runs[i].crisp) anyCrisp = true;
+    else anyPlain = true;
+  }
+  function pass(crisp, thresh) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, tw, th);
+    ctx.fillStyle = '#000000';
+    ctx.strokeStyle = '#000000';
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    setTrack(ctx, 0);
+    runs.forEach(function (run) {
+      if (!!run.crisp !== crisp) return;
+      ctx.font = fontCss(run.size, run.bold);
+      setTrack(ctx, run.track);
+      var m = ctx.measureText(run.text);
+      var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
+      var x = Math.round(run.x * SCALE);
+      var y = Math.round(run.y * SCALE + ascent);
+      if (crisp) {
+        ctx.lineWidth = CRISP_STROKE * SCALE;
+        ctx.lineJoin = 'round';
+        ctx.miterLimit = 2;
+        ctx.strokeText(run.text, x, y);
       }
-      if (dark >= 6) img.set(x, y);
+      ctx.fillText(run.text, x, y);
+    });
+    var data = ctx.getImageData(0, 0, tw, th).data;
+    var y, x, dy, dx, dark, si;
+    for (y = 0; y < img.h; y++) {
+      for (x = 0; x < img.w; x++) {
+        dark = 0;
+        for (dy = 0; dy < SCALE; dy++) for (dx = 0; dx < SCALE; dx++) {
+          si = ((y * SCALE + dy) * tw + (x * SCALE + dx)) * 4;
+          if (data[si] < 150) dark++;
+        }
+        if (dark >= thresh) img.set(x, y);
+      }
     }
   }
+  if (anyPlain) pass(false, 6);
+  if (anyCrisp) pass(true, CRISP_THRESH);
 }
 /* Saved positions are millimetres from the top-left of the readable label.
    No opts.layout keeps the built-in NIIMBOT drawer below. A layout draws each
@@ -647,7 +687,9 @@ function paintLayout(img, layout, opts, kind) {
     x = px(el.x); y = px(el.y); w = Math.max(4, px(el.w || 4));
     size = el.size | 0; wrapN = el.wrap | 0 || 1; bold = el.bold ? 1 : 0;
     block = [];
+    var track = 0;
     if (text && kind === 'jewelry_tag' && (field.id === 'stones' || field.id === 'jo' || field.id === 'sku' || field.id === 'location' || field.id === 'weight')) {
+      track = CRISP_TRACK;
       var minSize = field.id === 'stones' ? 11 : 10;
       var maxH = 0, fitGuard = 0, fitTall;
       function roomUntil(id) {
@@ -662,10 +704,10 @@ function paintLayout(img, layout, opts, kind) {
       else if (field.id === 'weight') maxH = px(29) - y;
       if (maxH < 0) maxH = 0;
       if (field.id === 'stones' && maxH && maxH < 8) maxH = 8;
-      while (size > minSize && wrapN <= 1 && metricsOf(text, size, bold).w > w) size--;
+      while (size > minSize && wrapN <= 1 && metricsOf(text, size, bold, track).w > w) size--;
       while (fitGuard++ < 24) {
-        block = wrapN <= 1 ? [metricsOf(text, size, bold).w <= w ? text : ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
-        fitTall = blockHeight(block, size, bold);
+        block = wrapN <= 1 ? [metricsOf(text, size, bold, track).w <= w ? text : ellipsis(text, w, size, bold, track)] : wrapLines(text, w, size, wrapN, bold, track);
+        fitTall = blockHeight(block, size, bold, track);
         if (!maxH || fitTall <= maxH || size <= minSize && wrapN <= 1) break;
         if (size > minSize) { size--; continue; }
         if (wrapN > 1) { wrapN--; continue; }
@@ -680,13 +722,13 @@ function paintLayout(img, layout, opts, kind) {
     }
     cursor = y;
     for (li = 0; li < block.length; li++) {
-      m = metricsOf(block[li], size, bold);
+      m = metricsOf(block[li], size, bold, track);
       tw = m.w;
       if (el.align === 'right') tx = x + w - tw;
       else if (el.align === 'center') tx = x + (w - tw) / 2;
       else tx = x;
       lineH = Math.ceil(m.ascent + m.descent);
-      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold });
+      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold, crisp: track ? 1 : 0, track: track });
       lines.push(block[li]);
       cursor += lineH + 2;
     }
@@ -837,18 +879,18 @@ function drawJewelry(img, box, opts) {
   var colRight = qpix ? right - qpix - 4 : right;
   var colW = Math.max(8, colRight - left);
   function fitMeta(text, wrapN) {
-    var size = META_PX, linesAt;
-    if (wrapN > 1 && metricsOf(text, size).w > colW) {
-      linesAt = wrapLines(text, colW, size, wrapN);
+    var size = META_PX, linesAt, track = CRISP_TRACK;
+    if (wrapN > 1 && metricsOf(text, size, undefined, track).w > colW) {
+      linesAt = wrapLines(text, colW, size, wrapN, undefined, track);
       if (linesAt.length && linesAt.join(' ').indexOf('...') < 0) return { lines: linesAt, size: size };
     }
-    while (size > META_MIN && metricsOf(text, size).w > colW) size--;
-    if (metricsOf(text, size).w <= colW) return { lines: [text], size: size };
+    while (size > META_MIN && metricsOf(text, size, undefined, track).w > colW) size--;
+    if (metricsOf(text, size, undefined, track).w <= colW) return { lines: [text], size: size };
     if (wrapN > 1) {
-      linesAt = wrapLines(text, colW, META_MIN, wrapN);
-      return { lines: linesAt.length ? linesAt : [ellipsis(text, colW, META_MIN)], size: META_MIN };
+      linesAt = wrapLines(text, colW, META_MIN, wrapN, undefined, track);
+      return { lines: linesAt.length ? linesAt : [ellipsis(text, colW, META_MIN, undefined, track)], size: META_MIN };
     }
-    return { lines: [ellipsis(text, colW, META_MIN)], size: META_MIN };
+    return { lines: [ellipsis(text, colW, META_MIN, undefined, track)], size: META_MIN };
   }
   var meta = [];
   if (jo) meta.push(fitMeta(jo, 1));
@@ -859,7 +901,7 @@ function drawJewelry(img, box, opts) {
   var metaGap = 2, metaH = 0, mi, mj;
   for (mi = 0; mi < meta.length; mi++) {
     for (mj = 0; mj < meta[mi].lines.length; mj++) {
-      metaH += Math.ceil(metricsOf(meta[mi].lines[mj], meta[mi].size).ascent + metricsOf(meta[mi].lines[mj], meta[mi].size).descent) + (metaH ? metaGap : 0);
+      metaH += Math.ceil(metricsOf(meta[mi].lines[mj], meta[mi].size, undefined, CRISP_TRACK).ascent + metricsOf(meta[mi].lines[mj], meta[mi].size, undefined, CRISP_TRACK).descent) + (metaH ? metaGap : 0);
     }
   }
   var clusterBottom = bottom;
@@ -871,8 +913,8 @@ function drawJewelry(img, box, opts) {
     specPx = STONE_PX;
     var stoneWrap = 3, stoneGuard = 0;
     while (stoneGuard++ < 24) {
-      var trial = stoneWrap <= 1 ? [metricsOf(stones, specPx).w <= innerW ? stones : ellipsis(stones, innerW, specPx)] : wrapLines(stones, innerW, specPx, stoneWrap);
-      if (blockHeight(trial, specPx) <= stoneRoom) { stoneLines = trial; break; }
+      var trial = stoneWrap <= 1 ? [metricsOf(stones, specPx, undefined, CRISP_TRACK).w <= innerW ? stones : ellipsis(stones, innerW, specPx, undefined, CRISP_TRACK)] : wrapLines(stones, innerW, specPx, stoneWrap, undefined, CRISP_TRACK);
+      if (blockHeight(trial, specPx, undefined, CRISP_TRACK) <= stoneRoom) { stoneLines = trial; break; }
       if (specPx > STONE_MIN) { specPx--; continue; }
       if (stoneWrap > 1) { stoneWrap--; continue; }
       stoneLines = trial;
@@ -880,8 +922,8 @@ function drawJewelry(img, box, opts) {
     }
     var sy = stoneTop;
     stoneLines.forEach(function (t) {
-      var m = metricsOf(t, specPx);
-      runs.push({ text: t, x: left, y: sy, size: specPx });
+      var m = metricsOf(t, specPx, undefined, CRISP_TRACK);
+      runs.push({ text: t, x: left, y: sy, size: specPx, crisp: 1, track: CRISP_TRACK });
       lines.push(t);
       sy += Math.ceil(m.ascent + m.descent) + 2;
     });
@@ -893,8 +935,8 @@ function drawJewelry(img, box, opts) {
   var metaY = metaTop;
   meta.forEach(function (row) {
     row.lines.forEach(function (t) {
-      var m = metricsOf(t, row.size);
-      runs.push({ text: t, x: left, y: metaY, size: row.size });
+      var m = metricsOf(t, row.size, undefined, CRISP_TRACK);
+      runs.push({ text: t, x: left, y: metaY, size: row.size, crisp: 1, track: CRISP_TRACK });
       lines.push(t);
       metaY += Math.ceil(m.ascent + m.descent) + metaGap;
     });
@@ -1152,7 +1194,9 @@ function paperView(rendered) {
 function preview(rendered, opts) {
   opts = opts || {};
   var scale = opts.scale > 0 ? opts.scale : 4;
-  var smooth = opts.smooth !== false;
+  /* Smoothing is opt-in. The default scales the 203 dpi 1-bit bitmap by whole
+     pixels, so a CSS preview can use image-rendering: pixelated and stay black. */
+  var smooth = opts.smooth === true;
   var labelW = rendered.labelW, labelH = rendered.labelH, tail = rendered.tail || 0;
   var jewelry = rendered.kind === 'jewelry_tag' && tail;
   var readable = !jewelry && rendered.paperW > 0 && rendered.paper;

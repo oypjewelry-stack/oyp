@@ -136,8 +136,27 @@ const noPrice = L.render({
 eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
 const readTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 18500, name: 'Oval sapphire ring', item_type: 'Ring', metal: 'Gold', karat: '18K', stones: 'Sapphire', weight: '20', jo: '26-287', sku: '18-498', location: 'Showroom' });
 eq(readTag.specPx === 16 && readTag.joPx === 14 && readTag.qrBox && readTag.qrBox.size >= L.px(9) && readTag.qrBox.size <= L.px(10) && readTag.lines.indexOf('Sapphire') >= 0 && readTag.lines.indexOf('26-287') >= 0 && readTag.lines.indexOf('Showroom') >= 0 && readTag.lines.indexOf('20g') >= 0 && readTag.lines.indexOf('₱18,500.00') >= 0 && readTag.lines.indexOf('Oval sapphire ring') >= 0 && readTag.lines.indexOf('GOLD') >= 0 && decode(readTag) === '26-287', 'a short stone, JO, location, and weight print larger, and the price, description, and metal stay');
+function paperGray(img) {
+  let gray = 0;
+  const d = img.paper || [];
+  for (let i = 0; i < d.length; i += 4) if (d[i] !== 0 && d[i] !== 255) gray++;
+  return gray;
+}
+function fringe(img) {
+  let n = 0;
+  for (let i = 0; i < img.data.length; i += 4) {
+    const r = img.data[i];
+    if (r > 160 && r < 250) n++;
+  }
+  return n;
+}
+const crispPrev = L.preview(readTag, { scale: 4 });
+const softPrev = L.preview(readTag, { scale: 4, smooth: true });
+eq(paperGray(readTag) === 0, 'the jewelry bitmap is true black on white at 203 dpi');
+eq(fringe(crispPrev) * 20 < fringe(softPrev), 'a jewelry preview stays nearest-neighbour unless smoothing is requested');
 const longTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 125000, name: 'Oval sapphire cluster ring with a hidden gallery and a two-line description', item_type: 'Necklace', metal: 'Yellow gold', karat: '18KWG', stones: 'Oval sapphire 2.40ct with tapered baguette shoulders and a hidden halo', weight: '12345', jo: '26-1234A', sku: 'SKU-998877', location: 'Philippine Showroom Vault' });
-eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longTag.lines.indexOf('Philippine Showroom') >= 0 && longTag.lines.indexOf('Vault') >= 0 && longTag.joPx === 14 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
+const longLoc = longTag.lines.filter(s => /Philippine|Showroom|Vault/.test(s));
+eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longLoc.length === 2 && longLoc.join(' ') === 'Philippine Showroom Vault' && longLoc.every(s => s.indexOf('...') < 0) && longTag.joPx === 14 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
 function outsideFlaps(img) {
   const rects = L.flapRects(img);
   for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
@@ -408,9 +427,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=33') && index.includes('print-label.js?v=15') && index.includes('nav.js?v=71') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=21') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=21') && read('sim/swipe-preview.html').includes('print.css?v=21'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=15') && read('nav.js').includes('print.js?v=33') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=33') && read('staff/print-test.html').includes('print-label.js?v=15') && read('staff/print-test.html').includes('print.css?v=21') && read('staff/print-test.html').includes('nav.js?v=71') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=34') && index.includes('print-label.js?v=16') && index.includes('nav.js?v=72') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=22') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=22') && read('sim/swipe-preview.html').includes('print.css?v=22'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=16') && read('nav.js').includes('print.js?v=34') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=34') && read('staff/print-test.html').includes('print-label.js?v=16') && read('staff/print-test.html').includes('print.css?v=22') && read('staff/print-test.html').includes('nav.js?v=72') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -430,6 +449,7 @@ if (mainNav && mainNav !== read('nav.js')) {
   eq(assetVer(read('scan/index.html'), 'nav.js') !== assetVer(gitShow('scan/index.html'), 'nav.js'), 'nav.js changed since main, so the scanner bumps the absolute nav.js URL');
 }
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
+eq(/\.oyp-prevstage canvas,\.oyp-prevbig\{[^}]*image-rendering:pixelated/.test(read('print.css')) && /\.oyp-qprev\{[^}]*image-rendering:pixelated/.test(read('print.css')) && read('print.js').includes('{ scale: 4, smooth: false }') && !read('print.js').includes('smooth: true'), 'preview canvases keep the 203 dpi pixels crisp');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
 const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');

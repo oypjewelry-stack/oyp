@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 33;
+var PRINT_JS = 34;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -2250,7 +2250,7 @@ function drawQueuePreviews(el, r) {
       var it = items[slot.getAttribute('data-qi') | 0];
       if (!it) return;
       try {
-        var view = root.OYPLabel.preview(root.OYPLabel.render(labelOpts(it)), { scale: 4, smooth: true });
+        var view = root.OYPLabel.preview(root.OYPLabel.render(labelOpts(it)), { scale: 4, smooth: false });
         view.canvas.className = 'oyp-qprev';
         view.canvas.setAttribute('aria-label', slot.getAttribute('aria-label') || 'Sticker preview');
         slot.replaceWith(view.canvas);
@@ -3352,7 +3352,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=21';
+  link.href = (base || '') + 'print.css?v=22';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
