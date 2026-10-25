@@ -704,11 +704,12 @@ function ivOpenViewer(o) {
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', o.sketch ? 'Sketch from JO card' : 'Photo');
-  root.innerHTML = `<button type="button" class="ivx" aria-label="Close">×</button>
-    <button type="button" class="ivprev" aria-label="Previous photo">‹</button>
-    <button type="button" class="ivnext" aria-label="Next photo">›</button>
+  const glyph = d => '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"/></svg>';
+  root.innerHTML = `<button type="button" class="ivx" aria-label="Close">${glyph('M7 7l10 10M17 7 7 17')}</button>
+    <button type="button" class="ivprev" aria-label="Previous photo">${glyph('M15 6 9 12l6 6')}</button>
+    <button type="button" class="ivnext" aria-label="Next photo">${glyph('M9 6l6 6-6 6')}</button>
     <p class="ivpos" aria-live="polite"></p>
-    <div class="ivtools"><button type="button" class="ivz" data-z="out" aria-label="Zoom out">−</button><button type="button" class="ivz" data-z="in" aria-label="Zoom in">+</button></div>
+    <div class="ivtools"><button type="button" class="ivz" data-z="out" aria-label="Zoom out">${glyph('M6 12h12')}</button><button type="button" class="ivz" data-z="in" aria-label="Zoom in">${glyph('M12 6v12M6 12h12')}</button></div>
     <div class="ivframe"><div class="ivpan"><img alt="" draggable="false"></div></div>`;
   document.body.appendChild(root);
   const frame = root.querySelector('.ivframe');

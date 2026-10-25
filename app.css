@@ -325,21 +325,22 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .iview{position:fixed;inset:0;z-index:300;background:rgba(17,17,17,.92);touch-action:none}
 .iview.sketch{background:#fff}
 .iview.sketch .ivx,.iview.sketch .ivz{box-shadow:0 0 0 1px #111}
-.iview .ivprev,.iview .ivnext{display:none;position:absolute;z-index:2;top:50%;width:44px;height:44px;margin:0;padding:0;border:0;border-radius:22px;background:#fff;color:#111;font-size:32px;line-height:1;cursor:pointer;align-items:center;justify-content:center}
+.iview .ivprev,.iview .ivnext{display:none;position:absolute;z-index:2;top:50%;width:44px;height:44px;margin:0;padding:0;border:0;border-radius:22px;background:#fff;color:#111;cursor:pointer;place-items:center}
 .iview .ivprev{left:12px;transform:translateY(-50%)}.iview .ivnext{right:12px;transform:translateY(-50%)}
 .iview .ivpos{position:absolute;z-index:2;top:18px;left:50%;transform:translateX(-50%);margin:0;padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font-family:var(--label);font-size:13px;letter-spacing:.04em;line-height:1.2;pointer-events:none}
 .iview.sketch .ivpos{background:#fff;color:#111}
 .iview.sketch .ivprev,.iview.sketch .ivnext{box-shadow:0 0 0 1px #111}
 @media (min-width:761px){
-  .iview .ivprev,.iview .ivnext{display:flex}
+  .iview .ivprev,.iview .ivnext{display:grid}
   .iview .ivprev[hidden],.iview .ivnext[hidden]{display:none}
 }
 .iview .ivframe{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden}
 .iview .ivpan{transform-origin:center center}
 .iview img{display:block;max-width:100vw;max-height:100vh;background:#fff;user-select:none;-webkit-user-drag:none}
-.iview .ivx{position:absolute;z-index:2;top:12px;right:12px;width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;font-size:28px;line-height:1;cursor:pointer}
+.iview .ivx{display:grid;place-items:center;padding:0;margin:0;position:absolute;z-index:2;top:12px;right:12px;width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;cursor:pointer}
 .iview .ivtools{position:absolute;z-index:2;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:10px}
-.iview .ivz{width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;font-size:26px;line-height:1;cursor:pointer}
+.iview .ivz{display:grid;place-items:center;padding:0;margin:0;width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;cursor:pointer}
+.iview .ivprev svg,.iview .ivnext svg,.iview .ivx svg,.iview .ivz svg{display:block;width:24px;height:24px}
 .ivfs{display:grid;grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp)) calc(14px*var(--sp));margin:calc(12px*var(--sp)) 0}.ivf b{font-family:var(--head);font-weight:500;font-size:calc(16px*var(--hs));display:block;margin-top:calc(2px*var(--sp))}
 @media (max-width:760px){.ivgrid{grid-template-columns:1fr;gap:0;border-top:1px solid #eee}.ivcard{flex-direction:row;border:0;border-bottom:1px solid #eee;border-radius:0;padding:calc(10px*var(--sp)) calc(2px*var(--sp));gap:calc(12px*var(--sp))}
   .ivcard .ivph{width:76px;height:76px;aspect-ratio:auto;border-radius:calc(10px*var(--rad));flex-shrink:0}.ivb{padding:0;min-width:0;flex:1}.ivsel{min-width:0;flex:1 1 30%}.ivsel select{width:100%;font-size:calc(14px*var(--fs));padding:calc(8px*var(--sp))}
