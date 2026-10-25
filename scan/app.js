@@ -120,6 +120,14 @@ function printerRow() { // the shared nav.js row: plain text under Settings, gre
   if (N && typeof N.printerItemHtml === 'function') return N.printerItemHtml();
   return '<a data-oyp-printer="1" role="button" tabindex="0" title="Printer not connected">Printer<span class="oyp-pr-dot" aria-hidden="true"></span></a>';
 }
+function breakOut(html) { // Mobile is this page inside a frame. Office links have to replace the whole window.
+  return String(html || '').replace(/<a\b([^>]*?)>/g, (full, attrs) => {
+    if (/\btarget\s*=/.test(attrs)) return full;
+    const href = /href\s*=\s*"([^"]*)"/.exec(attrs) || /href\s*=\s*'([^']*)'/.exec(attrs);
+    if (!href || href[1] === '#' || href[1].charAt(0) === '#') return full;
+    return '<a' + attrs + ' target="_top">';
+  });
+}
 function buildMenu() {
   const N = window.OYPNav || NAV_FALLBACK, role = localStorage.getItem(LS.role), items = menuItems(N, role), site = N.STAFF || STAFF_URL, c = queue.counts();
   let h = '', placed = false;
@@ -140,7 +148,7 @@ function buildMenu() {
     h += `<hr><a href="#" data-m="queue">Pending uploads${n ? ` <span class="badge">${n}</span>` : ''}</a><a href="#" data-m="settings">Scanner settings</a><a href="${PRINT_TEST}">Print test</a>`;
     if (role) h += `<a href="${site}#/logout" data-m="logout">Log out</a>`;
   }
-  return h;
+  return breakOut(h);
 }
 const menu = $('menu');
 $('btnMenu').onclick = e => { e.stopPropagation(); if (!menu.classList.contains('hidden')) return menu.classList.add('hidden'); menu.innerHTML = buildMenu(); menu.classList.remove('hidden'); };

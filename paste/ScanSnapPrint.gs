@@ -7,8 +7,8 @@
    printEnqueue_ is called with manual:true so the phone's print_auto switches are left alone. */
 var SNAP_JEWELRY_KEY = 'scanner.snap_jewelry';
 var SNAP_QR_KEY = 'scanner.snap_qr';
-var SNAP_SEEN_KEY = 'oypSnapSeen';
-var SNAP_SEEN_CAP = 4000;
+var SNAP_SEEN_SHEET = 'SnapSeen';
+var SNAP_SEEN_PREFIX = 'oypSnap.';
 
 function snapProps_() {
   try {
@@ -134,25 +134,76 @@ function snapNorm_(s) {
   var m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})([A-Z])?/);
   return m ? m[1] + '-' + m[2] + (m[3] || '') : '';
 }
-function snapSeenLoad_() {
-  var p = snapProps_(), raw, parts, out, i;
-  out = {};
-  if (!p || !p.getProperty) return out;
-  raw = p.getProperty(SNAP_SEEN_KEY) || '';
-  parts = String(raw).split('\n');
-  for (i = 0; i < parts.length; i++) if (parts[i]) out[parts[i]] = 1;
-  return out;
-}
-function snapSeenSave_(map) {
-  var p = snapProps_(), keys, k;
-  if (!p || !p.setProperty) return;
-  keys = [];
-  for (k in map) if (map.hasOwnProperty(k) && map[k]) keys.push(k);
-  if (keys.length > SNAP_SEEN_CAP) keys = keys.slice(keys.length - SNAP_SEEN_CAP);
-  p.setProperty(SNAP_SEEN_KEY, keys.join('\n'));
+/* One Script Property value is about 9KB. A single list of seen scans breaks around 250
+   entries, and a 700 JO backlog would throw or print twice. Each JO + tag + scan file
+   is its own short property, and the same id is a row on SnapSeen. Nothing is dropped:
+   a rolling cap would forget an old file and queue it again. */
+function snapSeenMem_() {
+  if (!snapSeenMem_.map) snapSeenMem_.map = {};
+  return snapSeenMem_.map;
 }
 function snapSeenId_(jo, kind, fileId) {
   return String(jo || '') + '|' + String(kind || '') + '|' + String(fileId || '');
+}
+function snapSeenKey_(id) {
+  return SNAP_SEEN_PREFIX + String(id || '').replace(/[\r\n]/g, '');
+}
+function snapSs_() {
+  try {
+    if (typeof ss_ === 'function') return ss_();
+    if (typeof SpreadsheetApp !== 'undefined') return SpreadsheetApp.getActive();
+  } catch (e) {}
+  return null;
+}
+function snapSeenSheet_(create) {
+  var ss, sh;
+  ss = snapSs_();
+  if (!ss || !ss.getSheetByName) return null;
+  sh = ss.getSheetByName(SNAP_SEEN_SHEET);
+  if (sh || !create) return sh;
+  try {
+    if (!ss.insertSheet) return null;
+    sh = ss.insertSheet(SNAP_SEEN_SHEET);
+    if (sh && sh.getRange) sh.getRange(1, 1, 1, 2).setValues([['id', 'at']]);
+    return sh;
+  } catch (e1) { return null; }
+}
+function snapSeenInSheet_(id) {
+  var sh, last, values, i;
+  sh = snapSeenSheet_(false);
+  if (!sh || !sh.getLastRow || sh.getLastRow() < 2) return false;
+  last = sh.getLastRow();
+  values = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (i = 0; i < values.length; i++) if (String(values[i][0] || '') === id) return true;
+  return false;
+}
+function snapSeenHas_(id) {
+  var mem, p, key;
+  mem = snapSeenMem_();
+  if (mem[id]) return true;
+  key = snapSeenKey_(id);
+  p = snapProps_();
+  try {
+    if (p && p.getProperty && p.getProperty(key) === '1') { mem[id] = 1; return true; }
+  } catch (e) {}
+  if (snapSeenInSheet_(id)) { mem[id] = 1; return true; }
+  return false;
+}
+function snapSeenAdd_(id) {
+  var mem, p, sh, row;
+  mem = snapSeenMem_();
+  mem[id] = 1;
+  p = snapProps_();
+  try { if (p && p.setProperty) p.setProperty(snapSeenKey_(id), '1'); } catch (e) {}
+  sh = snapSeenSheet_(true);
+  if (!sh || !sh.getRange) return;
+  if (snapSeenInSheet_(id)) return;
+  row = (sh.getLastRow ? sh.getLastRow() : 0) + 1;
+  if (row < 2) {
+    sh.getRange(1, 1, 1, 2).setValues([['id', 'at']]);
+    row = 2;
+  }
+  sh.getRange(row, 1, 1, 2).setValues([[id, new Date().toISOString()]]);
 }
 /* Call this once after a ScanSnap file becomes a JO. jo is the filed number. fileId is that scan's Drive file id. */
 function snapPrintAfterFile_(jo, fileId) {
@@ -165,19 +216,17 @@ function snapPrintAfterFile_(jo, fileId) {
     [SNAP_JEWELRY_KEY, 'jewelry_tag'],
     [SNAP_QR_KEY, 'jo_card']
   ];
-  seen = snapSeenLoad_();
   calls = 0;
   for (i = 0; i < plan.length; i++) {
     row = plan[i];
     if (!snapFlag_(row[0])) continue;
     id = snapSeenId_(jo, row[1], fileId);
-    if (seen[id]) continue;
+    if (snapSeenHas_(id)) continue;
     try {
       printEnqueue_(jo, row[1], 'scansnap', { manual: true });
-      seen[id] = 1;
+      snapSeenAdd_(id);
       calls++;
     } catch (e1) {}
   }
-  snapSeenSave_(seen);
   return { ok: true, calls: calls };
 }

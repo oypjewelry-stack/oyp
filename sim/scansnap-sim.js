@@ -52,7 +52,8 @@ eq(Snap.resultText({ ok: false, error: 'Unknown action' }) === 'Needs the latest
 eq(Snap.resultText({ ok: false, error: 'No connection. Check the internet and try again.', code: 'NET' }).indexOf('No connection') >= 0, 'a dropped connection stays an error');
 
 eq(!/\bconst\b|\blet\b|=>|`/.test(gs) && gs.includes('scanner.snap_jewelry') && gs.includes('scanner.snap_qr') && gs.includes("printEnqueue_(jo, row[1], 'scansnap', { manual: true })"), 'the paste is Apps Script style and queues through printEnqueue_');
-eq(hook.includes('snapPrintAfterFile_(JO, FILE_ID)') && auth.includes('isSnapPrintAction_') && !gs.includes('insertSheet'), 'the hook is one call and the paste does not create a sheet');
+eq(hook.includes('function snapPrintAfterFiled_') && hook.includes('snapPrintAfterFiled_(FILED_JO, SCAN_FILE_ID)') && auth.includes('isSnapPrintAction_') && gs.includes("insertSheet(SNAP_SEEN_SHEET)") && gs.includes('SnapSeen') && !gs.includes('oypSnapSeen') && !gs.includes('SNAP_SEEN_CAP'), 'the hook is one call and each seen id is its own property plus a SnapSeen row');
+eq(scanApp.includes('function breakOut') && scanApp.includes('target="_top"') && scanApp.includes("href[1] === '#'"), 'office links in the scanner menu leave the Mobile frame');
 
 const bag = {};
 const calls = [];
@@ -136,6 +137,17 @@ filed = ctx.snapPrintAfterFile_('26-428', 'fileA');
 eq(filed.calls === 0 && calls.length === 2 && rows.length === 2, 'the same JO, tag, and scan file do not queue again');
 ctx.snapPrintAfterFile_('26-428', 'fileB');
 eq(rows.length === 2 && rows.filter(r => r.kind === 'jewelry_tag').length === 1 && rows.filter(r => r.kind === 'jo_card').length === 1, 'a second file of the same JO does not add a second queue row');
+let missed = 0, huge = false, blob = false;
+for (let i = 0; i < 300; i++) {
+  const one = ctx.snapPrintAfterFile_('27-' + (1000 + i), 'drive' + i);
+  if (!one.ok || one.calls !== 2) missed++;
+}
+const replay = ctx.snapPrintAfterFile_('27-1000', 'drive0');
+Object.keys(bag).forEach(function (k) {
+  if (k === 'oypSnapSeen') blob = true;
+  if (String(bag[k]).length > 9000) huge = true;
+});
+eq(missed === 0 && replay.calls === 0 && !blob && !huge, 'three hundred scans stay idempotent and no property value approaches 9KB');
 ctx.snapPrintSet_({ jewelry: false, qr: true }, admin);
 calls.length = 0;
 ctx.snapPrintAfterFile_('26-500', 'fileC');
@@ -151,6 +163,22 @@ eq(got.qr === false && saved.some(r => r.key === 'scanner.snap_qr' && String(r.v
 bag['scanner.snap_qr'] = '1';
 eq(ctx.snapPrintGet_({}, admin).qr === false, 'a Settings tab value wins over a stale script property');
 eq(sheetRows('SettingsLog').some(r => r.key === 'scanner.snap_qr' && r.note === 'Scan snap'), 'the change is logged when SettingsLog exists');
+ctx.ss_ = function () {
+  return {
+    getSheetByName: function (name) { return sheets[name] || null; },
+    insertSheet: function (name) {
+      sheets[name] = new Sheet([['id', 'at']]);
+      return sheets[name];
+    }
+  };
+};
+ctx.snapPrintSet_({ qr: true }, admin);
+const sheeted = ctx.snapPrintAfterFile_('26-900', 'fileSheet');
+const seenId = '26-900|jo_card|fileSheet';
+eq(sheeted.calls === 1 && sheets.SnapSeen && sheets.SnapSeen.grid.some(r => String(r[0]) === seenId), 'the first filed scan creates SnapSeen and stores that file');
+ctx.snapSeenMem_.map = {};
+delete bag['oypSnap.' + seenId];
+eq(ctx.snapPrintAfterFile_('26-900', 'fileSheet').calls === 0, 'SnapSeen alone stops the same JO, tag, and scan file');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function httpGet(url) {
