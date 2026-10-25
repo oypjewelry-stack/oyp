@@ -299,6 +299,14 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivmoney{display:flex;gap:calc(10px*var(--sp));flex-wrap:wrap;font-family:var(--label);font-size:calc(12px*var(--fs));color:#555;margin-top:calc(8px*var(--sp));padding-top:calc(7px*var(--sp));border-top:1px solid #f1f1f1}.ivmoney b{font-weight:500;color:#111}.ivm{color:#a8861c}
 .ivsheet{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:25;display:flex;justify-content:flex-end}.ivsbox{background:#fff;width:min(calc(460px*var(--pw)),100%);height:100%;overflow:auto;padding:calc(20px*var(--sp)) calc(22px*var(--sp))}
 .ivsbox .dback{background:none;border:0;cursor:pointer;margin-bottom:calc(12px*var(--sp));padding:0}.ivph.big{border-radius:calc(12px*var(--rad));margin:calc(10px*var(--sp)) 0 calc(12px*var(--sp))}
+.ivph.sketch{background-size:contain;background-repeat:no-repeat;background-position:center}
+.ivph span.ivsk{position:absolute;left:4px;right:4px;bottom:4px;text-align:center;background:rgba(255,255,255,.92);color:#333;letter-spacing:.04em;padding:2px 3px;border-radius:6px;line-height:1.2}
+.ivsknote{margin:0 0 calc(10px*var(--sp));font-family:var(--label);font-size:calc(11px*var(--fs));letter-spacing:.06em;text-transform:uppercase;color:#555}
+.ivsknote[hidden],.ivdraw[hidden],.ivjoph[hidden]{display:none}
+.ivdraw,.ivjoph{margin:0 0 calc(12px*var(--sp))}
+.ivdraw .lab,.ivjoph .lab{display:block;margin-bottom:calc(6px*var(--sp))}
+.ivdraw .shot .ph,.ivjoph .shot .ph{width:120px;height:90px}
+.ivph.big.phstage.sketch>img{object-fit:contain;background:#f4f2ec}
 .ivfs{display:grid;grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp)) calc(14px*var(--sp));margin:calc(12px*var(--sp)) 0}.ivf b{font-family:var(--head);font-weight:500;font-size:calc(16px*var(--hs));display:block;margin-top:calc(2px*var(--sp))}
 @media (max-width:760px){.ivgrid{grid-template-columns:1fr;gap:0;border-top:1px solid #eee}.ivcard{flex-direction:row;border:0;border-bottom:1px solid #eee;border-radius:0;padding:calc(10px*var(--sp)) calc(2px*var(--sp));gap:calc(12px*var(--sp))}
   .ivcard .ivph{width:76px;height:76px;aspect-ratio:auto;border-radius:calc(10px*var(--rad));flex-shrink:0}.ivb{padding:0;min-width:0;flex:1}.ivsel{min-width:0;flex:1 1 30%}.ivsel select{width:100%;font-size:calc(14px*var(--fs));padding:calc(8px*var(--sp))}

@@ -69,6 +69,54 @@ function photo(jo, fid, size) {
   if (!photoCache[k]) photoCache[k] = rawCache[r].then(src => turn(src, e));
   return photoCache[k];
 }
+function shotLoader(j, fid, kind, size) {
+  const full = size === 'full' || size === 1600;
+  if (kind === 'card' && window.OYPPhotos) return window.OYPPhotos.load({ jo: j.jo, id: fid, kind: 'card', size: full ? 1600 : 300, legacy: 'job' }).then(src => turn(src, extraTurn(fid)));
+  return photo(j.jo, fid, full ? 'full' : undefined);
+}
+function openShot(main, j, fid, kind) {
+  const big = main.querySelector('#rvBig');
+  if (!big || !j) return;
+  kind = kind || 'scan';
+  big.classList.remove('hidden');
+  const wire = box => {
+    let turned = false;
+    const rot = box.querySelector('.rot');
+    if (rot) rot.onclick = async e => {
+      e.stopPropagation();
+      setExtraTurn(fid, extraTurn(fid) + 90);
+      turned = true;
+      delete photoCache[fid + '|1600|' + extraTurn(fid)];
+      delete photoCache[fid + '|300|' + extraTurn(fid)];
+      const s2 = await shotLoader(j, fid, kind, 'full'), im = box.querySelector('img');
+      if (im && s2) { im.src = s2; im.classList.remove('phblur'); }
+    };
+    box.onclick = e => {
+      if (e.target.closest('.rot, .phorig')) return;
+      box.classList.add('hidden');
+      if (!turned) return;
+      const ph = main.querySelector(`.shot [data-ph$="|${CSS.escape(fid)}"]`), th = document.querySelector(`.rvrow [data-th$="|${CSS.escape(fid)}"]`);
+      [ph, th].forEach(el => el && shotLoader(j, fid, kind, 300).then(s3 => { if (s3) el.style.backgroundImage = `url("${s3}")`; }));
+    };
+  };
+  if (window.OYPPhotos) window.OYPPhotos.stage(big, { jo: j.jo, id: fid, kind: kind, legacy: 'job', alt: '', empty: 'Photo not found', turn: src => turn(src, extraTurn(fid)), tools: '<button type="button" class="pill sm rot">ROTATE</button>', wire });
+  else photo(j.jo, fid, 'full').then(src => { big.innerHTML = src ? `<img src="${src}" alt=""><button class="pill sm rot">ROTATE</button>` : '<span class="lab">Photo not found</span>'; wire(big); });
+}
+function fillDrivePhotos(main, j) {
+  const host = main.querySelector('#rvJoPh');
+  if (!host || !j || j.stub || !window.OYPPhotos || !window.OYPPhotos.extras) return;
+  const jo = j.jo;
+  window.OYPPhotos.extras(jo, { cards: true }).then(x => {
+    if (!host.isConnected) return;
+    const pages = (x && x.cards) || [];
+    if (!pages.length) return;
+    host.innerHTML = pages.map(p => `<button type="button" class="shot" data-big="${window.OYP.esc(p.id)}"><span class="ph"></span><span class="lab">${window.OYP.esc(window.OYPPhotos.pageLabel(pages, p))}</span></button>`).join('');
+    host.querySelectorAll('.shot').forEach((b, i) => {
+      if (pages[i].src) b.querySelector('.ph').style.backgroundImage = `url("${pages[i].src}")`;
+      b.onclick = () => openShot(main, j, pages[i].id, 'card');
+    });
+  }).catch(() => {});
+}
 const locChip = j => { const { esc } = window.OYP;
   return j.location === 'archived' ? '<span class="chip arch" title="JO on record, no physical piece">Archived</span>'
     : j.location ? `<span class="chip dark">${esc(locLabel(j.location))}</span>` : '<span class="chip gold">Needs location</span>'; };
@@ -245,6 +293,7 @@ function shotsHtml(j) {
     }
   }
   const latest = setLabel(meta);
+  if (!H.length && !(pages && pages.length)) return `<div class="shlab"><span class="lab">JO photos</span></div><div class="shots" id="rvJoPh"><span class="muted">No photos</span></div>`;
   if (!H.length) return (meta.version ? `<div class="shlab"><span class="lab">${esc(latest)}</span></div>` : '') + row(j.jo, pages);
   const chip = swapped ? '' : '<span class="chip dark">Latest</span>';
   return `<div class="shlab">${chip}<span class="lab">${esc(latest || 'Latest scan')}</span></div>${row(j.jo, pages)}
@@ -387,22 +436,8 @@ function wire(main) {
   const filled = el => { const f = el.closest('.fsec'); if (f) { f.classList.remove('miss'); const fl = f.querySelector('.flag:not(.c)'); if (fl) fl.remove(); } };
   main.querySelectorAll('.rvp input, .rvp textarea').forEach(el => el.addEventListener('input', () => { if (el.value.trim() && !['fCq'].includes(el.id)) filled(el); }));
   const back = $('[data-back]'); if (back) back.onclick = () => { S.open = null; draw(main); };
-  main.querySelectorAll('[data-big]').forEach(b => b.onclick = () => {
-    const big = main.querySelector('#rvBig'), fid = b.dataset.big;
-    big.classList.remove('hidden');
-    const wire = box => {
-      let turned = false;
-      const rot = box.querySelector('.rot');
-      if (rot) rot.onclick = async e => { e.stopPropagation(); setExtraTurn(fid, extraTurn(fid) + 90); turned = true; // remembered on this device
-        delete photoCache[fid + '|1600|' + extraTurn(fid)]; delete photoCache[fid + '|300|' + extraTurn(fid)];
-        const s2 = await photo(j.jo, fid, 'full'), im = box.querySelector('img'); if (im && s2) { im.src = s2; im.classList.remove('phblur'); } };
-      box.onclick = e => { if (e.target.closest('.rot, .phorig')) return; box.classList.add('hidden'); if (turned) {
-        const ph = main.querySelector(`.shot [data-ph$="|${CSS.escape(fid)}"]`), th = document.querySelector(`.rvrow [data-th$="|${CSS.escape(fid)}"]`);
-        [ph, th].forEach(el => el && photo(j.jo, fid).then(s3 => { if (s3) el.style.backgroundImage = `url("${s3}")`; })); } };
-    };
-    if (window.OYPPhotos) window.OYPPhotos.stage(big, { jo: j.jo, id: fid, kind: 'scan', legacy: 'job', alt: '', empty: 'Photo not found', turn: src => turn(src, extraTurn(fid)), tools: '<button type="button" class="pill sm rot">ROTATE</button>', wire });
-    else photo(j.jo, fid, 'full').then(src => { big.innerHTML = src ? `<img src="${src}" alt=""><button class="pill sm rot">ROTATE</button>` : '<span class="lab">Photo not found</span>'; wire(big); });
-  });
+  main.querySelectorAll('[data-big]').forEach(b => b.onclick = () => openShot(main, j, b.dataset.big, 'scan'));
+  if (j && !j.stub) fillDrivePhotos(main, j);
   main.querySelectorAll('[data-loc]').forEach(b => b.onclick = () => { st.location = b.dataset.loc; main.querySelectorAll('[data-loc]').forEach(x => x.classList.toggle('on', x === b)); filled(b); });
   main.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { st.type = st.type === b.dataset.type ? '' : b.dataset.type; main.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x.dataset.type === st.type)); if (st.type) filled(b);
     if (S.steps && !saved0 && !st.stepsTouched) { st.steps = defSteps(st.type); drawSteps(); } }); // not saved yet: the default follows the type

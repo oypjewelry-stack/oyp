@@ -1,6 +1,7 @@
 /* OYP back office: Inventory (#/jos, every JO / finished piece) and Materials (#/inventory, raw stock).
    Server: InventoryPages.gs (invList, invThumbs, matList, matHistory, matSave, matMove). The server strips what a role may not
    see (price + margin: executives; costs: executives + production manager); this file only draws what it gets.
+   JO photos are card scans. They follow can.cost, the same gate as the cost line. A page-2 sketch is only a stand-in profile. */
    Move / Archive on this page is one call, invBulk (paste/InvBulk.gs.txt). It changes location. It does not delete a row.
    Delete is a separate call, invDelete, and the sheet asks before it sends that. */
 (() => {
@@ -23,7 +24,7 @@ const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see
 const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, open: null, at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [] };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, sketch: {}, open: null, at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [], extra: 0 };
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
@@ -138,9 +139,13 @@ function ivCard(j, can, edit) {
 function ivSheet(j, edit) { // details only. Actions stay on the floating ⋯ menu.
   if (!j) return ''; const { esc } = window.OYP;
   const f = (lab, v) => v ? `<div class="ivf"><span class="lab">${esc(lab)}</span><b>${esc(v)}</b></div>` : '';
+  const can = (IV.r && IV.r.can) || {}, sketch = !!IV.sketch[j.jo];
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
     <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${edit ? 'Details' : 'View only'}</span></div>
-    <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
+    <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''} ${sketch ? 'sketch' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
+    <p class="ivsknote" id="ivSkNote" ${sketch ? '' : 'hidden'}>Sketch from JO card</p>
+    <div class="ivdraw" id="ivDraw" hidden><span class="lab">Drawings</span><div class="shots" id="ivDraws"></div></div>
+    ${can.cost ? `<div class="ivjoph" id="ivJoPh" hidden><span class="lab">JO photos</span><div class="shots" id="ivShots"></div></div>` : ''}
     <p class="kd">${esc(j.description || 'No details')}</p>
     <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}
       ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('Job', j.type === 'repair' ? 'Repair' : j.type === 'revision' ? 'Revision' : j.type ? 'New job' : '')}
@@ -321,8 +326,11 @@ function ivWire(main) {
 }
 function ivCloseSheet(main) {
   IV.open = null;
+  IV.extra++;
   const el = main.querySelector('#ivSheet');
   if (el) el.remove();
+  const big = document.getElementById('ivBig');
+  if (big) big.classList.add('hidden');
 }
 /* The sheet is position:fixed, so opening it does not rebuild the grid. */
 function ivMountSheet(main) {
@@ -333,8 +341,7 @@ function ivMountSheet(main) {
   if (!j) { IV.open = null; return; }
   main.insertAdjacentHTML('beforeend', ivSheet(j, ivEdit()));
   ivWireSheet(main);
-  const big = main.querySelector('#ivSheet .ivph.big');
-  if (big && j.has_photo && window.OYPPhotos) window.OYPPhotos.stage(big, { jo: j.jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: 'No photo' });
+  ivPhotos(main, j);
 }
 function ivOpenCard(j) {
   try { sessionStorage.setItem('oypReviewOpen', JSON.stringify({ jo: j.jo, back: '#/jos', label: 'BACK',
@@ -363,22 +370,85 @@ function ivOpenMenu(main, btn) {
     { label: 'Delete', danger: true, run: () => ivDelete(main, j) }
   ]);
 }
-function ivThumbs(main, L) { // piece photos only. 300px thumbs, loaded as tiles scroll in (no 60-tile cap). L kept for the call site.
+function ivThumbs(main, L) { // piece photos, or a page-2 stand-in when this role can see costs. L kept for the call site.
   void L;
   if (!window.OYPPhotos) return;
   const grid = main.querySelector('#ivGrid');
+  const cost = !!(IV.r && IV.r.can && IV.r.can.cost);
   if (grid) window.OYPPhotos.watch(grid, {
     sel: '[data-th]',
-    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
-    paint(el, src) {
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv', fallback: cost }),
+    paint(el, src, item) {
       const k = el.dataset.th; IV.thumbs[k] = src || '';
-      const cap = el.querySelector(':scope > span');
-      if (src) { el.style.backgroundImage = `url('${src}')`; el.classList.add('has'); if (cap) cap.remove(); }
-      else if (!cap) el.insertAdjacentHTML('beforeend', '<span>No photo</span>');
+      IV.sketch[k] = !!(src && item && item.sketch);
+      const cap = el.querySelector(':scope > span:not(.ivsk)');
+      if (src) {
+        el.style.backgroundImage = `url('${src}')`;
+        el.classList.add('has');
+        el.classList.toggle('sketch', !!IV.sketch[k]);
+        if (cap) cap.remove();
+        if (IV.sketch[k]) { if (!el.querySelector('.ivsk')) el.insertAdjacentHTML('beforeend', '<span class="ivsk">Sketch from JO card</span>'); }
+        else { const sk = el.querySelector('.ivsk'); if (sk) sk.remove(); }
+      } else if (!cap) el.insertAdjacentHTML('beforeend', '<span>No photo</span>');
     }
   });
-  const jo = IV.open, j = jo && IV.r && IV.r.jobs.find(x => x.jo === jo), big = main.querySelector('#ivSheet .ivph.big');
-  if (big && j && j.has_photo) window.OYPPhotos.stage(big, { jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: 'No photo' });
+  const jo = IV.open, j = jo && IV.r && IV.r.jobs.find(x => x.jo === jo);
+  if (j && main.querySelector('#ivSheet')) ivPhotos(main, j);
+}
+function ivPhotos(main, j) {
+  if (!j || !window.OYPPhotos) return;
+  const can = (IV.r && IV.r.can) || {};
+  const big = main.querySelector('#ivSheet .ivph.big');
+  if (big && (j.has_photo || can.cost || IV.sketch[j.jo])) {
+    window.OYPPhotos.stage(big, {
+      jo: j.jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: 'No photo', fallback: !!can.cost,
+      noted: item => {
+        const n = main.querySelector('#ivSkNote');
+        if (n) n.hidden = !item.sketch;
+        big.classList.toggle('sketch', !!item.sketch);
+        IV.sketch[j.jo] = !!item.sketch;
+      }
+    });
+  }
+  ivFillExtra(main, j);
+}
+function ivShots(box, jo, pages, kind) {
+  const { esc } = window.OYP;
+  box.innerHTML = pages.map(p => `<button type="button" class="shot" data-id="${esc(p.id)}"><span class="ph"></span><span class="lab">${esc(p.label)}</span></button>`).join('');
+  box.querySelectorAll('.shot').forEach((b, i) => {
+    const src = pages[i].src;
+    if (src) b.querySelector('.ph').style.backgroundImage = `url("${src}")`;
+    b.onclick = ev => { ev.stopPropagation(); ivZoom(jo, pages[i].id, kind, pages[i].label); };
+  });
+}
+function ivZoom(jo, id, kind, alt) {
+  let big = document.getElementById('ivBig');
+  if (!big) {
+    big = document.createElement('div');
+    big.id = 'ivBig';
+    big.className = 'rvbig hidden';
+    document.body.appendChild(big);
+  }
+  big.classList.remove('hidden');
+  big.onclick = e => { if (e.target.closest && e.target.closest('.phorig')) return; big.classList.add('hidden'); };
+  window.OYPPhotos.stage(big, { jo, id, kind: kind || 'card', legacy: 'job', alt: alt || '', empty: 'Photo not found' });
+}
+function ivFillExtra(main, j) {
+  const P = window.OYPPhotos;
+  if (!P || !P.extras) return;
+  const seq = ++IV.extra, jo = j.jo, can = (IV.r && IV.r.can) || {};
+  P.extras(jo, { drawing: true, cards: !!can.cost }).then(x => {
+    if (seq !== IV.extra || IV.open !== jo) return;
+    const sheet = main.querySelector('#ivSheet');
+    if (!sheet) return;
+    const draw = sheet.querySelector('#ivDraw'), draws = sheet.querySelector('#ivDraws');
+    const photos = (x.drawing || []).map(d => ({ id: d.id, src: d.src || '', label: 'Drawing' }));
+    if (draw && draws && photos.length) { draw.hidden = false; ivShots(draws, jo, photos, 'drawing'); }
+    if (!can.cost) return;
+    const host = sheet.querySelector('#ivJoPh'), shots = sheet.querySelector('#ivShots');
+    const pages = (x.cards || []).map(p => ({ id: p.id, src: p.src || '', label: P.pageLabel(x.cards, p) }));
+    if (host && shots && pages.length) { host.hidden = false; ivShots(shots, jo, pages, 'card'); }
+  }).catch(() => {});
 }
 
 /* =================== Materials (#/inventory) =================== */

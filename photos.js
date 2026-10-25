@@ -65,12 +65,18 @@ function idbPut(id, size, src) {
 function remember(item, src) {
   if (!src) return;
   const size = item.size;
+  // A page-2 stand-in is not the JO's profile. Keep it for this visit only, never under the JO key.
+  if (item.sketch && item.jo && size === 300) {
+    MEM.set('sketch:' + item.jo + '|300', src);
+    if (item.id) MEM.set('sketchid:' + item.jo, item.id);
+    return;
+  }
   if (item.id) {
     MEM.set(memKey(item.id, size), src);
     idbPut(item.id, size, src);
     if (size === 300) lsPut(item.id, item.kind === 'piece' ? item.jo : '', src);
   }
-  if (item.kind === 'piece' && item.jo && size === 300) MEM.set('jo:' + item.jo + '|300', src);
+  if (item.kind === 'piece' && item.jo && size === 300 && !item.sketch) MEM.set('jo:' + item.jo + '|300', src);
 }
 function peek(item) {
   const size = item.size;
@@ -89,6 +95,12 @@ function peek(item) {
       if (item.jo) MEM.set('jo:' + item.jo + '|300', src);
       return src;
     }
+  }
+  if (item.fallback && item.kind === 'piece' && size === 300 && !item.id && item.jo && MEM.has('sketch:' + item.jo + '|300') && !MEM.has('jo:' + item.jo + '|300')) {
+    item.sketch = true;
+    const sid = MEM.get('sketchid:' + item.jo);
+    if (sid) item.id = sid;
+    return MEM.get('sketch:' + item.jo + '|300');
   }
   return '';
 }
@@ -127,22 +139,34 @@ async function send(size, ws) {
     finish(w, r.src || '');
     return;
   }
-  const piece = [], scan = [];
+  const piece = [], scan = [], drawing = [], fallback = [];
   ws.forEach(w => {
-    if (w.item.kind === 'piece') piece.push(w.item.jo);
-    else if (w.item.id) scan.push({ jo: w.item.jo, id: w.item.id });
+    if (w.item.kind === 'piece') {
+      piece.push(w.item.jo);
+      if (w.item.fallback) fallback.push(w.item.jo);
+    } else if (w.item.kind === 'drawing' && !w.item.id) drawing.push(w.item.jo);
+    else if (w.item.id) scan.push({ jo: w.item.jo, id: w.item.id, card: w.item.kind === 'card' ? 1 : 0, drawing: w.item.kind === 'drawing' ? 1 : 0 });
   });
+  const body = { size, piece, scan };
+  if (fallback.length) body.fallback = fallback;
+  if (drawing.length) body.drawing = drawing;
   let r = null;
-  try { r = await window.OYP.call('photoThumbs', { size, piece, scan }); } catch (e) { r = null; }
+  try { r = await window.OYP.call('photoThumbs', body); } catch (e) { r = null; }
   if (!r || r.error === 'Unknown action') { mode = 'old'; return legacy(size, ws); }
   if (!r.ok) { ws.forEach(w => finish(w, '')); return; }
   const missed = [];
   ws.forEach(w => {
     if (w.item.kind === 'piece') {
       const row = r.piece && r.piece[w.item.jo];
+      if (row && row.sketch) w.item.sketch = true;
       if (row && row.src) { w.item.id = row.id || w.item.id; finish(w, row.src); }
       else if (row && row.found === false) finish(w, '');
       else missed.push(w);
+    } else if (w.item.kind === 'drawing' && !w.item.id) {
+      const row = r.drawing && r.drawing[w.item.jo];
+      const first = Array.isArray(row) ? row[0] : row;
+      if (first && first.src) { w.item.id = first.id || w.item.id; finish(w, first.src); }
+      else finish(w, '');
     } else {
       const src = r.scan && w.item.id ? r.scan[w.item.id] : '';
       finish(w, src || '');
@@ -242,16 +266,37 @@ function stage(el, o) {
     img.classList.toggle('phblur', !!blur);
     lab.hidden = true;
   };
-  const base = { jo: o.jo, id: o.id || '', kind: o.kind || 'scan', legacy: o.legacy || 'prod' };
-  const thumb = peek(Object.assign({}, base, { size: 300 }));
+  const base = { jo: o.jo, id: o.id || '', kind: o.kind || 'scan', legacy: o.legacy || 'prod', fallback: !!o.fallback, sketch: false };
+  const thumbItem = Object.assign({}, base, { size: 300 });
+  const thumb = peek(thumbItem);
   if (thumb) show(thumb, true);
-  load(Object.assign({}, base, { size: 300 })).then(src => { if (src) show(src, true); });
-  load(Object.assign({}, base, { size: 1600 })).then(src => {
+  const sharpen = src => {
     if (src) return show(src, false);
     sharp = true;
     if (img.parentNode) img.classList.remove('phblur');
     else { lab.hidden = false; lab.textContent = o.empty || 'Photo not found'; }
+  };
+  const mark = () => {
+    if (thumbItem.sketch) {
+      base.sketch = true;
+      base.id = thumbItem.id || base.id;
+      base.kind = 'card';
+      el.classList.add('sketch');
+    } else if (base.fallback) {
+      base.sketch = false;
+      el.classList.remove('sketch');
+    }
+    if (base.fallback && typeof o.noted === 'function') o.noted(base);
+  };
+  // Page 2 is a whole card. Its orientation is not fixed, so the stand-in is not cropped here.
+  load(thumbItem).then(src => {
+    if (src) show(src, true);
+    if (base.fallback && base.kind === 'piece') {
+      mark();
+      return load(Object.assign({}, base, { size: 1600 })).then(sharpen);
+    }
   });
+  if (!(base.fallback && base.kind === 'piece')) load(Object.assign({}, base, { size: 1600 })).then(sharpen);
   orig.onclick = async e => {
     if (e) e.stopPropagation();
     orig.disabled = true;
@@ -263,5 +308,27 @@ function stage(el, o) {
   };
   if (o.wire) o.wire(el);
 }
-window.OYPPhotos = { load, watch, prefetch, stage, peek };
+function pageLabel(pages, p) {
+  const n = (pages || []).filter(x => x && x.page === p.page).length;
+  const side = n > 1 && p.side === 'b' ? ' back' : n > 1 && p.side === 'a' ? ' front' : '';
+  return 'Page ' + p.page + side;
+}
+function extras(jo, opt) {
+  opt = opt || {};
+  const body = { size: 300, piece: [], scan: [] };
+  if (opt.drawing) body.drawing = [jo];
+  if (opt.cards) body.cards = [jo];
+  return window.OYP.call('photoThumbs', body).then(r => {
+    const drawing = (r && r.ok && r.drawing && r.drawing[jo]) || [];
+    const cards = (r && r.ok && r.cards && r.cards[jo]) || [];
+    const scan = (r && r.scan) || {};
+    cards.forEach(c => {
+      c.src = scan[c.id] || '';
+      if (c.src) remember({ id: c.id, jo, kind: 'card', size: 300 }, c.src);
+    });
+    drawing.forEach(d => { if (d && d.src) remember({ id: d.id, jo, kind: 'drawing', size: 300 }, d.src); });
+    return { drawing: drawing.filter(d => d && d.id), cards };
+  }).catch(() => ({ drawing: [], cards: [] }));
+}
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel };
 })();
