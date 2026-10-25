@@ -39,7 +39,7 @@
 .setstaff{max-width:calc(900px*var(--cw));border:1px solid #eee;border-radius:calc(14px*var(--rad));padding:0 calc(18px*var(--sp))}
 .setp{display:flex;justify-content:space-between;align-items:center;gap:calc(12px*var(--sp));padding:calc(12px*var(--sp)) 0;border-bottom:1px solid #f1f1f1;flex-wrap:wrap}.setp:last-child{border-bottom:0}
 .setp.off .cn{color:#999}.setpn{display:flex;align-items:center;gap:calc(8px*var(--sp));flex-wrap:wrap}.setpa{display:flex;align-items:center;gap:calc(14px*var(--sp))}
-.setpa select{padding:calc(7px*var(--sp)) calc(10px*var(--sp));font-size:calc(15px*var(--fs))}
+.setpa select{padding:calc(7px*var(--sp)) calc(10px*var(--sp));font-size:max(16px,calc(15px*var(--fs)))}
 .setlog{max-width:calc(760px*var(--cw))}.setli{display:flex;flex-direction:column;gap:calc(3px*var(--sp));padding:calc(12px*var(--sp)) 0;border-bottom:1px solid #f1f1f1}
 .setli b{font-family:var(--head);font-weight:500;font-size:calc(17px*var(--hs))}.setli>span:last-child{font-size:calc(15px*var(--fs))}
 @media (max-width:899px){.setgrid{grid-template-columns:1fr 1fr}.setstages{grid-template-columns:1fr}.setstages .setrow:nth-last-child(2){border-bottom:1px solid #f1f1f1}}

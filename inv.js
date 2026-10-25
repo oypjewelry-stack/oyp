@@ -284,7 +284,7 @@ function ivDraw(main) {
     <p class="muted">${IV.view === 'review' ? 'Items marked REVIEW. Approve one here and it leaves this list.' : 'Every JO and finished piece. Tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     ${ivChipsHtml(esc)}
-    <input id="ivQ" class="rvq" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire">
+    ${ivQRow(esc)}
     ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
     <div class="ivfilt"><div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
@@ -477,7 +477,22 @@ function ivWire(main) {
   const $ = s => main.querySelector(s);
   const stop = e => e.stopPropagation();
   main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; ivDraw(main); });
-  if ($('#ivQ')) $('#ivQ').oninput = e => { IV.q = e.target.value; const pos = e.target.selectionStart; ivDraw(main); const q = $('#ivQ'); q.focus(); q.setSelectionRange(pos, pos); };
+  if ($('#ivQ')) $('#ivQ').oninput = e => {
+    IV.q = e.target.value;
+    const pos = e.target.selectionStart;
+    ivDraw(main);
+    const q = $('#ivQ');
+    if (!q) return;
+    try { q.focus({ preventScroll: true }); } catch (err) { q.focus(); }
+    try { q.setSelectionRange(pos, pos); } catch (err) {}
+  };
+  if ($('#ivQMode')) $('#ivQMode').onclick = () => {
+    ivQModeSet(ivQMode() === 'scan' ? 'type' : 'scan');
+    const q = $('#ivQ');
+    if (q) try { q.blur(); } catch (err) {}
+    ivDraw(main);
+    ivRefocus(main);
+  };
   if ($('#ivQ')) $('#ivQ').onkeydown = e => {
     if (e.isComposing) return;
     if (e.key === 'Backspace' || e.key === 'Delete') { ivQReset(); return; }
@@ -486,8 +501,10 @@ function ivWire(main) {
     e.preventDefault();
     const raw = e.target.value;
     if (!ivEdit() || !(ivQFast(raw) || ivFullJo(raw))) return;
-    IV.q = '';
+    if (ivQFast(raw)) ivQSawScanner();
+    IV.q = ivQKeep(raw);
     ivQReset();
+    try { e.target.blur(); } catch (err) {}
     ivScanCommit(raw, true);
   };
   if ($('#ivStage')) $('#ivStage').onchange = e => { IV.stage = e.target.value; if (IV.stage && IV.view !== 'all' && IV.view !== 'making') IV.view = 'all'; ivDraw(main); };
@@ -1383,13 +1400,44 @@ window.OYPInv = { renderJos: (m, u) => {
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
    The search box takes the same scan when it is focused: a fast wedge, or a full JO and Enter.
+   That Enter keeps the number in the box and runs the search. It does not clear the field or select the text.
    Any other Enter leaves the text as a filter.
+   Scan mode (inputmode none) takes the wedge and leaves the on-screen keyboard down.
+   Type mode (inputmode search) shows the keyboard. The choice is remembered. Until a fast wedge
+   ending in Enter is seen, the box stays in Type so a phone can type.
    A sticker's QR is the JO itself (26-287 or 26-287A) or a link / prefixed text that contains one
    (jo=26-287, or a path ending in /26-287). The same read is in consign.js.
    A sticker QR is the JO with its version letter (26-287B). That scan selects the 26-287B tile.
    A scan with no letter still folds to the base. If several tiles share that base, the newest letter is the one selected. */
 const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_MAX = 400;
+const QMODE_KEY = 'oypIvQMode';
 let scanBuf = '', scanAt = 0, qLastAt = 0, qBurstLen = 0;
+function ivQMode() {
+  try {
+    const v = localStorage.getItem(QMODE_KEY);
+    if (v === 'scan' || v === 'type') return v;
+  } catch (e) {}
+  return 'type';
+}
+function ivQModeStored() {
+  try {
+    const v = localStorage.getItem(QMODE_KEY);
+    return v === 'scan' || v === 'type';
+  } catch (e) { return false; }
+}
+function ivQModeSet(mode) {
+  try { localStorage.setItem(QMODE_KEY, mode === 'scan' ? 'scan' : 'type'); } catch (e) {}
+}
+function ivQSawScanner() { if (!ivQModeStored()) ivQModeSet('scan'); }
+function ivQKeep(raw) {
+  const p = joParts(raw);
+  return p ? p.base + (p.letter || '') : String(raw || '');
+}
+function ivQRow(esc) {
+  const scan = ivQMode() === 'scan';
+  const label = scan ? 'Scan mode. Tap to type with the keyboard.' : 'Type mode. Tap to scan without the keyboard.';
+  return `<div class="ivqrow"><input id="ivQ" class="rvq" inputmode="${scan ? 'none' : 'search'}" enterkeyhint="search" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire"><button type="button" class="ivqmode" id="ivQMode" aria-pressed="${scan ? 'true' : 'false'}" aria-label="${esc(label)}">${scan ? 'Scan' : 'Type'}</button></div>`;
+}
 function ivQNote() {
   const now = Date.now();
   qBurstLen = !qLastAt || now - qLastAt > SCAN_GAP ? 1 : qBurstLen + 1;
@@ -1459,7 +1507,26 @@ function ivFindScan(p) {
 function ivById(id) { return id ? ((IV.r.jobs || []).find(j => j.jo === id) || ivFindBase(id)) : null; }
 function ivScanOn() { return !!(IV.r && ivEdit() && IV.view !== 'count' && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
-function ivRefocus(main) { const s = main.querySelector('#ivQ'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
+function ivCaretEnd(el) {
+  if (!el || typeof el.setSelectionRange !== 'function') return;
+  const n = String(el.value || '').length;
+  try { el.setSelectionRange(n, n); } catch (e) {}
+}
+function ivRefocus(main) {
+  const box = main.querySelector('#ivQ');
+  if (!box) return;
+  // Blur only this search box so a stuck iOS focus zoom drops, then focus it again in the same tap
+  // so Type can bring the on-screen keyboard back. The caret stays at the end, not a select-all.
+  try { box.blur(); } catch (e) {}
+  try { box.focus({ preventScroll: true }); } catch (e) { try { box.focus(); } catch (e2) {} }
+  ivCaretEnd(box);
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      const s = main.querySelector('#ivQ');
+      if (s && document.activeElement === s) ivCaretEnd(s);
+    });
+  }
+}
 function ivFlash(jo) {
   const grid = document.getElementById('ivGrid');
   if (grid) {
@@ -1522,6 +1589,7 @@ document.addEventListener('keydown', e => {
     scanBuf = '';
     if (!fast) return;
     e.preventDefault(); e.stopPropagation();
+    ivQSawScanner();
     ivScanCommit(raw, false);
     return;
   }

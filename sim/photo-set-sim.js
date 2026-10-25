@@ -56,9 +56,9 @@ const sheetFn = inv.slice(inv.indexOf('function ivSheet'), inv.indexOf('function
 eq(sheetFn.indexOf('function ivSheet') === 0 && !sheetFn.includes('background-image'), 'the detail frame does not paint the list thumb behind the photo');
 eq(photos.includes("el.style.backgroundImage = 'none'"), 'a shown detail image clears any background image');
 const preview = read('sim/photo-set-preview.html');
-eq(preview.includes('photos.js?v=16') && preview.includes('inv.js?v=33') && preview.includes('sketchclean.js?v=1') && preview.includes('app.css?v=66'), 'the layout fixture loads the same files');
-eq(index.includes('photos.js?v=16') && index.includes('inv.js?v=33') && index.includes('app.css?v=66') && read('staff/print-test.html').includes('app.css?v=66'), 'changed files are cache-busted');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=66'), 'the customer page stays on app.css?v=29');
+eq(preview.includes('photos.js?v=16') && preview.includes('inv.js?v=34') && preview.includes('sketchclean.js?v=1') && preview.includes('app.css?v=67'), 'the layout fixture loads the same files');
+eq(index.includes('photos.js?v=16') && index.includes('inv.js?v=34') && index.includes('app.css?v=67') && read('staff/print-test.html').includes('app.css?v=67'), 'changed files are cache-busted');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=67'), 'the customer page stays on app.css?v=29');
 
 const bag = {};
 const cache = {

@@ -26,8 +26,8 @@ eq(app.includes("main.querySelector('.ivfiltacts')") && app.includes('slot.appen
 eq(app.includes("btn.textContent = on ? 'Done' : 'Edit layout'") && app.includes("toast('Layout saved')"), 'Edit layout still toggles and saves');
 eq(inv.includes("if ($('#ivChoose')) $('#ivChoose').onclick") && inv.includes('IV.choose = !IV.choose') && inv.includes('class="ivbar"'), 'Select still enters select mode and the toolbar stays');
 eq(css.includes('.ivfilt{display:flex;align-items:flex-end') && css.includes('.ivfilt .ivsels{flex-wrap:nowrap}') && css.includes('@media (max-width:760px){.ivfilt{flex-direction:column;align-items:stretch}'), 'desktop keeps one filter line and mobile stacks the buttons under it');
-eq(index.includes('app.css?v=66') && index.includes('app.js?v=43') && index.includes('inv.js?v=33'), 'changed files are cache-busted');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=66'), 'the customer page stays on app.css?v=29');
+eq(index.includes('app.css?v=67') && index.includes('app.js?v=43') && index.includes('inv.js?v=34'), 'changed files are cache-busted');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=67'), 'the customer page stays on app.css?v=29');
 
 const jobs = [];
 for (let i = 0; i < 18; i++) {

@@ -34,7 +34,7 @@ eq(photos.includes('indexedDB') && photos.includes('localStorage') && photos.inc
 eq(app.includes('photoThumbs: 1') && app.includes('photoFile: 1'), 'photo reads do not clear the page cache');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(!/photoThumbs|photoFile/.test(cached), 'photo answers are not stored with the page cache');
-eq(index.includes('sketchclean.js?v=1') && index.indexOf('sketchclean.js?v=1') < index.indexOf('photos.js?v=16') && index.includes('photos.js?v=16') && index.includes('inv.js?v=33') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=43') && index.includes('app.css?v=66') && index.includes('nav.js?v=77'), 'changed files are cache-busted');
+eq(index.includes('sketchclean.js?v=1') && index.indexOf('sketchclean.js?v=1') < index.indexOf('photos.js?v=16') && index.includes('photos.js?v=16') && index.includes('inv.js?v=34') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=43') && index.includes('app.css?v=67') && index.includes('nav.js?v=77'), 'changed files are cache-busted');
 eq(fast.includes('photoThumbs: 1, photoFile: 1') && fast.includes('NOT added to FAST.CACHE'), 'Fast.gs keeps the new actions as fresh reads');
 eq(steps.includes('PASTE_STEPS') && steps.includes('Manage deployments') && steps.includes('New version'), 'paste steps tell the owner to deploy a new version');
 eq(steps.includes('Replace that file') && steps.includes('Page 1 is never') && steps.includes('drawings folder'), 'the new paste steps replace PhotoFast and describe the stand-in');
