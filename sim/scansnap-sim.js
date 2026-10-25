@@ -20,7 +20,7 @@ const gs = read('paste/ScanSnapPrint.gs');
 const hook = read('paste/JoInbox.gs.snapsnap.patch.txt');
 const auth = read('paste/Auth.gs.snapsnap.patch.txt');
 
-eq(index.includes('scansnap.js?v=1') && index.includes('app.js?v=42') && index.includes('app.css?v=65') && index.includes('nav.js?v=67'), 'the scanner page is cache-busted');
+eq(index.includes('scansnap.js?v=2') && index.includes('app.js?v=42') && index.includes('app.css?v=65') && index.includes('nav.js?v=67'), 'the scanner page is cache-busted');
 eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=65'), 'the customer page stays on app.css?v=29');
 eq(app.includes("page === 'scanner'") && app.includes('OYPScanSnap.render') && !app.includes('OYPJoInbox.render'), 'Scanner is a back-office page and Needs a look is not rendered from the router');
 eq(app.includes('snapPrintGet: 1') && !/snapPrintSet\s*:/.test(app), 'snapPrintGet is a fresh read and snapPrintSet stays a write');
@@ -38,17 +38,17 @@ global.location.hash = '#/scanner/mobile';
 eq(Snap.tabFromHash() === 'mobile', 'a mobile hash opens the Mobile tab');
 global.location.hash = '#/scanner';
 eq(Snap.canEdit(ada) && Snap.canEdit({ role: 'production_manager', username: 'sue' }) && !Snap.canEdit({ role: 'staff', username: 'ann' }), 'admin and production manager can change the boxes');
-eq(Snap.HINT === 'Press Scan on the ScanSnap, then Scan now to file it right away', 'the hint tells the owner to press Scan on the ScanSnap');
+eq(Snap.HINT === 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.' && Snap.CHECK === 'CHECK FOR NEW SCANS', 'the button files now and the hint is one line');
 eq(Snap.NOT_SAVED === "Changes aren't saved yet.", 'the page says changes are not saved yet');
 const html = Snap.snapHtml();
 eq(html.includes('>Scan snap<') && html.indexOf('>Scan snap<') < html.indexOf('>Mobile<') && html.includes('class="fchip tap on"') && html.includes('data-stab="snap"'), 'Scan snap is the first tab and it starts selected');
 eq(html.includes('id="snapJewelry" checked') && html.includes('>Print jewelry tag<') && html.includes('id="snapQr" checked') && html.includes('>Print QR tag<'), 'both boxes start checked');
-eq(html.includes('saved yet.') && html.indexOf('id="snapNote" hidden') < 0 && html.includes('id="snapNow"') && html.includes(Snap.HINT), 'before a save the note, Scan now, and the hint are on the page');
+eq(html.includes('saved yet.') && html.indexOf('id="snapNote" hidden') < 0 && html.includes('>' + Snap.CHECK + '<') && html.includes(Snap.HINT) && html.indexOf('Scan now') < 0, 'before a save the note, the check button, and the hint are on the page');
 eq(Snap.mobileHtml().includes('../scan/index.html') && Snap.mobileHtml().includes('title="Mobile scanner"') && Snap.mobileSrc('admin') === '../scan/index.html?role=admin', 'Mobile loads the existing scanner page');
 eq(Snap.resultText({ ok: true, filed: 2, waiting: 1, problem: 0 }) === '2 new scans filed, 1 waiting', 'a check reports new scans and how many are waiting');
 eq(Snap.resultText({ ok: true, filed: 1, waiting: 0, problem: 2 }) === '1 new scan filed, 0 waiting, 2 errors', 'errors are counted on the result line');
 eq(Snap.resultText({ ok: true, waiting: true, message: 'The scanner is still sending pages. Try again in a few seconds.' }).indexOf('still sending') >= 0, 'a scanner that is still sending shows that message');
-eq(Snap.resultText({ ok: false, error: 'Unknown action' }) === 'Needs the latest script paste', 'Scan now before the paste says the script is not in yet');
+eq(Snap.resultText({ ok: false, error: 'Unknown action' }) === 'Needs the latest script paste', 'the check before the paste says the script is not in yet');
 eq(Snap.resultText({ ok: false, error: 'No connection. Check the internet and try again.', code: 'NET' }).indexOf('No connection') >= 0, 'a dropped connection stays an error');
 
 eq(!/\bconst\b|\blet\b|=>|`/.test(gs) && gs.includes('scanner.snap_jewelry') && gs.includes('scanner.snap_qr') && gs.includes("printEnqueue_(jo, row[1], 'scansnap', { manual: true })"), 'the paste is Apps Script style and queues through printEnqueue_');
@@ -275,13 +275,14 @@ async function chromeAt(width, port, pageUrl, art) {
         const q = document.getElementById('snapQr');
         const note = document.getElementById('snapNote');
         const hint = document.getElementById('snapHint');
+        const btn = document.getElementById('snapNow');
         const on = document.querySelector('#scanTabs .fchip.on');
-        if (!j || !q || !note || !hint || !on) return null;
+        if (!j || !q || !note || !hint || !on || !btn) return null;
         const main = document.getElementById('main');
         return {
           j: j.checked, q: q.checked, jDis: j.disabled,
           note: note.textContent, noteHidden: note.hidden,
-          hint: hint.textContent, tab: on.textContent,
+          hint: hint.textContent, check: btn.textContent, tab: on.textContent,
           frame: !!document.querySelector('.scanframe'),
           overflow: main ? main.scrollWidth - main.clientWidth : 0
         };
@@ -293,7 +294,7 @@ async function chromeAt(width, port, pageUrl, art) {
     eq(!!m, 'Scan snap is on screen at ' + width);
     if (!m) return {};
     console.log('snap', width, JSON.stringify(m));
-    eq(m.tab === 'Scan snap' && m.j === true && m.q === true && m.jDis === false && m.noteHidden === false && m.note === "Changes aren't saved yet." && m.hint === 'Press Scan on the ScanSnap, then Scan now to file it right away' && m.frame === false, 'before the paste both boxes are checked and the note is showing at ' + width);
+    eq(m.tab === 'Scan snap' && m.j === true && m.q === true && m.jDis === false && m.noteHidden === false && m.note === "Changes aren't saved yet." && m.hint === 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.' && m.check === 'CHECK FOR NEW SCANS' && m.frame === false, 'before the paste both boxes are checked and the note is showing at ' + width);
     eq(m.overflow <= 1, 'Scan snap does not overflow at ' + width);
     const clicked = await evalJson(`(async () => {
       document.getElementById('snapJewelry').click();
@@ -311,13 +312,13 @@ async function chromeAt(width, port, pageUrl, art) {
       return { j: j.checked, note: note && note.textContent, noteHidden: note && note.hidden, text: text };
     })()`);
     console.log('scan now', width, JSON.stringify(clicked));
-    eq(clicked && clicked.j === true && clicked.noteHidden === false && clicked.text === '2 new scans filed, 1 waiting', 'unchecking before the paste does not stick, and Scan now reports the check at ' + width);
+    eq(clicked && clicked.j === true && clicked.noteHidden === false && clicked.text === '2 new scans filed, 1 waiting', 'unchecking before the paste does not stick, and the check reports the result at ' + width);
     await evalJson('window.scrollTo(0,0); 1');
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: width < 800 });
     await sleep(40);
     const snapPng = await send('Page.captureScreenshot', { format: 'png' });
     const snapBuf = Buffer.from(snapPng.data, 'base64');
-    const snapName = 'scansnap_tab_' + width + '.png';
+    const snapName = 'scansnap_check_' + width + '.png';
     fs.writeFileSync(path.join(art, snapName), snapBuf);
     const mobile = await evalJson(`(async () => {
       document.querySelector('[data-stab="mobile"]').click();
@@ -339,7 +340,7 @@ async function chromeAt(width, port, pageUrl, art) {
     await sleep(80);
     const mobPng = await send('Page.captureScreenshot', { format: 'png' });
     const mobBuf = Buffer.from(mobPng.data, 'base64');
-    const mobName = 'scansnap_mobile_' + width + '.png';
+    const mobName = 'scansnap_check_mobile_' + width + '.png';
     fs.writeFileSync(path.join(art, mobName), mobBuf);
     return { snap: crypto.createHash('md5').update(snapBuf).digest('hex'), mobile: crypto.createHash('md5').update(mobBuf).digest('hex') };
   } finally {

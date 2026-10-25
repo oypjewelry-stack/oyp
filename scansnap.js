@@ -1,11 +1,12 @@
 /* Scanner menu: Scan snap (default) and Mobile.
-   Scan snap files the Fujitsu ScanSnap drop in JO Inbox. Scan now runs joInboxRun, the same check as the 5-minute trigger.
+   Scan snap files the Fujitsu ScanSnap drop in JO Inbox. CHECK FOR NEW SCANS runs joInboxRun at once, the same check as the 5-minute trigger.
    Print jewelry tag and Print QR tag default on. The server keeps them (snapPrintGet / snapPrintSet) so the trigger sees them.
    Until that paste is in, both stay checked and the page says the change is not saved.
    Mobile loads the phone scanner (scan/index.html) and does not change it. */
 (function (root) {
 'use strict';
-const HINT = 'Press Scan on the ScanSnap, then Scan now to file it right away';
+const HINT = 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.';
+const CHECK = 'CHECK FOR NEW SCANS';
 const NOT_SAVED = "Changes aren't saved yet.";
 const S = { user: null, ready: false, jewelry: true, qr: true, run: { busy: false, text: '' } };
 
@@ -61,7 +62,7 @@ function snapHtml() {
     + '<label class="settog"><input type="checkbox" id="snapQr"' + (S.qr ? ' checked' : '') + dis + '> <span>Print QR tag</span></label>'
     + '</div>'
     + '<p class="snapnote" id="snapNote"' + note + '>' + esc(NOT_SAVED) + '</p>'
-    + '<button type="button" class="pill" id="snapNow"' + (S.run.busy ? ' disabled aria-busy="true"' : '') + '>' + (S.run.busy ? 'Checking…' : 'Scan now') + '</button>'
+    + '<button type="button" class="pill" id="snapNow"' + (S.run.busy ? ' disabled aria-busy="true"' : '') + '>' + (S.run.busy ? 'Checking…' : CHECK) + '</button>'
     + '<p class="muted snaphint" id="snapHint">' + esc(HINT) + '</p>'
     + '<p class="snapresult" id="snapResult" role="status">' + esc(S.run.text || '') + '</p></div>';
 }
@@ -170,7 +171,7 @@ async function render(main, user) {
 }
 root.OYPScanSnap = {
   render: render, resultText: resultText, snapHtml: snapHtml, mobileHtml: mobileHtml, mobileSrc: mobileSrc,
-  canEdit: canEdit, tabFromHash: tabFromHash, HINT: HINT, NOT_SAVED: NOT_SAVED, missing: missing
+  canEdit: canEdit, tabFromHash: tabFromHash, HINT: HINT, CHECK: CHECK, NOT_SAVED: NOT_SAVED, missing: missing
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPScanSnap;
 })(typeof window !== 'undefined' ? window : globalThis);
