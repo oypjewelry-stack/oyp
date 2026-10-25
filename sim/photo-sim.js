@@ -34,7 +34,7 @@ eq(photos.includes('indexedDB') && photos.includes('localStorage') && photos.inc
 eq(app.includes('photoThumbs: 1') && app.includes('photoFile: 1'), 'photo reads do not clear the page cache');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(!/photoThumbs|photoFile/.test(cached), 'photo answers are not stored with the page cache');
-eq(index.includes('photos.js?v=7') && index.includes('inv.js?v=23') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=40') && index.includes('app.css?v=57') && index.includes('nav.js?v=66'), 'changed files are cache-busted');
+eq(index.includes('photos.js?v=7') && index.includes('inv.js?v=24') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=40') && index.includes('app.css?v=58') && index.includes('nav.js?v=66'), 'changed files are cache-busted');
 eq(fast.includes('photoThumbs: 1, photoFile: 1') && fast.includes('NOT added to FAST.CACHE'), 'Fast.gs keeps the new actions as fresh reads');
 eq(steps.includes('PASTE_STEPS') && steps.includes('Manage deployments') && steps.includes('New version'), 'paste steps tell the owner to deploy a new version');
 eq(steps.includes('Replace that file') && steps.includes('Page 1 is never') && steps.includes('drawings folder'), 'the new paste steps replace PhotoFast and describe the stand-in');
@@ -49,6 +49,10 @@ eq(review.includes('id="rvJoPh"') && review.includes("kind: 'card'") && review.i
 eq(read('app.css').includes('.ivph.big.sketch{aspect-ratio:auto;height:auto;display:block;background:#fff}') && read('app.css').includes('.ivph.big.phstage.sketch>img{position:static;inset:auto;width:100%;height:auto;object-fit:contain;background:#fff}') && read('app.css').includes('.iview.sketch{background:#fff}'), 'the sketch frame follows the crop on white, and the viewer matches');
 eq(photos.includes('function sketchBox') && photos.includes('function sketchFrame') && photos.includes('presentSketch') && photos.includes('SKETCH_ROI') && !photos.includes('SKETCH_FRAME'), 'a page-2 stand-in is cropped to the ink and is not stretched to the old frame');
 eq(inv.includes("root.className = 'iview' + (o.sketch ? ' sketch' : '')"), 'a sketch opens in the white viewer');
+eq(inv.includes('function ivGallery') && inv.includes("addStrip(sheet.querySelector('#ivDraws'), 'drawing')") && inv.includes("if (can.cost) addStrip(sheet.querySelector('#ivShots'), 'card')"), 'the viewer walks the sheet in order, and page scans stay behind the cost gate');
+eq(inv.includes('class="ivprev"') && inv.includes('class="ivnext"') && inv.includes("e.key === 'ArrowLeft'") && inv.includes("e.key === 'ArrowRight'") && inv.includes('if (next < 0 || next >= items.length) return'), 'arrows and keys move inside the list and do not wrap');
+eq(inv.includes('Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy)') && inv.includes('scale <= 1') && inv.includes('scale = 1; x = 0; y = 0'), 'a fit-zoom swipe changes the photo and zoom resets');
+eq(read('app.css').includes('.iview .ivpos') && read('app.css').includes('.iview .ivprev[hidden],.iview .ivnext[hidden]{display:none}') && read('app.css').includes('@media (min-width:761px)'), 'the position stays visible and desktop arrows hide at the ends');
 const cardClick = inv.slice(inv.indexOf('el.onclick = e =>'), inv.indexOf('ivWireSheet(main);'));
 eq(cardClick.includes('ivMountSheet(main)') && !cardClick.includes('ivOpenCard'), 'tapping an inventory item stays on Inventory');
 eq(inv.includes('>REVIEW<') && inv.includes('function ivOpenViewer') && inv.includes('OYPReview.mount') && inv.includes("review: ['REVIEW'") && inv.includes("debug: ['DEBUG'"), 'a pending JO is reviewed in Inventory and a photo opens large');
