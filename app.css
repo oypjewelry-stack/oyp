@@ -61,7 +61,7 @@ body{font-size:calc(1rem*var(--fs));font-family:var(--body);background:#fff;colo
 table{border-collapse:collapse;width:100%;max-width:calc(900px*var(--cw));font-size:calc(16px*var(--fs))}
 th{text-align:left}th .lab{padding:calc(8px*var(--sp)) calc(10px*var(--sp))}td{padding:calc(12px*var(--sp)) calc(10px*var(--sp));border-top:1px solid #eee;vertical-align:middle}
 td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;cursor:pointer;margin-right:calc(12px*var(--sp));color:#111;text-decoration:underline}
-.chip{font-family:var(--label);font-weight:var(--d-chip-g,500);font-size:var(--d-chip-fp,calc(11px*var(--fs)));color:var(--d-chip-c,#111);border:1px solid #ddd;border-radius:var(--d-chip-rp,calc(12px*var(--rad)));padding:calc(3px*var(--sp)) calc(10px*var(--sp)*var(--pw));display:inline-block;text-transform:uppercase;letter-spacing:.04em;min-height:var(--d-chip-hp,auto);min-width:var(--d-chip-wp,auto)}
+.chip{font-family:var(--label);font-weight:var(--d-chip-g,500);font-size:var(--d-chip-fp,calc(11px*var(--fs)));color:var(--d-chip-c,#111);border:1px solid #ddd;border-radius:var(--d-chip-rp,calc(12px*var(--rad)));padding:calc(3px*var(--sp)) calc(10px*var(--sp)*var(--pw));display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;line-height:1;text-transform:uppercase;letter-spacing:.04em;text-indent:.04em;min-height:var(--d-chip-hp,auto);min-width:var(--d-chip-wp,auto)}
 .chip.gold{background:var(--gold);border-color:var(--gold);color:#fff}
 .addrow{display:flex;gap:calc(12px*var(--sp));align-items:end;flex-wrap:wrap;margin:calc(6px*var(--sp)) 0 calc(26px*var(--sp))}
 .addrow input,.addrow select{border:1.5px solid #111;border-radius:calc(12px*var(--rad));padding:calc(10px*var(--sp)) calc(12px*var(--sp));font-family:var(--body);font-size:calc(17px*var(--fs));background:#fff}
@@ -313,7 +313,9 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivaddmsg{margin:-4px 0 calc(12px*var(--sp));font-family:var(--label);font-size:calc(12px*var(--fs));color:#555}
 .ivaddmsg.err{color:#8a1f11}
 .ivph.big.phstage{cursor:zoom-in}
-.kf .chip.tbr,.ivtag .chip.tbr{font-size:calc(12px*var(--fs));white-space:nowrap;letter-spacing:.02em;padding:calc(3px*var(--sp)) calc(8px*var(--sp))}
+/* Inventory card pills share the .kf size. A 12px REVIEW pill stretched the row and left the other labels high. The detail badge stays 12px, with its own letter-spacing indent. */
+.ivcard .kf .chip{white-space:nowrap}
+.ivtag .chip.tbr{font-size:calc(12px*var(--fs));line-height:1;white-space:nowrap;letter-spacing:.02em;text-indent:.02em;padding:calc(3px*var(--sp)) calc(8px*var(--sp))}
 .ivtag{margin:0 0 calc(8px*var(--sp))}
 .ivchips .fchip.tbr:not(.on){box-shadow:inset 0 0 0 1.5px var(--gold)}
 .side a[data-nkey="jos"],.menu a[data-nkey="jos"]{display:flex;align-items:center;gap:8px}

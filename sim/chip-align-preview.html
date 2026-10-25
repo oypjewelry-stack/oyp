@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600&family=Libre+Bodoni:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../app.css?v=61">
+<title>Chip alignment</title>
+<style>body{margin:0;background:#fff}.page{padding:16px 12px 24px}</style>
+</head><body>
+<div class="page">
+  <div class="ivgrid">
+    <div class="ivcard" id="card">
+      <div class="ivph"></div>
+      <div class="ivb">
+        <div class="kjo">Elena Tan · 26-425</div>
+        <div class="kd">Wide cuff with blue stones</div>
+        <div class="kf" id="row">
+          <span class="chip dark">Vault</span>
+          <span class="chip">Repair</span>
+          <span class="chip gold tbr">REVIEW</span>
+          <span class="chip gold">No location</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="ivtag" id="detail"><span class="chip gold tbr">REVIEW</span></p>
+</div>
+<script>
+function pillBox(el) {
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  const tr = r.getBoundingClientRect();
+  const pr = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  return {
+    text: el.textContent,
+    cls: el.className,
+    dx: (tr.left + tr.width / 2) - (pr.left + pr.width / 2),
+    dy: (tr.top + tr.height / 2) - (pr.top + pr.height / 2),
+    h: pr.height,
+    top: pr.top,
+    fs: cs.fontSize,
+    lh: cs.lineHeight,
+    ls: cs.letterSpacing,
+    pad: cs.padding,
+    disp: cs.display,
+    bs: cs.boxSizing,
+    indent: cs.textIndent
+  };
+}
+window.__measure = function () {
+  const pills = [...document.querySelectorAll('#row .chip')].map(pillBox);
+  const heights = pills.map(p => p.h);
+  const tops = pills.map(p => p.top);
+  const detail = pillBox(document.querySelector('#detail .chip'));
+  return {
+    inner: innerWidth,
+    dpr: devicePixelRatio,
+    sameH: Math.max.apply(null, heights) - Math.min.apply(null, heights),
+    sameTop: Math.max.apply(null, tops) - Math.min.apply(null, tops),
+    pills: pills,
+    detail: detail
+  };
+};
+</script>
+</body></html>
