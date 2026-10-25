@@ -7,15 +7,13 @@
 <link rel="stylesheet" href="../app.css?v=60">
 <style>
   body{margin:0;background:#fff}
-  .sharpgrid{display:flex;flex-direction:column;gap:18px;width:350px;padding:16px}
-  .sharpgrid .ivcard{width:350px}
-  .sharpgrid .cap{padding:8px 10px 12px;font:14px/1.3 sans-serif}
+  .cap{padding:8px 10px 12px;font:13px/1.3 sans-serif}
 </style>
 <script src="../sketchclean.js?v=1"></script>
-<script src="../photos.js?v=14"></script>
+<script src="../photos.js?v=15"></script>
 </head>
 <body>
-<div class="sharpgrid" id="grid"></div>
+<div class="ivgrid" id="grid"></div>
 <script>
 (function () {
   const JOS = [
@@ -25,6 +23,7 @@
     { jo: '26-500', kind: 'photo', sketch: false }
   ];
   const before = location.search.indexOf('phase=before') >= 0;
+  window.__big = 0;
   function canvas(w, h) {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -164,6 +163,7 @@
     call(action, body) {
       if (action !== 'photoThumbs') return Promise.resolve({ ok: false, error: 'Unknown action' });
       const big = body.size >= 1000;
+      if (big) window.__big++;
       if (before && big) return new Promise(function () {});
       const piece = {};
       (body.piece || []).forEach(jo => {
@@ -187,8 +187,14 @@
       const jo = el.dataset.th;
       seen[jo] = seen[jo] || [];
       seen[jo].push(src);
-      const need = before ? 1 : 2;
-      if (JOS.every(row => seen[row.jo] && seen[row.jo].length >= need)) window.__ready = 'yes';
+      const ready = JOS.every(row => {
+        const n = (seen[row.jo] || []).length;
+        const el = grid.querySelector('[data-th="' + row.jo + '"]');
+        if (!n || !el || !el.clientWidth) return false;
+        const tier = window.OYPPhotos.sharpTier(el.clientWidth, window.devicePixelRatio || 1);
+        return before || !tier ? true : n >= 2;
+      });
+      if (ready) window.__ready = 'yes';
     }
   });
   window.__measure = async function () {

@@ -1,5 +1,6 @@
-/* Staff photo cache. Lists paint a 300px thumbnail at once, then upgrade tiles on screen one at a time
-   to a JPEG sized to the card's device pixels (capped at 900) from the existing 1600px photoThumbs read.
+/* Staff photo cache. Lists paint a 300px thumbnail at once. A tile then upgrades only when its own rendered width
+   times the screen density is above 300, to the 600 or 900 tier, from the existing 1600px photoThumbs read.
+   A phone row is 76 CSS px, so the 300px thumb is already enough and is not downloaded again. A resize measures each tile again.
    Opening a photo shows the thumbnail, then a 1600px image. The full Drive file loads only from Open original.
    Repeat views are kept in memory, IndexedDB, and (small thumbs) localStorage.
    A page-2 stand-in is stored in IndexedDB too, keyed by the JO and the source page file.
@@ -26,6 +27,8 @@ const SHARP_Q = [];
 const SHARP_MEM = new Map();
 const SHARP_PEND = new Set();
 const SHARP_NET = new Set();
+const SHARP_ROOTS = [];
+const SHARP_APPLIED = typeof WeakMap === 'function' ? new WeakMap() : new Map();
 let SHARP_RUN = 0;
 let SHARP_ORDER = [];
 let timer = 0, mode = '', firstBatch = true, revSoon = false;
@@ -324,16 +327,16 @@ function sketchStale(jo) {
   const at = MEM.get('sketchat:' + jo) || 0;
   return !at || (Date.now() - at) > SKETCH_AGE;
 }
-/* Card CSS width times the screen density, rounded up to a 100px step. 300 and below stays on the thumbnail. */
+/* Smallest of 300, 600, 900 that covers this tile's rendered width times the screen density.
+   300 is the thumbnail already on screen, so a phone row (76 CSS px, even at density 3) returns 0 and downloads nothing. */
 function sharpTier(cssPx, dpr) {
   const css = +cssPx || 0;
   const ratio = +dpr || 0;
   if (css <= 0 || ratio <= 0) return 0;
-  let px = Math.round(css * ratio);
-  if (px <= 300) return 0;
-  px = Math.ceil(px / 100) * 100;
-  if (px > SHARP_CAP) px = SHARP_CAP;
-  return px > 300 ? px : 0;
+  const need = Math.round(css * ratio);
+  if (need <= 300) return 0;
+  if (need <= 600) return 600;
+  return SHARP_CAP;
 }
 function sharpStorageKey(item, tier) {
   if (!item || !item.jo || !tier) return '';
@@ -559,21 +562,65 @@ function later(fn) {
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
   else setTimeout(fn, 32);
 }
+function markSharp(el, tier) {
+  if (!el || !tier) return;
+  const prev = SHARP_APPLIED.get(el) || 0;
+  if (tier > prev) SHARP_APPLIED.set(el, tier);
+}
+function tileNearScreen(el) {
+  if (!el || el.isConnected === false) return false;
+  if (typeof el.getBoundingClientRect !== 'function') return true;
+  let r = null;
+  try { r = el.getBoundingClientRect(); } catch (e) { return true; }
+  if (!r || (!r.width && !r.height && !r.top && !r.bottom)) return true;
+  const h = window.innerHeight || 0;
+  const w = window.innerWidth || 0;
+  if (!h || !w) return true;
+  return r.bottom > -800 && r.top < h + 800 && r.right > 0 && r.left < w;
+}
+function remeasureSharp() {
+  for (let i = SHARP_ROOTS.length - 1; i >= 0; i--) {
+    const row = SHARP_ROOTS[i];
+    if (!row.root || row.root.isConnected === false) { SHARP_ROOTS.splice(i, 1); continue; }
+    let nodes = [];
+    try { nodes = row.root.querySelectorAll(row.sel); } catch (e) { continue; }
+    for (let n = 0; n < nodes.length; n++) {
+      const el = nodes[n];
+      if (!tileNearScreen(el)) continue;
+      let item = null;
+      try { item = row.item(el); } catch (e) { item = null; }
+      if (item) queueSharp(el, item, row);
+    }
+  }
+}
+function bindSharpResize() {
+  if (bindSharpResize.on || !window.addEventListener) return;
+  bindSharpResize.on = true;
+  let wait = 0;
+  const kick = () => {
+    clearTimeout(wait);
+    wait = setTimeout(remeasureSharp, 80);
+  };
+  window.addEventListener('resize', kick);
+  window.addEventListener('orientationchange', kick);
+}
 function queueSharp(el, item, opt, waited) {
   if (!el || el.isConnected === false || !opt || !item) return;
   if (item.kind !== 'piece' || item.size !== 300 || !item.jo) return;
   if (mode === 'old') return;
-  const tier = sharpTier(el.clientWidth || el.offsetWidth || 0, window.devicePixelRatio || 1);
-  if (!tier) {
+  const css = el.clientWidth || el.offsetWidth || 0;
+  if (!css) {
     if (waited) return;
     later(() => queueSharp(el, item, opt, true));
     return;
   }
+  const tier = sharpTier(css, window.devicePixelRatio || 1);
+  if (!tier || (SHARP_APPLIED.get(el) || 0) >= tier) return;
   const copy = Object.assign({}, item);
   const key = sharpStorageKey(copy, tier);
   if (!key) return;
   const hit = sharpMemGet(key, copy);
-  if (hit) { opt.paint(el, hit.src, copy); return; }
+  if (hit) { markSharp(el, tier); opt.paint(el, hit.src, copy); return; }
   const token = sharpToken(copy.jo, tier);
   if (SHARP_PEND.has(token)) return;
   if (!(SHARP_NET.has(token) && sharpGenerationOk(copy)) && !sharpGenerationOk(copy)) SHARP_NET.delete(token);
@@ -600,6 +647,7 @@ async function sharpJob(job) {
     const cached = await idbGetObj(key);
     if (cached && sharpFresh(item, cached)) {
       sharpMemPut(key, cached);
+      markSharp(el, tier);
       if (el.isConnected !== false && !superseded(item)) opt.paint(el, cached.src, item);
       return;
     }
@@ -614,6 +662,7 @@ async function sharpJob(job) {
     const rec = { src: out, sharp: true, sketch: !!item.sketch, id: item.id || '', jo: item.jo, at: Date.now(), tier: tier };
     sharpMemPut(key, rec);
     saveSharp(item.jo, key, rec);
+    markSharp(el, tier);
     opt.paint(el, out, item);
   } catch (e) {}
 }
@@ -920,6 +969,11 @@ function watch(root, opt) {
   }
   const go = () => {
     const user = opt;
+    for (let i = SHARP_ROOTS.length - 1; i >= 0; i--) {
+      if (SHARP_ROOTS[i].root === root || SHARP_ROOTS[i].root.isConnected === false) SHARP_ROOTS.splice(i, 1);
+    }
+    SHARP_ROOTS.push({ root: root, sel: user.sel, item: user.item, paint: user.paint });
+    bindSharpResize();
     opt = {
       sel: user.sel,
       item: user.item,

@@ -85,33 +85,45 @@ async function chrome() {
     await send('Page.enable');
     const art = '/opt/cursor/artifacts';
     fs.mkdirSync(art, { recursive: true });
-    const width = 1100, height = 1800;
-    for (const phase of ['before', 'after']) {
-      await send('Emulation.setDeviceMetricsOverride', { width: width, height: height, deviceScaleFactor: 2, mobile: false });
-      await send('Page.navigate', { url: 'file://' + path.join(root, 'sim/sharp-list-preview.html') + '?phase=' + phase });
+    const views = [
+      { name: '390', width: 390, height: 844, dpr: 3, mobile: true },
+      { name: '1024', width: 1024, height: 900, dpr: 2, mobile: false }
+    ];
+    for (const view of views) {
+      await send('Emulation.setDeviceMetricsOverride', { width: view.width, height: view.height, deviceScaleFactor: view.dpr, mobile: view.mobile });
+      await send('Page.navigate', { url: 'file://' + path.join(root, 'sim/sharp-list-preview.html') + '?view=' + view.name });
       let ready = '';
       for (let i = 0; i < 80; i++) {
         ready = await evalJson('window.__ready || ""');
         if (ready === 'yes') break;
         await sleep(100);
       }
-      eq(ready === 'yes', phase + ' cards painted');
+      eq(ready === 'yes', view.name + ' cards painted');
       if (ready !== 'yes') continue;
-      await send('Emulation.setDeviceMetricsOverride', { width: width, height: height, deviceScaleFactor: 2, mobile: false });
+      await send('Emulation.setDeviceMetricsOverride', { width: view.width, height: view.height, deviceScaleFactor: view.dpr, mobile: view.mobile });
       await evalJson('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))');
-      const clean = await evalJson('JSON.stringify(window.__clean || [])');
+      const inner = await evalJson('window.innerWidth');
+      eq(inner === view.width, 'layout width is ' + view.width + ' (got ' + inner + ')');
       const rows = JSON.parse(await evalJson('window.__measure().then(function (rows) { return JSON.stringify(rows); })'));
-      console.log(phase, 'clean', clean);
-      console.log(phase, 'measure', JSON.stringify(rows));
-      if (phase === 'after') {
-        const parsed = JSON.parse(clean);
-        parsed.forEach(row => eq(row.confident === true && row.w >= 600, row.jo + ' sketchClean on the 1600px page is confident (' + row.w + 'x' + row.h + ', ' + row.reason + ')'));
-      }
+      const big = await evalJson('window.__big || 0');
+      console.log(view.name, 'big', big, 'measure', JSON.stringify(rows));
       rows.forEach(row => {
-        eq(row.dpr === 2 && row.cssW >= 340 && row.cssW <= 360, phase + ' ' + row.jo + ' card is about 350 CSS px at 2x (css ' + row.cssW + ', dpr ' + row.dpr + ')');
-        if (phase === 'before') eq(row.bw <= 480, phase + ' ' + row.jo + ' bitmap is the small thumb (' + row.bw + 'x' + row.bh + ')');
-        else eq(row.bw >= 600 && row.bw <= 900, phase + ' ' + row.jo + ' bitmap is the device-pixel tier (' + row.bw + 'x' + row.bh + ')');
+        eq(row.dpr === view.dpr, view.name + ' ' + row.jo + ' uses DPR ' + view.dpr + ' (got ' + row.dpr + ')');
+        if (view.name === '390') {
+          eq(row.cssW >= 70 && row.cssW <= 84 && row.tier === 0 && row.bw <= 300 && row.paints === 1, view.name + ' ' + row.jo + ' stays on the 300px thumb (' + row.cssW + ' CSS px, bitmap ' + row.bw + 'x' + row.bh + ', tier ' + row.tier + ')');
+        } else {
+          const long = Math.max(row.bw, row.bh);
+          eq(row.cssW >= 200 && (row.tier === 600 || row.tier === 900) && row.paints >= 2 && long > 300 && long <= row.tier, view.name + ' ' + row.jo + ' upgrades to its tier (' + row.cssW + ' CSS px, bitmap ' + row.bw + 'x' + row.bh + ', tier ' + row.tier + ')');
+        }
       });
+      if (view.name === '390') eq(big === 0, 'the phone list does not request a 1600px image');
+      else eq(big >= 1, 'the desktop list requests the larger image');
+      const pagePng = await send('Page.captureScreenshot', { format: 'png' });
+      const pageBuf = Buffer.from(pagePng.data, 'base64');
+      const pageName = 'sharp_list_' + view.name + '.png';
+      fs.writeFileSync(path.join(art, pageName), pageBuf);
+      shots.push({ name: pageName, md5: crypto.createHash('md5').update(pageBuf).digest('hex'), bytes: pageBuf.length, view: view.name });
+      console.log('shot', pageName, shots[shots.length - 1].md5, pageBuf.length);
       const rects = JSON.parse(await evalJson(`JSON.stringify([...document.querySelectorAll('.ivph')].map(el => {
         const r = el.getBoundingClientRect();
         return { jo: el.dataset.th, x: r.x, y: r.y, w: r.width, h: r.height };
@@ -122,19 +134,19 @@ async function chrome() {
           clip: { x: rect.x, y: rect.y, width: rect.w, height: rect.h, scale: 1 }
         });
         const buf = Buffer.from(png.data, 'base64');
-        const name = 'sharp_' + phase + '_' + rect.jo + '.png';
+        const name = 'sharp_' + view.name + '_' + rect.jo + '.png';
         fs.writeFileSync(path.join(art, name), buf);
         const md5 = crypto.createHash('md5').update(buf).digest('hex');
-        shots.push({ name, md5, bytes: buf.length, phase });
+        shots.push({ name, md5, bytes: buf.length, view: view.name });
         console.log('shot', name, md5, buf.length);
       }
     }
-    const before = shots.filter(s => s.phase === 'before');
-    const after = shots.filter(s => s.phase === 'after');
-    eq(before.length === 4 && after.length === 4, 'eight crops were written');
-    before.forEach(b => {
-      const a = after.find(s => s.name.replace('after', 'before') === b.name);
-      eq(a && a.md5 !== b.md5, b.name + ' differs from the sharp crop');
+    const phone = shots.filter(s => s.view === '390' && s.name.indexOf('26-') >= 0);
+    const desk = shots.filter(s => s.view === '1024' && s.name.indexOf('26-') >= 0);
+    eq(phone.length === 4 && desk.length === 4, 'both viewports wrote four tile crops');
+    phone.forEach(p => {
+      const d = desk.find(s => s.name.slice(s.name.indexOf('_26')) === p.name.slice(p.name.indexOf('_26')));
+      eq(d && d.md5 !== p.md5, p.name + ' differs from the desktop crop');
     });
   } finally {
     try { if (ws) ws.close(); } catch (e) {}
