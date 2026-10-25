@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 35;
+var PRINT_JS = 36;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -824,69 +824,113 @@ function hostList(host) {
   for (i = 0; i < kids.length; i++) out.push(kids[i]);
   return out;
 }
-function clearTagSvg(host) {
+function clearTag(host, keepCanvas) {
   hostList(host).forEach(function (el) {
     var name = String((el && (el.nodeName || el.tagName)) || '').toLowerCase();
-    if (name !== 'svg') return;
+    var cls = el && typeof el.className === 'string' ? el.className : '';
+    var art = name === 'svg' || cls.indexOf('oyp-tag') >= 0;
+    if (!art && !(name === 'canvas' && !keepCanvas)) return;
     if (el.remove) el.remove();
     else if (host.removeChild) host.removeChild(el);
   });
 }
-/* Jewelry words are SVG text. QR modules and the logo are SVG rectangles.
-   A JO card still uses the bitmap preview. */
-function mountTagSvg(host, scene, className) {
-  if (!host || !host.appendChild || !scene) return null;
-  clearTagSvg(host);
+function tagPct(n, total) {
+  return (Math.round((n / total) * 10000) / 100) + '%';
+}
+function tagCqw(n, total) {
+  return (Math.round((n / total) * 10000) / 100) + 'cqw';
+}
+function tagTextNode(value) {
+  if (document.createTextNode) return document.createTextNode(value);
+  return { nodeName: '#text', nodeType: 3, textContent: String(value), data: String(value), children: [] };
+}
+/* Logo sits under the words. The QR sits over them. Both are SVG rectangles. */
+function tagShapes(scene, role) {
+  var rects = (scene.rects || []).filter(function (r) { return r && r.role === role; });
+  if (!rects.length) return null;
   var svg = svgEl('svg');
-  var cls = (className ? className + ' ' : '') + 'oyp-tagsvg';
-  svg.setAttribute('class', cls);
+  svg.setAttribute('class', 'oyp-tagshapes');
   svg.setAttribute('viewBox', '0 0 ' + scene.width + ' ' + scene.height);
-  svg.setAttribute('width', String(scene.width));
-  svg.setAttribute('height', String(scene.height));
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Jewelry tag');
-  if (className && className.indexOf('oyp-laycanvas') >= 0 && svg.style) {
-    svg.style.position = 'absolute';
-    svg.style.left = '0';
-    svg.style.top = '0';
-    svg.style.width = '100%';
-    svg.style.height = '100%';
-    svg.style.pointerEvents = 'none';
-  }
-  var font = 'OYPLabel, Inter, "Helvetica Neue", Arial, sans-serif';
-  var paper = svgEl('rect');
-  paper.setAttribute('x', '0');
-  paper.setAttribute('y', '0');
-  paper.setAttribute('width', String(scene.width));
-  paper.setAttribute('height', String(scene.height));
-  paper.setAttribute('fill', '#fff');
-  paper.setAttribute('data-role', 'paper');
-  svg.appendChild(paper);
-  (scene.texts || []).forEach(function (t) {
-    if (!t || !t.text) return;
-    var node = svgEl('text');
-    node.setAttribute('x', String(Math.round(t.x * 100) / 100));
-    node.setAttribute('y', String(Math.round(t.y * 100) / 100));
-    node.setAttribute('fill', '#000');
-    node.setAttribute('font-family', font);
-    node.setAttribute('font-weight', String(t.weight || 700));
-    node.setAttribute('font-size', String(t.size));
-    if (t.track) node.setAttribute('letter-spacing', String(t.track));
-    node.textContent = t.text;
-    svg.appendChild(node);
-  });
-  (scene.rects || []).forEach(function (r) {
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  rects.forEach(function (r) {
     var node = svgEl('rect');
     node.setAttribute('x', String(r.x));
     node.setAttribute('y', String(r.y));
     node.setAttribute('width', String(r.w));
     node.setAttribute('height', String(r.h));
     node.setAttribute('fill', '#000');
-    if (r.role) node.setAttribute('data-role', r.role);
+    node.setAttribute('data-role', role);
     svg.appendChild(node);
   });
-  host.appendChild(svg);
   return svg;
+}
+/* Jewelry words are HTML text. SVG is only the QR and the logo.
+   A JO card still uses the bitmap preview. The Niimbot path is unchanged. */
+function buildTag(scene, className) {
+  if (!scene || !scene.width || !scene.height) return null;
+  var lay = className && className.indexOf('oyp-laycanvas') >= 0;
+  var root = document.createElement('div');
+  var cls = (className ? className + ' ' : '') + 'oyp-tag';
+  root.className = cls;
+  if (root.setAttribute) root.setAttribute('class', cls);
+  root.setAttribute('aria-label', 'Jewelry tag');
+  if (root.style) {
+    root.style.aspectRatio = scene.width + ' / ' + scene.height;
+    root.style.background = lay ? 'transparent' : '#fff';
+    root.style.color = '#000';
+    if (lay) {
+      root.style.position = 'absolute';
+      root.style.left = '0';
+      root.style.top = '0';
+      root.style.width = '100%';
+      root.style.height = '100%';
+      root.style.pointerEvents = 'none';
+    }
+  }
+  var logo = tagShapes(scene, 'logo');
+  if (logo) root.appendChild(logo);
+  (scene.texts || []).forEach(function (t) {
+    if (!t || !t.text) return;
+    var word = document.createElement('span');
+    word.className = 'oyp-tagword';
+    if (word.setAttribute) word.setAttribute('class', 'oyp-tagword');
+    var ascent = t.ascent != null ? +t.ascent : t.size * 0.97;
+    if (word.style) {
+      word.style.left = tagPct(t.x, scene.width);
+      word.style.top = tagPct(t.y - ascent, scene.height);
+      word.style.fontSize = tagCqw(t.size, scene.width);
+      word.style.fontWeight = String(t.weight || 700);
+      if (t.track) word.style.letterSpacing = tagCqw(t.track, scene.width);
+    }
+    word.appendChild(tagTextNode(t.text));
+    root.appendChild(word);
+  });
+  (scene.rects || []).forEach(function (r) {
+    if (!r || r.role !== 'fold') return;
+    var mark = document.createElement('i');
+    mark.className = 'oyp-tagmark';
+    if (mark.setAttribute) mark.setAttribute('data-role', 'fold');
+    if (mark.style) {
+      mark.style.left = tagPct(r.x, scene.width);
+      mark.style.top = tagPct(r.y, scene.height);
+      mark.style.width = tagPct(r.w, scene.width);
+      mark.style.height = tagPct(r.h, scene.height);
+    }
+    root.appendChild(mark);
+  });
+  var qr = tagShapes(scene, 'qr');
+  if (qr) root.appendChild(qr);
+  return root;
+}
+function mountTag(host, scene, className) {
+  if (!host || !host.appendChild || !scene) return null;
+  var keepCanvas = className && (className.indexOf('oyp-qprev') >= 0 || className.indexOf('oyp-laycanvas') >= 0);
+  clearTag(host, keepCanvas);
+  var root = buildTag(scene, className);
+  if (!root) return null;
+  host.appendChild(root);
+  return root;
 }
 function previewItem(sticker) {
   return {
@@ -984,8 +1028,8 @@ function paintSticker(sticker, bigHost, miniHost) {
   try {
     if (sticker.kind === 'jewelry_tag' && root.OYPLabel.tagScene) {
       var scene = root.OYPLabel.tagScene(plainOpts(previewItem(sticker), sticker.kind, linkFor(sticker.kind)));
-      if (bigHost) mountTagSvg(bigHost, scene, 'oyp-prevbig');
-      if (miniHost) mountTagSvg(miniHost, scene, 'oyp-prevmini');
+      if (bigHost) mountTag(bigHost, scene, 'oyp-prevbig');
+      if (miniHost) mountTag(miniHost, scene, 'oyp-prevmini');
       return;
     }
     if (!root.OYPLabel.preview) return;
@@ -1204,9 +1248,9 @@ function openLayout(kind, item, onSave) {
         canvas.height = scene.height;
         var uctx = canvas.getContext('2d');
         if (uctx && uctx.clearRect) uctx.clearRect(0, 0, canvas.width, canvas.height);
-        mountTagSvg(paper, scene, 'oyp-laycanvas');
+        mountTag(paper, scene, 'oyp-laycanvas');
       } else {
-        clearTagSvg(paper);
+        clearTag(paper, true);
         var rendered = L.render(optsFor());
         var view = kind === 'jewelry_tag' && L.exitCanvas ? L.exitCanvas(rendered) : L.labelCanvas(rendered);
         placed = rendered.placed || [];
@@ -2350,11 +2394,11 @@ function drawQueuePreviews(el, r) {
       try {
         if (it.kind === 'jewelry_tag' && root.OYPLabel.tagScene) {
           var scene = root.OYPLabel.tagScene(labelOpts(it));
-          var svg = mountTagSvg(slot.parentNode || slot, scene, 'oyp-qprev');
-          if (svg && slot.parentNode && slot.replaceWith) {
-            svg.setAttribute('aria-label', slot.getAttribute('aria-label') || 'Jewelry tag');
-            slot.replaceWith(svg);
-          }
+          var tag = buildTag(scene, 'oyp-qprev');
+          if (tag && slot.replaceWith) {
+            tag.setAttribute('aria-label', slot.getAttribute('aria-label') || 'Jewelry tag');
+            slot.replaceWith(tag);
+          } else if (tag && slot.parentNode) slot.parentNode.appendChild(tag);
           return;
         }
         var view = root.OYPLabel.preview(root.OYPLabel.render(labelOpts(it)), { scale: 4, smooth: false });
@@ -3459,7 +3503,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=23';
+  link.href = (base || '') + 'print.css?v=24';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {
@@ -3561,5 +3605,5 @@ function start() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();
 
-root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, printQueued: printQueued, printStickers: printStickers, askPrint: askPrint, enqueueBatch: enqueueBatch, download: download, connect: connect, connectSlot: connectSlot, disconnect: disconnect, printerMarks: printerMarks, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx, mountTag: mountTagSvg };
+root.OYPPrint = { summary: summary, mountSettings: mountSettings, mountQueue: mountQueue, printJo: printJo, printLocal: printLocal, printQueued: printQueued, printStickers: printStickers, askPrint: askPrint, enqueueBatch: enqueueBatch, download: download, connect: connect, connectSlot: connectSlot, disconnect: disconnect, printerMarks: printerMarks, refresh: refresh, labelOpts: labelOpts, load: load, save: save, offsetMm: offsetMm, shiftPx: shiftPx, mountTag: mountTag };
 })(typeof window !== 'undefined' ? window : globalThis);

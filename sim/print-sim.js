@@ -433,9 +433,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=35') && index.includes('print-label.js?v=17') && index.includes('nav.js?v=73') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=23') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=23') && read('sim/swipe-preview.html').includes('print.css?v=23'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=17') && read('nav.js').includes('print.js?v=35') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=35') && read('staff/print-test.html').includes('print-label.js?v=17') && read('staff/print-test.html').includes('print.css?v=23') && read('staff/print-test.html').includes('nav.js?v=73') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=36') && index.includes('print-label.js?v=18') && index.includes('nav.js?v=74') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=18') && read('nav.js').includes('print.js?v=36') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=36') && read('staff/print-test.html').includes('print-label.js?v=18') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=74') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -457,7 +457,7 @@ if (mainNav && mainNav !== read('nav.js')) {
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(/\.oyp-prevstage canvas,\.oyp-prevbig\{[^}]*image-rendering:pixelated/.test(read('print.css')) && /\.oyp-qprev\{[^}]*image-rendering:pixelated/.test(read('print.css')) && read('print.js').includes('{ scale: 4, smooth: false }') && !read('print.js').includes('smooth: true'), 'preview canvases keep the 203 dpi pixels crisp');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
-eq(read('staff/print-test.html').includes("s.kind === 'jewelry_tag'") && read('staff/print-test.html').includes('OYPLabel.tagScene') && read('staff/print-test.html').includes('OYPPrint.mountTag') && read('print.js').includes('mountTag: mountTagSvg'), 'the print test jewelry tag is SVG text, and the other samples stay previews');
+eq(read('staff/print-test.html').includes("s.kind === 'jewelry_tag'") && read('staff/print-test.html').includes('OYPLabel.tagScene') && read('staff/print-test.html').includes('OYPPrint.mountTag') && read('print.js').includes('mountTag: mountTag') && read('print.js').includes('createTextNode') && !read('print.js').includes("svgEl('text')"), 'the print test jewelry tag is HTML text, and the QR and logo stay SVG');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
 const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
 eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
@@ -1566,8 +1566,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v33') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v33') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v34') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v34') >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
@@ -1770,6 +1770,9 @@ drain().then(function () {
     }
     env.sandbox.document.createElement = function (name) { return makeEl(name); };
     env.sandbox.document.createElementNS = function (_ns, name) { return makeEl(name); };
+    env.sandbox.document.createTextNode = function (text) {
+      return { nodeName: '#text', nodeType: 3, textContent: String(text == null ? '' : text), data: String(text == null ? '' : text), children: [], parentNode: null };
+    };
     env.sandbox.document.body.appendChild = function (el) { sheets.push(el); el.parentNode = env.sandbox.document.body; return el; };
     env.sandbox.document.getElementById = function (id) {
       function walk(n) {
@@ -1869,10 +1872,23 @@ drain().then(function () {
       env.sheets.forEach(walk);
       return out;
     }
-    const tagTexts = nodesNamed(tag, 'text').map(function (n) { return n.textContent; });
+    function htmlText(env) {
+      const out = [];
+      function walk(n, inSvg) {
+        if (!n) return;
+        const name = String(n.nodeName || '').toLowerCase();
+        const svg = inSvg || name === 'svg';
+        if (n.nodeType === 3 && !svg && String(n.textContent || '').length) out.push(n);
+        (n.children || []).forEach(function (c) { walk(c, svg); });
+      }
+      env.sheets.forEach(function (s) { walk(s, false); });
+      return out;
+    }
+    const tagNodes = htmlText(tag);
+    const tagTexts = tagNodes.map(function (n) { return n.textContent; });
     const tagRects = nodesNamed(tag, 'rect');
-    eq(tagTexts.indexOf('Cubic Zirconia') >= 0 && tagTexts.indexOf('26-287B') >= 0 && tagTexts.indexOf('A.R3') >= 0 && tagTexts.indexOf('7g') >= 0 && tagTexts.indexOf('Silver Necklace') >= 0 && tagTexts.indexOf('Ada Lopez') < 0, 'the preview tag is SVG text nodes');
-    eq(nodesNamed(tag, 'canvas').length === 0 && nodesNamed(tag, 'img').length === 0 && nodesNamed(tag, 'image').length === 0 && tagRects.some(function (n) { return n.attrs['data-role'] === 'qr' && n.attrs.width === n.attrs.height; }) && tagRects.some(function (n) { return n.attrs['data-role'] === 'logo'; }), 'the preview has no canvas or image; the QR and logo are SVG rectangles');
+    eq(nodesNamed(tag, 'text').length === 0 && tagNodes.length > 0 && tagNodes.every(function (n) { return String(n.parentNode && n.parentNode.nodeName || '').toLowerCase() === 'span'; }) && tagTexts.indexOf('Cubic Zirconia') >= 0 && tagTexts.indexOf('26-287B') >= 0 && tagTexts.indexOf('A.R3') >= 0 && tagTexts.indexOf('7g') >= 0 && tagTexts.indexOf('Silver Necklace') >= 0 && tagTexts.indexOf('Ada Lopez') < 0, 'the preview tag text is HTML text nodes');
+    eq(nodesNamed(tag, 'canvas').length === 0 && nodesNamed(tag, 'img').length === 0 && nodesNamed(tag, 'image').length === 0 && tagRects.some(function (n) { return n.attrs['data-role'] === 'qr' && n.attrs.width === n.attrs.height; }) && tagRects.some(function (n) { return n.attrs['data-role'] === 'logo'; }) && tagRects.every(function (n) { return n.attrs['data-role'] === 'qr' || n.attrs['data-role'] === 'logo'; }), 'the preview has no canvas or image; SVG rectangles are only the QR and the logo');
     eq(find(tag, 'data-nav', 'prev').disabled === true, 'previous is disabled on the first tag');
     eq(!batch(tag) && !tag.calls.some(function (b) { return b.action === 'printItemSave' || b.op === 'printItemSave' || b.action === 'jobReviewSave'; }), 'the kind choice still has not queued or saved');
     click(tag, 'data-nav', 'next');

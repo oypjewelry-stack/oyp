@@ -1,7 +1,7 @@
 /* Niimbot sticker bitmaps. 203 dpi, print direction "top": canvas width is the printhead,
    canvas height is the feed. The 30 mm label is centred. The thermal head still receives a
-   1-bit raster. On screen, a jewelry tag is SVG: real text for the words, rects for each
-   QR module and each logo bit. Inter Bold (OFL) is the face.
+   1-bit raster. On screen, a jewelry tag's words are HTML text. SVG is only the QR
+   modules and the logo bits. Inter Bold (OFL) is the face.
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
    Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs the flag upright,
    25 mm wide by 30 mm high, with the 45 mm tail to the right of that picture.
@@ -500,10 +500,12 @@ function stampLocal(img, runs) {
       var m = ctx.measureText(run.text);
       var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
       if (root.__oypCapture && run.text) {
+        var fontUp = m.fontBoundingBoxAscent || ascent;
         root.__oypCapture.texts.push({
           text: run.text,
           x: run.x,
           y: run.y + ascent / SCALE,
+          ascent: fontUp / SCALE,
           size: run.size,
           track: run.track || 0,
           weight: (run.bold === 0 || run.bold === false) ? 400 : 700
@@ -1277,8 +1279,9 @@ function preview(rendered, opts) {
   };
 }
 
-/* Readable jewelry tag for the screen. Words are text records. QR modules, the logo,
-   and the fold are rectangles. The Niimbot send path still uses render()'s 1-bit raster. */
+/* Readable jewelry tag for the screen. Words are text records the page draws as HTML.
+   QR modules and the logo are rectangles the page draws as SVG. The Niimbot send path
+   still uses render()'s 1-bit raster. */
 function tagScene(opts) {
   opts = Object.assign({ kind: 'jewelry_tag' }, opts || {});
   opts.kind = 'jewelry_tag';
