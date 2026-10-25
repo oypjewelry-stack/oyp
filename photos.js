@@ -1,8 +1,13 @@
-/* Staff photo cache. Lists use a 300px thumbnail. Opening a photo shows that thumbnail at once, then a 1600px image.
-   The full Drive file loads only from Open original. Repeat views are kept in memory, IndexedDB, and (small thumbs) localStorage.
-   A page-2 stand-in (cleaned drawing, or a white card when there is no drawing) is stored in IndexedDB too, keyed by the JO and the source page file.
+/* Staff photo cache. Lists paint a 300px thumbnail at once. A tile then upgrades only when its own rendered width
+   times the screen density is above 300, to the 600 or 900 tier, from the existing 1600px photoThumbs read.
+   A phone row is 76 CSS px, so the 300px thumb is already enough and is not downloaded again. A resize measures each tile again.
+   Opening a photo shows the thumbnail, then a 1600px image. The full Drive file loads only from Open original.
+   Repeat views are kept in memory, IndexedDB, and (small thumbs) localStorage.
+   A page-2 stand-in is stored in IndexedDB too, keyed by the JO and the source page file.
+   The sharper list image is a separate record (the key includes the pixel tier) and is not copied into memory at startup.
    At startup every cached thumb is copied into memory in one pass, so the list can paint before any network call.
-   One photoThumbs call covers the tiles on screen. Until PhotoFast.gs is pasted, the old invThumbs / prodPhoto / jobPhoto calls are used. */
+   One photoThumbs call covers the tiles on screen. Until PhotoFast.gs is pasted, the old invThumbs / prodPhoto / jobPhoto calls are used,
+   and the list keeps the 300px image. */
 (() => {
 'use strict';
 const MEM = new Map();
@@ -14,6 +19,18 @@ const PRE = { p: null, done: false, gate: null };
 const PRE_WAIT = 300;
 const SKETCH_AGE = 14 * 24 * 60 * 60 * 1000;
 const SKETCH_MAX_W = 480;
+const SHARP_CAP = 900;
+const SHARP_RUN_MAX = 1;
+const SHARP_MEM_MAX = 12;
+const SHARP_IDB_MAX = 80;
+const SHARP_Q = [];
+const SHARP_MEM = new Map();
+const SHARP_PEND = new Set();
+const SHARP_NET = new Set();
+const SHARP_ROOTS = [];
+const SHARP_APPLIED = typeof WeakMap === 'function' ? new WeakMap() : new Map();
+let SHARP_RUN = 0;
+let SHARP_ORDER = [];
 let timer = 0, mode = '', firstBatch = true, revSoon = false;
 
 const memKey = (id, size) => id + '|' + size;
@@ -69,11 +86,29 @@ function idbPut(id, size, src) {
     try { d.transaction('ph', 'readwrite').objectStore('ph').put(src, id + '|' + size); } catch (e) {}
   }).catch(() => {});
 }
-function idbPutRaw(key, val) {
+function idbPutRaw(key, val, onFail) {
   if (!key || val == null || !window.indexedDB) return;
   db().then(d => {
-    try { d.transaction('ph', 'readwrite').objectStore('ph').put(val, key); } catch (e) {}
+    try {
+      const q = d.transaction('ph', 'readwrite').objectStore('ph').put(val, key);
+      if (onFail && q) q.onerror = () => onFail(q.error);
+    } catch (e) { if (onFail) onFail(e); }
   }).catch(() => {});
+}
+function idbGetObj(key) {
+  if (!key || !window.indexedDB) return Promise.resolve(null);
+  return new Promise(res => {
+    let done = false;
+    const finish = v => { if (done) return; done = true; res(v); };
+    setTimeout(() => finish(null), 400);
+    db().then(d => new Promise(r => {
+      try {
+        const q = d.transaction('ph', 'readonly').objectStore('ph').get(key);
+        q.onsuccess = () => { const v = q.result; r(v && typeof v === 'object' ? v : null); };
+        q.onerror = () => r(null);
+      } catch (e) { r(null); }
+    })).then(finish).catch(() => finish(null));
+  });
 }
 function idbDel(key) {
   if (!key || !window.indexedDB) return;
@@ -83,6 +118,16 @@ function idbDel(key) {
 }
 function primeRecord(key, val) {
   if (val && typeof val === 'object') {
+    if (val.sharpOrder && Array.isArray(val.keys)) {
+      val.keys.forEach(k => { if (SHARP_ORDER.indexOf(k) < 0) SHARP_ORDER.push(k); });
+      return;
+    }
+    if (val.sharpIndex && val.jo && Array.isArray(val.keys)) {
+      MEM.set('sharpidx:' + val.jo, val.keys.slice());
+      return;
+    }
+    // Upgraded tiles stay out of the startup copy. A list of sharp JPEGs would sit in memory for every JO.
+    if (val.sharp) return;
     if (val.sketch && val.jo && val.src) {
       const size = val.size || 300;
       MEM.set('sketch:' + val.jo + '|' + size, val.src);
@@ -282,6 +327,345 @@ function sketchStale(jo) {
   const at = MEM.get('sketchat:' + jo) || 0;
   return !at || (Date.now() - at) > SKETCH_AGE;
 }
+/* Smallest of 300, 600, 900 that covers this tile's rendered width times the screen density.
+   300 is the thumbnail already on screen, so a phone row (76 CSS px, even at density 3) returns 0 and downloads nothing. */
+function sharpTier(cssPx, dpr) {
+  const css = +cssPx || 0;
+  const ratio = +dpr || 0;
+  if (css <= 0 || ratio <= 0) return 0;
+  const need = Math.round(css * ratio);
+  if (need <= 300) return 0;
+  if (need <= 600) return 600;
+  return SHARP_CAP;
+}
+function sharpStorageKey(item, tier) {
+  if (!item || !item.jo || !tier) return '';
+  if (item.sketch) return 'shsk:' + item.jo + '|' + tier;
+  return 'shjo:' + item.jo + '|' + tier;
+}
+function sharpToken(jo, tier) { return jo + '|' + tier; }
+function sharpFresh(item, rec) {
+  if (!rec || rec.sharp !== true || !rec.src || !item) return false;
+  if (item.sketch) {
+    if (!rec.sketch) return false;
+    const id = MEM.get('sketchid:' + item.jo) || item.id || '';
+    if (id && rec.id && rec.id !== id) return false;
+    if (sketchStale(item.jo)) return false;
+    const at = MEM.get('sketchat:' + item.jo) || 0;
+    if (rec.at && at && rec.at + 1000 < at) return false;
+    return true;
+  }
+  if (rec.sketch) return false;
+  const id = item.id || MEM.get('photoid:' + item.jo) || '';
+  if (id && rec.id && rec.id !== id) return false;
+  return true;
+}
+function sharpGenerationOk(item) {
+  if (!item || !item.jo) return false;
+  if (item.sketch) return !sketchStale(item.jo);
+  return true;
+}
+function superseded(item) {
+  if (!item || !item.jo) return true;
+  if (!item.sketch) {
+    const id = MEM.get('photoid:' + item.jo) || '';
+    return !!(item.id && id && id !== item.id);
+  }
+  if (MEM.get('photoid:' + item.jo) && MEM.has('jo:' + item.jo + '|300')) return true;
+  const id = MEM.get('sketchid:' + item.jo) || '';
+  return !!(item.id && id && id !== item.id);
+}
+function sharpMemDrop(key) {
+  const rec = SHARP_MEM.get(key);
+  if (!rec) return;
+  SHARP_MEM.delete(key);
+  if (rec.src && rec.src.indexOf('blob:') === 0 && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+    try { URL.revokeObjectURL(rec.src); } catch (e) {}
+  }
+}
+function sharpMemGet(key, item) {
+  const rec = SHARP_MEM.get(key);
+  if (!rec) return null;
+  if (!sharpFresh(item, rec)) { sharpMemDrop(key); return null; }
+  SHARP_MEM.delete(key);
+  SHARP_MEM.set(key, rec);
+  return rec;
+}
+function sharpMemPut(key, rec) {
+  if (SHARP_MEM.has(key)) SHARP_MEM.delete(key);
+  SHARP_MEM.set(key, rec);
+  while (SHARP_MEM.size > SHARP_MEM_MAX) sharpMemDrop(SHARP_MEM.keys().next().value);
+}
+function clearSharpNet(jo) {
+  const prefix = jo + '|';
+  [...SHARP_NET].forEach(t => { if (t.indexOf(prefix) === 0) SHARP_NET.delete(t); });
+  [...SHARP_PEND].forEach(t => { if (t.indexOf(prefix) === 0) SHARP_PEND.delete(t); });
+  for (let i = SHARP_Q.length - 1; i >= 0; i--) if (SHARP_Q[i].jo === jo) SHARP_Q.splice(i, 1);
+}
+function saveSharpOrder() {
+  idbPutRaw('shorder', { sharpOrder: true, keys: SHARP_ORDER.slice() });
+}
+function forgetIndexKey(key) {
+  const found = [];
+  MEM.forEach((val, mk) => { if (mk.indexOf('sharpidx:') === 0) found.push(mk); });
+  found.forEach(mk => {
+    const val = MEM.get(mk);
+    if (!Array.isArray(val) || val.indexOf(key) < 0) return;
+    const next = val.filter(k => k !== key);
+    const jo = mk.slice('sharpidx:'.length);
+    if (!next.length) { MEM.delete(mk); idbDel('shidx:' + jo); }
+    else { MEM.set(mk, next); idbPutRaw('shidx:' + jo, { sharpIndex: true, jo: jo, keys: next }); }
+  });
+}
+function noteSharpKey(jo, key) {
+  SHARP_ORDER = SHARP_ORDER.filter(k => k !== key);
+  SHARP_ORDER.push(key);
+  while (SHARP_ORDER.length > SHARP_IDB_MAX) {
+    const old = SHARP_ORDER.shift();
+    idbDel(old);
+    sharpMemDrop(old);
+    forgetIndexKey(old);
+  }
+  saveSharpOrder();
+  if (!jo) return;
+  let keys = MEM.get('sharpidx:' + jo) || [];
+  if (keys.indexOf(key) < 0) keys = keys.concat([key]);
+  MEM.set('sharpidx:' + jo, keys);
+  idbPutRaw('shidx:' + jo, { sharpIndex: true, jo: jo, keys: keys });
+}
+function quotaName(err) {
+  const n = (err && (err.name || err.message)) || '';
+  return String(n).indexOf('QuotaExceeded') >= 0;
+}
+function saveSharp(jo, key, rec) {
+  noteSharpKey(jo, key);
+  idbPutRaw(key, rec, err => {
+    if (!quotaName(err)) return;
+    const drop = Math.max(1, Math.ceil(SHARP_ORDER.length / 2));
+    for (let i = 0; i < drop && SHARP_ORDER.length > 1; i++) {
+      const old = SHARP_ORDER.shift();
+      if (old === key) { SHARP_ORDER.push(old); continue; }
+      idbDel(old);
+      sharpMemDrop(old);
+      forgetIndexKey(old);
+    }
+    saveSharpOrder();
+    idbPutRaw(key, rec);
+  });
+}
+function dropSharpPrefix(jo, prefix, cancel) {
+  const keys = MEM.get('sharpidx:' + jo) || [];
+  let dropped = 0;
+  const keep = [];
+  keys.forEach(k => {
+    if (k.indexOf(prefix) === 0) {
+      dropped++;
+      idbDel(k);
+      sharpMemDrop(k);
+      SHARP_ORDER = SHARP_ORDER.filter(x => x !== k);
+    } else keep.push(k);
+  });
+  if (!dropped && !cancel) return;
+  if (keep.length) {
+    MEM.set('sharpidx:' + jo, keep);
+    idbPutRaw('shidx:' + jo, { sharpIndex: true, jo: jo, keys: keep });
+  } else {
+    MEM.delete('sharpidx:' + jo);
+    idbDel('shidx:' + jo);
+  }
+  if (dropped) saveSharpOrder();
+  if (cancel) clearSharpNet(jo);
+}
+function dropSketchSharp(jo) { if (jo) dropSharpPrefix(jo, 'shsk:' + jo + '|', false); }
+function dropRealSharp(jo) { if (jo) dropSharpPrefix(jo, 'shjo:' + jo + '|', true); }
+function setSketchId(jo, id) {
+  const prev = MEM.get('sketchid:' + jo) || '';
+  if (id) MEM.set('sketchid:' + jo, id);
+  if (prev && id && prev !== id) {
+    clearSharpNet(jo);
+    dropSketchSharp(jo);
+  }
+}
+function fitDown(src, maxPx) {
+  if (!src) return Promise.resolve('');
+  if (typeof document === 'undefined' || !document.createElement) return Promise.resolve(src);
+  return new Promise(resolve => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => {
+      try {
+        const sw = img.naturalWidth || img.width || 0;
+        const sh = img.naturalHeight || img.height || 0;
+        if (!sw || !sh) { resolve(''); return; }
+        const long = Math.max(sw, sh);
+        const scale = long > maxPx ? maxPx / long : 1;
+        const w = Math.max(1, Math.round(sw * scale));
+        const h = Math.max(1, Math.round(sh * scale));
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      } catch (e) { resolve(''); }
+    };
+    img.onerror = () => resolve('');
+    img.src = src;
+  });
+}
+/* Stand-ins are cleaned from the large page, then capped at the tier. The 300px thumb still uses shrinkStandIn. */
+function sharpFromPage(item, src, tier) {
+  if (!item.sketch) return fitDown(src, tier);
+  return cropSketch(src).then(cleaned => cleaned ? fitDown(cleaned, tier) : '');
+}
+function flyLarge(item) {
+  if (!item || item.sketch || !item.jo) return null;
+  const keys = ['piece:' + item.jo + '|piece|1600'];
+  if (item.id) keys.push(item.id + '|piece|1600');
+  for (let i = 0; i < keys.length; i++) if (FLY.has(keys[i])) return FLY.get(keys[i]);
+  return null;
+}
+/* photoThumbs already accepts a size. PhotoFast maps any size >= 1000 to the 1600px image, so this does not need a new paste.
+   Unknown action means PhotoFast is not pasted: keep the 300px tile and do not ask again. */
+async function pullLarge(item) {
+  if (mode === 'old') return '';
+  if (!item.sketch) {
+    const pending = flyLarge(item);
+    if (pending) {
+      try { const src = await pending; if (src) return src; } catch (e) {}
+    }
+  }
+  if (mode === 'old') return '';
+  let r = null;
+  try {
+    const body = { size: 1600, piece: [item.jo] };
+    if (item.fallback) body.fallback = [item.jo];
+    r = await window.OYP.call('photoThumbs', body);
+  } catch (e) { r = null; }
+  if (!r || r.error === 'Unknown action') { mode = 'old'; return ''; }
+  if (!r.ok) return '';
+  const row = r.piece && r.piece[item.jo];
+  if (!row || !row.src) return '';
+  if (row.id) item.id = row.id;
+  if (row.sketch) item.sketch = true;
+  else {
+    item.sketch = false;
+    if (item.id && item.jo) {
+      const prev = MEM.get('photoid:' + item.jo);
+      if (prev && prev !== item.id) dropRealSharp(item.jo);
+      MEM.set('photoid:' + item.jo, item.id);
+    }
+    if (item.jo) dropStandIn(item.jo);
+  }
+  return row.src;
+}
+function later(fn) {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn);
+  else setTimeout(fn, 32);
+}
+function markSharp(el, tier) {
+  if (!el || !tier) return;
+  const prev = SHARP_APPLIED.get(el) || 0;
+  if (tier > prev) SHARP_APPLIED.set(el, tier);
+}
+function tileNearScreen(el) {
+  if (!el || el.isConnected === false) return false;
+  if (typeof el.getBoundingClientRect !== 'function') return true;
+  let r = null;
+  try { r = el.getBoundingClientRect(); } catch (e) { return true; }
+  if (!r || (!r.width && !r.height && !r.top && !r.bottom)) return true;
+  const h = window.innerHeight || 0;
+  const w = window.innerWidth || 0;
+  if (!h || !w) return true;
+  return r.bottom > -800 && r.top < h + 800 && r.right > 0 && r.left < w;
+}
+function remeasureSharp() {
+  for (let i = SHARP_ROOTS.length - 1; i >= 0; i--) {
+    const row = SHARP_ROOTS[i];
+    if (!row.root || row.root.isConnected === false) { SHARP_ROOTS.splice(i, 1); continue; }
+    let nodes = [];
+    try { nodes = row.root.querySelectorAll(row.sel); } catch (e) { continue; }
+    for (let n = 0; n < nodes.length; n++) {
+      const el = nodes[n];
+      if (!tileNearScreen(el)) continue;
+      let item = null;
+      try { item = row.item(el); } catch (e) { item = null; }
+      if (item) queueSharp(el, item, row);
+    }
+  }
+}
+function bindSharpResize() {
+  if (bindSharpResize.on || !window.addEventListener) return;
+  bindSharpResize.on = true;
+  let wait = 0;
+  const kick = () => {
+    clearTimeout(wait);
+    wait = setTimeout(remeasureSharp, 80);
+  };
+  window.addEventListener('resize', kick);
+  window.addEventListener('orientationchange', kick);
+}
+function queueSharp(el, item, opt, waited) {
+  if (!el || el.isConnected === false || !opt || !item) return;
+  if (item.kind !== 'piece' || item.size !== 300 || !item.jo) return;
+  if (mode === 'old') return;
+  const css = el.clientWidth || el.offsetWidth || 0;
+  if (!css) {
+    if (waited) return;
+    later(() => queueSharp(el, item, opt, true));
+    return;
+  }
+  const tier = sharpTier(css, window.devicePixelRatio || 1);
+  if (!tier || (SHARP_APPLIED.get(el) || 0) >= tier) return;
+  const copy = Object.assign({}, item);
+  const key = sharpStorageKey(copy, tier);
+  if (!key) return;
+  const hit = sharpMemGet(key, copy);
+  if (hit) { markSharp(el, tier); opt.paint(el, hit.src, copy); return; }
+  const token = sharpToken(copy.jo, tier);
+  if (SHARP_PEND.has(token)) return;
+  if (!(SHARP_NET.has(token) && sharpGenerationOk(copy)) && !sharpGenerationOk(copy)) SHARP_NET.delete(token);
+  SHARP_PEND.add(token);
+  SHARP_Q.push({ el: el, item: copy, opt: opt, tier: tier, token: token, key: key, jo: copy.jo });
+  sharpPump();
+}
+function sharpPump() {
+  if (SHARP_RUN >= SHARP_RUN_MAX || !SHARP_Q.length) return;
+  const job = SHARP_Q.shift();
+  SHARP_RUN++;
+  const done = () => {
+    SHARP_RUN--;
+    if (!SHARP_Q.some(j => j.token === job.token)) SHARP_PEND.delete(job.token);
+    sharpPump();
+  };
+  sharpJob(job).then(done, done);
+}
+async function sharpJob(job) {
+  const item = job.item, el = job.el, opt = job.opt, tier = job.tier;
+  let key = job.key;
+  try {
+    if (!el || el.isConnected === false) return;
+    const cached = await idbGetObj(key);
+    if (cached && sharpFresh(item, cached)) {
+      sharpMemPut(key, cached);
+      markSharp(el, tier);
+      if (el.isConnected !== false && !superseded(item)) opt.paint(el, cached.src, item);
+      return;
+    }
+    if (SHARP_NET.has(job.token) || mode === 'old') return;
+    SHARP_NET.add(job.token);
+    const src = await pullLarge(item);
+    if (!src) return;
+    key = sharpStorageKey(item, tier) || key;
+    if (superseded(item) || el.isConnected === false) return;
+    const out = await sharpFromPage(item, src, tier);
+    if (!out || superseded(item) || el.isConnected === false) return;
+    const rec = { src: out, sharp: true, sketch: !!item.sketch, id: item.id || '', jo: item.jo, at: Date.now(), tier: tier };
+    sharpMemPut(key, rec);
+    saveSharp(item.jo, key, rec);
+    markSharp(el, tier);
+    opt.paint(el, out, item);
+  } catch (e) {}
+}
 function dropStandIn(jo) {
   if (!jo) return;
   MEM.delete('sketch:' + jo + '|300');
@@ -295,6 +679,7 @@ function dropStandIn(jo) {
   if (key) idbDel(key);
   if (id) idbDel('sk:' + jo + '|' + id);
   idbDel('sk:' + jo + '|');
+  dropSketchSharp(jo);
 }
 function forgetProfile(jo) {
   if (!jo) return;
@@ -337,11 +722,13 @@ function shrinkStandIn(src) {
   });
 }
 function persistSketch(jo, id, src) {
+  const prev = MEM.get('sketchat:' + jo) || 0;
   const at = Date.now();
   MEM.set('sketchat:' + jo, at);
+  if (prev && at - prev > 1000) clearSharpNet(jo);
   const key = 'sk:' + jo + '|' + (id || '');
-  const prev = MEM.get('sketchkey:' + jo);
-  if (prev && prev !== key) idbDel(prev);
+  const prevKey = MEM.get('sketchkey:' + jo);
+  if (prevKey && prevKey !== key) idbDel(prevKey);
   MEM.set('sketchkey:' + jo, key);
   shrinkStandIn(src).then(small => {
     idbPutRaw(key, { src: small || src, jo: jo, id: id || '', at: at, sketch: true, size: 300 });
@@ -353,11 +740,18 @@ function remember(item, src) {
   // A page-2 stand-in is not the JO's profile. The cleaned image (or the white card) is stored on its own key.
   if (item.sketch && item.jo) {
     MEM.set('sketch:' + item.jo + '|' + size, src);
-    if (size === 300 && item.id) MEM.set('sketchid:' + item.jo, item.id);
+    if (size === 300 && item.id) setSketchId(item.jo, item.id);
     if (size === 300) persistSketch(item.jo, item.id || '', src);
     return;
   }
-  if (item.kind === 'piece' && item.jo && !item.sketch) dropStandIn(item.jo);
+  if (item.kind === 'piece' && item.jo && !item.sketch) {
+    if (item.id) {
+      const prev = MEM.get('photoid:' + item.jo);
+      if (prev && prev !== item.id) dropRealSharp(item.jo);
+      MEM.set('photoid:' + item.jo, item.id);
+    }
+    dropStandIn(item.jo);
+  }
   if (item.id) {
     MEM.set(memKey(item.id, size), src);
     idbPut(item.id, size, src);
@@ -574,11 +968,30 @@ function watch(root, opt) {
     if (OBS[i].root === root || !OBS[i].root.isConnected) { OBS[i].io.disconnect(); OBS.splice(i, 1); }
   }
   const go = () => {
+    const user = opt;
+    for (let i = SHARP_ROOTS.length - 1; i >= 0; i--) {
+      if (SHARP_ROOTS[i].root === root || SHARP_ROOTS[i].root.isConnected === false) SHARP_ROOTS.splice(i, 1);
+    }
+    SHARP_ROOTS.push({ root: root, sel: user.sel, item: user.item, paint: user.paint });
+    bindSharpResize();
+    opt = {
+      sel: user.sel,
+      item: user.item,
+      paint(el, src, item) {
+        user.paint(el, src, item);
+        if (src) queueSharp(el, item, user);
+      }
+    };
     const IO = window.IntersectionObserver;
     const nodes = root.querySelectorAll(opt.sel);
     const list = [];
     for (let i = 0; i < nodes.length; i++) list.push(nodes[i]);
-    const startLoad = (el, item) => load(item).then(src => { if (el.isConnected !== false) opt.paint(el, src || '', item); });
+    const startLoad = (el, item) => load(item).then(src => {
+      if (el.isConnected === false) return;
+      // load() copies the item, so the sketch flag is applied there. Peek copies it back onto the tile's item.
+      if (src && !item.sketch) peek(item);
+      opt.paint(el, src || '', item);
+    });
     let io = null;
     if (IO) {
       io = new IO(entries => entries.forEach(en => {
@@ -816,5 +1229,5 @@ async function setPhoto(jo, file, hooks) {
   return { ok: false, error: 'Could not save the photo' };
 }
 prime();
-window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, ready: PRE.p, photoBox, photoParts, setPhoto };
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, ready: PRE.p, photoBox, photoParts, setPhoto, sharpTier };
 })();

@@ -20,7 +20,9 @@ eq(photos.includes('openCursor') && photos.includes("'sk:'") && photos.includes(
 eq(photos.includes('14 * 24 * 60 * 60 * 1000') && photos.includes('sketchStale') && photos.includes('dropStandIn'), 'stand-ins expire after 14 days and a real photo drops the stand-in');
 eq(photos.includes("rootMargin: '800px'") && photos.includes('i < 16') && photos.includes("img.decoding = 'async'") && photos.includes('queueMicrotask'), 'the first tiles start on a microtask, look 800px ahead, and decode async');
 eq(photos.includes("MEM.set('sketch:'") && photos.includes('!item.sketch') && photos.includes("MEM.set('jo:'"), 'a stand-in stays off the profile key');
-eq(index.includes('photos.js?v=13'), 'photos.js cache number is bumped');
+eq(index.includes('photos.js?v=15'), 'photos.js cache number is bumped');
+eq(photos.includes('SHARP_CAP = 900') && photos.includes("toDataURL('image/jpeg', 0.82)") && photos.includes('SHARP_RUN_MAX = 1') && photos.includes('SHARP_MEM_MAX = 12') && photos.includes('SHARP_IDB_MAX = 80') && photos.includes('QuotaExceeded'), 'list tiles upgrade to a device-pixel JPEG capped at 900');
+eq(photos.includes('function sharpTier') && photos.includes('need <= 300') && photos.includes('need <= 600') && photos.includes('cropSketch(src)') && photos.includes("addEventListener('resize'") && photos.includes("addEventListener('orientationchange'"), 'tiers are 300, 600 and 900, and a resize measures the tiles again');
 eq(photos.includes('PRE_WAIT = 300') && photos.includes('function preReady'), 'a stuck IndexedDB open releases the list after 300ms');
 eq(fast.includes('return n >= 1000 ? PF.MED : PF.TILE') && fast.includes('if (!px) px = PF.TILE'), 'PhotoFast still serves the 300px tile for a list stand-in');
 
@@ -81,6 +83,8 @@ const idb = {
 
 const calls = [];
 let coldAt = 0, revAt = 0;
+let live = 0, maxLive = 0;
+const spans = [];
 const store = {};
 const ctx = {
   setTimeout, clearTimeout, Promise, Map, queueMicrotask, performance, Date,
@@ -106,15 +110,26 @@ ctx.window.OYP = {
     if (action === 'photoThumbs') {
       if (!revAt && dataBody.piece && dataBody.piece.indexOf('26-426') >= 0) revAt = performance.now();
       if (!coldAt && dataBody.piece && dataBody.piece.indexOf('c0') >= 0) coldAt = performance.now();
+      const big = dataBody.size >= 1000;
       const piece = {};
       (dataBody.piece || []).forEach(jo => {
-        if (jo === '26-426') piece[jo] = { id: 'real426', src: 'data:image/jpeg;base64,REAL426', found: true };
+        if (jo === 'ubad') piece[jo] = { id: 'id-ubad', src: 'data:image/jpeg;base64,W300H225ubad', found: true };
+        else if (jo === 'usk') piece[jo] = { id: 'id-usk', src: big ? 'data:image/jpeg;base64,W1600H1200usk' : 'data:image/jpeg;base64,W300H206usk', found: false, sketch: true };
+        else if (/^u\d+$/.test(jo)) piece[jo] = { id: 'id-' + jo, src: big ? 'data:image/jpeg;base64,W1600H1200' + jo : 'data:image/jpeg;base64,W300H225' + jo, found: true };
+        else if (jo === '26-426') piece[jo] = { id: 'real426', src: 'data:image/jpeg;base64,REAL426', found: true };
         else if (jo === '26-427') piece[jo] = { id: 'c427', src: 'data:image/jpeg;base64,NEW427', found: false, sketch: true };
         else if (jo === '26-429') piece[jo] = { id: 'new429', src: 'data:image/jpeg;base64,NEW429', found: false, sketch: true };
         else if (jo === '26-425') piece[jo] = { id: 'c425', src: 'data:image/jpeg;base64,OTHER425', found: false, sketch: true };
         else piece[jo] = { id: 'f-' + jo, src: 'data:image/jpeg;base64,' + jo, found: true };
       });
-      return Promise.resolve({ ok: true, size: dataBody.size, piece: piece, scan: {}, cards: {}, drawing: {} });
+      const payload = { ok: true, size: dataBody.size, piece: piece, scan: {}, cards: {}, drawing: {} };
+      if (big && dataBody.piece && dataBody.piece.indexOf('ubad') >= 0) payload.ok = false;
+      if (!big) return Promise.resolve(payload);
+      live++;
+      if (live > maxLive) maxLive = live;
+      const span = { jo: (dataBody.piece || []).slice().join(), n: (dataBody.piece || []).length, start: performance.now(), end: 0 };
+      spans.push(span);
+      return new Promise(res => setTimeout(() => { live--; span.end = performance.now(); res(payload); }, 40));
     }
     return Promise.resolve({ ok: false, error: 'Unknown action' });
   }
@@ -272,6 +287,238 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   if (openReq.onsuccess) openReq.onsuccess();
   await wait(30);
   eq(S.peek({ jo: '26-777', kind: 'piece', size: 300, fallback: true }) === lateSrc, 'a late preload still fills memory');
+
+  eq(P.sharpTier(76, 3) === 0 && P.sharpTier(76, 2) === 0 && P.sharpTier(100, 3) === 0, 'a 76px phone tile stays on the 300px thumb, including at DPR 3');
+  eq(P.sharpTier(350, 1) === 600, 'a 350px tile at DPR 1 needs 350 device px, so the 600 tier');
+  eq(P.sharpTier(350, 2) === 900 && P.sharpTier(500, 2) === 900 && P.sharpTier(200, 2) === 600 && P.sharpTier(0, 2) === 0, 'a 350px tile at DPR 2 needs 700 device px, so the 900 tier');
+  ctx.devicePixelRatio = 2;
+  ctx.Uint8Array = Uint8Array;
+  ctx.Uint8ClampedArray = Uint8ClampedArray;
+  ctx.Float32Array = Float32Array;
+  ctx.Int32Array = Int32Array;
+  ctx.Uint32Array = Uint32Array;
+  ctx.ImageData = function ImageData(data, w, h) { this.data = data; this.width = w; this.height = h; };
+  ctx.Image = class {
+    set src(v) {
+      this._src = v;
+      const m = /OUT(\d+)x(\d+)/.exec(v) || /W(\d+)H(\d+)/.exec(v);
+      this.naturalWidth = m ? +m[1] : 1600;
+      this.naturalHeight = m ? +m[2] : 1200;
+      this.width = this.naturalWidth;
+      this.height = this.naturalHeight;
+      queueMicrotask(() => { if (this.onload) this.onload(); });
+    }
+    get src() { return this._src || ''; }
+  };
+  ctx.document = {
+    createElement() {
+      const c = { width: 0, height: 0 };
+      c.getContext = () => ({
+        drawImage() {}, fillRect() {}, fillStyle: '',
+        getImageData(x, y, w, h) { return { data: new Uint8ClampedArray(w * h * 4), width: w, height: h }; },
+        putImageData() {}
+      });
+      c.toDataURL = (type, q) => 'data:image/jpeg;base64,OUT' + c.width + 'x' + c.height + 'q' + q;
+      return c;
+    }
+  };
+  ctx.sketchClean = function (data, w, h) {
+    const ow = Math.max(1, Math.round(w * 0.4));
+    const oh = Math.max(1, Math.round(h * 0.5));
+    return { confident: true, out: { w: ow, h: oh, data: new Uint8ClampedArray(ow * oh * 4) } };
+  };
+  function wide(jo) { return { dataset: { th: jo }, isConnected: true, clientWidth: 350 }; }
+  const sharpPaints = [];
+  const sharpTiles = [wide('u0'), wide('u1'), wide('u2'), wide('usk')];
+  const beforeSharp = calls.length;
+  P.watch({ isConnected: true, querySelectorAll: () => sharpTiles }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv', fallback: true }),
+    paint(el, src, item) { sharpPaints.push({ jo: el.dataset.th, src: src, at: performance.now(), sketch: !!(item && item.sketch) }); }
+  });
+  const upgraded = await (async () => {
+    const t0 = performance.now();
+    while (performance.now() - t0 < 2000) {
+      const ready = ['u0', 'u1', 'u2', 'usk'].every(jo => sharpPaints.filter(p => p.jo === jo).length >= 2);
+      if (ready) return true;
+      await wait(15);
+    }
+    return ['u0', 'u1', 'u2', 'usk'].every(jo => sharpPaints.filter(p => p.jo === jo).length >= 2);
+  })();
+  eq(upgraded, 'each on-screen tile paints a thumbnail and then a sharper image');
+  ['u0', 'u1', 'u2', 'usk'].forEach(jo => {
+    const rows = sharpPaints.filter(p => p.jo === jo);
+    const span = spans.filter(s => s.jo === jo)[0];
+    eq(!!rows[0] && rows[0].src.indexOf('OUT700') < 0 && span && rows[0].at <= span.start, jo + ' keeps the thumbnail until its sharper image is ready');
+  });
+  eq(sharpPaints.filter(p => p.jo === 'usk')[0].sketch === true && sharpPaints.filter(p => p.jo === 'u0')[0].sketch === false, 'the thumbnail paint already knows a stand-in from a product photo');
+  eq(sharpPaints.filter(p => p.jo === 'u0').pop().src === 'data:image/jpeg;base64,OUT900x675q0.82', 'a 350px tile at DPR 2 is downscaled to the 900 tier at jpeg 0.82');
+  eq(sharpPaints.filter(p => p.jo === 'usk').pop().src === 'data:image/jpeg;base64,OUT640x600q0.82', 'a stand-in is cleaned from the 1600px page and is not upscaled or capped at 480');
+  const bigCalls = calls.slice(beforeSharp).filter(c => c.action === 'photoThumbs' && c.data.size >= 1000);
+  eq(bigCalls.length === 4 && bigCalls.every(c => c.data.piece.length === 1), 'each tile asks for the 1600px image once');
+  eq(maxLive === 1 && spans.length >= 4 && spans.every((s, i) => i === 0 || s.start >= spans[i - 1].end - 1), 'sharper images are fetched one at a time (' + maxLive + ' in flight)');
+  const rec0 = data.get('shjo:u0|900');
+  const recS = data.get('shsk:usk|900');
+  eq(!!rec0 && rec0.sharp === true && rec0.tier === 900 && rec0.src.indexOf('OUT900x675q0.82') >= 0, 'the real photo tier is stored in IndexedDB');
+  eq(!!recS && recS.sharp === true && recS.sketch === true && recS.id === 'id-usk' && recS.tier === 900, 'the stand-in tier key includes the JO and the pixel size');
+  const afterFirst = spans.length;
+  const againTiles = [wide('u0'), wide('u1'), wide('u2'), wide('usk')];
+  P.watch({ isConnected: true, querySelectorAll: () => againTiles }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv', fallback: true }),
+    paint(el, src) { sharpPaints.push({ jo: el.dataset.th, src: src, at: performance.now(), again: true }); }
+  });
+  await wait(50);
+  eq(spans.length === afterFirst, 'a revisit in the same session paints the cached tier with no new network call');
+  eq(sharpPaints.some(p => p.again && p.jo === 'u0' && p.src.indexOf('OUT900x675q0.82') >= 0), 'the cached real photo is the one painted on revisit');
+
+  const revisitCalls = [];
+  const rctx = {
+    setTimeout, clearTimeout, Promise, Map, queueMicrotask, performance, Date,
+    Uint8Array, Uint8ClampedArray, Float32Array, Int32Array, Uint32Array,
+    indexedDB: idb,
+    devicePixelRatio: 2,
+    IntersectionObserver: ctx.IntersectionObserver,
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} }
+  };
+  rctx.window = rctx;
+  rctx.window.OYP = {
+    call(action, body) {
+      revisitCalls.push({ action: action, data: body });
+      return Promise.resolve({ ok: false, error: 'should not be called' });
+    }
+  };
+  vm.createContext(rctx);
+  vm.runInContext(photos, rctx, { filename: 'photos.js' });
+  const R = rctx.window.OYPPhotos;
+  await R.ready;
+  const revisitPaints = [];
+  R.watch({ isConnected: true, querySelectorAll: () => [wide('u0'), wide('usk')] }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv', fallback: true }),
+    paint(el, src) { revisitPaints.push({ jo: el.dataset.th, src: src }); }
+  });
+  const revisitOk = await (async () => {
+    const t0 = performance.now();
+    while (performance.now() - t0 < 1000) {
+      const u0 = revisitPaints.filter(p => p.jo === 'u0').pop();
+      const usk = revisitPaints.filter(p => p.jo === 'usk').pop();
+      if (u0 && usk && u0.src.indexOf('OUT900x675') >= 0 && usk.src.indexOf('OUT640x600') >= 0) return true;
+      await wait(15);
+    }
+    return false;
+  })();
+  const revisitBig = revisitCalls.filter(c => c.action === 'photoThumbs' && c.data && c.data.size >= 1000);
+  eq(revisitOk && revisitBig.length === 0, 'a later visit reads the tier from IndexedDB and does not request the 1600px image');
+
+  const badPaints = [];
+  const badBefore = spans.length;
+  P.watch({ isConnected: true, querySelectorAll: () => [wide('ubad')] }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint(el, src) { badPaints.push(src); }
+  });
+  await wait(200);
+  eq(badPaints.length >= 1 && badPaints.every(s => s.indexOf('W300H225ubad') >= 0) && spans.length === badBefore + 1, 'a failed upgrade leaves the 300px image');
+  const badSpans = spans.length;
+  P.watch({ isConnected: true, querySelectorAll: () => [wide('ubad')] }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint(el, src) { badPaints.push(src); }
+  });
+  await wait(80);
+  eq(spans.length === badSpans && badPaints.every(s => s.indexOf('OUT') < 0), 'a failed tile is not asked again');
+
+  ctx.devicePixelRatio = 3;
+  const smallBefore = spans.length;
+  P.watch({ isConnected: true, querySelectorAll: () => [{ dataset: { th: 'u76' }, isConnected: true, clientWidth: 76 }] }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint() {}
+  });
+  await wait(100);
+  eq(spans.length === smallBefore, 'a 76px tile at DPR 3 does not download a larger image');
+
+  ctx.devicePixelRatio = 1;
+  const d1Before = spans.length;
+  const d1Paints = [];
+  const u350el = { dataset: { th: 'u350' }, isConnected: true, clientWidth: 350 };
+  P.watch({ isConnected: true, querySelectorAll: () => [u350el] }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint(el, src) { d1Paints.push(src); }
+  });
+  const d1Ok = await (async () => {
+    const t0 = performance.now();
+    while (performance.now() - t0 < 1000) {
+      if (d1Paints.some(s => s.indexOf('OUT600x450q0.82') >= 0)) return true;
+      await wait(15);
+    }
+    return false;
+  })();
+  eq(d1Ok && spans.length === d1Before + 1 && data.get('shjo:u350|600') && data.get('shjo:u350|600').tier === 600, 'a 350px tile at DPR 1 upgrades once to the 600 tier');
+
+  u350el.isConnected = false;
+  ctx._ev = {};
+  ctx.addEventListener = (name, fn) => { (ctx._ev[name] = ctx._ev[name] || []).push(fn); };
+  ctx.removeEventListener = () => {};
+  ctx.dispatchEvent = ev => { (ctx._ev[ev.type] || []).slice().forEach(fn => fn(ev)); };
+  ctx.devicePixelRatio = 3;
+  const grown = { dataset: { th: 'urs' }, isConnected: true, clientWidth: 76 };
+  const growRoot = { isConnected: true, querySelectorAll: () => [grown] };
+  const growBefore = spans.length;
+  const growPaints = [];
+  P.watch(growRoot, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint(el, src) { growPaints.push({ w: el.clientWidth, src: src }); }
+  });
+  await wait(120);
+  eq(spans.length === growBefore && growPaints.length >= 1 && growPaints.every(p => p.src.indexOf('OUT') < 0), 'the mobile width paints only the 300px thumb');
+  grown.clientWidth = 350;
+  ctx.devicePixelRatio = 2;
+  ctx.dispatchEvent(new Event('resize'));
+  const grownOk = await (async () => {
+    const t0 = performance.now();
+    while (performance.now() - t0 < 1500) {
+      if (growPaints.some(p => p.src.indexOf('OUT900x675q0.82') >= 0)) return true;
+      await wait(20);
+    }
+    return false;
+  })();
+  eq(grownOk && spans.filter(s => s.jo === 'urs').length === 1, 'widening the same tile from 76px to 350px at DPR 2 downloads the 900 tier once');
+
+  const oldCalls = [];
+  const octx = {
+    setTimeout, clearTimeout, Promise, Map, queueMicrotask, performance, Date,
+    indexedDB: { open() { const req = {}; queueMicrotask(() => { req.result = { objectStoreNames: { contains: () => true }, transaction() { return { objectStore() { return { openCursor() { const r = {}; queueMicrotask(() => { r.result = null; if (r.onsuccess) r.onsuccess(); }); return r; }, get() { const r = {}; queueMicrotask(() => { r.result = undefined; if (r.onsuccess) r.onsuccess(); }); return r; }, put() {}, delete() {} }; } }; } }; if (req.onsuccess) req.onsuccess(); }); return req; } },
+    devicePixelRatio: 2,
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} }
+  };
+  octx.window = octx;
+  octx.window.OYP = {
+    call(action, body) {
+      oldCalls.push({ action: action, data: body });
+      if (action === 'photoThumbs' && body.size >= 1000) return Promise.resolve({ ok: false, error: 'Unknown action' });
+      const piece = {};
+      (body.piece || []).forEach(jo => { piece[jo] = { id: 'id-' + jo, src: 'data:image/jpeg;base64,W300H225' + jo, found: true }; });
+      return Promise.resolve({ ok: true, size: body.size, piece: piece, scan: {}, cards: {}, drawing: {} });
+    }
+  };
+  vm.createContext(octx);
+  vm.runInContext(photos, octx, { filename: 'photos.js' });
+  const O = octx.window.OYPPhotos;
+  await O.ready;
+  const oldPaints = [];
+  const oldTiles = [wide('o0'), wide('o1'), wide('o2')];
+  O.watch({ isConnected: true, querySelectorAll: () => oldTiles }, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv' }),
+    paint(el, src) { oldPaints.push({ jo: el.dataset.th, src: src }); }
+  });
+  await wait(200);
+  const oldBig = oldCalls.filter(c => c.action === 'photoThumbs' && c.data.size >= 1000);
+  eq(oldBig.length === 1 && oldPaints.length === 3 && oldPaints.every(p => p.src.indexOf('W300H225') >= 0), 'without PhotoFast the list stays on the 300px image after one probe');
 
   console.log('MEASURE preloadMs=' + preloadMs.toFixed(2) + ' peekMs=' + peekMs.toFixed(3) + ' loadMs=' + loadMs.toFixed(3) + ' loadCalls=0 revMs=' + revMs.toFixed(2) + ' revCalls=1 coldMs=' + coldMs.toFixed(2) + ' coldCalls=1 cursors=' + cursors + ' gets=' + gets + ' hungMs=' + hungMs.toFixed(0) + ' laterMs=' + laterMs.toFixed(0));
   if (failed) { console.error(failed + ' failed'); process.exit(1); }
