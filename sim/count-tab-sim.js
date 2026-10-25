@@ -45,7 +45,7 @@ eq(app.includes("sessionStorage.setItem('oypInvView', 'count')") && app.includes
 eq(app.includes('canon.indexOf(x) >= 0'), 'a hidden-menu list drops a key that is no longer in the menu');
 eq(inv.includes('data-iv="count">COUNT</button>') && inv.includes('OYPCount.render') && inv.includes("keys.push('count')"), 'COUNT is the last Inventory tab and reuses the count page');
 eq(count.includes('root.OYPInv.countOn') && count.includes("call('countFinish'") && count.includes('applyRead(ST.session, raw)'), 'the count page still owns its reads, and it paints inside the tab');
-eq(index.includes('count.js?v=3') && index.includes('inv.js?v=32') && index.includes('nav.js?v=74') && index.includes('app.js?v=43') && index.includes('count.css?v=2') && index.includes('app.css?v=65'), 'changed files are cache-busted');
+eq(index.includes('count.js?v=3') && index.includes('inv.js?v=32') && index.includes('nav.js?v=75') && index.includes('app.js?v=43') && index.includes('count.css?v=2') && index.includes('app.css?v=65'), 'changed files are cache-busted');
 eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=65'), 'the customer page stays on app.css?v=29');
 
 function get(url) {

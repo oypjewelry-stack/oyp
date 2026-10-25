@@ -231,14 +231,18 @@ function canvasFor(kind, head, model) {
     width: head, height: labelH + tail, preset: p.id
   };
 }
-/* Largest QR that fits maxPx. Quiet zone 4 when it fits, otherwise 3, module at least 3. */
+/* Largest QR that fits maxPx, quiet zone included. Never larger than maxPx:
+   the old fallback (module 2, quiet 4) could be taller than the 20 mm card,
+   and the bitmap then dropped the bottom of the code. */
 function chooseQr(mods, maxPx) {
-  var best = { mod: 2, quiet: 4, size: qrSize(mods, 2, 4) }, m, q, size;
-  for (m = 8; m >= 3; m--) for (q = 4; q >= 2; q--) {
+  var best = null, m, q, size;
+  for (m = 8; m >= 1; m--) for (q = 4; q >= 2; q--) {
     size = qrSize(mods, m, q);
-    if (size <= maxPx && size > best.size) best = { mod: m, quiet: q, size: size };
+    if (size <= maxPx && (!best || size > best.size)) best = { mod: m, quiet: q, size: size };
   }
-  return best;
+  if (best) return best;
+  size = qrSize(mods, 1, 2);
+  return { mod: 1, quiet: 2, size: size <= maxPx ? size : maxPx };
 }
 
 function Img(w, h) {
@@ -570,7 +574,7 @@ var LAYOUT_BASE = {
     jo: { show: 1, x: 1, y: 20.4, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
     sku: { show: 1, x: 1, y: 22.5, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
     location: { show: 1, x: 1, y: 24.5, size: 14, bold: 1, align: 'left', w: 13, wrap: 2 },
-    qr: { show: 1, x: 14.6, y: 19.6, qr: 9.4 },
+    qr: { show: 1, x: 13.6, y: 19.6, qr: 9.4 },
     line: { show: 0, x: 1, y: 20, size: 9, bold: 1, align: 'left', w: 16, wrap: 1 }
   },
   jo_card: {
@@ -666,16 +670,34 @@ function elementText(id, opts) {
   return '';
 }
 function fitQrBox(mods, boxPx) {
-  var mod = 1, best = 1, size;
+  var mod = 1, best = 0, size;
   while (mod < 16) {
     size = qrSize(mods, mod, 2);
     if (size > boxPx) break;
     best = mod;
     mod++;
   }
+  if (!best) return null;
   return { mod: best, quiet: 2, size: qrSize(mods, best, 2) };
 }
-function paintLayout(img, layout, opts, kind) {
+/* Top-left of the quiet-zone square, inside bounds. A request bigger than the
+   label shrinks until the quiet zone fits; it is not drawn past the edge. */
+function placeQr(mods, x, y, request, bounds) {
+  var room = Math.max(1, Math.min(bounds.w, bounds.h));
+  var want = Math.max(1, request | 0);
+  var fit = fitQrBox(mods, Math.min(want, room)) || fitQrBox(mods, room);
+  var mod = fit ? fit.mod : 1, quiet = fit ? fit.quiet : 2;
+  var size = fit ? fit.size : Math.min(room, qrSize(mods, 1, 2));
+  var px0 = x, py0 = y;
+  if (px0 < bounds.x) px0 = bounds.x;
+  if (py0 < bounds.y) py0 = bounds.y;
+  if (px0 + size > bounds.x + bounds.w) px0 = bounds.x + bounds.w - size;
+  if (py0 + size > bounds.y + bounds.h) py0 = bounds.y + bounds.h - size;
+  if (px0 < bounds.x) px0 = bounds.x;
+  if (py0 < bounds.y) py0 = bounds.y;
+  return { x: px0, y: py0, mod: mod, quiet: quiet, size: size };
+}
+function paintLayout(img, layout, opts, kind, bounds) {
   var fields = layoutFields(kind);
   var runs = [], placed = [], lines = [];
   var specPx = 0, joPx = 0, qrInfo = null, i, field, el, text, x, y, w, size, wrapN, bold, block, cursor, li, m, tw, tx, lineH;
@@ -698,10 +720,15 @@ function paintLayout(img, layout, opts, kind) {
     if (field.kind === 'qr') {
       text = elementText('qr', opts);
       x = px(el.x); y = px(el.y); w = Math.max(8, px(el.qr || 6));
+      var boxBounds = bounds || { x: 0, y: 0, w: img.w, h: img.h };
+      /* A code that sits wholly on the jewelry tail stays there. One that crosses
+         the flag edge is pulled onto the flag, so the tail does not cut it. */
+      if (boxBounds.flag && x >= boxBounds.x + boxBounds.w) boxBounds = { x: boxBounds.x + boxBounds.w, y: 0, w: img.w - (boxBounds.x + boxBounds.w), h: img.h };
       if (text) {
-        var mods = makeQr(text), fit = fitQrBox(mods, w);
-        img.qr(mods, x, y, fit.mod, fit.quiet);
-        qrInfo = { x: x, y: y, size: fit.size, text: text };
+        var mods = makeQr(text), fit = placeQr(mods, x, y, w, boxBounds);
+        img.qr(mods, fit.x, fit.y, fit.mod, fit.quiet);
+        qrInfo = { x: fit.x, y: fit.y, size: fit.size, text: text };
+        x = fit.x; y = fit.y; w = fit.size;
       }
       placed.push({ id: 'qr', x: x, y: y, w: w, h: w });
       continue;
@@ -773,10 +800,25 @@ function rotatePaper(img, box, paper) {
     }
   }
 }
+/* Paper x is the feed. After the printer offset, that axis still has to stay
+   on the 25 mm flag. The tail is past contentW, and that is the edge that
+   cuts the bottom of the printed QR. */
+function flagBounds(flagW, flagH, shiftY) {
+  var x0 = Math.max(0, -(shiftY || 0));
+  var x1 = Math.min(flagW, flagW - (shiftY || 0));
+  if (x1 < x0) x1 = x0;
+  return { x: x0, y: 0, w: Math.max(1, x1 - x0), h: flagH, flag: 1 };
+}
+function feedBounds(w, h, shiftY) {
+  var y0 = Math.max(0, -(shiftY || 0));
+  var y1 = Math.min(h, h - (shiftY || 0));
+  if (y1 < y0) y1 = y0;
+  return { x: 0, y: y0, w: w, h: Math.max(1, y1 - y0) };
+}
 function drawJewelryLayout(img, box, opts) {
   var contentW = box.labelH, contentH = box.labelW;
   var paper = new Img(contentW + box.tail, contentH);
-  var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag');
+  var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag', flagBounds(contentW, contentH, box.inkShift || 0));
   var qrBox = null;
   if (drawn.qr) qrBox = { x: box.offsetX + (contentH - drawn.qr.y - drawn.qr.size), y: drawn.qr.x, size: drawn.qr.size };
   rotatePaper(img, box, paper);
@@ -784,7 +826,7 @@ function drawJewelryLayout(img, box, opts) {
 }
 function drawCardLayout(img, box, opts) {
   var sheet = new Img(box.labelW, box.labelH);
-  var drawn = paintLayout(sheet, normalizeLayout('jo_card', opts.layout), opts, 'jo_card');
+  var drawn = paintLayout(sheet, normalizeLayout('jo_card', opts.layout), opts, 'jo_card', feedBounds(box.labelW, box.labelH, box.inkShift || 0));
   var dy, dx, pi, qrBox = null;
   for (dy = 0; dy < sheet.h; dy++) {
     for (dx = 0; dx < sheet.w; dx++) {
@@ -887,19 +929,28 @@ function drawJewelry(img, box, opts) {
 
   /* Lower flap. Stone starts at 16 px (2.0 mm, 5.7 pt). JO, location, and weight
      start at 14 px (1.8 mm, 5.0 pt). The QR uses 3 px modules, about 9.4 mm on a
-     short JO. A line shrinks only when the full words would leave the flag or
-     cover the QR. Price, the description, the metal row, and the logo stay as they are. */
+     short JO, and stops 2 mm short of the flag edge that feeds into the tail.
+     That edge is the bottom of the printed code. A line shrinks only when the
+     full words would leave the flag or cover the QR. Price, the description,
+     the metal row, and the logo stay as they are. */
   var STONE_PX = 16, STONE_MIN = 11, META_PX = 14, META_MIN = 10;
   var mods = jo ? makeQr(jo) : null;
   var mod = 3, quiet = 2;
   var qpix = mods ? qrSize(mods, mod, quiet) : 0;
   var stoneTop = foldY + pad;
-  var maxQr = bottom - stoneTop - 4 - STONE_PX;
-  while (mods && mod > 2 && qpix > maxQr) {
+  var tailGap = px(2);
+  var maxQr = Math.min(bottom - stoneTop - 4 - STONE_PX, contentW - tailGap - pad);
+  while (mods && mod > 1 && qpix > maxQr) {
     mod--;
     qpix = qrSize(mods, mod, quiet);
   }
-  var colRight = qpix ? right - qpix - 4 : right;
+  var qx0 = qpix ? contentW - tailGap - qpix : 0;
+  var qy0 = qpix ? bottom - qpix : 0;
+  if (mods && qpix) {
+    var held = placeQr(mods, qx0, qy0, qpix, flagBounds(contentW, contentH, box.inkShift || 0));
+    mod = held.mod; quiet = held.quiet; qpix = held.size; qx0 = held.x; qy0 = held.y;
+  }
+  var colRight = qpix ? qx0 - 4 : right;
   var colW = Math.max(8, colRight - left);
   function fitMeta(text, wrapN) {
     var size = META_PX, linesAt, track = CRISP_TRACK;
@@ -969,9 +1020,8 @@ function drawJewelry(img, box, opts) {
   dashes(paper, left, foldY, innerW);
   var qrBox = null;
   if (mods) {
-    var qx = right - qpix, qy = bottom - qpix;
-    paper.qr(mods, qx, qy, mod, quiet);
-    qrBox = { x: box.offsetX + (contentH - qy - qpix), y: qx, size: qpix };
+    paper.qr(mods, qx0, qy0, mod, quiet);
+    qrBox = { x: box.offsetX + (contentH - qy0 - qpix), y: qx0, size: qpix };
   }
   rotatePaper(img, box, paper);
   return { lines: lines, specPx: specPx, joPx: joPx, qr: jo, qrBox: qrBox, paper: paper };
@@ -994,6 +1044,7 @@ function render(opts) {
   var img = new Img(box.width, box.height);
   var shiftX = opts.shiftX | 0, shiftY = (opts.shiftY | 0) + (box.biasY || 0);
   box.offsetX += shiftX;
+  box.inkShift = shiftY;
   var rawSet = img.set.bind(img);
   img.set = function (x, y) { rawSet(x, y + shiftY); };
   var lines = [];
@@ -1082,7 +1133,20 @@ function render(opts) {
     if (jo) runs.push({ text: lines[0], x: textX2, y: textY2, size: joPx });
     if (subFit) runs.push({ text: subFit.text, x: textX2, y: textY2 + jm2.ascent + jm2.descent + 4, size: subFit.size });
     var qrY2 = Math.round((box.labelH - qpix2) / 2);
-    if (mods2) qrBox = { x: x0 + pad, y: qrY2, size: qpix2 };
+    var qrX2 = pad;
+    if (mods2) {
+      var cardRoom = feedBounds(box.labelW, box.labelH, shiftY);
+      if (qpix2 > cardRoom.w || qpix2 > cardRoom.h) {
+        picked = chooseQr(mods2, Math.min(cardRoom.w, cardRoom.h));
+        mod2 = picked.mod; quiet2 = picked.quiet; qpix2 = picked.size;
+        qrY2 = cardRoom.y + Math.round((cardRoom.h - qpix2) / 2);
+      }
+      if (qrX2 < cardRoom.x) qrX2 = cardRoom.x;
+      if (qrY2 < cardRoom.y) qrY2 = cardRoom.y;
+      if (qrX2 + qpix2 > cardRoom.x + cardRoom.w) qrX2 = cardRoom.x + cardRoom.w - qpix2;
+      if (qrY2 + qpix2 > cardRoom.y + cardRoom.h) qrY2 = cardRoom.y + cardRoom.h - qpix2;
+      qrBox = { x: x0 + qrX2, y: qrY2, size: qpix2 };
+    }
     stampText(img, runs, box);
     if (mods2) img.qr(mods2, qrBox.x, qrBox.y, mod2, quiet2);
   }

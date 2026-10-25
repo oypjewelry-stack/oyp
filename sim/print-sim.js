@@ -103,7 +103,7 @@ function readableTag(img) {
   if (dash < 40 || gap < 20) return false;
   const box = img.qrBox;
   if (!box) return false;
-  return box.y >= img.labelH - box.size - L.px(2);
+  return box.y >= img.labelH - box.size - L.px(3);
 }
 eq(clearMargin(wide) && clearMargin(longStones), 'tag ink stays about 1 mm inside the flag edges');
 function sideMargins(img) {
@@ -190,6 +190,35 @@ function flapInk(img) {
 const flaps = flapInk(fullTag);
 eq(!outsideFlaps(fullTag) && tailWhite(fullTag), 'no black pixel falls outside the two flap rectangles');
 eq(!outsideFlaps(readTag) && !outsideFlaps(longTag) && tailWhite(readTag) && tailWhite(longTag), 'the larger stone, JO, location, weight, and QR stay inside the flaps');
+/* The quiet-zone square, not just the dark modules. Jewelry uses the 25 mm flag,
+   not the tail: that feed edge is the bottom of the printed code. */
+function qrOnLabel(img) {
+  const b = img.qrBox;
+  if (!b || !(b.size > 0)) return false;
+  const x0 = img.offsetX - (img.shiftX || 0);
+  return b.x >= x0 && b.y >= 0 && b.x + b.size <= x0 + img.labelW && b.y + b.size <= img.labelH;
+}
+function sceneQrInside(scene) {
+  return (scene.rects || []).filter(r => r.role === 'qr').every(r => r.x >= 0 && r.y >= 0 && r.x + r.w <= scene.width && r.y + r.h <= scene.height);
+}
+['B1', 'B31'].forEach(model => ['26-287', '26-1234A'].forEach(jo => {
+  const cardImg = L.render({ kind: 'jo_card', model, jo, due: '2026-10-21' });
+  const tagImg = L.render({ kind: 'jewelry_tag', model, jo, stones: 'Sapphire', location: 'Showroom', weight: '20', sku: '18-498' });
+  const cardLayImg = L.render({ kind: 'jo_card', model, jo, due: '2026-10-21', layout: L.normalizeLayout('jo_card', null) });
+  const tagLayImg = L.render({ kind: 'jewelry_tag', model, jo, stones: 'Sapphire', location: 'Showroom', weight: '20', layout: L.normalizeLayout('jewelry_tag', null) });
+  eq(qrOnLabel(cardImg) && decode(cardImg) === jo, model + ' JO card ' + jo + ' keeps the whole QR, quiet zone included, on the 30×20 label');
+  eq(qrOnLabel(tagImg) && decode(tagImg) === jo, model + ' jewelry tag ' + jo + ' keeps the whole QR, quiet zone included, on the 25×30 flag');
+  eq(qrOnLabel(cardLayImg) && qrOnLabel(tagLayImg) && decode(cardLayImg) === jo && decode(tagLayImg) === jo, model + ' saved layouts for ' + jo + ' keep both QR codes inside the label');
+  eq(sceneQrInside(L.tagScene({ kind: 'jewelry_tag', model, jo, stones: 'Sapphire' })), model + ' jewelry tag ' + jo + ' draws every QR module inside the on-screen label');
+}));
+const hugeTagLay = JSON.parse(JSON.stringify(L.normalizeLayout('jewelry_tag', null)));
+hugeTagLay.qr.x = 0; hugeTagLay.qr.y = 0; hugeTagLay.qr.qr = 30;
+const hugeCardLay = JSON.parse(JSON.stringify(L.normalizeLayout('jo_card', null)));
+hugeCardLay.qr.x = 0; hugeCardLay.qr.y = 0; hugeCardLay.qr.qr = 20;
+const hugeTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', layout: hugeTagLay });
+const hugeCard = L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', layout: hugeCardLay });
+eq(qrOnLabel(hugeTag) && decode(hugeTag) === '26-287' && hugeTag.qrBox.size >= L.px(9), 'an enlarged jewelry QR stays on the flag instead of running onto the tail');
+eq(qrOnLabel(hugeCard) && decode(hugeCard) === '26-287', 'an enlarged JO QR stays inside the 30×20 label');
 eq(flaps.left > 40 && flaps.right > 40 && flaps.span > L.px(15), 'each flap carries ink along the feed, not a strip across the top');
 function paperReads(img, jo) {
   const view = L.paperView(img);
@@ -433,9 +462,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=36') && index.includes('print-label.js?v=18') && index.includes('nav.js?v=74') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=18') && read('nav.js').includes('print.js?v=36') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=36') && read('staff/print-test.html').includes('print-label.js?v=18') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=74') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=36') && index.includes('print-label.js?v=19') && index.includes('nav.js?v=75') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=19') && read('nav.js').includes('print.js?v=36') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=36') && read('staff/print-test.html').includes('print-label.js?v=19') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=75') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
