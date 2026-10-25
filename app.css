@@ -153,8 +153,6 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;z-index:2}
 .rvq{width:100%;border:1.5px solid #111;border-radius:calc(12px*var(--rad));padding:calc(10px*var(--sp)) calc(12px*var(--sp));font-family:var(--body);font-size:max(16px,calc(16px*var(--fs)));margin-bottom:calc(10px*var(--sp))}
 .ivqrow{display:flex;align-items:center;gap:8px;max-width:calc(620px*var(--cw));min-width:0;margin:0 0 calc(10px*var(--sp))}
 .ivqrow .rvq{flex:1 1 auto;width:auto;min-width:0;margin:0}
-.ivqmode{flex:none;box-sizing:border-box;height:44px;min-width:72px;padding:0 12px;border:1.5px solid #111;border-radius:calc(12px*var(--rad));background:#fff;color:#111;font-family:var(--label);font-weight:500;font-size:16px;letter-spacing:.02em;line-height:1;cursor:pointer}
-.ivqmode[aria-pressed="true"]{background:#111;color:#fff}
 .bulk{display:flex;align-items:center;gap:calc(8px*var(--sp));border:1px solid #eee;border-radius:calc(12px*var(--rad));padding:calc(8px*var(--sp)) calc(10px*var(--sp));margin-bottom:calc(10px*var(--sp));position:sticky;top:61px;background:#fff;z-index:5}
 .bulk.on{border-color:var(--gold);background:#fffdf6}.bulk select{flex:1;min-width:0;border:1.5px solid #111;border-radius:calc(10px*var(--rad));padding:calc(8px*var(--sp));font-family:var(--body);font-size:max(16px,calc(15px*var(--fs)));background:#fff}
 .ck{display:flex;align-items:center;gap:calc(7px*var(--sp));font-family:var(--label);font-size:calc(12px*var(--fs));letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;cursor:pointer}.ck input{width:18px;height:18px;accent-color:#111}

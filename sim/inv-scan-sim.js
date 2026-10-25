@@ -1,4 +1,4 @@
-/* Inventory search on a phone: Scan/Type, a scan keeps the number, and the page stays within the screen.
+/* Inventory search on a phone: a scan fills the box on its own, typing stays available, and the page stays within the screen.
    Run: node sim/inv-scan-sim.js */
 'use strict';
 const fs = require('fs');
@@ -16,15 +16,19 @@ const inv = read('inv.js');
 const css = read('app.css');
 const index = read('staff/index.html');
 const scanBlock = inv.slice(inv.indexOf("if ($('#ivQ')) $('#ivQ').onkeydown"), inv.indexOf("if ($('#ivStage'))"));
-eq(index.includes('app.css?v=67') && index.includes('inv.js?v=34') && index.includes('pay.css?v=4') && index.includes('todo.css?v=8') && index.includes('settings.css?v=12'), 'staff pages load the new css and inventory script');
-eq(read('staff/print-test.html').includes('app.css?v=67') && read('staff/print-test.html').includes('settings.css?v=12'), 'print test loads the same staff css');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=67'), 'the customer page stays on app.css?v=29');
+const docAt = inv.lastIndexOf("document.addEventListener('keydown'");
+const docBlock = inv.slice(docAt, inv.indexOf('}, true);', docAt));
+eq(index.includes('app.css?v=68') && index.includes('inv.js?v=35') && index.includes('pay.css?v=4') && index.includes('todo.css?v=8') && index.includes('settings.css?v=12'), 'staff pages load the new css and inventory script');
+eq(read('staff/print-test.html').includes('app.css?v=68') && read('staff/print-test.html').includes('settings.css?v=12'), 'print test loads the same staff css');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=68'), 'the customer page stays on app.css?v=29');
 eq(!index.includes('maximum-scale') && !read('staff/print-test.html').includes('maximum-scale'), 'the viewport is not locked with maximum-scale');
-eq(inv.includes('id="ivQMode"') && inv.includes("inputmode=\"${scan ? 'none' : 'search'}\"") && inv.includes("QMODE_KEY = 'oypIvQMode'") && inv.includes('function ivQSawScanner') && inv.includes('function ivQKeep'), 'the search box has a Scan/Type toggle remembered on this device');
-eq(!inv.includes('#ivScan') && !inv.includes('id="ivScan"'), 'the toggle is not the old scan field');
-eq(!scanBlock.includes("IV.q = ''") && scanBlock.includes('IV.q = ivQKeep(raw)') && scanBlock.includes('ivQSawScanner'), 'a scan Enter keeps the number and does not clear the box');
-eq(inv.includes('function ivCaretEnd') && inv.includes('setSelectionRange(n, n)') && !inv.includes('.select()'), 'the caret stays at the end of the search box');
-eq(css.includes('font-size:max(16px,calc(16px*var(--fs)))') && css.includes('.ivqrow{') && css.includes('grid-template-columns:auto minmax(0,1fr) auto') && css.includes('.ivchips{flex-wrap:nowrap;overflow-x:auto'), 'phone fields are at least 16px and the header and chips can shrink');
+eq(inv.includes('inputmode="search"') && inv.includes('function ivSoftOpen') && inv.includes('function ivHardwareBurst') && inv.includes('function ivScanEnter') && inv.includes("localStorage.removeItem('oypIvQMode')") && inv.includes('function ivQKeep') && inv.includes('SCAN_GAP = 50') && inv.includes('SCAN_HARD_ENTER = 400'), 'a scan is a 50ms wedge or a hardware wedge while the software keyboard is closed');
+eq(!inv.includes('id="ivQMode"') && !inv.includes('ivQSawScanner') && !inv.includes('QMODE_KEY') && !inv.includes('inputmode="none"') && !inv.includes('ivqmode') && inv.includes('does not draw a keyboard button'), 'the search box has no Scan/Type switch and no page keyboard button');
+eq(!inv.includes('#ivScan') && !inv.includes('id="ivScan"'), 'capture does not use the old scan field');
+eq(!scanBlock.includes("IV.q = ''") && scanBlock.includes('IV.q = ivQKeep(raw)') && scanBlock.includes('ivScanEnter(raw)') && scanBlock.includes('e.target.blur()'), 'a scan Enter keeps the number, blurs, and does not clear the box');
+eq(docBlock.includes('IV.q = ivQKeep(raw)') && docBlock.includes('ivScanCommit(raw, false)') && !docBlock.includes("IV.q = ''"), 'a scan while the box is not focused still fills the search box');
+eq(inv.includes('function ivReleaseSearch') && !inv.includes('ivRefocus') && inv.includes('function ivCaretEnd') && inv.includes('setSelectionRange(n, n)') && !inv.includes('.select()'), 'after a scan the caret is collapsed and the field is not refocused');
+eq(css.includes('font-size:max(16px,calc(16px*var(--fs)))') && css.includes('.ivqrow{') && !css.includes('.ivqmode{') && css.includes('grid-template-columns:auto minmax(0,1fr) auto') && css.includes('.ivchips{flex-wrap:nowrap;overflow-x:auto'), 'phone fields are at least 16px and the header and chips can shrink');
 eq(read('pay.css').includes('font-size:max(16px,calc(15px*var(--fs)))') && read('settings.css').includes('font-size:max(16px,calc(15px*var(--fs)))') && read('todo.css').includes('font-size:max(16px,var(--d-btnsm-fp,calc(14px*var(--hs))))'), 'other text fields on a phone stay at least 16px');
 
 const JOBS = [
@@ -141,7 +145,7 @@ async function chromeAt(width, port, pageUrl, shots) {
       localStorage.setItem('oypSessionExp', '2099-01-01T00:00:00.000Z');
       localStorage.setItem('oypUser', JSON.stringify({ username: 'ada', display_name: 'Ada', role: 'admin' }));
       localStorage.setItem('oypDevice', 'd-inv-scan');
-      localStorage.removeItem('oypIvQMode');
+      localStorage.setItem('oypIvQMode', 'scan');
     } catch (e) {}` });
     await send('Page.navigate', { url: pageUrl });
     let ready = null;
@@ -151,12 +155,13 @@ async function chromeAt(width, port, pageUrl, shots) {
         const lay = document.getElementById('layEditBtn');
         const choose = document.getElementById('ivChoose');
         if (!q || !lay || !choose || document.querySelector('[aria-busy="true"]')) return null;
-        return q.getAttribute('inputmode') + '|' + lay.textContent + '|' + choose.textContent;
+        const modeBtn = document.getElementById('ivQMode');
+        return q.getAttribute('inputmode') + '|' + lay.textContent + '|' + choose.textContent + '|' + (modeBtn ? 'button' : 'nobutton') + '|' + (localStorage.getItem('oypIvQMode') || '');
       })()`);
       if (ready) break;
       await sleep(150);
     }
-    check(ready === 'search|Edit layout|Select', 'at ' + width + 'px Inventory opens in Type with Edit layout and Select (' + ready + ')');
+    check(ready === 'search|Edit layout|Select|nobutton|', 'at ' + width + 'px Inventory opens ready to type, with no saved scan mode (' + ready + ')');
     const fit = async (label) => {
       const box = await evalJs(`(() => {
         const w = window.innerWidth;
@@ -177,7 +182,7 @@ async function chromeAt(width, port, pageUrl, shots) {
       })()`);
       const inside = part => part && part.l >= -1 && part.r <= box.w + 1 && part.w > 0;
       check(box && box.sw <= box.w, label + ' scrollWidth ' + (box && box.sw) + ' <= ' + (box && box.w));
-      check(box && inside(box.top) && inside(box.lay) && inside(box.choose) && inside(box.sum) && inside(box.chips) && inside(box.q) && inside(box.mode), label + ' header, Edit layout, Select, stats, chips and search stay on screen ' + JSON.stringify(box && { top: box.top, lay: box.lay, choose: box.choose, sum: box.sum, chips: box.chips, q: box.q, mode: box.mode }));
+      check(box && inside(box.top) && inside(box.lay) && inside(box.choose) && inside(box.sum) && inside(box.chips) && inside(box.q) && !box.mode && box.q.w > box.w * 0.8, label + ' header, Edit layout, Select, stats, chips and search stay on screen ' + JSON.stringify(box && { top: box.top, lay: box.lay, choose: box.choose, sum: box.sum, chips: box.chips, q: box.q, mode: box.mode }));
       if (box && box.sels) check(inside(box.sels), label + ' filters stay on screen ' + JSON.stringify(box.sels));
       const small = (box && box.fonts || []).filter(f => !(f.fs >= 16));
       check(box && box.fonts.length > 0 && small.length === 0, label + ' inputs and selects are at least 16px ' + JSON.stringify(small));
@@ -199,7 +204,7 @@ async function chromeAt(width, port, pageUrl, shots) {
       q.focus();
       return { value: q.value, mode: q.getAttribute('inputmode'), active: document.activeElement && document.activeElement.id, cards: [...document.querySelectorAll('.ivcard')].map(c => c.dataset.jo).join(','), stored: localStorage.getItem('oypIvQMode') || '' };
     })()`);
-    check(typed && typed.value === 'sapphire' && typed.mode === 'search' && typed.active === 'ivQ' && typed.cards === '26-287' && typed.stored === '', 'at ' + width + 'px a typed search stays in Type and filters (' + JSON.stringify(typed) + ')');
+    check(typed && typed.value === 'sapphire' && typed.mode === 'search' && typed.active === 'ivQ' && typed.cards === '26-287' && typed.stored === '', 'at ' + width + 'px a typed search keeps the software keyboard and filters (' + JSON.stringify(typed) + ')');
     await fit('at ' + width + 'px typed search');
     if (width === 390) {
       const pic = await send('Page.captureScreenshot', { format: 'png' });
@@ -230,21 +235,26 @@ async function chromeAt(width, port, pageUrl, shots) {
         cards: [...document.querySelectorAll('.ivcard')].map(c => c.dataset.jo).join(',')
       };
     })()`);
-    check(scanned && scanned.value === '26-300' && scanned.mode === 'none' && scanned.stored === 'scan' && scanned.start === scanned.end && scanned.start === 6 && scanned.active === 'ivQ' && scanned.on === '26-300', 'at ' + width + 'px a fast scan keeps the number, collapses the highlight, and switches to Scan (' + JSON.stringify(scanned) + ')');
+    check(scanned && scanned.value === '26-300' && scanned.mode === 'search' && scanned.stored === '' && scanned.start === scanned.end && scanned.active !== 'ivQ' && scanned.on === '26-300' && scanned.cards === '26-300', 'at ' + width + 'px a fast scan keeps the number, leaves the keyboard mode alone, and does not highlight it (' + JSON.stringify(scanned) + ')');
     await fit('at ' + width + 'px scan Enter');
     if (width === 390) {
       const pic = await send('Page.captureScreenshot', { format: 'png' });
       fs.writeFileSync(path.join(shots, 'inv_search_scan_390.png'), Buffer.from(pic.data, 'base64'));
     }
-    const typedAgain = await evalJs(`(async () => {
-      document.getElementById('ivQMode').click();
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
-      const before = document.getElementById('ivQ').getAttribute('inputmode');
-      const text = '26-287';
+    const tapped = await evalJs(`(() => {
+      const box = document.getElementById('ivQ');
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+      return { value: box.value, mode: box.getAttribute('inputmode'), active: document.activeElement && document.activeElement.id, start: box.selectionStart, end: box.selectionEnd };
+    })()`);
+    check(tapped && tapped.value === '26-300' && tapped.mode === 'search' && tapped.active === 'ivQ' && tapped.start === tapped.end && tapped.end === 6, 'at ' + width + 'px tapping the box after a scan restores typing with the caret at the end (' + JSON.stringify(tapped) + ')');
+    const slow = await evalJs(`(async () => {
       const q0 = document.getElementById('ivQ');
+      q0.focus();
       q0.value = '';
       q0.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
-      for (const ch of text) {
+      for (const ch of 'beads') {
+        await new Promise(r => setTimeout(r, 70));
         const q = document.getElementById('ivQ');
         q.focus();
         q.value += ch;
@@ -252,16 +262,42 @@ async function chromeAt(width, port, pageUrl, shots) {
         q.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
         q.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch }));
       }
+      await new Promise(r => setTimeout(r, 70));
       document.getElementById('ivQ').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const box = document.getElementById('ivQ');
+      return { value: box.value, mode: box.getAttribute('inputmode'), active: document.activeElement && document.activeElement.id };
+    })()`);
+    check(slow && slow.value === 'beads' && slow.mode === 'search' && slow.active === 'ivQ', 'at ' + width + 'px a slow word and Enter stays typing (' + JSON.stringify(slow) + ')');
+    const unfocused = await evalJs(`(async () => {
+      const q = document.getElementById('ivQ');
+      q.blur();
+      for (const ch of '26-281') document.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
       const box = document.getElementById('ivQ');
-      return { before, value: box.value, mode: box.getAttribute('inputmode'), stored: localStorage.getItem('oypIvQMode') || '', active: document.activeElement && document.activeElement.id, start: box.selectionStart, end: box.selectionEnd };
+      return {
+        value: box.value, mode: box.getAttribute('inputmode'),
+        active: document.activeElement && document.activeElement.id,
+        on: (document.querySelector('.ivcard.on') || {}).dataset ? document.querySelector('.ivcard.on').dataset.jo : ''
+      };
     })()`);
-    check(typedAgain && typedAgain.before === 'search' && typedAgain.value === '26-287' && typedAgain.mode === 'search' && typedAgain.stored === 'type' && typedAgain.active === 'ivQ' && typedAgain.start === typedAgain.end, 'at ' + width + 'px Type stays Type after another scan and the number stays put (' + JSON.stringify(typedAgain) + ')');
-    await evalJs(`(() => { const s = document.getElementById('ivLoc'); s.value = 'showroom'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-    await evalJs('new Promise(r => requestAnimationFrame(() => r(1)))');
-    const filtered = await evalJs(`(() => ({ cards: [...document.querySelectorAll('.ivcard')].map(c => c.dataset.jo).join(','), q: document.getElementById('ivQ').value }))()`);
-    check(filtered && filtered.cards === '26-287' && filtered.q === '26-287', 'at ' + width + 'px the location filter runs on the kept search (' + JSON.stringify(filtered) + ')');
+    check(unfocused && unfocused.value === '26-281' && unfocused.mode === 'search' && unfocused.active !== 'ivQ' && unfocused.on === '26-281', 'at ' + width + 'px a scan with the box unfocused still fills it (' + JSON.stringify(unfocused) + ')');
+    const soft = await evalJs(`(() => { const vv = window.visualViewport; const h = window.innerHeight || 0; return !!(vv && h && vv.height < h * 0.75); })()`);
+    const lagged = await evalJs(`(async () => {
+      document.getElementById('ivQ').blur();
+      for (const ch of 'pearl') document.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+      await new Promise(r => setTimeout(r, 150));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const box = document.getElementById('ivQ');
+      return { value: box.value, mode: box.getAttribute('inputmode'), active: document.activeElement && document.activeElement.id };
+    })()`);
+    check(lagged && lagged.mode === 'search' && lagged.value === (soft ? '26-281' : 'pearl') && lagged.active !== 'ivQ', 'at ' + width + 'px a hardware wedge whose Enter lags ' + (soft ? 'stays a search while the software keyboard is open' : 'fills the box while the software keyboard is closed') + ' (' + JSON.stringify(lagged) + ')');
+    await evalJs(`(() => { const s = document.getElementById('ivLoc'); s.value = 'showroom'; s.dispatchEvent(new Event('change', { bubbles: true })); const q = document.getElementById('ivQ'); q.focus(); q.value = '26-287'; q.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '26-287' })); })()`);
+    await evalJs('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))');
+    const filtered = await evalJs(`(() => ({ cards: [...document.querySelectorAll('.ivcard')].map(c => c.dataset.jo).join(','), q: document.getElementById('ivQ').value, active: document.activeElement && document.activeElement.id }))()`);
+    check(filtered && filtered.cards === '26-287' && filtered.q === '26-287' && filtered.active === 'ivQ', 'at ' + width + 'px the location filter runs on a typed search (' + JSON.stringify(filtered) + ')');
     await fit('at ' + width + 'px filters');
     await evalJs(`document.getElementById('ivChoose').click()`);
     await evalJs(`(() => { const q = document.getElementById('ivQ'); if (q) q.focus(); })()`);
