@@ -144,7 +144,7 @@ function section(s) {
   if (s === 'layout') return head(t[1], 'Edit layout, on the dashboard or any back-office page, shows the reorder and hide controls. Done saves them on this device. Each section header, location tile, and menu item moves and hides on its own. Log out stays last.');
   if (s === 'log') return head(t[1], 'The newest 40 changes. The full list is in the SettingsLog tab of the Sheet.') + logBox();
   if (s === 'labels') return head(t[1], 'Saved on this device only. A JO card is the 30×20 sticker. A jewelry tag is 30×25 with a blank 45 mm tail. The client name stays on the queue list and is not printed.')
-    + '<div id="printSet"></div><h3 class="lab seth">Print queue</h3><div class="setbox" id="printQueue"></div><div class="setbox" id="printRange"></div>';
+    + '<div id="printSet"></div><h3 class="lab seth">Print queue</h3><div class="setbox" id="printQueue"></div><div class="setbox" id="printOne"></div><div class="setbox" id="printRange"></div>';
   return '';
 }
 /* ---------- Design (sliders -> CSS variables, design.js) ---------- */
