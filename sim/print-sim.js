@@ -153,6 +153,12 @@ function fringe(img) {
 const crispPrev = L.preview(readTag, { scale: 4 });
 const softPrev = L.preview(readTag, { scale: 4, smooth: true });
 eq(paperGray(readTag) === 0, 'the jewelry bitmap is true black on white at 203 dpi');
+const tagScene = L.tagScene({ kind: 'jewelry_tag', model: 'B1', price: 18500, name: 'Oval sapphire ring', item_type: 'Ring', metal: 'Gold', karat: '18K', stones: 'Sapphire', weight: '20', jo: '26-287', sku: '18-498', location: 'Showroom' });
+const sceneWords = tagScene.texts.map(function (t) { return t.text; });
+const qrRects = tagScene.rects.filter(function (r) { return r.role === 'qr'; });
+const logoRects = tagScene.rects.filter(function (r) { return r.role === 'logo'; });
+eq(tagScene.width === 560 && tagScene.height === 240 && sceneWords.indexOf('Sapphire') >= 0 && sceneWords.indexOf('26-287') >= 0 && sceneWords.indexOf('Showroom') >= 0 && sceneWords.indexOf('20g') >= 0 && sceneWords.indexOf('Oval sapphire ring') >= 0, 'the jewelry tag keeps its words as text records');
+eq(qrRects.length > 20 && qrRects.every(function (r) { return r.w === r.h && r.w >= 2 && r.w <= 4; }) && logoRects.length > 10 && logoRects.every(function (r) { return r.w === 1 && r.h === 1; }), 'the QR and the logo are vector rectangles, not a bitmap');
 eq(fringe(crispPrev) * 20 < fringe(softPrev), 'a jewelry preview stays nearest-neighbour unless smoothing is requested');
 const longTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 125000, name: 'Oval sapphire cluster ring with a hidden gallery and a two-line description', item_type: 'Necklace', metal: 'Yellow gold', karat: '18KWG', stones: 'Oval sapphire 2.40ct with tapered baguette shoulders and a hidden halo', weight: '12345', jo: '26-1234A', sku: 'SKU-998877', location: 'Philippine Showroom Vault' });
 const longLoc = longTag.lines.filter(s => /Philippine|Showroom|Vault/.test(s));
@@ -427,9 +433,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=34') && index.includes('print-label.js?v=16') && index.includes('nav.js?v=72') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=22') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=22') && read('sim/swipe-preview.html').includes('print.css?v=22'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=16') && read('nav.js').includes('print.js?v=34') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=34') && read('staff/print-test.html').includes('print-label.js?v=16') && read('staff/print-test.html').includes('print.css?v=22') && read('staff/print-test.html').includes('nav.js?v=72') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=35') && index.includes('print-label.js?v=17') && index.includes('nav.js?v=73') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=23') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=23') && read('sim/swipe-preview.html').includes('print.css?v=23'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=17') && read('nav.js').includes('print.js?v=35') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=35') && read('staff/print-test.html').includes('print-label.js?v=17') && read('staff/print-test.html').includes('print.css?v=23') && read('staff/print-test.html').includes('nav.js?v=73') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -451,6 +457,7 @@ if (mainNav && mainNav !== read('nav.js')) {
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
 eq(/\.oyp-prevstage canvas,\.oyp-prevbig\{[^}]*image-rendering:pixelated/.test(read('print.css')) && /\.oyp-qprev\{[^}]*image-rendering:pixelated/.test(read('print.css')) && read('print.js').includes('{ scale: 4, smooth: false }') && !read('print.js').includes('smooth: true'), 'preview canvases keep the 203 dpi pixels crisp');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
+eq(read('staff/print-test.html').includes("s.kind === 'jewelry_tag'") && read('staff/print-test.html').includes('OYPLabel.tagScene') && read('staff/print-test.html').includes('OYPPrint.mountTag') && read('print.js').includes('mountTag: mountTagSvg'), 'the print test jewelry tag is SVG text, and the other samples stay previews');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
 const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
 eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
@@ -1745,9 +1752,9 @@ drain().then(function () {
 }).then(function () {
   function armKind(env) {
     const sheets = [];
-    env.sandbox.document.createElement = function () {
-      const el = { className: '', id: '', textContent: '', style: {}, children: [], attrs: {}, parentNode: null, onclick: null };
-      el.setAttribute = function (k, v) { el.attrs[k] = String(v); };
+    function makeEl(name) {
+      const el = { nodeName: String(name || 'div').toLowerCase(), className: '', id: '', textContent: '', style: {}, children: [], attrs: {}, parentNode: null, onclick: null };
+      el.setAttribute = function (k, v) { el.attrs[k] = String(v); if (k === 'class') el.className = String(v); };
       el.getAttribute = function (k) { return Object.prototype.hasOwnProperty.call(el.attrs, k) ? el.attrs[k] : null; };
       el.appendChild = function (child) { el.children.push(child); child.parentNode = el; return child; };
       el.remove = function () {
@@ -1760,7 +1767,9 @@ drain().then(function () {
         if (s >= 0) sheets.splice(s, 1);
       };
       return el;
-    };
+    }
+    env.sandbox.document.createElement = function (name) { return makeEl(name); };
+    env.sandbox.document.createElementNS = function (_ns, name) { return makeEl(name); };
     env.sandbox.document.body.appendChild = function (el) { sheets.push(el); el.parentNode = env.sandbox.document.body; return el; };
     env.sandbox.document.getElementById = function (id) {
       function walk(n) {
@@ -1826,6 +1835,7 @@ drain().then(function () {
   const tag = armKind(bootPrint({
     queue: { ok: true, items: [], spec: { client: 'Ada Lopez', price: '11500', description: 'Silver Necklace', item_type: 'Earring', metal: 'Gold', karat: '14K', stones: 'Cubic Zirconia', weight_g: '7', sku: '18-498', location: 'A.R3' } }
   }));
+  tag.sandbox.OYPLabel = L;
   const pending = tag.sandbox.OYPPrint.askPrint(['26-287B', '26-288', '26-289']);
   const primary = (function walk(n) {
     if (n && n.attrs && n.attrs['aria-current'] === 'true') return n;
@@ -1850,6 +1860,19 @@ drain().then(function () {
     eq(count && count.textContent === '1 / 3' && nums.join(',') === '1,2,3' && find(tag, 'data-print', 'all').textContent === 'Print all (3)' && find(tag, 'data-print', 'one').textContent === 'Print this one', 'the strip is numbered, the counter is 1 / 3, and both print buttons are there');
     eq(save && save.disabled === true && save.attrs.disabled === 'disabled' && note && note.textContent.indexOf('this print only') >= 0, 'Save to item is disabled, and the note says this print only');
     eq(fields.indexOf('price=11500') >= 0 && fields.indexOf('name=Silver Necklace') >= 0 && fields.indexOf('type=Earring') >= 0 && fields.indexOf('metal=Gold') >= 0 && fields.indexOf('karat=14K') >= 0 && fields.indexOf('stones=Cubic Zirconia') >= 0 && fields.indexOf('weight=7') >= 0 && fields.indexOf('jo=26-287B') >= 0 && fields.indexOf('sku=18-498') >= 0 && fields.indexOf('location=A.R3') >= 0 && fields.indexOf('Ada Lopez') < 0, 'the tag fields load from the item, and the client name is not one of them');
+    function nodesNamed(env, name) {
+      const out = [];
+      function walk(n) {
+        if (n && String(n.nodeName || '').toLowerCase() === name) out.push(n);
+        ((n && n.children) || []).forEach(walk);
+      }
+      env.sheets.forEach(walk);
+      return out;
+    }
+    const tagTexts = nodesNamed(tag, 'text').map(function (n) { return n.textContent; });
+    const tagRects = nodesNamed(tag, 'rect');
+    eq(tagTexts.indexOf('Cubic Zirconia') >= 0 && tagTexts.indexOf('26-287B') >= 0 && tagTexts.indexOf('A.R3') >= 0 && tagTexts.indexOf('7g') >= 0 && tagTexts.indexOf('Silver Necklace') >= 0 && tagTexts.indexOf('Ada Lopez') < 0, 'the preview tag is SVG text nodes');
+    eq(nodesNamed(tag, 'canvas').length === 0 && nodesNamed(tag, 'img').length === 0 && nodesNamed(tag, 'image').length === 0 && tagRects.some(function (n) { return n.attrs['data-role'] === 'qr' && n.attrs.width === n.attrs.height; }) && tagRects.some(function (n) { return n.attrs['data-role'] === 'logo'; }), 'the preview has no canvas or image; the QR and logo are SVG rectangles');
     eq(find(tag, 'data-nav', 'prev').disabled === true, 'previous is disabled on the first tag');
     eq(!batch(tag) && !tag.calls.some(function (b) { return b.action === 'printItemSave' || b.op === 'printItemSave' || b.action === 'jobReviewSave'; }), 'the kind choice still has not queued or saved');
     click(tag, 'data-nav', 'next');

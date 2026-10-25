@@ -1,6 +1,7 @@
 /* Niimbot sticker bitmaps. 203 dpi, print direction "top": canvas width is the printhead,
-   canvas height is the feed. The 30 mm label is centred. Text is Inter Bold (OFL), drawn with
-   fillText at 4x and reduced to the 1-bit label. QR modules stay crisp rectangles.
+   canvas height is the feed. The 30 mm label is centred. The thermal head still receives a
+   1-bit raster. On screen, a jewelry tag is SVG: real text for the words, rects for each
+   QR module and each logo bit. Inter Bold (OFL) is the face.
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
    Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs the flag upright,
    25 mm wide by 30 mm high, with the 45 mm tail to the right of that picture.
@@ -141,17 +142,23 @@ var LOGO_ROWS = [
   '000001111111110000011100000001100000'
 ];
 function blitBits(img, rows, x, y) {
-  var r, c, row;
+  var r, c, row, cap;
   for (r = 0; r < rows.length; r++) {
     row = rows[r];
-    for (c = 0; c < row.length; c++) if (row.charAt(c) === '1') img.set(x + c, y + r);
+    for (c = 0; c < row.length; c++) if (row.charAt(c) === '1') {
+      img.set(x + c, y + r);
+      cap = root.__oypCapture;
+      if (cap) cap.rects.push({ x: x + c, y: y + r, w: 1, h: 1, role: 'logo' });
+    }
   }
 }
 function dashes(img, x, y, w) {
-  var on = 3, gap = 2, i = 0, n;
+  var on = 3, gap = 2, i = 0, n, cap;
   while (i < w) {
     n = Math.min(on, w - i);
     img.rect(x + i, y, n, 1);
+    cap = root.__oypCapture;
+    if (cap) cap.rects.push({ x: x + i, y: y, w: n, h: 1, role: 'fold' });
     i += on + gap;
   }
 }
@@ -249,10 +256,14 @@ Img.prototype.rect = function (x, y, w, h) {
   for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) this.set(x + xx, y + yy);
 };
 Img.prototype.qr = function (mods, x, y, mod, quiet) {
-  var n = mods.length, q = quiet || 0;
+  var n = mods.length, q = quiet || 0, cap, rx, ry;
   for (var row = 0; row < n; row++) for (var col = 0; col < n; col++) {
     if (mods[row].charAt(col) !== '1') continue;
-    this.rect(x + (col + q) * mod, y + (row + q) * mod, mod, mod);
+    rx = x + (col + q) * mod;
+    ry = y + (row + q) * mod;
+    this.rect(rx, ry, mod, mod);
+    cap = root.__oypCapture;
+    if (cap) cap.rects.push({ x: rx, y: ry, w: mod, h: mod, role: 'qr' });
   }
 };
 Img.prototype.frame = function (x, y, w, h, t) {
@@ -488,6 +499,16 @@ function stampLocal(img, runs) {
       setTrack(ctx, run.track);
       var m = ctx.measureText(run.text);
       var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
+      if (root.__oypCapture && run.text) {
+        root.__oypCapture.texts.push({
+          text: run.text,
+          x: run.x,
+          y: run.y + ascent / SCALE,
+          size: run.size,
+          track: run.track || 0,
+          weight: (run.bold === 0 || run.bold === false) ? 400 : 700
+        });
+      }
       var x = Math.round(run.x * SCALE);
       var y = Math.round(run.y * SCALE + ascent);
       if (crisp) {
@@ -1256,8 +1277,29 @@ function preview(rendered, opts) {
   };
 }
 
+/* Readable jewelry tag for the screen. Words are text records. QR modules, the logo,
+   and the fold are rectangles. The Niimbot send path still uses render()'s 1-bit raster. */
+function tagScene(opts) {
+  opts = Object.assign({ kind: 'jewelry_tag' }, opts || {});
+  opts.kind = 'jewelry_tag';
+  var capture = { texts: [], rects: [] };
+  root.__oypCapture = capture;
+  var rendered;
+  try { rendered = render(opts); }
+  finally { root.__oypCapture = null; }
+  return {
+    width: rendered.paperW || 0,
+    height: rendered.paperH || 0,
+    texts: capture.texts,
+    rects: capture.rects,
+    placed: rendered.placed || [],
+    lines: rendered.lines || []
+  };
+}
+
 root.OYPLabel = {
   render: render, toCanvas: toCanvas, preview: preview, labelCanvas: labelCanvas, exitCanvas: exitCanvas, tagOutline: tagOutline, flapRects: flapRects, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
+  tagScene: tagScene,
   normalizeLayout: normalizeLayout, elementDefaults: elementDefaults, layoutFields: layoutFields, paperMm: paperMm,
   ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias, paperView: paperView
 };
