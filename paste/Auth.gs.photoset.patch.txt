@@ -1,0 +1,12 @@
+Auth.gs — one line in handleAction_, immediately under the PhotoFast hook.
+Do not paste a new Auth.gs over the live file.
+
+FIND
+  if (typeof isPhotoFastAction_ === 'function' && isPhotoFastAction_(a)) return handlePhotoFast_(req, s.user); // PhotoFast.gs
+
+REPLACE WITH
+  if (typeof isPhotoFastAction_ === 'function' && isPhotoFastAction_(a)) return handlePhotoFast_(req, s.user); // PhotoFast.gs
+  if (typeof isPhotoSetAction_ === 'function' && isPhotoSetAction_(a)) return handlePhotoSet_(req, s.user); // PhotoSet.gs
+
+photoSet is a write. Do not add it to Fast.gs FAST.READS or FAST.CACHE.
+Do not add it to DashCache. A saved photo must not be stored with the page answers.

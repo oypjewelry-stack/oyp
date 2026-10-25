@@ -1,0 +1,40 @@
+Add or change a JO profile photo. The staff Inventory button is already on the site.
+Until this paste is deployed, saving a photo shows "Photo upload isn't switched on yet" and writes nothing.
+
+Editor:
+https://script.google.com/home/projects/17TdK0I66eGV_3XpM8OSPw9L7BlEbknYvJKI8JEMecrSCxLh4bhdihCXJ/edit
+
+1. New file (code only)
+   In that project: + Script. Name it PhotoSet.
+   Paste paste/PhotoSet.gs (the whole file, no extra header). Save.
+   Do not paste this over PhotoFast, InventoryPages, JobSync, or Auth.
+
+2. Auth.gs — one line in handleAction_, immediately under the PhotoFast hook.
+   Do not paste a new Auth.gs over the live file.
+   The PhotoFast line is already there (paste/Auth.gs.photoset.patch.txt):
+
+   if (typeof isPhotoFastAction_ === 'function' && isPhotoFastAction_(a)) return handlePhotoFast_(req, s.user); // PhotoFast.gs
+
+   Add this line immediately under it:
+
+   if (typeof isPhotoSetAction_ === 'function' && isPhotoSetAction_(a)) return handlePhotoSet_(req, s.user); // PhotoSet.gs
+
+   Use the same names as that hook (a, req, s.user).
+
+3. Do not edit Fast.gs or DashCache.gs.
+   photoSet is a write. Do not add it to FAST.READS or FAST.CACHE.
+   Do not add it to a list that saves the answer.
+
+4. Deploy
+   Deploy > Manage deployments > pencil > New version > Deploy.
+   Do not use New deployment.
+
+What photoSet does
+  Admin and production manager only. The server checks the role again.
+  The file is saved as <JO>-photo-<timestamp>.jpg in the JO folder
+  (JobOrders.drive_folder_id, or Job Order Cards/<JO> when that cell is empty).
+  JobOrders.product_photo_file_id becomes the new file id.
+  updated_at and updated_by are written on that same row.
+  drive_folder_id is filled in only when it was empty.
+  The previous Drive file stays. No other cell is changed.
+  Cached thumbnails for that JO are cleared. AuditLog gets the new file id.
