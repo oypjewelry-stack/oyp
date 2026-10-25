@@ -49,8 +49,8 @@
   function invHtml() {
     return '<div class="iv"><div class="dhead"><h2>Inventory</h2><span class="dheadacts"><span class="lab">2 items</span><button type="button" class="pill sm outline" id="ivChoose">Select</button></span></div>'
       + '<p class="muted">Every JO and finished piece.</p><div class="ivgrid" id="ivGrid">'
-      + '<div class="ivcard tap" data-jo="26-287"><div class="ivph"><button type="button" class="ivmore" aria-label="Actions">⋯</button><span>No photo</span></div><div class="ivb"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div><div class="kf"><span class="chip dark">Vault</span></div></div></div>'
-      + '<div class="ivcard tap" data-jo="26-265"><div class="ivph"><button type="button" class="ivmore" aria-label="Actions">⋯</button><span>No photo</span></div><div class="ivb"><div class="kjo">26-265</div><div class="kd">Plain band, size 6</div><div class="kf"><span class="chip">Casting</span></div></div></div>'
+      + '<div class="ivcard tap" data-jo="26-287"><div class="ivph"></div><div class="ivb"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div><div class="kf"><span class="chip dark">Vault</span></div><div class="ivmoney"><span class="muted">No cost yet</span></div></div><button type="button" class="ivmore" aria-label="Actions">⋯</button></div>'
+      + '<div class="ivcard tap" data-jo="26-265"><div class="ivph"></div><div class="ivb"><div class="kjo">26-265</div><div class="kd">Plain band, size 6</div><div class="kf"><span class="chip">Casting</span></div><div class="ivmoney"><span class="muted">No cost yet</span></div></div><button type="button" class="ivmore" aria-label="Actions">⋯</button></div>'
       + '</div></div>';
   }
   function prodCard(jo, name, desc, who, phone) {
@@ -246,7 +246,7 @@
 
   var opened = 0, cornerRan = 0;
   var host = document.createElement('div');
-  host.innerHTML = '<div class="ivcard tap" data-jo="26-287"><div class="ivph"><span>No photo</span></div><div class="ivb"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div></div></div>';
+  host.innerHTML = '<div class="ivcard tap" data-jo="26-287"><div class="ivph"></div><div class="ivb"><div class="kjo">Elena Tan · 26-287</div><div class="kd">Oval sapphire ring</div></div></div>';
   main.appendChild(host);
   host.querySelector('.ivcard').addEventListener('click', function () { opened++; });
   OYPSwipe.mount(host, { item: '.ivcard', actions: function () { return [{ label: 'Archive', undoable: true, run: function () { cornerRan++; } }]; } });

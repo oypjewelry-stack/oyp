@@ -258,12 +258,12 @@ function ivCard(j, can, edit) {
   if (can.cost) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
   if (can.price) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
   const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo);
-  const tools = (IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '')
-      + (edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="false">⋯</button>` : '');
-  return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${tools}${ph ? '' : `<span>${j.has_photo && ph === undefined ? '' : 'No photo'}</span>`}</div>
+  const ck = IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '';
+  const more = edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="false">⋯</button>` : '';
+  return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${ck}</div>
     <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
     <div class="kd">${esc(j.description || 'No details yet')}</div>${sp ? `<div class="ivsp">${esc(sp)}</div>` : ''}
-    <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div></div>`;
+    <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : ''}</div>${more}</div>`;
 }
 function ivSheet(j, edit) { // details, and the review form when this JO is still waiting. Actions stay on the floating ⋯ menu.
   if (!j) return ''; const { esc } = window.OYP;
@@ -278,8 +278,7 @@ function ivSheet(j, edit) { // details, and the review form when this JO is stil
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
     <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${inline ? 'Review' : edit ? 'Details' : 'View only'}</span></div>
     ${pending ? '<p class="ivtag"><span class="chip gold tbr">REVIEW</span></p>' : ''}
-    <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''} ${sketch ? 'sketch' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}>${IV.thumbs[j.jo] ? '' : '<span>No photo</span>'}</div>
-    <p class="ivsknote" id="ivSkNote" ${sketch ? '' : 'hidden'}>Sketch from JO card</p>
+    <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''} ${sketch ? 'sketch' : ''}"${IV.thumbs[j.jo] ? ` style="background-image:url('${IV.thumbs[j.jo]}')"` : ''}></div>
     <div class="ivdraw" id="ivDraw" hidden><span class="lab">Drawings</span><div class="shots" id="ivDraws"></div></div>
     ${can.cost ? `<div class="ivjoph" id="ivJoPh" hidden><span class="lab">JO photos</span><div class="shots" id="ivShots"></div></div>` : ''}
     ${inline ? '<div class="ivrev" id="ivRev"><p class="muted">Loading the review…</p></div>' : facts}
@@ -513,15 +512,16 @@ function ivThumbs(main, L) { // piece photos, or a page-2 stand-in when this rol
     paint(el, src, item) {
       const k = el.dataset.th; IV.thumbs[k] = src || '';
       IV.sketch[k] = !!(src && item && item.sketch);
-      const cap = el.querySelector(':scope > span:not(.ivsk)');
+      const cap = el.querySelector(':scope > span');
+      if (cap) cap.remove();
       if (src) {
         el.style.backgroundImage = `url('${src}')`;
         el.classList.add('has');
         el.classList.toggle('sketch', !!IV.sketch[k]);
-        if (cap) cap.remove();
-        if (IV.sketch[k]) { if (!el.querySelector('.ivsk')) el.insertAdjacentHTML('beforeend', '<span class="ivsk">Sketch from JO card</span>'); }
-        else { const sk = el.querySelector('.ivsk'); if (sk) sk.remove(); }
-      } else if (!cap) el.insertAdjacentHTML('beforeend', '<span>No photo</span>');
+      } else {
+        el.style.backgroundImage = '';
+        el.classList.remove('has', 'sketch');
+      }
     }
   });
   const jo = IV.open, j = jo && IV.r && IV.r.jobs.find(x => x.jo === jo);
@@ -533,10 +533,8 @@ function ivPhotos(main, j) {
   const big = main.querySelector('#ivSheet .ivph.big');
   if (big && (j.has_photo || can.cost || IV.sketch[j.jo])) {
     window.OYPPhotos.stage(big, {
-      jo: j.jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: 'No photo', fallback: !!can.cost,
+      jo: j.jo, kind: 'piece', legacy: 'inv', alt: 'Piece', empty: '', fallback: !!can.cost,
       noted: item => {
-        const n = main.querySelector('#ivSkNote');
-        if (n) n.hidden = !item.sketch;
         big.classList.toggle('sketch', !!item.sketch);
         IV.sketch[j.jo] = !!item.sketch;
       }
@@ -597,8 +595,7 @@ function ivOpenViewer(o) {
   root.setAttribute('aria-label', o.sketch ? 'Sketch from JO card' : 'Photo');
   root.innerHTML = `<button type="button" class="ivx" aria-label="Close">×</button>
     <div class="ivtools"><button type="button" class="ivz" data-z="out" aria-label="Zoom out">−</button><button type="button" class="ivz" data-z="in" aria-label="Zoom in">+</button></div>
-    <div class="ivframe"><div class="ivpan"><img alt="${window.OYP.esc(o.alt || '')}" draggable="false"></div></div>
-    ${o.sketch ? '<p class="ivcap">Sketch from JO card</p>' : ''}`;
+    <div class="ivframe"><div class="ivpan"><img alt="${window.OYP.esc(o.alt || '')}" draggable="false"></div></div>`;
   document.body.appendChild(root);
   const frame = root.querySelector('.ivframe');
   const pan = root.querySelector('.ivpan');
