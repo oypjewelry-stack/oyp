@@ -44,7 +44,7 @@ eq(inv.includes('Add photo') && inv.includes('Change photo') && inv.includes("ac
 eq(!inv.includes('capture'), 'the phone sheet offers the camera and the library');
 eq(inv.includes('root._jo') && inv.includes('root._setProfile') && inv.includes("it.key === 'piece'"), 'a saved photo replaces the first slide in an open viewer');
 eq(css.includes('.ivph.big.phstage.sketch{padding-bottom:52px}') && css.includes('.ivadd{position:absolute;z-index:4;right:8px;bottom:8px;'), 'the button sits in the padding under a sketch');
-eq(index.includes('photos.js?v=11') && index.includes('inv.js?v=25') && index.includes('app.css?v=59') && read('staff/print-test.html').includes('app.css?v=59'), 'changed files are cache-busted');
+eq(index.includes('photos.js?v=12') && index.includes('inv.js?v=25') && index.includes('app.css?v=59') && read('staff/print-test.html').includes('app.css?v=59'), 'changed files are cache-busted');
 eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=59'), 'the customer page stays on app.css?v=29');
 
 const bag = {};
@@ -324,6 +324,61 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   eq(chunked.ok && sent.length === 2 && sent[0].data.part === 0 && sent[1].data.part === 1 && sent[0].data.parts === 2 && sent[0].data.upload === sent[1].data.upload && /^[a-z0-9]{16}$/.test(sent[0].data.upload), 'a long photo is uploaded in order and shares one upload id');
   eq(notes.indexOf('Uploading 1/2') >= 0 && notes.indexOf('Uploading 2/2') >= 0, 'progress names each chunk');
   eq(P.peek({ jo: '26-500', kind: 'piece', size: 300 }) === big, 'the chunked photo is the new profile');
+
+  const noted = [];
+  const classes = new Set();
+  function domNode(tag) {
+    const node = { tagName: tag, children: [], parentNode: null, isConnected: true, alt: '', textContent: '', hidden: false, src: '', type: '', disabled: false, decoding: '', style: {} };
+    node.classList = {
+      add(c) { classes.add(c); node.classList._has.add(c); },
+      remove(c) { node.classList._has.delete(c); },
+      toggle(c, on) { if (on) node.classList._has.add(c); else node.classList._has.delete(c); },
+      contains(c) { return node.classList._has.has(c); },
+      _has: new Set()
+    };
+    node.appendChild = ch => { ch.parentNode = node; node.children.push(ch); return ch; };
+    node.insertBefore = ch => { ch.parentNode = node; node.children.unshift(ch); return ch; };
+    node.removeChild = ch => { node.children = node.children.filter(x => x !== ch); ch.parentNode = null; };
+    Object.defineProperty(node, 'firstChild', { get() { return node.children[0] || null; } });
+    Object.defineProperty(node, 'className', {
+      get() { return [...node.classList._has].join(' '); },
+      set(v) { node.classList._has = new Set(String(v || '').split(/\s+/).filter(Boolean)); }
+    });
+    return node;
+  }
+  const hold = [];
+  const sctx = {
+    setTimeout, clearTimeout, Promise, Map, queueMicrotask, Date, Math, JSON, Image: function Image() {
+      const img = { naturalWidth: 0, naturalHeight: 0 };
+      Object.defineProperty(img, 'src', { set() { setTimeout(() => { if (img.onload) img.onload(); }, 0); } });
+      return img;
+    },
+    document: { createElement: tag => tag === 'canvas' ? { width: 4, height: 3, getContext: () => ({ fillRect() {}, fillStyle: '' }), toDataURL: () => 'data:image/jpeg;base64,WHITE' } : domNode(tag) }
+  };
+  sctx.window = sctx;
+  let release;
+  sctx.window.OYP = {
+    call(action, body) {
+      if (action !== 'photoThumbs') return Promise.resolve({ ok: false, error: 'Unknown action' });
+      return new Promise(res => hold.push(() => {
+        const piece = {};
+        (body.piece || []).forEach(jo => { piece[jo] = { id: 'card' + jo, src: 'data:image/jpeg;base64,PAGE', found: false, sketch: true }; });
+        res({ ok: true, piece: piece, scan: {}, cards: {}, drawing: {} });
+      }));
+    }
+  };
+  vm.createContext(sctx);
+  vm.runInContext(photos, sctx, { filename: 'photos.js' });
+  const frame = domNode('div');
+  frame.classList.add = function (c) { classes.add(c); frame.classList._has.add(c); };
+  const S = sctx.window.OYPPhotos;
+  const pending = S.load({ jo: '26-441', kind: 'piece', size: 300, fallback: true });
+  S.stage(frame, { jo: '26-441', kind: 'piece', legacy: 'inv', alt: 'Piece', empty: '', fallback: true, noted: item => noted.push(!!item.sketch) });
+  for (let i = 0; i < 20 && !hold.length; i++) await wait(0);
+  hold.splice(0).forEach(fn => fn());
+  await pending;
+  await wait(40);
+  eq(frame.classList.contains('sketch') && noted.indexOf(true) >= 0, 'a detail frame opened while the list is still loading keeps the stand-in class');
 
   if (failed) { console.error(failed + ' failed'); process.exit(1); }
   console.log('photo-set-sim ok');

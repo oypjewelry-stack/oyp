@@ -675,11 +675,23 @@ function stage(el, o) {
     if (base.fallback && typeof o.noted === 'function') o.noted(base);
   };
   // A page-2 stand-in is cleaned before it is shown. Page 1 is not a stand-in.
+  // The list may already be fetching this JO. That shared promise marks its own item, so peek again before deciding the frame.
   load(thumbItem).then(src => {
+    if (!thumbItem.sketch) peek(thumbItem);
     if (src) show(src, true);
     if (base.fallback && base.kind === 'piece') {
       mark();
-      return load(Object.assign({}, base, { size: 1600 })).then(sharpen);
+      const med = Object.assign({}, base, { size: 1600 });
+      return load(med).then(src2 => {
+        if (med.sketch && !el.classList.contains('sketch')) {
+          base.sketch = true;
+          base.id = med.id || base.id;
+          base.kind = 'card';
+          el.classList.add('sketch');
+          if (typeof o.noted === 'function') o.noted(base);
+        }
+        return sharpen(src2);
+      });
     }
   });
   if (!(base.fallback && base.kind === 'piece')) load(Object.assign({}, base, { size: 1600 })).then(sharpen);
