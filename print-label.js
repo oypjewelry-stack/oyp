@@ -568,7 +568,7 @@ var LAYOUT_BASE = {
     type: { show: 1, x: 1, y: 11.2, size: 12, bold: 1, align: 'left', w: 7, wrap: 1 },
     metal: { show: 1, x: 9, y: 11.2, size: 12, bold: 1, align: 'center', w: 7, wrap: 1 },
     karat: { show: 1, x: 16.5, y: 11.2, size: 12, bold: 1, align: 'right', w: 7.5, wrap: 1 },
-    fold: { show: 1, x: 1, y: 15, w: 23 },
+    fold: { show: 0, x: 1, y: 15, w: 23 },
     stones: { show: 1, x: 1, y: 16, size: 16, bold: 1, align: 'left', w: 23, wrap: 3 },
     weight: { show: 1, x: 1, y: 26.6, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
     jo: { show: 1, x: 1, y: 20.4, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
@@ -610,8 +610,13 @@ function elementDefaults(kind) {
   return out;
 }
 function layoutFields(kind) {
-  var card = kind === 'jo_card', out = [], i;
-  for (i = 0; i < LAYOUT_FIELDS.length; i++) if (card || !LAYOUT_FIELDS[i].card) out.push(LAYOUT_FIELDS[i]);
+  var card = kind === 'jo_card', out = [], i, field;
+  for (i = 0; i < LAYOUT_FIELDS.length; i++) {
+    field = LAYOUT_FIELDS[i];
+    if (!card && field.card) continue;
+    if (!card && field.id === 'fold') continue;
+    out.push(field);
+  }
   return out;
 }
 function clampMm(v, fallback, min, max) {
@@ -712,6 +717,9 @@ function paintLayout(img, layout, opts, kind, bounds) {
       continue;
     }
     if (field.kind === 'fold') {
+      /* The jewelry tag no longer prints the fold guide. Its y still marks
+         where the rows sit, so hiding the dashes does not move them. */
+      if (kind === 'jewelry_tag') continue;
       x = px(el.x); y = px(el.y); w = Math.max(1, px(el.w || 1));
       dashes(img, x, y, w);
       placed.push({ id: 'fold', x: x, y: y > 3 ? y - 3 : 0, w: w, h: 8 });
@@ -1022,7 +1030,7 @@ function drawJewelry(img, box, opts) {
   });
 
   stampLocal(paper, runs);
-  dashes(paper, left, foldY, innerW);
+  /* foldY still places the metal row and the stone. The dashed guide is not drawn. */
   var qrBox = null;
   if (mods) {
     paper.qr(mods, qx0, qy0, mod, quiet);

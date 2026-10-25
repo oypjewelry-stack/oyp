@@ -39,8 +39,8 @@ eq(read('inv.js').includes('data-mtab="stock"') && read('inv.js').includes('data
 eq(!scanApp.includes("['prices', 'Material prices']"), 'the scanner fallback menu drops Material prices');
 eq(app.includes('joInboxList: 1') && app.includes('joInboxPhoto: 1') && app.includes('joInboxStatus: 1'), 'list, photo, and status are reads');
 eq(!/joInboxConfirm\s*:/.test(app) && !/joInboxFix\s*:/.test(app) && !/joInboxDiscard\s*:/.test(app) && !/joInboxPush\s*:/.test(app), 'confirm, fix, discard, and push stay writes so the page cache clears');
-eq(index.includes('joinbox.js?v=3') && index.includes('joinbox.css?v=3') && index.includes('nav.js?v=76') && index.includes('app.js?v=43'), 'the new page and nav.js are cache-busted');
-eq(read('staff/print-test.html').includes('nav.js?v=76') && scanHtml.includes('https://oypjewelry.com/nav.js?v=76'), 'print test and the scanner load the same nav.js');
+eq(index.includes('joinbox.js?v=3') && index.includes('joinbox.css?v=3') && index.includes('nav.js?v=77') && index.includes('app.js?v=43'), 'the new page and nav.js are cache-busted');
+eq(read('staff/print-test.html').includes('nav.js?v=77') && scanHtml.includes('https://oypjewelry.com/nav.js?v=77'), 'print test and the scanner load the same nav.js');
 eq(scanApp.includes("grp('Needs a look', bad)") && scanApp.includes('class="jocrop"') && scanApp.includes('function openJoView'), 'the scanner Needs a look rows, crop, and zoom viewer are unchanged');
 
 eq(J.isMissing({ ok: false, error: 'Unknown action' }) && J.isMissing({ ok: false, error: 'Unknown action: joInboxList' }) && !J.isMissing({ ok: false, error: 'Not allowed', code: 'FORBIDDEN' }) && !J.isMissing({ ok: true }), 'an unknown action is the missing backend, and a refusal is not');
