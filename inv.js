@@ -1,4 +1,5 @@
 /* OYP back office: Inventory (#/jos, every JO / finished piece) and Materials (#/inventory, raw stock).
+   Material prices is the Prices tab on this page for roles that had that menu item. Stock is this file's materials list.
    Server: InventoryPages.gs (invList, invThumbs, matList, matHistory, matSave, matMove). The server strips what a role may not
    see (price + margin: executives; costs: executives + production manager); this file only draws what it gets.
    JO photos are card scans. They follow can.cost, the same gate as the cost line. A page-2 sketch is only a stand-in profile.
@@ -869,6 +870,36 @@ function mWire(main) {
   });
   const med = $('.medit'); if (med) med.ontoggle = () => { MS.editing = med.open; };
 }
+let matTab = 'stock';
+function matPricesAllowed(u) {
+  const roles = window.OYPNav && window.OYPNav.MAT_PRICE_ROLES;
+  return !!(u && roles && roles[u.role]);
+}
+function takeMatTab(u) {
+  let ask = '';
+  try { ask = sessionStorage.getItem('oypMatView') || ''; sessionStorage.removeItem('oypMatView'); } catch (e) {}
+  if (ask === 'prices' || ask === 'stock') matTab = ask;
+  if (!matPricesAllowed(u)) matTab = 'stock';
+  return matTab;
+}
+/* Stock is the materials list. Prices reuses prices.js. A role that never had Material prices sees only Stock, with no tab strip. */
+function renderMaterials(main, u) {
+  const allow = matPricesAllowed(u), tab = takeMatTab(u);
+  if (!allow) {
+    if (innerWidth < 900) { MS.open = null; MS.adding = false; }
+    return renderMats(main, u);
+  }
+  main.innerHTML = `<div class="rvchips mattabs" id="matTabs"><button type="button" class="fchip tap${tab === 'stock' ? ' on' : ''}" data-mtab="stock">Stock</button><button type="button" class="fchip tap${tab === 'prices' ? ' on' : ''}" data-mtab="prices">Prices</button></div><div id="matBody"></div>`;
+  const host = main.querySelector('#matBody');
+  main.querySelectorAll('[data-mtab]').forEach(b => b.onclick = () => {
+    matTab = b.dataset.mtab === 'prices' ? 'prices' : 'stock';
+    if (matTab === 'stock' && /^#\/prices/.test(location.hash)) { location.hash = '#/inventory'; return; }
+    renderMaterials(main, u);
+  });
+  if (tab === 'prices' && window.OYPPrices) return window.OYPPrices.render(host, u);
+  if (innerWidth < 900) { MS.open = null; MS.adding = false; }
+  return renderMats(host, u);
+}
 // a fresh visit (menu / link) on a phone starts on the list; on a desktop the last item stays open
 window.OYPInv = { renderJos: (m, u) => {
   IV.open = null; ivCloseView(); IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.offer = ''; IV.want = '';
@@ -884,7 +915,7 @@ window.OYPInv = { renderJos: (m, u) => {
     }
   } catch (e) {}
   return renderJos(m, u);
-}, renderMats: (m, u) => { if (innerWidth < 900) { MS.open = null; MS.adding = false; } return renderMats(m, u); }, openViewer: ivOpenViewer, paintNav: ivPaintNav };
+}, renderMats: (m, u) => renderMaterials(m, u), openViewer: ivOpenViewer, paintNav: ivPaintNav };
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
    The search box takes the same scan when it is focused: a fast wedge, or a full JO and Enter.

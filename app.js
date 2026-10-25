@@ -161,7 +161,8 @@ document.addEventListener('click', e => {
 const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.OFFICE_NAV || window.OYPNav.NAV; // nav.js: same menu in the scanner, minus back-office-only pages (Production)
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
 const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, look: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, count: true,
-  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do; count.js: inventory count; joinbox.js: needs a look
+  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do; count.js: inventory count; joinbox.js: needs a look. prices stays done so a saved menu key does not say soon; the page is the Prices tab on Materials.
+function matPrices(u) { const roles = window.OYPNav && window.OYPNav.MAT_PRICE_ROLES; return !!(u && roles && roles[u.role]); }
 // Menu order on this device, per signed-in name. Empty = today's menu. The scanner keeps the shared list in nav.js.
 const navKey = u => 'oypNavOrder:' + (u && u.username || 'device');
 function readNavOrder(u) {
@@ -341,10 +342,14 @@ function route() {
     try { sessionStorage.setItem('oypInvView', cur0 === 'look' ? 'debug' : 'review'); } catch (e) {}
     history.replaceState(null, '', '#/jos');
   }
+  if (cur0 === 'prices' && matPrices(u)) { // Material prices is the Prices tab on Materials. Log and history keep their hash so prices.js can read it.
+    try { sessionStorage.setItem('oypMatView', 'prices'); } catch (e) {}
+    if (!/^#\/prices\//.test(location.hash)) history.replaceState(null, '', '#/inventory');
+  }
   const canon = NAV[u.role], cur = (location.hash.match(/^#\/(\w+)/) || [])[1];
   const ALIAS = { clients: 'customers', joborders: 'jos', materials: 'inventory' }; // old / friendly links keep working
   const want = canon.some(n => n[0] === cur) ? cur : ALIAS[cur] && canon.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
-  const page = want || canon[0][0]; // opening a page still starts at today's first item when the link is not a menu item
+  const page = (cur === 'prices' && matPrices(u)) ? 'inventory' : (want || canon[0][0]); // opening a page still starts at today's first item when the link is not a menu item
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
   $('title').textContent = page === 'todo' ? 'TO DO' : page === 'count' ? 'INVENTORY COUNT' : 'Back office';
   renderNav(u, page); // desktop sidebar: items scroll; the name block stays at the bottom
@@ -361,9 +366,8 @@ function route() {
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'todo' && window.OYPTodo) return window.OYPTodo.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
-  if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
   if (page === 'jos' && window.OYPInv) return window.OYPInv.renderJos($('main'), u); // inv.js: Inventory (all JOs / pieces)
-  if (page === 'inventory' && window.OYPInv) return window.OYPInv.renderMats($('main'), u); // inv.js: Materials (raw stock)
+  if (page === 'inventory' && window.OYPInv) return window.OYPInv.renderMats($('main'), u); // inv.js: Materials. Stock, and Prices when this role had Material prices.
   if (page === 'count' && window.OYPCount) return window.OYPCount.render($('main'), u); // count.js: RFID inventory count
   if (window.OYPPay && window.OYPPay.pages.includes(page)) return window.OYPPay.render($('main'), u, page); // pay.js
   if (page === 'users') return usersPage();

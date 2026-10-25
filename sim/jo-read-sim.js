@@ -100,7 +100,7 @@ const nameFor = it => '26-287B-p' + it.page + '-102226.jpg';
   ok(zones.includes('item.boundJo'), 'a re-processed page is stored without waiting on a second JO read');
   ok(app.includes("if ((p.held || p.jo === 'OCR') && realJO(state.jo)) fileHeld(realJO(state.jo))"), 'a page enqueued while the read is in flight is bound when that add finishes');
   ok(fileAs.indexOf('fileHeld(jo)') !== -1 && fileAs.indexOf('fileHeld(jo)') < fileAs.indexOf('say('), 'the zone read binds the held page before the toast');
-  ok(/app\.js\?v=20261025a/.test(html) && /queue\.js\?v=20261022n/.test(html), 'app.js and queue.js cache-busts are v20261025a and v20261022n');
+  ok(/app\.js\?v=20261025b/.test(html) && /queue\.js\?v=20261022n/.test(html), 'app.js and queue.js cache-busts are v20261025b and v20261022n');
   ok(app.includes('function warmOcr') && app.includes('function lookupJo') && app.includes('oypJoList') && app.includes("op: 'joList'") && app.includes('Saved, reading JO…') && app.includes('page-worker.js?v=20261022b'), 'the shutter paints immediately, OCR is warmed, and the JO list stays on the phone');
   const worker = fs.readFileSync(path.join(__dirname, '../scan/page-worker.js'), 'utf8');
   const orientAt = worker.indexOf('ms.orient = Math.round(t() - a);');
