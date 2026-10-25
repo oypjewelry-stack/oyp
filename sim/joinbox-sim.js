@@ -28,10 +28,19 @@ eq(nav.menuHtml({ role: 'staff', username: 'ann', display_name: 'Ann' }, '', '')
 eq(menu.indexOf('Consignment') < menu.indexOf('>Scanner<') && menu.indexOf('>To review<') < 0, 'Consignment stays before Scanner and To review is gone');
 
 eq(app.includes("cur0 === 'look'") && !app.includes("page === 'look'") && app.includes('OYPJoInbox.refreshBadge') && !app.includes('OYPJoInbox.render'), 'old Needs a look links leave the menu and the badge still refreshes');
+const ids = role => keys(role).split(',');
+eq(ids('admin').indexOf('prices') < 0 && ids('production_manager').indexOf('prices') < 0 && ids('admin').indexOf('inventory') >= 0 && ids('production_manager').indexOf('inventory') >= 0, 'Material prices is a tab on Materials, not its own menu item');
+eq(nav.menuHtml(ada, 'inventory', '').indexOf('Material prices') < 0 && nav.menuHtml(ada, 'inventory', '').includes('>Materials<'), 'the phone menu names Materials once');
+eq(nav.MAT_PRICE_ROLES.admin && nav.MAT_PRICE_ROLES.production_manager && !nav.MAT_PRICE_ROLES.accounting && !nav.MAT_PRICE_ROLES.staff, 'only a role that had Material prices can open the Prices tab');
+eq(keys('accounting') === 'dashboard,todo,appts,jos,payments,quotes,balances,clients' && keys('staff') === 'home,todo,appts,count,scanner', 'accounting and staff menus stay as they were');
+eq(['count', 'appts', 'scanner', 'consignment', 'estimate', 'payments'].every(k => ids('admin').indexOf(k) >= 0), 'Inventory count, Appointments, Scanner, Consignment, Cost estimator, and Quotes / payments stay');
+eq(app.includes("cur0 === 'prices'") && app.includes('oypMatView') && app.includes("history.replaceState(null, '', '#/inventory')") && !app.includes("page === 'prices'"), 'an old Material prices link opens Materials on the Prices tab');
+eq(read('inv.js').includes('data-mtab="stock"') && read('inv.js').includes('data-mtab="prices"') && read('inv.js').includes('OYPPrices.render') && read('inv.js').includes('function renderMats'), 'Stock and Prices reuse the materials list and the prices page');
+eq(!scanApp.includes("['prices', 'Material prices']"), 'the scanner fallback menu drops Material prices');
 eq(app.includes('joInboxList: 1') && app.includes('joInboxPhoto: 1') && app.includes('joInboxStatus: 1'), 'list, photo, and status are reads');
 eq(!/joInboxConfirm\s*:/.test(app) && !/joInboxFix\s*:/.test(app) && !/joInboxDiscard\s*:/.test(app) && !/joInboxPush\s*:/.test(app), 'confirm, fix, discard, and push stay writes so the page cache clears');
-eq(index.includes('joinbox.js?v=3') && index.includes('joinbox.css?v=2') && index.includes('nav.js?v=65') && index.includes('app.js?v=39'), 'the new page and nav.js are cache-busted');
-eq(read('staff/print-test.html').includes('nav.js?v=65') && scanHtml.includes('https://oypjewelry.com/nav.js?v=65'), 'print test and the scanner load the same nav.js');
+eq(index.includes('joinbox.js?v=3') && index.includes('joinbox.css?v=2') && index.includes('nav.js?v=66') && index.includes('app.js?v=40'), 'the new page and nav.js are cache-busted');
+eq(read('staff/print-test.html').includes('nav.js?v=66') && scanHtml.includes('https://oypjewelry.com/nav.js?v=66'), 'print test and the scanner load the same nav.js');
 eq(scanApp.includes("grp('Needs a look', bad)") && scanApp.includes('class="jocrop"') && scanApp.includes('function openJoView'), 'the scanner Needs a look rows, crop, and zoom viewer are unchanged');
 
 eq(J.isMissing({ ok: false, error: 'Unknown action' }) && J.isMissing({ ok: false, error: 'Unknown action: joInboxList' }) && !J.isMissing({ ok: false, error: 'Not allowed', code: 'FORBIDDEN' }) && !J.isMissing({ ok: true }), 'an unknown action is the missing backend, and a refusal is not');
@@ -98,6 +107,52 @@ eq(!J.pageHtml({ forbidden: true }).includes('jiRunBtn') && J.pageHtml({ missing
 eq(index.includes('joinbox.js?v=3') && read('sim/joinbox-preview.html').includes('joinbox.js?v=3'), 'joinbox.js and joinbox.css are cache-busted');
 eq(!/joInboxRun\s*:/.test(app), 'joInboxRun stays a write: the page cache clears after a run');
 (async function () {
+  const vm = require('vm');
+  const session = {};
+  const priceCalls = [];
+  function hostEl() {
+    return { innerHTML: '', querySelector() { return null; }, querySelectorAll() { return []; } };
+  }
+  function mainEl() {
+    const host = hostEl();
+    const buttons = [];
+    const main = {
+      _html: '',
+      querySelector(sel) { return sel === '#matBody' && this._html.indexOf('id="matBody"') >= 0 ? host : null; },
+      querySelectorAll(sel) {
+        if (sel !== '[data-mtab]') return [];
+        buttons.length = 0;
+        const re = /data-mtab="(stock|prices)"/g; let m;
+        while ((m = re.exec(this._html))) buttons.push({ dataset: { mtab: m[1] }, onclick: null });
+        return buttons.slice();
+      }
+    };
+    Object.defineProperty(main, 'innerHTML', { get() { return this._html; }, set(v) { this._html = String(v); } });
+    return { main, host, buttons };
+  }
+  const ctx = {
+    window: {}, document: { addEventListener() {} }, addEventListener() {},
+    sessionStorage: { getItem: k => (k in session ? session[k] : null), setItem: (k, v) => { session[k] = String(v); }, removeItem: k => { delete session[k]; } },
+    location: { hash: '#/inventory' }, innerWidth: 1200,
+    OYPNav: nav,
+    OYP: { here: () => () => true, esc: s => String(s == null ? '' : s), call: async a => { priceCalls.push(a); return { ok: false, error: 'stopped' }; }, toast() {} },
+    OYPPrices: { render(el) { priceCalls.push('render:' + (el && el === ctx._host ? 'host' : 'other')); el.innerHTML = '<div class="prices"><h2>Material prices</h2></div>'; return Promise.resolve(); } }
+  };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(read('inv.js'), ctx);
+  session.oypMatView = 'prices';
+  const both = mainEl(); ctx._host = both.host;
+  await ctx.OYPInv.renderMats(both.main, { role: 'admin' });
+  eq(both.main.innerHTML.includes('>Stock<') && both.main.innerHTML.includes('>Prices<') && both.main.innerHTML.includes('class="fchip tap on" data-mtab="prices"') && both.host.innerHTML.includes('Material prices') && priceCalls.indexOf('matList') < 0, 'an old prices hand-off shows the Prices tab and the prices page');
+  const stockBtn = both.buttons.find(b => b.dataset.mtab === 'stock');
+  ctx.location.hash = '#/prices/log';
+  stockBtn.onclick();
+  eq(ctx.location.hash === '#/inventory', 'Stock leaves a prices subpage for Materials');
+  priceCalls.length = 0;
+  const only = mainEl();
+  await ctx.OYPInv.renderMats(only.main, { role: 'accounting' });
+  eq(only.main.innerHTML.indexOf('data-mtab') < 0 && priceCalls[0] === 'matList' && only.main.innerHTML.includes('<h2>Materials</h2>'), 'a role that never had Material prices sees only the stock page');
   const calls = [];
   let answer = { ok: true, filed: 3, check: 1, blank: 2, problem: 0, more: false, waiting: false, fields: { left: 0 } }, gate = null;
   globalThis.OYP = { call: async function (a, d) {
