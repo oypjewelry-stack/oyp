@@ -4,6 +4,9 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const http = require('http');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
 const root = path.join(__dirname, '..');
 const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 let failed = 0;
@@ -44,7 +47,12 @@ eq(inv.includes('Add photo') && inv.includes('Change photo') && inv.includes("ac
 eq(!inv.includes('capture'), 'the phone sheet offers the camera and the library');
 eq(inv.includes('root._jo') && inv.includes('root._setProfile') && inv.includes("it.key === 'piece'"), 'a saved photo replaces the first slide in an open viewer');
 eq(css.includes('.ivph.big.phstage.sketch{padding-bottom:52px}') && css.includes('.ivadd{position:absolute;z-index:4;right:8px;bottom:8px;'), 'the button sits in the padding under a sketch');
-eq(index.includes('photos.js?v=12') && index.includes('inv.js?v=25') && index.includes('app.css?v=59') && read('staff/print-test.html').includes('app.css?v=59'), 'changed files are cache-busted');
+const sheetFn = inv.slice(inv.indexOf('function ivSheet'), inv.indexOf('function ivRange'));
+eq(sheetFn.indexOf('function ivSheet') === 0 && !sheetFn.includes('background-image'), 'the detail frame does not paint the list thumb behind the photo');
+eq(photos.includes("el.style.backgroundImage = 'none'"), 'a shown detail image clears any background image');
+const preview = read('sim/photo-set-preview.html');
+eq(preview.includes('photos.js?v=13') && preview.includes('inv.js?v=26') && preview.includes('sketchclean.js?v=1') && preview.includes('app.css?v=59'), 'the layout fixture loads the same files');
+eq(index.includes('photos.js?v=13') && index.includes('inv.js?v=26') && index.includes('app.css?v=59') && read('staff/print-test.html').includes('app.css?v=59'), 'changed files are cache-busted');
 eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=59'), 'the customer page stays on app.css?v=29');
 
 const bag = {};
@@ -294,6 +302,146 @@ vm.runInContext(photos, ctx, { filename: 'photos.js' });
 const P = ctx.window.OYPPhotos;
 
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function httpGet(url) {
+  return new Promise((resolve, reject) => {
+    http.get(url, res => {
+      let d = '';
+      res.on('data', c => { d += c; });
+      res.on('end', () => resolve(d));
+    }).on('error', reject);
+  });
+}
+
+/* Opens the real inventory sheet at 390px. A wide stand-in used to leave the list thumb painted behind the img. */
+async function detailFrames() {
+  const port = 9300 + Math.floor(Math.random() * 600);
+  const dir = '/tmp/chrome-photo-set-layout-' + Date.now();
+  fs.rmSync(dir, { recursive: true, force: true });
+  const chrome = spawn('google-chrome', [
+    '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
+    '--allow-file-access-from-files',
+    '--remote-debugging-port=' + port,
+    '--user-data-dir=' + dir,
+    'about:blank'
+  ], { stdio: 'ignore' });
+  let ws;
+  const shots = [];
+  try {
+    let version = '';
+    for (let i = 0; i < 50; i++) {
+      try { version = await httpGet('http://127.0.0.1:' + port + '/json/version'); break; }
+      catch (e) { await wait(100); }
+    }
+    if (!version) throw new Error('Chrome debug port did not open');
+    const browser = new WebSocket(JSON.parse(version).webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => { browser.addEventListener('open', resolve); browser.addEventListener('error', reject); });
+    let seq = 0;
+    const pending = new Map();
+    const onMsg = ev => {
+      const msg = JSON.parse(ev.data);
+      if (!msg.id || !pending.has(msg.id)) return;
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(JSON.stringify(msg.error)));
+      else p.resolve(msg.result);
+    };
+    browser.addEventListener('message', onMsg);
+    const sendBrowser = (method, params) => {
+      const id = ++seq;
+      return new Promise((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+        browser.send(JSON.stringify({ id, method, params: params || {} }));
+      });
+    };
+    const { targetId } = await sendBrowser('Target.createTarget', { url: 'about:blank' });
+    browser.close();
+    const list = JSON.parse(await httpGet('http://127.0.0.1:' + port + '/json/list'));
+    const page = list.find(t => t.id === targetId);
+    if (!page) throw new Error('Chrome page target missing');
+    ws = new WebSocket(page.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => { ws.addEventListener('open', resolve); ws.addEventListener('error', reject); });
+    seq = 0;
+    pending.clear();
+    ws.addEventListener('message', onMsg);
+    const send = (method, params) => {
+      const id = ++seq;
+      return new Promise((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+        ws.send(JSON.stringify({ id, method, params: params || {} }));
+      });
+    };
+    const evalJson = async expr => {
+      const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+      if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 500));
+      return r.result && r.result.value;
+    };
+    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    await send('Page.enable');
+    const pageUrl = 'file://' + path.join(root, 'sim/photo-set-preview.html');
+    await send('Page.navigate', { url: pageUrl });
+    let ready = '';
+    for (let i = 0; i < 200; i++) {
+      ready = await evalJson('window.__ready ? "yes" : ""');
+      if (ready === 'yes') break;
+      await wait(100);
+    }
+    eq(ready === 'yes', 'the inventory fixture rendered');
+    if (ready !== 'yes') return shots;
+    const art = '/opt/cursor/artifacts';
+    fs.mkdirSync(art, { recursive: true });
+    const shot = async name => {
+      await evalJson('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))');
+      await wait(80);
+      const png = await send('Page.captureScreenshot', { format: 'png' });
+      const file = path.join(art, name + '.png');
+      const buf = Buffer.from(png.data, 'base64');
+      fs.writeFileSync(file, buf);
+      const md5 = crypto.createHash('md5').update(buf).digest('hex');
+      shots.push({ name, md5, bytes: buf.length });
+      return md5;
+    };
+    const sketchCases = [
+      ['26-441', 'tall', 'inv_sketch_tall_add_390'],
+      ['26-442', 'wide', 'inv_sketch_wide_add_390'],
+      ['26-444', 'square', 'inv_sketch_square_add_390'],
+      ['26-443', 'white', 'inv_sketch_white_add_390']
+    ];
+    for (const [jo, name, file] of sketchCases) {
+      const state = await evalJson('window.__open(' + JSON.stringify(jo) + ')');
+      eq(state === 'ready', name + ' detail is ready');
+      if (state !== 'ready') continue;
+      const m = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      console.log('measure', name, JSON.stringify(m));
+      eq(m.imgs === 1 && m.bg === 'none' && m.imgBg === 'none', name + ' frame has one image and no background-image');
+      eq(m.label === 'Add photo' && m.sketch === true && m.imgPos === 'static', name + ' stand-in is in flow and labeled Add photo');
+      eq(m.overlap === false && m.origOverlap === false && m.gap >= 4 && m.origGap >= 4, name + ' button and Open original sit clear of the image');
+      eq(Math.abs(m.pad - 52) < 1 && Math.abs(m.frameH - m.imgH - m.pad) < 2, name + ' frame height is the image plus the 52px gutter');
+      eq(m.aspectDelta < 0.03 && m.nw > 0 && m.nh > 0, name + ' displayed aspect matches the image');
+      if (name === 'white') eq(m.nw === 4 && m.nh === 3, 'a card with no drawing is the white 4 by 3 stand-in');
+      if (name === 'square') eq(Math.abs(m.nw / m.nh - 1) < 0.02, 'the square drawing stays square');
+      if (name === 'wide') eq(m.nw / m.nh > 1.15, 'the wide drawing stays wide');
+      await shot(file);
+    }
+    const realState = await evalJson('window.__open("26-500")');
+    eq(realState === 'ready', 'real photo detail is ready');
+    if (realState === 'ready') {
+      const m = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      console.log('measure', 'real', JSON.stringify(m));
+      eq(m.imgs === 1 && m.bg === 'none' && m.imgBg === 'none', 'a real photo is one image with no background-image');
+      eq(m.label === 'Change photo' && m.sketch === false && m.imgPos === 'absolute' && m.overlap === true, 'Change photo stays in the corner of a real photo');
+      await shot('inv_real_change_390');
+    }
+    const hashes = shots.map(s => s.md5);
+    eq(hashes.length === 5 && new Set(hashes).size === 5, 'the five detail shots are different files');
+    shots.forEach(s => console.log('shot', s.name, s.md5, s.bytes));
+  } finally {
+    try { if (ws) ws.close(); } catch (e) {}
+    try { chrome.kill('SIGKILL'); } catch (e) {}
+  }
+  return shots;
+}
+
 (async () => {
   const box = P.photoBox(3200, 1600);
   const same = P.photoBox(800, 600);
@@ -379,6 +527,8 @@ function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
   await pending;
   await wait(40);
   eq(frame.classList.contains('sketch') && noted.indexOf(true) >= 0, 'a detail frame opened while the list is still loading keeps the stand-in class');
+
+  await detailFrames();
 
   if (failed) { console.error(failed + ' failed'); process.exit(1); }
   console.log('photo-set-sim ok');

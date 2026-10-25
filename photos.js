@@ -651,6 +651,8 @@ function stage(el, o) {
     img.src = s;
     img.classList.toggle('phblur', !!blur);
     lab.hidden = true;
+    // The sheet used to keep the list thumb as a CSS background. Under a wide stand-in that paints a second, cropped copy of the drawing, and the button sits on it.
+    el.style.backgroundImage = 'none';
   };
   const base = { jo: o.jo, id: o.id || '', kind: o.kind || 'scan', legacy: o.legacy || 'prod', fallback: !!o.fallback, sketch: false };
   const thumbItem = Object.assign({}, base, { size: 300 });
