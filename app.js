@@ -198,7 +198,7 @@ function writeNavOrder(u, keys, canon) {
 }
 function orderedNav(u) { return window.OYPNav.ordered(u); }
 function navLink(k, t, page) {
-  const count = k === 'look' ? '<span class="ncount" data-ncount="look" hidden></span>' : '';
+  const count = k === 'jos' ? '<span class="ncount" data-ncount="review" hidden></span>' : '';
   if (k === 'scanner') return `<a href="${scanUrl()}" data-nkey="scanner">${esc(t)}</a>`;
   return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}${count}</a>`;
 }
@@ -230,6 +230,7 @@ function renderNav(u, page) {
   const m = $('menu');
   if (m && !m.classList.contains('hidden')) { m.innerHTML = phoneInner(u); finishNav(m, u); }
   if (window.OYPJoInbox) window.OYPJoInbox.paintBadge();
+  if (window.OYPReview && window.OYPReview.paintNav) window.OYPReview.paintNav();
 }
 function finishNav(box, u) {
   if (!box || !u) return;
@@ -336,14 +337,19 @@ function route() {
   }
   show('vOffice'); $('title').textContent = 'Back office';
   if (cur0 === 'users' && NAV[u.role].some(n => n[0] === 'settings')) { history.replaceState(null, '', '#/settings/staff'); } // old Staff logins page: now Settings › Staff accounts
+  if (cur0 === 'review' || cur0 === 'look') { // both pages are Inventory tabs: REVIEW, and DEBUG for held scans
+    try { sessionStorage.setItem('oypInvView', cur0 === 'look' ? 'debug' : 'review'); } catch (e) {}
+    history.replaceState(null, '', '#/jos');
+  }
   const canon = NAV[u.role], cur = (location.hash.match(/^#\/(\w+)/) || [])[1];
   const ALIAS = { clients: 'customers', joborders: 'jos', materials: 'inventory' }; // old / friendly links keep working
   const want = canon.some(n => n[0] === cur) ? cur : ALIAS[cur] && canon.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
   const page = want || canon[0][0]; // opening a page still starts at today's first item when the link is not a menu item
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  $('title').textContent = page === 'todo' ? 'TO DO' : page === 'count' ? 'INVENTORY COUNT' : page === 'look' ? 'NEEDS A LOOK' : 'Back office';
+  $('title').textContent = page === 'todo' ? 'TO DO' : page === 'count' ? 'INVENTORY COUNT' : 'Back office';
   renderNav(u, page); // desktop sidebar: items scroll; the name block stays at the bottom
   if (window.OYPJoInbox && (u.role === 'admin' || u.role === 'production_manager')) window.OYPJoInbox.refreshBadge();
+  if (window.OYPReview && window.OYPReview.refreshNav && (u.role === 'admin' || u.role === 'production_manager')) window.OYPReview.refreshNav();
   const title = canon.find(n => n[0] === page)[1];
   schedulePrefetch(canon, page);
   // nothing saved for this page yet (first visit, or just after a change): a light placeholder, not the last page's content
@@ -354,8 +360,6 @@ function route() {
   if (page === 'consignment' && window.OYPConsign) return window.OYPConsign.render($('main'), u); // consign.js
   if (page === 'dashboard' && window.OYPDash) return window.OYPDash.render($('main'), u);
   if (page === 'todo' && window.OYPTodo) return window.OYPTodo.render($('main'), u);
-  if (page === 'review' && window.OYPReview) return window.OYPReview.render($('main'), u);
-  if (page === 'look' && window.OYPJoInbox) return window.OYPJoInbox.render($('main'), u);
   if (page === 'estimate' && window.OYPEstimate) return window.OYPEstimate.render($('main'), u);
   if (page === 'prices' && window.OYPPrices) return window.OYPPrices.render($('main'), u);
   if (page === 'jos' && window.OYPInv) return window.OYPInv.renderJos($('main'), u); // inv.js: Inventory (all JOs / pieces)

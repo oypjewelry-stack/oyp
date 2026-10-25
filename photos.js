@@ -62,13 +62,143 @@ function idbPut(id, size, src) {
     try { d.transaction('ph', 'readwrite').objectStore('ph').put(src, id + '|' + size); } catch (e) {}
   }).catch(() => {});
 }
+/* Page 2 front of the JO card. The design sketch is the right-hand DESIGN panel, below the
+   DESIGN heading and inside the box rules. Tuned on a landscape 26-425 page-2 scan.
+   Page 1 is never passed here: only a stand-in (sketch:true, page 2 front) is cropped. */
+const SKETCH_ROI = { x: 0.613, y: 0.242, w: 0.347, h: 0.490 };
+const SKETCH_CROP = new Map();
+function sketchLuma(r, g, b) { return 0.299 * r + 0.587 * g + 0.114 * b; }
+/* rgba: Uint8Array or array of r,g,b,a. Returns {x,y,w,h} in source pixels, or null when the panel has no ink. */
+function sketchBox(rgba, w, h) {
+  w = w | 0; h = h | 0;
+  if (!rgba || w < 40 || h < 40) return null;
+  const x0 = Math.max(0, Math.min(w - 2, Math.round(w * SKETCH_ROI.x)));
+  const y0 = Math.max(0, Math.min(h - 2, Math.round(h * SKETCH_ROI.y)));
+  const x1 = Math.max(x0 + 2, Math.min(w, Math.round(w * (SKETCH_ROI.x + SKETCH_ROI.w))));
+  const y1 = Math.max(y0 + 2, Math.min(h, Math.round(h * (SKETCH_ROI.y + SKETCH_ROI.h))));
+  const rw = x1 - x0, rh = y1 - y0;
+  const step = rw * rh > 900000 ? 4 : rw * rh > 250000 ? 3 : 2;
+  const samples = [];
+  for (let y = 0; y < rh; y += step) {
+    const row = (y0 + y) * w;
+    for (let x = 0; x < rw; x += step) samples.push(sketchLuma(rgba[(row + x0 + x) * 4], rgba[(row + x0 + x) * 4 + 1], rgba[(row + x0 + x) * 4 + 2]));
+  }
+  if (!samples.length) return null;
+  samples.sort((a, b) => a - b);
+  const paper = samples[Math.min(samples.length - 1, Math.floor(samples.length * 0.92))] || 240;
+  const darkCut = paper * 0.80;
+  const ink = new Uint8Array(rw * rh);
+  for (let y = 0; y < rh; y++) {
+    const row = (y0 + y) * w;
+    const dest = y * rw;
+    for (let x = 0; x < rw; x++) {
+      const i = (row + x0 + x) * 4;
+      const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      const lum = sketchLuma(r, g, b);
+      const span = Math.max(r, g, b) - Math.min(r, g, b);
+      if (lum < darkCut || (span > 32 && lum < paper * 0.98)) ink[dest + x] = 1;
+    }
+  }
+  for (let y = 0; y < rh; y++) {
+    let n = 0, dest = y * rw;
+    for (let x = 0; x < rw; x++) n += ink[dest + x];
+    if (n > rw * 0.55) for (let x = 0; x < rw; x++) ink[dest + x] = 0;
+  }
+  for (let x = 0; x < rw; x++) {
+    let n = 0;
+    for (let y = 0; y < rh; y++) n += ink[y * rw + x];
+    if (n > rh * 0.55) for (let y = 0; y < rh; y++) ink[y * rw + x] = 0;
+  }
+  const seen = new Uint8Array(rw * rh);
+  const minA = Math.max(16, Math.round(rw * rh * 0.0001));
+  const stack = [];
+  let bx0 = rw, by0 = rh, bx1 = -1, by1 = -1, any = false;
+  for (let s = 0; s < ink.length; s++) {
+    if (!ink[s] || seen[s]) continue;
+    stack.length = 0;
+    stack.push(s);
+    seen[s] = 1;
+    let area = 0, minx = rw, miny = rh, maxx = 0, maxy = 0;
+    while (stack.length) {
+      const p = stack.pop();
+      area++;
+      const x = p % rw, y = (p / rw) | 0;
+      if (x < minx) minx = x;
+      if (y < miny) miny = y;
+      if (x > maxx) maxx = x;
+      if (y > maxy) maxy = y;
+      if (x > 0 && ink[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
+      if (x + 1 < rw && ink[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
+      if (y > 0 && ink[p - rw] && !seen[p - rw]) { seen[p - rw] = 1; stack.push(p - rw); }
+      if (y + 1 < rh && ink[p + rw] && !seen[p + rw]) { seen[p + rw] = 1; stack.push(p + rw); }
+    }
+    const bw = maxx - minx + 1, bh = maxy - miny + 1;
+    if (area < minA) continue;
+    if (bh <= 3 && bw > rw * 0.62) continue;
+    if (bw <= 3 && bh > rh * 0.62) continue;
+    any = true;
+    if (minx < bx0) bx0 = minx;
+    if (miny < by0) by0 = miny;
+    if (maxx > bx1) bx1 = maxx;
+    if (maxy > by1) by1 = maxy;
+  }
+  if (!any || bx1 < bx0 || by1 < by0) return null;
+  const pad = Math.max(8, Math.round(Math.min(rw, rh) * 0.035));
+  let ox = x0 + bx0 - pad, oy = y0 + by0 - pad, ow = bx1 - bx0 + 1 + pad * 2, oh = by1 - by0 + 1 + pad * 2;
+  if (ox < x0) { ow -= x0 - ox; ox = x0; }
+  if (oy < y0) { oh -= y0 - oy; oy = y0; }
+  if (ox + ow > x1) ow = x1 - ox;
+  if (oy + oh > y1) oh = y1 - oy;
+  if (ow < 8 || oh < 8) return null;
+  return { x: ox, y: oy, w: ow, h: oh };
+}
+function cropSketch(src) {
+  if (!src || typeof document === 'undefined' || !document.createElement) return Promise.resolve('');
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+        if (!sw || !sh) { resolve(''); return; }
+        const c = document.createElement('canvas');
+        c.width = sw; c.height = sh;
+        const g = c.getContext('2d', { willReadFrequently: true });
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, sw, sh);
+        g.drawImage(img, 0, 0);
+        const box = sketchBox(g.getImageData(0, 0, sw, sh).data, sw, sh);
+        if (!box) { resolve(''); return; }
+        const out = document.createElement('canvas');
+        out.width = box.w; out.height = box.h;
+        const og = out.getContext('2d');
+        og.fillStyle = '#fff';
+        og.fillRect(0, 0, box.w, box.h);
+        og.drawImage(c, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+        resolve(out.toDataURL('image/jpeg', 0.92));
+      } catch (e) { resolve(''); }
+    };
+    img.onerror = () => resolve('');
+    img.src = src;
+  });
+}
+function presentSketch(jo, src) {
+  const prev = SKETCH_CROP.get(jo);
+  if (prev && prev.len >= src.length && prev.src) return Promise.resolve(prev.src);
+  return cropSketch(src).then(out => {
+    const use = out || src;
+    const again = SKETCH_CROP.get(jo);
+    if (!again || src.length >= again.len) SKETCH_CROP.set(jo, { len: src.length, src: use });
+    const kept = SKETCH_CROP.get(jo);
+    return kept && kept.src ? kept.src : use;
+  }).catch(() => src);
+}
 function remember(item, src) {
   if (!src) return;
   const size = item.size;
-  // A page-2 stand-in is not the JO's profile. Keep it for this visit only, never under the JO key.
-  if (item.sketch && item.jo && size === 300) {
-    MEM.set('sketch:' + item.jo + '|300', src);
-    if (item.id) MEM.set('sketchid:' + item.jo, item.id);
+  // A page-2 stand-in is not the JO's profile. Keep the cropped sketch for this visit only.
+  if (item.sketch && item.jo) {
+    MEM.set('sketch:' + item.jo + '|' + size, src);
+    if (size === 300 && item.id) MEM.set('sketchid:' + item.jo, item.id);
     return;
   }
   if (item.id) {
@@ -80,6 +210,7 @@ function remember(item, src) {
 }
 function peek(item) {
   const size = item.size;
+  if (item.sketch && item.jo && MEM.has('sketch:' + item.jo + '|' + size)) return MEM.get('sketch:' + item.jo + '|' + size);
   if (item.id && MEM.has(memKey(item.id, size))) return MEM.get(memKey(item.id, size));
   if (item.kind === 'piece' && size === 300 && item.jo && MEM.has('jo:' + item.jo + '|300')) return MEM.get('jo:' + item.jo + '|300');
   if (size === 300) {
@@ -105,9 +236,16 @@ function peek(item) {
   return '';
 }
 function finish(w, src) {
-  if (src) remember(w.item, src);
-  w.resolve(src || '');
-  FLY.delete(w.key || flyKey(w.item));
+  const done = s => {
+    if (s) remember(w.item, s);
+    w.resolve(s || '');
+    FLY.delete(w.key || flyKey(w.item));
+  };
+  if (src && w.item && w.item.sketch && w.item.jo) {
+    presentSketch(w.item.jo, src).then(done).catch(() => done(src));
+    return;
+  }
+  done(src);
 }
 async function legacy(size, ws) {
   const piece = ws.filter(w => w.item.kind === 'piece');
@@ -288,7 +426,7 @@ function stage(el, o) {
     }
     if (base.fallback && typeof o.noted === 'function') o.noted(base);
   };
-  // Page 2 is a whole card. Its orientation is not fixed, so the stand-in is not cropped here.
+  // A page-2 stand-in is cropped to the design sketch before it is shown. Page 1 is not a stand-in.
   load(thumbItem).then(src => {
     if (src) show(src, true);
     if (base.fallback && base.kind === 'piece') {
@@ -330,5 +468,5 @@ function extras(jo, opt) {
     return { drawing: drawing.filter(d => d && d.id), cards };
   }).catch(() => ({ drawing: [], cards: [] }));
 }
-window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel };
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, SKETCH_ROI };
 })();

@@ -1,4 +1,4 @@
-/* Needs a look (#/look): scanned cards the JO reader held back.
+/* DEBUG tab in Inventory: scanned cards the JO reader held back. Old #/look links open that tab.
    JoInbox.gs (staff Apps Script) is the only backend. Admin and production manager.
    Prices and client phone are shown only when the response still has them. */
 (function (root) {
@@ -117,7 +117,9 @@ function paintBadge(n) {
     if (show) el.setAttribute('aria-label', v + ' scanned cards waiting');
     else el.removeAttribute('aria-label');
   });
+  if (root.OYPInv && root.OYPInv.paintNav) root.OYPInv.paintNav();
 }
+function count() { return typeof badge.n === 'number' ? badge.n : 0; }
 function roleOk(u) { return !!(u && (u.role === 'admin' || u.role === 'production_manager')); }
 async function refreshBadge(opts) {
   opts = opts || {};
@@ -180,7 +182,10 @@ function cardHtml(card) {
 }
 function pageHtml(m) {
   m = m || {};
-  const head = '<div class="jipage"><div class="dhead jihd"><h2>Needs a look <span class="ncount" data-ncount="look" hidden></span></h2>' + (m.forbidden ? '' : runBoxHtml()) + '</div>';
+  const tools = m.forbidden ? '' : runBoxHtml();
+  const head = m.embed
+    ? '<div class="jipage jiembed"><div class="dhead jihd">' + tools + '</div>'
+    : '<div class="jipage"><div class="dhead jihd"><h2>Needs a look <span class="ncount" data-ncount="look" hidden></span></h2>' + tools + '</div>';
   if (m.loading) return head + '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i></div></div>';
   if (m.missing) return head + '<div class="dcard jibanner"><h3>Scanner backend not set up yet</h3><p class="muted">Scanned cards will show here once JoInbox is pasted into Apps Script. The rest of the back office still works.</p></div></div>';
   if (m.forbidden) return head + '<div class="dcard jibanner"><h3>Not allowed</h3><p class="muted">Needs a look is for admins and production managers.</p></div></div>';
@@ -689,13 +694,15 @@ function wire(main) {
     if (act === 'discard-yes') runAction(article, 'discard');
   });
 }
-async function render(main, user) {
+async function render(main, user, opt) {
   S.user = user || S.user;
+  if (opt && opt.embed) S.embed = true;
   closeZoom();
   if (!main) return;
   if (!S.run.busy) S.run = { busy: false, msg: '', kind: '' }; // a message belongs to the visit it was made in
   const token = liveToken();
-  main.innerHTML = pageHtml({ loading: true });
+  const emb = !!S.embed;
+  main.innerHTML = pageHtml({ loading: true, embed: emb });
   let r;
   try { r = await api().call('joInboxList', { status: 'check', limit: 50 }); }
   catch (e) { r = { ok: false, error: 'Could not load', code: 'NET' }; }
@@ -704,12 +711,12 @@ async function render(main, user) {
   if (isMissing(r)) {
     badge.missing = true;
     paintBadge(0);
-    main.innerHTML = pageHtml({ missing: true });
+    main.innerHTML = pageHtml({ missing: true, embed: emb });
     wire(main);
     return;
   }
   if (!r || !r.ok) {
-    main.innerHTML = pageHtml(r && r.code === 'FORBIDDEN' ? { forbidden: true } : { error: (r && r.error) || 'Could not load' });
+    main.innerHTML = pageHtml(r && r.code === 'FORBIDDEN' ? { forbidden: true, embed: emb } : { error: (r && r.error) || 'Could not load', embed: emb });
     wire(main);
     return;
   }
@@ -718,7 +725,7 @@ async function render(main, user) {
   S.notices = [];
   badge.missing = false;
   badge.at = Date.now();
-  main.innerHTML = pageHtml({ cards: S.cards, counts: S.counts, notices: S.notices, total: r.total || S.cards.length });
+  main.innerHTML = pageHtml({ cards: S.cards, counts: S.counts, notices: S.notices, total: r.total || S.cards.length, embed: emb });
   paintBadge(Number(S.counts.check) || 0);
   wire(main);
   watchCrops(main);
@@ -731,7 +738,7 @@ if (root.document && root.document.addEventListener) {
   });
 }
 root.OYPJoInbox = {
-  render: render, refreshBadge: refreshBadge, paintBadge: paintBadge, cropRect: cropRect, actionFor: actionFor,
+  render: render, refreshBadge: refreshBadge, paintBadge: paintBadge, count: count, closeZoom: closeZoom, cropRect: cropRect, actionFor: actionFor,
   normJo: normJo, isMissing: isMissing, fieldRows: fieldRows, pageHtml: pageHtml, cardHtml: cardHtml, runText: runText, runError: runError, runScans: runScans
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPJoInbox;
