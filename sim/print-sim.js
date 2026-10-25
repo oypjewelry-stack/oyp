@@ -134,6 +134,10 @@ const noPrice = L.render({
   weight: 7, jo: '26-002', sku: '18-498', location: 'A.R3'
 });
 eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
+const readTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 18500, name: 'Oval sapphire ring', item_type: 'Ring', metal: 'Gold', karat: '18K', stones: 'Sapphire', weight: '20', jo: '26-287', sku: '18-498', location: 'Showroom' });
+eq(readTag.specPx === 16 && readTag.joPx === 14 && readTag.qrBox && readTag.qrBox.size >= L.px(9) && readTag.qrBox.size <= L.px(10) && readTag.lines.indexOf('Sapphire') >= 0 && readTag.lines.indexOf('26-287') >= 0 && readTag.lines.indexOf('Showroom') >= 0 && readTag.lines.indexOf('20g') >= 0 && readTag.lines.indexOf('₱18,500.00') >= 0 && readTag.lines.indexOf('Oval sapphire ring') >= 0 && readTag.lines.indexOf('GOLD') >= 0 && decode(readTag) === '26-287', 'a short stone, JO, location, and weight print larger, and the price, description, and metal stay');
+const longTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 125000, name: 'Oval sapphire cluster ring with a hidden gallery and a two-line description', item_type: 'Necklace', metal: 'Yellow gold', karat: '18KWG', stones: 'Oval sapphire 2.40ct with tapered baguette shoulders and a hidden halo', weight: '12345', jo: '26-1234A', sku: 'SKU-998877', location: 'Philippine Showroom Vault' });
+eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longTag.lines.indexOf('Philippine Showroom') >= 0 && longTag.lines.indexOf('Vault') >= 0 && longTag.joPx === 14 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
 function outsideFlaps(img) {
   const rects = L.flapRects(img);
   for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
@@ -160,6 +164,7 @@ function flapInk(img) {
 }
 const flaps = flapInk(fullTag);
 eq(!outsideFlaps(fullTag) && tailWhite(fullTag), 'no black pixel falls outside the two flap rectangles');
+eq(!outsideFlaps(readTag) && !outsideFlaps(longTag) && tailWhite(readTag) && tailWhite(longTag), 'the larger stone, JO, location, weight, and QR stay inside the flaps');
 eq(flaps.left > 40 && flaps.right > 40 && flaps.span > L.px(15), 'each flap carries ink along the feed, not a strip across the top');
 function paperReads(img, jo) {
   const view = L.paperView(img);
@@ -193,7 +198,7 @@ const lay1 = L.render(Object.assign({ layout: layPrice }, layItem));
 const layQr = JSON.parse(JSON.stringify(layBase));
 layQr.qr.x = 40;
 layQr.qr.y = 8;
-layQr.qr.qr = 12;
+layQr.qr.qr = 14;
 const lay2 = L.render(Object.assign({ layout: layQr }, layItem));
 eq(packed(lay0) !== packed(lay1) && lay1.lines.indexOf('₱11,500.00') >= 0 && lay1.lines.indexOf('ELENA') < 0, 'the encoded bitmap changes when the layout moves the price');
 eq(packed(lay0) !== packed(lay2) && lay2.qrBox && lay0.qrBox && lay2.qrBox.size > lay0.qrBox.size && decode(lay2) === '26-002', 'the encoded bitmap changes when the layout enlarges the QR');
@@ -403,9 +408,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=33') && index.includes('print-label.js?v=14') && index.includes('nav.js?v=70') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=21') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=21') && read('sim/swipe-preview.html').includes('print.css?v=21'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=14') && read('nav.js').includes('print.js?v=33') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=33') && read('staff/print-test.html').includes('print-label.js?v=14') && read('staff/print-test.html').includes('print.css?v=21') && read('staff/print-test.html').includes('nav.js?v=70') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=33') && index.includes('print-label.js?v=15') && index.includes('nav.js?v=71') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=21') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=21') && read('sim/swipe-preview.html').includes('print.css?v=21'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=15') && read('nav.js').includes('print.js?v=33') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=33') && read('staff/print-test.html').includes('print-label.js?v=15') && read('staff/print-test.html').includes('print.css?v=21') && read('staff/print-test.html').includes('nav.js?v=71') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';

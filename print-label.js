@@ -161,6 +161,14 @@ function wrapLines(text, maxW, size, maxLines, bold) {
   if (cur) lines.push(cur);
   return lines;
 }
+function blockHeight(lines, size, bold) {
+  var tall = 0, i, m;
+  for (i = 0; i < lines.length; i++) {
+    m = metricsOf(lines[i], size, bold);
+    tall += Math.ceil(m.ascent + m.descent) + (i ? 2 : 0);
+  }
+  return tall;
+}
 /* Up to three spec lines. Missing fields are skipped. Metal and karat share a line. Size and weight share the last. */
 function specLines(opts) {
   opts = opts || {};
@@ -489,17 +497,17 @@ var LAYOUT_BASE = {
   jewelry_tag: {
     price: { show: 1, x: 1, y: 1, size: 17, bold: 1, align: 'left', w: 14, wrap: 1 },
     logo: { show: 1, x: 19.5, y: 1 },
-    name: { show: 1, x: 1, y: 4.1, size: 15, bold: 1, align: 'left', w: 23, wrap: 1 },
+    name: { show: 1, x: 1, y: 4.1, size: 15, bold: 1, align: 'left', w: 23, wrap: 2 },
     type: { show: 1, x: 1, y: 11.2, size: 12, bold: 1, align: 'left', w: 7, wrap: 1 },
     metal: { show: 1, x: 9, y: 11.2, size: 12, bold: 1, align: 'center', w: 7, wrap: 1 },
     karat: { show: 1, x: 16.5, y: 11.2, size: 12, bold: 1, align: 'right', w: 7.5, wrap: 1 },
     fold: { show: 1, x: 1, y: 15, w: 23 },
-    stones: { show: 1, x: 1, y: 16, size: 10, bold: 1, align: 'left', w: 23, wrap: 3 },
-    weight: { show: 1, x: 1, y: 27.2, size: 9, bold: 1, align: 'left', w: 10, wrap: 1 },
-    jo: { show: 1, x: 8, y: 23.2, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
-    sku: { show: 1, x: 8, y: 24.6, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
-    location: { show: 1, x: 8, y: 26, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
-    qr: { show: 1, x: 17.8, y: 22.8, qr: 6.2 },
+    stones: { show: 1, x: 1, y: 16, size: 16, bold: 1, align: 'left', w: 23, wrap: 3 },
+    weight: { show: 1, x: 1, y: 26.6, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
+    jo: { show: 1, x: 1, y: 20.4, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
+    sku: { show: 1, x: 1, y: 22.5, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
+    location: { show: 1, x: 1, y: 24.5, size: 14, bold: 1, align: 'left', w: 13, wrap: 2 },
+    qr: { show: 1, x: 14.6, y: 19.6, qr: 9.4 },
     line: { show: 0, x: 1, y: 20, size: 9, bold: 1, align: 'left', w: 16, wrap: 1 }
   },
   jo_card: {
@@ -638,10 +646,34 @@ function paintLayout(img, layout, opts, kind) {
     text = elementText(field.id, opts);
     x = px(el.x); y = px(el.y); w = Math.max(4, px(el.w || 4));
     size = el.size | 0; wrapN = el.wrap | 0 || 1; bold = el.bold ? 1 : 0;
+    block = [];
+    if (text && kind === 'jewelry_tag' && (field.id === 'stones' || field.id === 'jo' || field.id === 'sku' || field.id === 'location' || field.id === 'weight')) {
+      var minSize = field.id === 'stones' ? 11 : 10;
+      var maxH = 0, fitGuard = 0, fitTall;
+      function roomUntil(id) {
+        var next = layout[id];
+        if (!next || !next.show) return 0;
+        return px(next.y) - y - 2;
+      }
+      if (field.id === 'stones') maxH = roomUntil('qr');
+      else if (field.id === 'jo') maxH = roomUntil('sku');
+      else if (field.id === 'sku') maxH = roomUntil('location');
+      else if (field.id === 'location') maxH = roomUntil('weight');
+      else if (field.id === 'weight') maxH = px(29) - y;
+      if (maxH < 0) maxH = 0;
+      if (field.id === 'stones' && maxH && maxH < 8) maxH = 8;
+      while (size > minSize && wrapN <= 1 && metricsOf(text, size, bold).w > w) size--;
+      while (fitGuard++ < 24) {
+        block = wrapN <= 1 ? [metricsOf(text, size, bold).w <= w ? text : ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
+        fitTall = blockHeight(block, size, bold);
+        if (!maxH || fitTall <= maxH || size <= minSize && wrapN <= 1) break;
+        if (size > minSize) { size--; continue; }
+        if (wrapN > 1) { wrapN--; continue; }
+        break;
+      }
+    } else if (text) block = wrapN <= 1 ? [ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
     if (field.id === 'stones') specPx = size;
     if (field.id === 'jo') joPx = size;
-    block = [];
-    if (text) block = wrapN <= 1 ? [ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
     if (!block.length) {
       placed.push({ id: field.id, x: x, y: y, w: w, h: Math.max(8, size) });
       continue;
@@ -733,13 +765,23 @@ function drawJewelry(img, box, opts) {
   blitBits(paper, LOGO_ROWS, right - logoW, top);
 
   if (name) {
-    var nameSize = sizeThatFits(name, innerW, 15, 11) || 11;
-    if (metricsOf(name, nameSize).w > innerW) name = ellipsis(name, innerW, nameSize);
     var nameY = top + logoH + 6;
-    var nameM = metricsOf(name, nameSize);
-    runs.push({ text: name, x: left, y: nameY, size: nameSize });
-    lines.push(name);
-    nameBottom = nameY + Math.ceil(nameM.ascent + nameM.descent);
+    var nameRoom = Math.max(12, (foldY - pad - 20) - nameY);
+    var nameSize = 15;
+    var nameLines = wrapLines(name, innerW, nameSize, 2);
+    while (nameSize > 11 && blockHeight(nameLines, nameSize) > nameRoom) {
+      nameSize--;
+      nameLines = wrapLines(name, innerW, nameSize, 2);
+    }
+    if (blockHeight(nameLines, nameSize) > nameRoom) nameLines = [ellipsis(name, innerW, nameSize)];
+    var nameCursor = nameY, ni;
+    for (ni = 0; ni < nameLines.length; ni++) {
+      var nameM = metricsOf(nameLines[ni], nameSize);
+      runs.push({ text: nameLines[ni], x: left, y: nameCursor, size: nameSize });
+      lines.push(nameLines[ni]);
+      nameCursor += Math.ceil(nameM.ascent + nameM.descent) + 2;
+    }
+    nameBottom = nameCursor;
   }
 
   if (spread.length) {
@@ -778,46 +820,63 @@ function drawJewelry(img, box, opts) {
     });
   }
 
+  /* Lower flap. Stone starts at 16 px (2.0 mm, 5.7 pt). JO, location, and weight
+     start at 14 px (1.8 mm, 5.0 pt). The QR uses 3 px modules, about 9.4 mm on a
+     short JO. A line shrinks only when the full words would leave the flag or
+     cover the QR. Price, the description, the metal row, and the logo stay as they are. */
+  var STONE_PX = 16, STONE_MIN = 11, META_PX = 14, META_MIN = 10;
   var mods = jo ? makeQr(jo) : null;
-  var mod = 2, quiet = 2;
+  var mod = 3, quiet = 2;
   var qpix = mods ? qrSize(mods, mod, quiet) : 0;
-  var codes = [];
-  if (jo) codes.push(jo);
-  if (sku) codes.push(sku);
-  if (loc) codes.push(loc);
-  var metaSize = 9;
-  var codeMax = Math.max(8, (qpix ? right - 4 - qpix : right) - left - 36);
-  while (metaSize > 7 && codes.some(function (t) { return metricsOf(t, metaSize).w > codeMax; })) metaSize--;
-  codes = codes.map(function (t) {
-    if (t === jo && metricsOf(t, metaSize).w <= codeMax) return t;
-    return metricsOf(t, metaSize).w <= codeMax ? t : ellipsis(t, codeMax, metaSize);
-  });
-  if (jo && codes.length && codes[0] !== jo && metricsOf(jo, 7).w <= codeMax) {
-    metaSize = 7;
-    codes[0] = jo;
-  }
-  joPx = jo ? metaSize : 0;
-  var clusterBottom = bottom;
-  var clusterH = qpix || (codes.length ? codes.length * 12 : 0);
-  var clusterTop = clusterBottom - clusterH;
   var stoneTop = foldY + pad;
+  var maxQr = bottom - stoneTop - 4 - STONE_PX;
+  while (mods && mod > 2 && qpix > maxQr) {
+    mod--;
+    qpix = qrSize(mods, mod, quiet);
+  }
+  var colRight = qpix ? right - qpix - 4 : right;
+  var colW = Math.max(8, colRight - left);
+  function fitMeta(text, wrapN) {
+    var size = META_PX, linesAt;
+    if (wrapN > 1 && metricsOf(text, size).w > colW) {
+      linesAt = wrapLines(text, colW, size, wrapN);
+      if (linesAt.length && linesAt.join(' ').indexOf('...') < 0) return { lines: linesAt, size: size };
+    }
+    while (size > META_MIN && metricsOf(text, size).w > colW) size--;
+    if (metricsOf(text, size).w <= colW) return { lines: [text], size: size };
+    if (wrapN > 1) {
+      linesAt = wrapLines(text, colW, META_MIN, wrapN);
+      return { lines: linesAt.length ? linesAt : [ellipsis(text, colW, META_MIN)], size: META_MIN };
+    }
+    return { lines: [ellipsis(text, colW, META_MIN)], size: META_MIN };
+  }
+  var meta = [];
+  if (jo) meta.push(fitMeta(jo, 1));
+  if (sku) meta.push(fitMeta(sku, 1));
+  if (loc) meta.push(fitMeta(loc, 2));
+  if (weight) meta.push(fitMeta(weight, 1));
+  joPx = jo ? meta[0].size : 0;
+  var metaGap = 2, metaH = 0, mi, mj;
+  for (mi = 0; mi < meta.length; mi++) {
+    for (mj = 0; mj < meta[mi].lines.length; mj++) {
+      metaH += Math.ceil(metricsOf(meta[mi].lines[mj], meta[mi].size).ascent + metricsOf(meta[mi].lines[mj], meta[mi].size).descent) + (metaH ? metaGap : 0);
+    }
+  }
+  var clusterBottom = bottom;
+  var clusterH = Math.max(qpix, metaH);
+  var clusterTop = clusterBottom - clusterH;
   var stoneRoom = clusterTop - 4 - stoneTop;
   var stoneLines = [];
   if (stones && stoneRoom > 8) {
-    specPx = 10;
-    while (specPx > 8) {
-      var trial = wrapLines(stones, innerW, specPx, 3);
-      var tall = 0, li;
-      for (li = 0; li < trial.length; li++) {
-        var tm = metricsOf(trial[li], specPx);
-        tall += Math.ceil(tm.ascent + tm.descent) + (li ? 2 : 0);
-      }
-      if (tall <= stoneRoom) { stoneLines = trial; break; }
-      specPx--;
-    }
-    if (!stoneLines.length) {
-      specPx = 8;
-      stoneLines = wrapLines(stones, innerW, specPx, 3);
+    specPx = STONE_PX;
+    var stoneWrap = 3, stoneGuard = 0;
+    while (stoneGuard++ < 24) {
+      var trial = stoneWrap <= 1 ? [metricsOf(stones, specPx).w <= innerW ? stones : ellipsis(stones, innerW, specPx)] : wrapLines(stones, innerW, specPx, stoneWrap);
+      if (blockHeight(trial, specPx) <= stoneRoom) { stoneLines = trial; break; }
+      if (specPx > STONE_MIN) { specPx--; continue; }
+      if (stoneWrap > 1) { stoneWrap--; continue; }
+      stoneLines = trial;
+      break;
     }
     var sy = stoneTop;
     stoneLines.forEach(function (t) {
@@ -828,27 +887,18 @@ function drawJewelry(img, box, opts) {
     });
   }
 
-  var codeGap = 2;
-  var codeH = 0;
-  codes.forEach(function (t, i) {
-    var m = metricsOf(t, metaSize);
-    codeH += Math.ceil(m.ascent + m.descent) + (i ? codeGap : 0);
+  var metaTop = qpix ? (bottom - qpix) + Math.max(0, Math.round((qpix - metaH) / 2)) : clusterTop;
+  if (metaTop + metaH > bottom) metaTop = bottom - metaH;
+  if (metaTop < clusterTop) metaTop = clusterTop;
+  var metaY = metaTop;
+  meta.forEach(function (row) {
+    row.lines.forEach(function (t) {
+      var m = metricsOf(t, row.size);
+      runs.push({ text: t, x: left, y: metaY, size: row.size });
+      lines.push(t);
+      metaY += Math.ceil(m.ascent + m.descent) + metaGap;
+    });
   });
-  var codeY = qpix ? clusterTop + Math.max(0, Math.round((qpix - codeH) / 2)) : clusterTop;
-  var codesRight = qpix ? right - qpix - 4 : right;
-  codes.forEach(function (t) {
-    var m = metricsOf(t, metaSize);
-    var w = m.w;
-    runs.push({ text: t, x: Math.round(codesRight - w), y: codeY, size: metaSize });
-    lines.push(t);
-    codeY += Math.ceil(m.ascent + m.descent) + codeGap;
-  });
-  if (weight) {
-    var wm = metricsOf(weight, metaSize);
-    var weightY = clusterBottom - Math.ceil(wm.ascent + wm.descent);
-    runs.push({ text: weight, x: left, y: weightY, size: metaSize });
-    lines.push(weight);
-  }
 
   stampLocal(paper, runs);
   dashes(paper, left, foldY, innerW);
