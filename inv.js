@@ -1,7 +1,7 @@
 /* OYP back office: Inventory (#/jos, every JO / finished piece) and Materials (#/inventory, raw stock).
    Server: InventoryPages.gs (invList, invThumbs, matList, matHistory, matSave, matMove). The server strips what a role may not
    see (price + margin: executives; costs: executives + production manager); this file only draws what it gets.
-   JO photos are card scans. They follow can.cost, the same gate as the cost line. A page-2 sketch is only a stand-in profile. */
+   JO photos are card scans. They follow can.cost, the same gate as the cost line. A page-2 sketch is only a stand-in profile.
    Move / Archive on this page is one call, invBulk (paste/InvBulk.gs.txt). It changes location. It does not delete a row.
    Delete is a separate call, invDelete, and the sheet asks before it sends that. */
 (() => {
