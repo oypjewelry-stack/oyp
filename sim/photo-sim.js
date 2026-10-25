@@ -34,7 +34,7 @@ eq(photos.includes('indexedDB') && photos.includes('localStorage') && photos.inc
 eq(app.includes('photoThumbs: 1') && app.includes('photoFile: 1'), 'photo reads do not clear the page cache');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(!/photoThumbs|photoFile/.test(cached), 'photo answers are not stored with the page cache');
-eq(index.includes('photos.js?v=4') && index.includes('inv.js?v=21') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=40') && index.includes('app.css?v=54') && index.includes('nav.js?v=66'), 'changed files are cache-busted');
+eq(index.includes('photos.js?v=6') && index.includes('inv.js?v=22') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=40') && index.includes('app.css?v=56') && index.includes('nav.js?v=66'), 'changed files are cache-busted');
 eq(fast.includes('photoThumbs: 1, photoFile: 1') && fast.includes('NOT added to FAST.CACHE'), 'Fast.gs keeps the new actions as fresh reads');
 eq(steps.includes('PASTE_STEPS') && steps.includes('Manage deployments') && steps.includes('New version'), 'paste steps tell the owner to deploy a new version');
 eq(steps.includes('Replace that file') && steps.includes('Page 1 is never') && steps.includes('drawings folder'), 'the new paste steps replace PhotoFast and describe the stand-in');
@@ -44,8 +44,9 @@ eq(gs.includes("cards[i].page === 2 && cards[i].side === 'a'"), 'the stand-in is
 eq(/\$\{can\.cost \? `<div class="ivjoph"[^`]*JO photos/.test(inv) && inv.includes('Sketch from JO card') && inv.includes('fallback: !!can.cost'), 'JO photos and the stand-in follow the cost gate');
 eq(photos.includes("MEM.set('sketch:'") && photos.includes('!item.sketch'), 'a stand-in is kept for this visit and is not stored as the profile');
 eq(review.includes('id="rvJoPh"') && review.includes("kind: 'card'") && review.includes('Open original') === false, 'the JO card lists Drive scans without an OcrLog row');
-eq(read('app.css').includes('.ivph.sketch') && read('app.css').includes('.ivph.big.phstage.sketch>img{object-fit:contain'), 'the stand-in is shown whole');
-eq(photos.includes('function sketchBox') && photos.includes('presentSketch') && photos.includes('SKETCH_ROI'), 'a page-2 stand-in is cropped to the design panel');
+eq(read('app.css').includes('.ivph.big.sketch{aspect-ratio:auto;height:auto;display:block;background:#fff}') && read('app.css').includes('.ivph.big.phstage.sketch>img{position:static;inset:auto;width:100%;height:auto;object-fit:contain;background:#fff}') && read('app.css').includes('.iview.sketch{background:#fff}'), 'the sketch frame follows the crop on white, and the viewer matches');
+eq(photos.includes('function sketchBox') && photos.includes('function sketchFrame') && photos.includes('presentSketch') && photos.includes('SKETCH_ROI') && !photos.includes('SKETCH_FRAME'), 'a page-2 stand-in is cropped to the ink and is not stretched to the old frame');
+eq(inv.includes("root.className = 'iview' + (o.sketch ? ' sketch' : '')"), 'a sketch opens in the white viewer');
 const cardClick = inv.slice(inv.indexOf('el.onclick = e =>'), inv.indexOf('ivWireSheet(main);'));
 eq(cardClick.includes('ivMountSheet(main)') && !cardClick.includes('ivOpenCard'), 'tapping an inventory item stays on Inventory');
 eq(inv.includes('>REVIEW<') && inv.includes('function ivOpenViewer') && inv.includes('OYPReview.mount') && inv.includes("review: ['REVIEW'") && inv.includes("debug: ['DEBUG'"), 'a pending JO is reviewed in Inventory and a photo opens large');
@@ -293,6 +294,12 @@ eq(P.sketchBox(paintSketch(200, 200, []), 200, 200) === null, 'a blank page-2 pa
   const inside = ink && ink.x >= x0 && ink.y >= y0 && ink.x + ink.w <= Math.round(W * (roi.x + roi.w)) + 1 && ink.y + ink.h <= Math.round(H * (roi.y + roi.h)) + 1;
   const covers = ink && ink.x <= x0 + 12 && ink.y <= y0 + 18 && ink.x + ink.w >= x0 + 64 && ink.y + ink.h >= y0 + 86;
   eq(!!ink && inside && covers, 'the crop keeps the handwriting and the yellow bead and drops the header and the speck');
+  const wide = P.sketchFrame({ x: 10, y: 40, w: 300, h: 80 }, { x: 0, y: 0, w: 400, h: 220 });
+  eq(wide.x === 10 && wide.y === 40 && wide.w === 300 && wide.h === 80 && wide.cw === 300 && wide.ch === 80 && wide.dx === 0 && wide.dy === 0, 'a wide sketch is not grown into the page around it');
+  const tall = P.sketchFrame({ x: 4, y: 8, w: 40, h: 90 }, { x: 0, y: 0, w: 200, h: 200 });
+  eq(tall.x === 4 && tall.y === 8 && tall.w === 40 && tall.h === 90 && tall.cw === 40 && tall.ch === 90 && tall.dx === 0 && tall.dy === 0, 'a tall sketch stays tall so the frame can match it');
+  const square = P.sketchFrame({ x: 2, y: 3, w: 100, h: 96 });
+  eq(Math.abs(square.cw / square.ch - 100 / 96) < 0.001 && square.w === 100 && square.h === 96, 'a near-square sketch keeps its own aspect');
 }
 eq(P.pageLabel([{ page: 1, side: 'a' }, { page: 1, side: 'b' }, { page: 2, side: 'a' }], { page: 1, side: 'b' }) === 'Page 1 back', 'two sides name the back');
 eq(P.pageLabel([{ page: 1, side: 'a' }, { page: 1, side: 'b' }, { page: 2, side: 'a' }], { page: 2, side: 'a' }) === 'Page 2', 'a single side is just the page');

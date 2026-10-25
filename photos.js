@@ -152,6 +152,12 @@ function sketchBox(rgba, w, h) {
   if (ow < 8 || oh < 8) return null;
   return { x: ox, y: oy, w: ow, h: oh };
 }
+/* The detail frame is sized to this crop. Do not grow into the page around the ink:
+   that paper is the form, and it showed up as beige bands on the sides. */
+function sketchFrame(box) {
+  const x = box.x, y = box.y, w = box.w, h = box.h;
+  return { x: x, y: y, w: w, h: h, cw: w, ch: h, dx: 0, dy: 0 };
+}
 function cropSketch(src) {
   if (!src || typeof document === 'undefined' || !document.createElement) return Promise.resolve('');
   return new Promise(resolve => {
@@ -168,12 +174,13 @@ function cropSketch(src) {
         g.drawImage(img, 0, 0);
         const box = sketchBox(g.getImageData(0, 0, sw, sh).data, sw, sh);
         if (!box) { resolve(''); return; }
+        const frame = sketchFrame(box);
         const out = document.createElement('canvas');
-        out.width = box.w; out.height = box.h;
+        out.width = frame.cw; out.height = frame.ch;
         const og = out.getContext('2d');
         og.fillStyle = '#fff';
-        og.fillRect(0, 0, box.w, box.h);
-        og.drawImage(c, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+        og.fillRect(0, 0, frame.cw, frame.ch);
+        og.drawImage(c, frame.x, frame.y, frame.w, frame.h, frame.dx, frame.dy, frame.w, frame.h);
         resolve(out.toDataURL('image/jpeg', 0.92));
       } catch (e) { resolve(''); }
     };
@@ -468,5 +475,5 @@ function extras(jo, opt) {
     return { drawing: drawing.filter(d => d && d.id), cards };
   }).catch(() => ({ drawing: [], cards: [] }));
 }
-window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, SKETCH_ROI };
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI };
 })();
