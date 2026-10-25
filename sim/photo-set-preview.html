@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../app.css?v=62">
+<link rel="stylesheet" href="../app.css?v=63">
 <title>Add photo layout</title>
 </head>
 <body>
@@ -54,7 +54,7 @@ HTMLInputElement.prototype.click = function () {
 </script>
 <script src="../sketchclean.js?v=1"></script>
 <script src="../photos.js?v=16"></script>
-<script src="../inv.js?v=29"></script>
+<script src="../inv.js?v=30"></script>
 <script>
 const ROI = { x: 0.578, y: 0.150, w: 0.377, h: 0.815 };
 function paper(W, H) {
@@ -209,6 +209,7 @@ window.__measure = function () {
   const imgs = frame ? [...frame.querySelectorAll('img')] : [];
   const img = imgs[0] || null;
   const pen = frame && frame.querySelector('.ivpencil');
+  const face = pen && pen.querySelector('.ivpface');
   const svg = pen && pen.querySelector('svg');
   const menu = document.querySelector('#ivSheet .ivphmenu');
   const add = menu && menu.querySelector('.ivadd');
@@ -217,13 +218,18 @@ window.__measure = function () {
   const msg = document.querySelector('#ivSheet .ivaddmsg');
   const orig = frame && frame.querySelector('.phorig');
   const cs = frame ? getComputedStyle(frame) : null;
-  const ib = img ? box(img) : null, pb = pen ? box(pen) : null, sb = svg ? box(svg) : null, ob = orig ? box(orig) : null, fb = frame ? box(frame) : null;
+  const ib = img ? box(img) : null, pb = pen ? box(pen) : null, zb = face ? box(face) : null, sb = svg ? box(svg) : null, ob = orig ? box(orig) : null, fb = frame ? box(frame) : null;
   const pad = cs ? parseFloat(cs.paddingBottom) || 0 : 0;
   const nw = img ? img.naturalWidth : 0, nh = img ? img.naturalHeight : 0;
   const dw = ib ? ib.width : 0, dh = ib ? ib.height : 0;
   const nat = nh ? nw / nh : 0, shown = dh ? dw / dh : 0;
-  const dx = pb && sb ? (sb.left + sb.width / 2) - (pb.left + pb.width / 2) : null;
-  const dy = pb && sb ? (sb.top + sb.height / 2) - (pb.top + pb.height / 2) : null;
+  const dx = zb && sb ? (sb.left + sb.width / 2) - (zb.left + zb.width / 2) : null;
+  const dy = zb && sb ? (sb.top + sb.height / 2) - (zb.top + zb.height / 2) : null;
+  const cdx = pb && zb ? (zb.left + zb.width / 2) - (pb.left + pb.width / 2) : null;
+  const cdy = pb && zb ? (zb.top + zb.height / 2) - (pb.top + pb.height / 2) : null;
+  const pcs = pen ? getComputedStyle(pen) : null;
+  const fcs = face ? getComputedStyle(face) : null;
+  const scs = svg ? getComputedStyle(svg) : null;
   const danger = del ? getComputedStyle(del).color : '';
   return {
     label: add ? add.textContent : '',
@@ -233,10 +239,19 @@ window.__measure = function () {
     pencil: !!pen,
     dx: dx == null ? null : Math.round(dx * 100) / 100,
     dy: dy == null ? null : Math.round(dy * 100) / 100,
+    cdx: cdx == null ? null : Math.round(cdx * 100) / 100,
+    cdy: cdy == null ? null : Math.round(cdy * 100) / 100,
     pw: pb ? Math.round(pb.width * 10) / 10 : 0,
     ph: pb ? Math.round(pb.height * 10) / 10 : 0,
+    fw: zb ? Math.round(zb.width * 10) / 10 : 0,
+    fh: zb ? Math.round(zb.height * 10) / 10 : 0,
     sw: sb ? Math.round(sb.width * 10) / 10 : 0,
     sh: sb ? Math.round(sb.height * 10) / 10 : 0,
+    ink: scs ? scs.color : '',
+    ring: fcs ? fcs.borderTopColor : '',
+    fill: fcs ? fcs.backgroundColor : '',
+    shadow: fcs ? fcs.boxShadow : '',
+    penShadow: pcs ? pcs.boxShadow : '',
     danger: danger,
     askOn: !!(ask && !ask.hidden),
     askText: ask ? (ask.querySelector('p') ? ask.querySelector('p').textContent : ask.textContent) : '',

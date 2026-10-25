@@ -308,8 +308,12 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivdraw .shot .ph,.ivjoph .shot .ph{width:120px;height:90px}
 .ivph.big.phstage.sketch>img{position:static;inset:auto;width:100%;height:auto;object-fit:contain;background:#fff}
 .ivph.big.phstage.sketch{padding-bottom:60px}
-.ivpencil{position:absolute;z-index:4;right:8px;bottom:8px;box-sizing:border-box;width:44px;height:44px;padding:0;margin:0;border:1px solid #ddd;border-radius:50%;background:#fff;color:#111;display:grid;place-items:center;line-height:0;cursor:pointer}
-.ivpencil svg{display:block;width:22px;height:22px}
+.ivpencil{position:absolute;z-index:4;right:8px;bottom:8px;box-sizing:border-box;width:44px;height:44px;padding:0;margin:0;border:0;border-radius:50%;background:transparent;color:var(--icon);display:grid;place-items:center;line-height:0;cursor:pointer;box-shadow:none;appearance:none}
+.ivpface{box-sizing:border-box;width:34px;height:34px;border:1px solid #e3e3e3;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center;box-shadow:none;pointer-events:none}
+.ivpencil svg{display:block;width:18px;height:18px}
+.ivpencil:hover,.ivpencil:focus-visible,.ivpencil:active,.ivpencil.is-down{color:#767676}
+.ivpencil:hover .ivpface,.ivpencil:focus-visible .ivpface,.ivpencil:active .ivpface,.ivpencil.is-down .ivpface{border-color:#cfcfcf;background:#fff}
+.ivpencil:focus,.ivpencil:focus-visible{outline:none}
 .ivpencil:disabled{opacity:.6}
 .ivphmenu{position:relative;z-index:5;margin:-4px 0 calc(12px*var(--sp));width:100%;box-sizing:border-box;background:#fff;border:1px solid #ddd;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:4px}
 .ivphmenu[hidden]{display:none}

@@ -16,8 +16,8 @@ function eq(cond, msg) {
 const inv = read('inv.js');
 const css = read('app.css');
 const index = read('staff/index.html');
-eq(index.includes('app.css?v=62') && index.includes('inv.js?v=29') && read('staff/print-test.html').includes('app.css?v=62'), 'staff pages load the new css and inventory script');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=62'), 'the customer page stays on app.css?v=29');
+eq(index.includes('app.css?v=63') && index.includes('inv.js?v=30') && read('staff/print-test.html').includes('app.css?v=63'), 'staff pages load the new css and inventory script');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=63'), 'the customer page stays on app.css?v=29');
 eq(inv.includes('stroke-width="2.5"') && inv.includes('viewBox="0 0 24 24"') && inv.includes('stroke="currentColor"') && inv.includes('stroke-linecap="round"'), 'the five controls are stroke icons');
 eq(inv.includes('aria-label="Close"') && inv.includes('aria-label="Previous photo"') && inv.includes('aria-label="Next photo"') && inv.includes('aria-label="Zoom out"') && inv.includes('aria-label="Zoom in"'), 'the labels stay on the buttons');
 eq(css.includes('.iview .ivx{display:grid;place-items:center;padding:0;') && css.includes('.iview .ivz{display:grid;place-items:center;padding:0;') && css.includes('place-items:center') && css.includes('.iview .ivprev,.iview .ivnext{display:grid}'), 'close, zoom, and the desktop arrows center with grid');

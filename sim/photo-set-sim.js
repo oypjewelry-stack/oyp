@@ -51,14 +51,14 @@ eq(inv.includes('Remove this photo? The drawing from the JO card comes back. The
 eq(!cardFn.includes('Remove photo') && !cardFn.includes('ivpencil'), 'list cards do not grow a pencil or a Remove photo button');
 eq(!inv.includes('capture'), 'the phone sheet offers the camera and the library');
 eq(inv.includes('root._jo') && inv.includes('root._setProfile') && inv.includes("it.key === 'piece'"), 'a saved photo replaces the first slide in an open viewer');
-eq(css.includes('.ivph.big.phstage.sketch{padding-bottom:60px}') && css.includes('.ivpencil{position:absolute;z-index:4;right:8px;bottom:8px;') && css.includes('border-radius:50%') && css.includes('place-items:center') && css.includes('.ivphmenu .ivdel{color:#b3261e}'), 'the pencil is a circle in the gutter under a sketch, and Remove photo is danger-colored');
+eq(css.includes('.ivph.big.phstage.sketch{padding-bottom:60px}') && css.includes('.ivpencil{position:absolute;z-index:4;right:8px;bottom:8px;') && css.includes('width:44px;height:44px') && css.includes('.ivpface{') && css.includes('width:34px;height:34px') && css.includes('border:1px solid #e3e3e3') && css.includes('color:var(--icon)') && css.includes('background:rgba(255,255,255,.92)') && css.includes('box-shadow:none') && css.includes('.ivpencil:hover,.ivpencil:focus-visible,.ivpencil:active,.ivpencil.is-down{color:#767676}') && css.includes('border-color:#cfcfcf') && css.includes('border-radius:50%') && css.includes('place-items:center') && css.includes('.ivphmenu .ivdel{color:#b3261e}'), 'the pencil is a quiet circle in the gutter under a sketch, and Remove photo is danger-colored');
 const sheetFn = inv.slice(inv.indexOf('function ivSheet'), inv.indexOf('function ivRange'));
 eq(sheetFn.indexOf('function ivSheet') === 0 && !sheetFn.includes('background-image'), 'the detail frame does not paint the list thumb behind the photo');
 eq(photos.includes("el.style.backgroundImage = 'none'"), 'a shown detail image clears any background image');
 const preview = read('sim/photo-set-preview.html');
-eq(preview.includes('photos.js?v=16') && preview.includes('inv.js?v=29') && preview.includes('sketchclean.js?v=1') && preview.includes('app.css?v=62'), 'the layout fixture loads the same files');
-eq(index.includes('photos.js?v=16') && index.includes('inv.js?v=29') && index.includes('app.css?v=62') && read('staff/print-test.html').includes('app.css?v=62'), 'changed files are cache-busted');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=62'), 'the customer page stays on app.css?v=29');
+eq(preview.includes('photos.js?v=16') && preview.includes('inv.js?v=30') && preview.includes('sketchclean.js?v=1') && preview.includes('app.css?v=63'), 'the layout fixture loads the same files');
+eq(index.includes('photos.js?v=16') && index.includes('inv.js?v=30') && index.includes('app.css?v=63') && read('staff/print-test.html').includes('app.css?v=63'), 'changed files are cache-busted');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=63'), 'the customer page stays on app.css?v=29');
 
 const bag = {};
 const cache = {
@@ -381,6 +381,19 @@ function httpGet(url) {
   });
 }
 
+function quietPencil(m) {
+  return m.pw === 44 && m.ph === 44 && m.fw === 34 && m.fh === 34 && m.sw === 18 && m.sh === 18
+    && Math.abs(m.dx) <= 0.5 && Math.abs(m.dy) <= 0.5
+    && Math.abs(m.cdx) <= 0.5 && Math.abs(m.cdy) <= 0.5
+    && m.ink === 'rgb(154, 154, 154)' && m.ring === 'rgb(227, 227, 227)'
+    && m.fill === 'rgba(255, 255, 255, 0.92)'
+    && m.shadow === 'none' && m.penShadow === 'none';
+}
+function louderPencil(m) {
+  return m.ink === 'rgb(118, 118, 118)' && m.ring === 'rgb(207, 207, 207)' && m.fill === 'rgb(255, 255, 255)'
+    && m.shadow === 'none' && m.penShadow === 'none';
+}
+
 /* Opens the real inventory sheet at 390px. A wide stand-in used to leave the list thumb painted behind the img. */
 async function detailFrames() {
   const port = 9300 + Math.floor(Math.random() * 600);
@@ -470,10 +483,10 @@ async function detailFrames() {
       return md5;
     };
     const sketchCases = [
-      ['26-441', 'tall', 'inv_sketch_tall_add_390'],
-      ['26-442', 'wide', 'inv_sketch_wide_add_390'],
-      ['26-444', 'square', 'inv_sketch_square_add_390'],
-      ['26-443', 'white', 'inv_sketch_white_add_390']
+      ['26-441', 'tall', 'inv_sketch_tall_soft_390'],
+      ['26-442', 'wide', 'inv_sketch_wide_soft_390'],
+      ['26-444', 'square', 'inv_sketch_square_soft_390'],
+      ['26-443', 'white', 'inv_sketch_white_soft_390']
     ];
     for (const [jo, name, file] of sketchCases) {
       const state = await evalJson('window.__open(' + JSON.stringify(jo) + ')');
@@ -483,7 +496,7 @@ async function detailFrames() {
       console.log('measure', name, JSON.stringify(m));
       eq(m.imgs === 1 && m.bg === 'none' && m.imgBg === 'none', name + ' frame has one image and no background-image');
       eq(m.label === 'Add photo' && m.sketch === true && m.imgPos === 'static' && m.removeHidden === true && m.menuOn === false && m.askOn === false, name + ' stand-in is in flow, with Add photo in the closed menu and no Remove photo');
-      eq(m.pencil === true && m.pw === 44 && m.ph === 44 && m.sw === 22 && m.sh === 22 && Math.abs(m.dx) <= 0.5 && Math.abs(m.dy) <= 0.5, name + ' pencil icon is centered in the 44px circle (' + m.dx + ', ' + m.dy + ')');
+      eq(m.pencil === true && quietPencil(m), name + ' pencil icon is centered in the quiet circle (' + m.dx + ', ' + m.dy + ')');
       eq(m.overlap === false && m.origOverlap === false && m.gap >= 4 && m.origGap >= 4, name + ' pencil and Open original sit clear of the drawing');
       eq(Math.abs(m.pad - 60) < 1 && Math.abs(m.frameH - m.imgH - m.pad) < 2, name + ' frame height is the image plus the gutter');
       eq(m.aspectDelta < 0.03 && m.nw > 0 && m.nh > 0, name + ' displayed aspect matches the image');
@@ -497,7 +510,7 @@ async function detailFrames() {
     const noPhoto = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
     console.log('measure', 'menu-sketch', JSON.stringify(noPhoto));
     eq(noPhoto.menuOn === true && noPhoto.label === 'Add photo' && noPhoto.removeHidden === true && noPhoto.overlap === false && noPhoto.gap >= 4, 'a drawing menu offers Add photo and hides Remove photo');
-    await shot('inv_menu_sketch_390');
+    await shot('inv_menu_sketch_soft_390');
     eq(await evalJson('window.__esc()') === true, 'Escape closes the menu');
     const realState = await evalJson('window.__open("26-500", {label:"Change photo"})');
     eq(realState === 'ready', 'real photo detail is ready');
@@ -506,15 +519,37 @@ async function detailFrames() {
       console.log('measure', 'real', JSON.stringify(m));
       eq(m.imgs === 1 && m.bg === 'none' && m.imgBg === 'none', 'a real photo is one image with no background-image');
       eq(m.menuOn === false && m.label === 'Change photo' && m.removeHidden === false && m.sketch === false && m.imgPos === 'absolute' && m.overlap === true, 'the closed pencil sits on a real photo, and the menu knows it can change or remove');
-      eq(m.pw === 44 && m.ph === 44 && Math.abs(m.dx) <= 0.5 && Math.abs(m.dy) <= 0.5, 'the real-photo pencil icon is centered (' + m.dx + ', ' + m.dy + ')');
-      await shot('inv_pencil_390');
+      eq(quietPencil(m), 'the real-photo pencil icon is centered (' + m.dx + ', ' + m.dy + ')');
+      await shot('inv_pencil_soft_390');
+      const doc = await send('DOM.getDocument', { depth: 0 });
+      const found = await send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '#ivSheet .ivpencil' });
+      await send('CSS.enable');
+      const tone = async state => {
+        await send('CSS.forcePseudoState', { nodeId: found.nodeId, forcedPseudoClasses: state ? [state] : [] });
+        await evalJson('new Promise(r => requestAnimationFrame(() => r(1)))');
+        return JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      };
+      const hover = await tone('hover');
+      eq(louderPencil(hover), 'hover uses a slightly stronger gray (' + hover.ink + ' ' + hover.ring + ' ' + hover.fill + ')');
+      const focus = await tone('focus-visible');
+      eq(louderPencil(focus), 'focus uses a slightly stronger gray (' + focus.ink + ' ' + focus.ring + ')');
+      const press = await tone('active');
+      eq(louderPencil(press), 'press uses a slightly stronger gray (' + press.ink + ' ' + press.ring + ')');
+      await tone('');
+      await evalJson('var pen=document.querySelector("#ivSheet .ivpencil"); if (pen) pen.classList.add("is-down"); 1');
+      const down = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      eq(louderPencil(down), 'the pointer press uses a slightly stronger gray (' + down.ink + ' ' + down.ring + ')');
+      await evalJson('var pen=document.querySelector("#ivSheet .ivpencil"); if (pen) pen.classList.remove("is-down"); 1');
+      await wait(80);
+      const rest = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      eq(quietPencil(rest), 'the pencil returns to the quiet gray (' + rest.ink + ' ' + rest.pw + 'x' + rest.fw + ' dx ' + rest.dx + ')');
     }
     const hashes = shots.slice(0, 4).map(s => s.md5);
     eq(hashes.length === 4 && new Set(hashes).size === 4, 'the four sketch frames are different files');
     eq(await evalJson('window.__menu()') === 'open', 'the pencil opens the menu on a real photo');
     const asked = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
     eq(asked.menuOn === true && asked.label === 'Change photo' && asked.removeHidden === false && asked.removeLabel === 'Remove photo' && asked.danger === 'rgb(179, 38, 30)', 'the real-photo menu offers Change photo and danger-styled Remove photo');
-    await shot('inv_menu_photo_390');
+    await shot('inv_menu_photo_soft_390');
     eq(await evalJson('window.__menu()') === 'open' && await evalJson('window.__outside()') === true, 'a tap outside closes the menu');
     const ask390 = await evalJson('window.__ask()');
     eq(ask390 === 'open', 'Remove photo opens the confirm');
@@ -530,36 +565,36 @@ async function detailFrames() {
     await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 2, mobile: false });
     await evalJson('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))');
     const wide = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
-    eq(wide.menuOn === false && wide.label === 'Change photo' && wide.pw === 44 && Math.abs(wide.dx) <= 0.5 && Math.abs(wide.dy) <= 0.5 && wide.overlap === true, 'the pencil stays centered on the real photo at 1024 (' + wide.dx + ', ' + wide.dy + ')');
-    await shot('inv_pencil_1024');
+    eq(wide.menuOn === false && wide.label === 'Change photo' && quietPencil(wide) && wide.overlap === true, 'the pencil stays centered on the real photo at 1024 (' + wide.dx + ', ' + wide.dy + ')');
+    await shot('inv_pencil_soft_1024');
     eq(await evalJson('window.__menu()') === 'open', 'the menu opens at 1024');
-    await shot('inv_menu_photo_1024');
+    await shot('inv_menu_photo_soft_1024');
     eq(await evalJson('window.__esc()') === true, 'Escape closes the menu at 1024');
     eq(await evalJson('window.__open("26-442")') === 'ready' && await evalJson('window.__menu()') === 'open', 'a drawing menu opens at 1024');
     const wideSketch = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
-    eq(wideSketch.menuOn === true && wideSketch.label === 'Add photo' && wideSketch.removeHidden === true && wideSketch.overlap === false && Math.abs(wideSketch.dx) <= 0.5 && Math.abs(wideSketch.dy) <= 0.5, 'at 1024 a drawing menu has Add photo only and the pencil stays clear (' + wideSketch.dx + ', ' + wideSketch.dy + ')');
-    await shot('inv_menu_sketch_1024');
+    eq(wideSketch.menuOn === true && wideSketch.label === 'Add photo' && wideSketch.removeHidden === true && wideSketch.overlap === false && quietPencil(wideSketch), 'at 1024 a drawing menu has Add photo only and the pencil stays clear (' + wideSketch.dx + ', ' + wideSketch.dy + ')');
+    await shot('inv_menu_sketch_soft_1024');
     eq(await evalJson('window.__open("26-500", {label:"Change photo"})') === 'ready', 'the real photo is back for removal');
     const removed = JSON.parse(await evalJson('window.__viewerRemove().then(function (r) { return JSON.stringify(r); })'));
     console.log('viewer remove', JSON.stringify(removed));
     eq(removed.ok === true && removed.hadSketch === false && removed.changed === true && removed.label === 'Add photo', 'removal swaps the list, the detail, and viewer slide 1 to the stand-in');
     await evalJson('var sbox=document.querySelector("#ivSheet .ivsbox"); if (sbox) sbox.scrollTop=0; 1');
     const afterWide = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
-    eq(afterWide.label === 'Add photo' && afterWide.menuOn === false && afterWide.sketch === true && afterWide.removeHidden === true && afterWide.bg === 'none' && afterWide.overlap === false, 'after removal the detail frame is the sketch and Remove photo is gone');
-    await shot('inv_remove_sketch_1024');
+    eq(afterWide.label === 'Add photo' && afterWide.menuOn === false && afterWide.sketch === true && afterWide.removeHidden === true && afterWide.bg === 'none' && afterWide.overlap === false && quietPencil(afterWide), 'after removal the detail frame is the sketch and Remove photo is gone');
+    await shot('inv_remove_soft_1024');
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await evalJson('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))');
     await evalJson('var sbox=document.querySelector("#ivSheet .ivsbox"); if (sbox) sbox.scrollTop=0; 1');
     const afterNarrow = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
-    eq(afterNarrow.sketch === true && afterNarrow.menuOn === false && Math.abs(afterNarrow.dx) <= 0.5 && Math.abs(afterNarrow.dy) <= 0.5 && afterNarrow.overlap === false, 'after removal the 390 pencil is centered and clear of the drawing (' + afterNarrow.dx + ', ' + afterNarrow.dy + ')');
-    await shot('inv_remove_sketch_390');
+    eq(afterNarrow.sketch === true && afterNarrow.menuOn === false && quietPencil(afterNarrow) && afterNarrow.overlap === false, 'after removal the 390 pencil is centered and clear of the drawing (' + afterNarrow.dx + ', ' + afterNarrow.dy + ')');
+    await shot('inv_remove_soft_390');
     const staffReady = await evalJson('window.__asStaff()');
     eq(staffReady === 'ready', 'inventory can render as staff');
     const staffOpen = await evalJson('window.__open("26-501", {staff:true})');
     eq(staffOpen === 'ready', 'a staff detail opens the real photo');
     const staffM = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
     eq(staffM.pencil === false && staffM.label === '' && staffM.removeLabel === '' && staffM.sketch === false, 'the pencil stays hidden for staff');
-    const design = ['inv_pencil_390', 'inv_menu_photo_390', 'inv_menu_sketch_390', 'inv_pencil_1024', 'inv_menu_photo_1024', 'inv_menu_sketch_1024', 'inv_remove_sketch_1024', 'inv_remove_sketch_390'];
+    const design = ['inv_pencil_soft_390', 'inv_menu_photo_soft_390', 'inv_menu_sketch_soft_390', 'inv_pencil_soft_1024', 'inv_menu_photo_soft_1024', 'inv_menu_sketch_soft_1024', 'inv_remove_soft_1024', 'inv_remove_soft_390'];
     const designShots = design.map(name => shots.find(s => s.name === name));
     const designHashes = designShots.map(s => s && s.md5);
     eq(designShots.every(Boolean) && new Set(designHashes).size === designHashes.length, 'pencil, menu, and after-removal shots differ at both widths');
