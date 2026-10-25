@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sharp list preview</title>
+<link rel="stylesheet" href="../app.css?v=60">
+<style>
+  body{margin:0;background:#fff}
+  .sharpgrid{display:flex;flex-direction:column;gap:18px;width:350px;padding:16px}
+  .sharpgrid .ivcard{width:350px}
+  .sharpgrid .cap{padding:8px 10px 12px;font:14px/1.3 sans-serif}
+</style>
+<script src="../sketchclean.js?v=1"></script>
+<script src="../photos.js?v=14"></script>
+</head>
+<body>
+<div class="sharpgrid" id="grid"></div>
+<script>
+(function () {
+  const JOS = [
+    { jo: '26-425', kind: 'tall', sketch: true },
+    { jo: '26-426', kind: 'wide', sketch: true },
+    { jo: '26-428', kind: 'square', sketch: true },
+    { jo: '26-500', kind: 'photo', sketch: false }
+  ];
+  const before = location.search.indexOf('phase=before') >= 0;
+  function canvas(w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
+  function drawPage(kind) {
+    const w = 1600, h = 1100, c = canvas(w, h), g = c.getContext('2d');
+    g.fillStyle = '#f3f0e8';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#fff';
+    g.fillRect(36, 36, 860, 1028);
+    const rx = w * 0.578, ry = h * 0.150, rw = w * 0.377, rh = h * 0.815;
+    g.fillStyle = '#fff';
+    g.fillRect(rx, ry, rw, rh);
+    g.save();
+    g.translate(rx + rw / 2, ry + rh / 2);
+    g.strokeStyle = '#161616';
+    g.lineWidth = 10;
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    if (kind === 'tall') {
+      g.beginPath();
+      g.ellipse(0, 10, 170, 390, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.ellipse(0, 20, 100, 250, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.lineWidth = 6;
+      for (let i = -3; i <= 3; i++) {
+        g.beginPath();
+        g.moveTo(i * 22, -250);
+        g.lineTo(i * 22, -330);
+        g.stroke();
+      }
+    } else if (kind === 'wide') {
+      g.beginPath();
+      g.roundRect(-270, -110, 540, 220, 90);
+      g.stroke();
+      g.beginPath();
+      g.roundRect(-210, -48, 420, 96, 48);
+      g.stroke();
+      g.strokeStyle = '#1a3f72';
+      g.lineWidth = 8;
+      for (let i = -3; i <= 3; i++) {
+        g.beginPath();
+        g.ellipse(i * 58, 0, 18, 26, 0, 0, Math.PI * 2);
+        g.stroke();
+      }
+    } else {
+      g.beginPath();
+      g.rect(-250, -250, 500, 500);
+      g.stroke();
+      g.lineWidth = 6;
+      g.beginPath();
+      g.rect(-150, -150, 300, 300);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(0, -150); g.lineTo(0, 150);
+      g.moveTo(-150, 0); g.lineTo(150, 0);
+      g.stroke();
+      for (let i = -4; i <= 4; i++) {
+        g.beginPath();
+        g.arc(i * 28, -190, 7, 0, Math.PI * 2);
+        g.stroke();
+      }
+    }
+    g.restore();
+    return c;
+  }
+  function drawPhoto() {
+    const w = 1600, h = 1200, c = canvas(w, h), g = c.getContext('2d');
+    const bg = g.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, '#f6f1e6');
+    bg.addColorStop(1, '#cfc6b4');
+    g.fillStyle = bg;
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#8d6b2e';
+    g.lineWidth = 22;
+    g.beginPath();
+    g.ellipse(800, 600, 460, 460, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.lineWidth = 10;
+    g.beginPath();
+    g.ellipse(800, 600, 320, 320, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = '#8d6b2e';
+    for (let a = 0; a < Math.PI * 2; a += 0.09) {
+      g.beginPath();
+      g.arc(800 + Math.cos(a) * 390, 600 + Math.sin(a) * 390, 7, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = '#241c10';
+    g.font = '72px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('925', 800, 600);
+    return c;
+  }
+  function shrink(src, max) {
+    const scale = max / Math.max(src.width, src.height);
+    const c = canvas(Math.max(1, Math.round(src.width * scale)), Math.max(1, Math.round(src.height * scale)));
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(src, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.8);
+  }
+  const pages = {};
+  const clean = [];
+  JOS.forEach(row => {
+    const full = row.kind === 'photo' ? drawPhoto() : drawPage(row.kind);
+    pages[row.jo] = { sketch: row.sketch, full: full.toDataURL('image/jpeg', 0.9), thumb: shrink(full, 300) };
+    if (row.sketch) {
+      const g = full.getContext('2d', { willReadFrequently: true });
+      const data = g.getImageData(0, 0, full.width, full.height).data;
+      const res = sketchClean(data, full.width, full.height, null);
+      clean.push({ jo: row.jo, confident: !!(res && res.confident), reason: res && res.reason, w: res && res.out ? res.out.w : 0, h: res && res.out ? res.out.h : 0 });
+    }
+  });
+  window.__clean = clean;
+  const grid = document.getElementById('grid');
+  JOS.forEach(row => {
+    const card = document.createElement('div');
+    card.className = 'ivcard';
+    const ph = document.createElement('div');
+    ph.className = 'ivph';
+    ph.dataset.th = row.jo;
+    const cap = document.createElement('div');
+    cap.className = 'cap';
+    cap.textContent = row.jo + (row.sketch ? ' sketch' : ' photo');
+    card.appendChild(ph);
+    card.appendChild(cap);
+    grid.appendChild(card);
+  });
+  const seen = {};
+  window.OYP = {
+    call(action, body) {
+      if (action !== 'photoThumbs') return Promise.resolve({ ok: false, error: 'Unknown action' });
+      const big = body.size >= 1000;
+      if (before && big) return new Promise(function () {});
+      const piece = {};
+      (body.piece || []).forEach(jo => {
+        const p = pages[jo];
+        if (!p) { piece[jo] = { found: false, src: '' }; return; }
+        piece[jo] = p.sketch
+          ? { id: 'file-' + jo, src: big ? p.full : p.thumb, found: false, sketch: true }
+          : { id: 'file-' + jo, src: big ? p.full : p.thumb, found: true };
+      });
+      return Promise.resolve({ ok: true, size: body.size, piece: piece, scan: {}, cards: {}, drawing: {} });
+    }
+  };
+  window.OYPPhotos.watch(grid, {
+    sel: '[data-th]',
+    item: el => ({ jo: el.dataset.th, kind: 'piece', size: 300, legacy: 'inv', fallback: true }),
+    paint(el, src, item) {
+      if (!src) return;
+      el.style.backgroundImage = "url('" + src + "')";
+      el.classList.add('has');
+      el.classList.toggle('sketch', !!(item && item.sketch));
+      const jo = el.dataset.th;
+      seen[jo] = seen[jo] || [];
+      seen[jo].push(src);
+      const need = before ? 1 : 2;
+      if (JOS.every(row => seen[row.jo] && seen[row.jo].length >= need)) window.__ready = 'yes';
+    }
+  });
+  window.__measure = async function () {
+    const rows = [];
+    const nodes = grid.querySelectorAll('.ivph');
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      const bg = getComputedStyle(el).backgroundImage || '';
+      const m = /url\(["']?([^"')]+)/.exec(bg);
+      const img = new Image();
+      if (m) { img.src = m[1]; try { await img.decode(); } catch (e) {} }
+      const r = el.getBoundingClientRect();
+      rows.push({
+        jo: el.dataset.th,
+        paints: (seen[el.dataset.th] || []).length,
+        bw: img.naturalWidth || 0,
+        bh: img.naturalHeight || 0,
+        cssW: Math.round(r.width),
+        cssH: Math.round(r.height),
+        sketch: el.classList.contains('sketch'),
+        dpr: window.devicePixelRatio || 1,
+        tier: window.OYPPhotos.sharpTier(el.clientWidth, window.devicePixelRatio || 1)
+      });
+    }
+    return rows;
+  };
+})();
+</script>
+</body>
+</html>
