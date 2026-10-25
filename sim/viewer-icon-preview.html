@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="../app.css?v=60">
+<title>Viewer icons</title>
+</head>
+<body>
+<script src="../inv.js?v=27"></script>
+<script>
+function page(kind) {
+  const c = document.createElement('canvas');
+  c.width = 900; c.height = 675;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f4f2ec';
+  g.fillRect(0, 0, 900, 675);
+  if (kind === 'ring') {
+    g.strokeStyle = '#b8860b';
+    g.lineWidth = 46;
+    g.beginPath();
+    g.ellipse(450, 340, 150, 180, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.strokeStyle = '#f3e2a4';
+    g.lineWidth = 10;
+    g.beginPath();
+    g.ellipse(450, 340, 150, 180, 0, 0, Math.PI * 2);
+    g.stroke();
+  } else if (kind === 'pendant') {
+    g.strokeStyle = '#1c3a5f';
+    g.lineWidth = 10;
+    g.beginPath();
+    g.ellipse(450, 180, 36, 50, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(450, 230);
+    g.lineTo(450, 430);
+    g.stroke();
+    g.beginPath();
+    g.ellipse(450, 500, 70, 90, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = '#4696c8';
+    g.beginPath();
+    g.ellipse(450, 490, 22, 28, 0, 0, Math.PI * 2);
+    g.fill();
+  } else {
+    g.strokeStyle = '#111';
+    g.lineWidth = 8;
+    g.strokeRect(180, 280, 540, 120);
+    g.fillStyle = '#4696c8';
+    for (let i = 0; i < 5; i++) {
+      g.beginPath();
+      g.ellipse(250 + i * 100, 340, 16, 22, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  return c.toDataURL('image/jpeg', 0.9);
+}
+window.OYPInv.openViewer({
+  jo: '26-441',
+  index: 1,
+  items: [
+    { src: page('ring'), alt: 'Page 1' },
+    { src: page('pendant'), alt: 'Page 2' },
+    { src: page('cuff'), alt: 'Page 3' }
+  ]
+});
+window.__ready = !!document.getElementById('ivView');
+window.__measure = function () {
+  const root = document.getElementById('ivView');
+  const specs = [
+    ['.ivprev', 'prev'],
+    ['.ivnext', 'next'],
+    ['.ivx', 'close'],
+    ['.ivz[data-z="out"]', 'zoom out'],
+    ['.ivz[data-z="in"]', 'zoom in']
+  ];
+  return specs.map(([sel, name]) => {
+    const btn = root.querySelector(sel);
+    const natural = getComputedStyle(btn).display;
+    const arrow = name === 'prev' || name === 'next';
+    if (arrow && natural === 'none') btn.style.display = 'grid';
+    const b = btn.getBoundingClientRect();
+    const svg = btn.querySelector('svg');
+    const s = svg.getBoundingClientRect();
+    const dx = (s.left + s.width / 2) - (b.left + b.width / 2);
+    const dy = (s.top + s.height / 2) - (b.top + b.height / 2);
+    const cs = getComputedStyle(btn);
+    const row = {
+      name: name,
+      natural: natural,
+      display: cs.display,
+      pad: cs.padding,
+      label: btn.getAttribute('aria-label'),
+      bw: Math.round(b.width * 10) / 10,
+      bh: Math.round(b.height * 10) / 10,
+      sw: Math.round(s.width * 10) / 10,
+      sh: Math.round(s.height * 10) / 10,
+      dx: Math.round(dx * 100) / 100,
+      dy: Math.round(dy * 100) / 100,
+      pos: root.querySelector('.ivpos').textContent
+    };
+    btn.style.display = '';
+    return row;
+  });
+};
+</script>
+</body>
+</html>
