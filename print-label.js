@@ -809,9 +809,14 @@ function flagBounds(flagW, flagH, shiftY) {
   if (x1 < x0) x1 = x0;
   return { x: x0, y: 0, w: Math.max(1, x1 - x0), h: flagH, flag: 1 };
 }
+/* y is the feed on a JO card. The bitmap is the full 20 mm, and the gap cuts
+   the trailing rows, so a quiet zone that ends on that edge prints as only
+   the top of the code. Keep it 3 mm inside both feed edges. shiftY is added
+   when the pixels are drawn. */
 function feedBounds(w, h, shiftY) {
-  var y0 = Math.max(0, -(shiftY || 0));
-  var y1 = Math.min(h, h - (shiftY || 0));
+  var inset = px(3);
+  var y0 = Math.max(0, -(shiftY || 0)) + inset;
+  var y1 = Math.min(h, h - (shiftY || 0)) - inset;
   if (y1 < y0) y1 = y0;
   return { x: 0, y: y0, w: w, h: Math.max(1, y1 - y0) };
 }
@@ -1085,10 +1090,16 @@ function render(opts) {
     sheetOut = cardLay.sheet;
     placed = cardLay.placed || [];
   } else {
-    /* QR stays the size that fills the 20 mm height. Its left ink margin is
-       repeated on the right, and the JO shrinks into the width that is left. */
+    /* The bitmap is the full 20 mm feed, and the gap cuts the trailing rows.
+       A code that fills that height loses its bottom. Four millimetres of
+       clear feed leaves the quiet zone inside the 3 mm the gap needs, including
+       the B31's 0.5 mm shift. The left ink margin is repeated on the right,
+       and the JO shrinks into the width that is left. */
     var mods2 = jo ? makeQr(jo) : null;
-    var qrMax = box.labelH - px(1.5) * 2;
+    var cardRoom = feedBounds(box.labelW, box.labelH, shiftY);
+    var qrMax = box.labelH - px(4) * 2;
+    if (qrMax > cardRoom.h) qrMax = cardRoom.h;
+    if (qrMax > cardRoom.w) qrMax = cardRoom.w;
     var picked = mods2 ? chooseQr(mods2, qrMax) : { mod: 3, quiet: 4, size: 0 };
     var mod2 = picked.mod, quiet2 = picked.quiet, qpix2 = picked.size;
     var gap2 = qpix2 ? 4 : 0;
@@ -1132,15 +1143,9 @@ function render(opts) {
     var textX2 = x0 + pad + qpix2 + gap2;
     if (jo) runs.push({ text: lines[0], x: textX2, y: textY2, size: joPx });
     if (subFit) runs.push({ text: subFit.text, x: textX2, y: textY2 + jm2.ascent + jm2.descent + 4, size: subFit.size });
-    var qrY2 = Math.round((box.labelH - qpix2) / 2);
+    var qrY2 = qpix2 ? Math.round((box.labelH - qpix2) / 2) : 0;
     var qrX2 = pad;
     if (mods2) {
-      var cardRoom = feedBounds(box.labelW, box.labelH, shiftY);
-      if (qpix2 > cardRoom.w || qpix2 > cardRoom.h) {
-        picked = chooseQr(mods2, Math.min(cardRoom.w, cardRoom.h));
-        mod2 = picked.mod; quiet2 = picked.quiet; qpix2 = picked.size;
-        qrY2 = cardRoom.y + Math.round((cardRoom.h - qpix2) / 2);
-      }
       if (qrX2 < cardRoom.x) qrX2 = cardRoom.x;
       if (qrY2 < cardRoom.y) qrY2 = cardRoom.y;
       if (qrX2 + qpix2 > cardRoom.x + cardRoom.w) qrX2 = cardRoom.x + cardRoom.w - qpix2;
