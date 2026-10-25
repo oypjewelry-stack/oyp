@@ -1,13 +1,19 @@
 /* Staff photo cache. Lists use a 300px thumbnail. Opening a photo shows that thumbnail at once, then a 1600px image.
    The full Drive file loads only from Open original. Repeat views are kept in memory, IndexedDB, and (small thumbs) localStorage.
+   A page-2 stand-in (cleaned drawing, or a white card when there is no drawing) is stored in IndexedDB too, keyed by the JO and the source page file.
+   At startup every cached thumb is copied into memory in one pass, so the list can paint before any network call.
    One photoThumbs call covers the tiles on screen. Until PhotoFast.gs is pasted, the old invThumbs / prodPhoto / jobPhoto calls are used. */
 (() => {
 'use strict';
 const MEM = new Map();
 const FLY = new Map();
 const WAIT = [];
+const REV = [];
 const OBS = [];
-let timer = 0, mode = '';
+const PRE = { p: null, done: false };
+const SKETCH_AGE = 14 * 24 * 60 * 60 * 1000;
+const SKETCH_MAX_W = 480;
+let timer = 0, mode = '', firstBatch = true, revSoon = false;
 
 const memKey = (id, size) => id + '|' + size;
 const flyKey = item => (item.kind === 'piece' && !item.id ? 'piece:' + item.jo : (item.id || item.jo)) + '|' + item.kind + '|' + item.size;
@@ -50,7 +56,7 @@ function idbGet(id, size) {
     db().then(d => new Promise(r => {
       try {
         const q = d.transaction('ph', 'readonly').objectStore('ph').get(id + '|' + size);
-        q.onsuccess = () => r(q.result || '');
+        q.onsuccess = () => r(typeof q.result === 'string' ? q.result : '');
         q.onerror = () => r('');
       } catch (e) { r(''); }
     })).then(finish).catch(() => finish(''));
@@ -61,6 +67,52 @@ function idbPut(id, size, src) {
   db().then(d => {
     try { d.transaction('ph', 'readwrite').objectStore('ph').put(src, id + '|' + size); } catch (e) {}
   }).catch(() => {});
+}
+function idbPutRaw(key, val) {
+  if (!key || val == null || !window.indexedDB) return;
+  db().then(d => {
+    try { d.transaction('ph', 'readwrite').objectStore('ph').put(val, key); } catch (e) {}
+  }).catch(() => {});
+}
+function idbDel(key) {
+  if (!key || !window.indexedDB) return;
+  db().then(d => {
+    try { d.transaction('ph', 'readwrite').objectStore('ph').delete(key); } catch (e) {}
+  }).catch(() => {});
+}
+function primeRecord(key, val) {
+  if (val && typeof val === 'object') {
+    if (val.sketch && val.jo && val.src) {
+      const size = val.size || 300;
+      MEM.set('sketch:' + val.jo + '|' + size, val.src);
+      if (val.id) MEM.set('sketchid:' + val.jo, val.id);
+      if (val.at) MEM.set('sketchat:' + val.jo, val.at);
+      MEM.set('sketchkey:' + val.jo, key);
+    }
+    return;
+  }
+  if (typeof val === 'string' && val) MEM.set(key, val);
+}
+function prime() {
+  if (PRE.p) return PRE.p;
+  if (!window.indexedDB) { PRE.done = true; PRE.p = Promise.resolve(); return PRE.p; }
+  PRE.p = db().then(d => new Promise(res => {
+    let settled = false;
+    const done = () => { if (settled) return; settled = true; PRE.done = true; res(); };
+    try {
+      const tx = d.transaction('ph', 'readonly');
+      const req = tx.objectStore('ph').openCursor();
+      req.onsuccess = () => {
+        const cur = req.result;
+        if (!cur) { done(); return; }
+        primeRecord(String(cur.key), cur.value);
+        try { cur.continue(); } catch (e) { done(); }
+      };
+      req.onerror = done;
+      tx.onabort = done;
+    } catch (e) { done(); }
+  })).catch(() => { PRE.done = true; });
+  return PRE.p;
 }
 /* Page 2 front of the JO card. The design sketch is the right-hand DESIGN panel, below the
    DESIGN heading and inside the box rules. Tuned on a landscape 26-425 page-2 scan.
@@ -171,6 +223,7 @@ function cropSketch(src) {
   if (!src || typeof document === 'undefined' || !document.createElement) return Promise.resolve('');
   return new Promise(resolve => {
     const img = new Image();
+    img.decoding = 'async';
     img.onload = () => {
       try {
         const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
@@ -211,21 +264,95 @@ function presentSketch(jo, src) {
     return kept && kept.src ? kept.src : use;
   }).catch(() => src);
 }
+function sketchStale(jo) {
+  const at = MEM.get('sketchat:' + jo) || 0;
+  return !at || (Date.now() - at) > SKETCH_AGE;
+}
+function dropStandIn(jo) {
+  if (!jo) return;
+  MEM.delete('sketch:' + jo + '|300');
+  MEM.delete('sketch:' + jo + '|1600');
+  const key = MEM.get('sketchkey:' + jo);
+  const id = MEM.get('sketchid:' + jo);
+  MEM.delete('sketchid:' + jo);
+  MEM.delete('sketchat:' + jo);
+  MEM.delete('sketchkey:' + jo);
+  SKETCH_CROP.delete(jo);
+  if (key) idbDel(key);
+  if (id) idbDel('sk:' + jo + '|' + id);
+  idbDel('sk:' + jo + '|');
+}
+function forgetProfile(jo) {
+  if (!jo) return;
+  MEM.delete('jo:' + jo + '|300');
+  idbDel('jo:' + jo + '|300');
+  const s = ls();
+  if (!s) return;
+  try {
+    const id = s.getItem('oypPhJ:' + jo) || '';
+    if (id) s.removeItem('oypPh:' + id);
+    s.removeItem('oypPhJ:' + jo);
+    if (id) {
+      let order = JSON.parse(s.getItem('oypPhO') || '[]');
+      if (!Array.isArray(order)) order = [];
+      s.setItem('oypPhO', JSON.stringify(order.filter(x => x !== id)));
+    }
+  } catch (e) {}
+}
+function shrinkStandIn(src) {
+  if (!src || typeof document === 'undefined' || !document.createElement) return Promise.resolve(src || '');
+  return new Promise(resolve => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => {
+      try {
+        const sw = img.naturalWidth || img.width || 0;
+        const sh = img.naturalHeight || img.height || 0;
+        if (!sw || !sh) { resolve(src); return; }
+        const w = sw > SKETCH_MAX_W ? SKETCH_MAX_W : sw;
+        const h = sw > SKETCH_MAX_W ? Math.max(1, Math.round(sh * (w / sw))) : sh;
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      } catch (e) { resolve(src); }
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+}
+function persistSketch(jo, id, src) {
+  const at = Date.now();
+  MEM.set('sketchat:' + jo, at);
+  const key = 'sk:' + jo + '|' + (id || '');
+  const prev = MEM.get('sketchkey:' + jo);
+  if (prev && prev !== key) idbDel(prev);
+  MEM.set('sketchkey:' + jo, key);
+  shrinkStandIn(src).then(small => {
+    idbPutRaw(key, { src: small || src, jo: jo, id: id || '', at: at, sketch: true, size: 300 });
+  }).catch(() => {});
+}
 function remember(item, src) {
   if (!src) return;
   const size = item.size;
-  // A page-2 stand-in is not the JO's profile. Keep the cropped sketch for this visit only.
+  // A page-2 stand-in is not the JO's profile. The cleaned image (or the white card) is stored on its own key.
   if (item.sketch && item.jo) {
     MEM.set('sketch:' + item.jo + '|' + size, src);
     if (size === 300 && item.id) MEM.set('sketchid:' + item.jo, item.id);
+    if (size === 300) persistSketch(item.jo, item.id || '', src);
     return;
   }
+  if (item.kind === 'piece' && item.jo && !item.sketch) dropStandIn(item.jo);
   if (item.id) {
     MEM.set(memKey(item.id, size), src);
     idbPut(item.id, size, src);
     if (size === 300) lsPut(item.id, item.kind === 'piece' ? item.jo : '', src);
   }
-  if (item.kind === 'piece' && item.jo && size === 300 && !item.sketch) MEM.set('jo:' + item.jo + '|300', src);
+  if (item.kind === 'piece' && item.jo && size === 300 && !item.sketch) {
+    MEM.set('jo:' + item.jo + '|300', src);
+    idbPutRaw('jo:' + item.jo + '|300', src);
+  }
 }
 function peek(item) {
   const size = item.size;
@@ -316,7 +443,22 @@ async function send(size, ws) {
   ws.forEach(w => {
     if (w.item.kind === 'piece') {
       const row = r.piece && r.piece[w.item.jo];
-      if (row && row.sketch) w.item.sketch = true;
+      if (row && row.src && !row.sketch) {
+        w.item.sketch = false;
+        dropStandIn(w.item.jo);
+      }
+      if (w.rev && row && row.sketch && row.src && row.id && MEM.get('sketchid:' + w.item.jo) === row.id && !sketchStale(w.item.jo)) {
+        w.item.sketch = true;
+        w.item.id = row.id;
+        w.resolve(MEM.get('sketch:' + w.item.jo + '|' + (w.item.size || 300)) || '');
+        return;
+      }
+      if (row && row.sketch) {
+        w.item.sketch = true;
+        if (w.rev) forgetProfile(w.item.jo);
+        if (row.id && MEM.get('sketchid:' + w.item.jo) && MEM.get('sketchid:' + w.item.jo) !== row.id) SKETCH_CROP.delete(w.item.jo);
+        if (sketchStale(w.item.jo)) SKETCH_CROP.delete(w.item.jo);
+      }
       if (row && row.src) { w.item.id = row.id || w.item.id; finish(w, row.src); }
       else if (row && row.found === false) finish(w, '');
       else missed.push(w);
@@ -339,8 +481,10 @@ async function flush() {
   await Promise.all(batch.map(async w => {
     const hit = peek(w.item);
     if (hit) { finish(w, hit); return; }
-    const idb = await idbGet(w.item.id, w.item.size);
-    if (idb) { finish(w, idb); return; }
+    if (!PRE.done) {
+      const idb = await idbGet(w.item.id, w.item.size);
+      if (idb) { finish(w, idb); return; }
+    }
     pending.push(w);
   }));
   const by = new Map();
@@ -351,7 +495,51 @@ async function flush() {
   });
   await Promise.all([...by.entries()].map(([size, ws]) => send(size, ws)));
 }
-function schedule() { clearTimeout(timer); timer = setTimeout(flush, 30); }
+function schedule() {
+  if (firstBatch) {
+    if (timer) return;
+    const fire = () => { timer = 0; firstBatch = false; flush(); };
+    if (typeof queueMicrotask === 'function') { timer = 1; queueMicrotask(fire); }
+    else if (typeof requestAnimationFrame === 'function') timer = requestAnimationFrame(fire);
+    else timer = setTimeout(fire, 0);
+    return;
+  }
+  clearTimeout(timer);
+  timer = setTimeout(flush, 30);
+}
+function runRev() {
+  revSoon = false;
+  const batch = REV.splice(0, REV.length);
+  if (!batch.length) return;
+  const by = new Map();
+  const seen = new Set();
+  batch.forEach(b => {
+    const item = Object.assign({}, b.item);
+    const k = flyKey(item);
+    if (seen.has(k)) return;
+    seen.add(k);
+    const shown = b.shown || '';
+    const w = {
+      item: item, el: b.el, opt: b.opt, rev: true, key: 'rev|' + k,
+      resolve: src => {
+        if (!src || src === shown || !b.el || b.el.isConnected === false || !b.opt) return;
+        b.opt.paint(b.el, src, item);
+      }
+    };
+    const size = item.size;
+    if (!by.has(size)) by.set(size, []);
+    by.get(size).push(w);
+  });
+  Promise.all([...by.entries()].map(([size, ws]) => send(size, ws))).catch(() => {});
+}
+function queueRev(el, item, shown, opt) {
+  REV.push({ el: el, item: item, shown: shown, opt: opt });
+  if (revSoon) return;
+  revSoon = true;
+  if (typeof queueMicrotask === 'function') queueMicrotask(runRev);
+  else if (typeof requestAnimationFrame === 'function') requestAnimationFrame(runRev);
+  else setTimeout(runRev, 0);
+}
 function load(item) {
   item = Object.assign({ kind: 'scan', size: 300, legacy: 'prod' }, item);
   const hit = peek(item);
@@ -370,21 +558,44 @@ function watch(root, opt) {
   for (let i = OBS.length - 1; i >= 0; i--) {
     if (OBS[i].root === root || !OBS[i].root.isConnected) { OBS[i].io.disconnect(); OBS.splice(i, 1); }
   }
-  const IO = window.IntersectionObserver;
-  const paint = (el, item) => load(item).then(src => { if (el.isConnected !== false) opt.paint(el, src || '', item); });
-  if (!IO) { root.querySelectorAll(opt.sel).forEach(el => paint(el, opt.item(el))); return; }
-  const io = new IO(entries => entries.forEach(en => {
-    if (!en.isIntersecting) return;
-    io.unobserve(en.target);
-    paint(en.target, opt.item(en.target));
-  }), { rootMargin: '400px' });
-  OBS.push({ root, io });
-  root.querySelectorAll(opt.sel).forEach(el => {
-    const item = opt.item(el);
-    const src = peek(item);
-    if (src) { opt.paint(el, src, item); return; }
-    io.observe(el);
-  });
+  const go = () => {
+    const IO = window.IntersectionObserver;
+    const nodes = root.querySelectorAll(opt.sel);
+    const list = [];
+    for (let i = 0; i < nodes.length; i++) list.push(nodes[i]);
+    const startLoad = (el, item) => load(item).then(src => { if (el.isConnected !== false) opt.paint(el, src || '', item); });
+    let io = null;
+    if (IO) {
+      io = new IO(entries => entries.forEach(en => {
+        if (!en.isIntersecting) return;
+        io.unobserve(en.target);
+        const item = opt.item(en.target);
+        const src = peek(item);
+        if (src) {
+          opt.paint(en.target, src, item);
+          queueRev(en.target, item, src, opt);
+          return;
+        }
+        startLoad(en.target, item);
+      }), { rootMargin: '800px' });
+      OBS.push({ root: root, io: io });
+    }
+    list.forEach((el, i) => {
+      const item = opt.item(el);
+      const src = peek(item);
+      const eager = !io || i < 16;
+      if (src) {
+        opt.paint(el, src, item);
+        if (eager) queueRev(el, item, src, opt);
+        else io.observe(el);
+        return;
+      }
+      if (eager) startLoad(el, item);
+      else io.observe(el);
+    });
+  };
+  if (PRE.p) PRE.p.then(go).catch(go);
+  else go();
 }
 function prefetch(jo, ids, kind, legacy) {
   (Array.isArray(ids) ? ids : [ids]).forEach(id => { if (id) load({ jo, id, kind: kind || 'scan', size: 1600, legacy: legacy || 'prod' }); });
@@ -396,6 +607,7 @@ function stage(el, o) {
   while (el.firstChild) el.removeChild(el.firstChild);
   const img = document.createElement('img');
   img.alt = o.alt || '';
+  img.decoding = 'async';
   img.className = 'phblur';
   const quiet = o.empty === '';
   const lab = document.createElement('span');
@@ -490,5 +702,6 @@ function extras(jo, opt) {
     return { drawing: drawing.filter(d => d && d.id), cards };
   }).catch(() => ({ drawing: [], cards: [] }));
 }
-window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI };
+prime();
+window.OYPPhotos = { load, watch, prefetch, stage, peek, extras, pageLabel, sketchBox, sketchFrame, cropSketch, SKETCH_ROI, ready: PRE.p };
 })();
