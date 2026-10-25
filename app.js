@@ -161,8 +161,9 @@ document.addEventListener('click', e => {
 const { SCANNER, ROLE_LABEL, scannerLink } = window.OYPNav, NAV = window.OYPNav.OFFICE_NAV || window.OYPNav.NAV; // nav.js: same menu in the scanner, minus back-office-only pages (Production)
 const scanUrl = () => { const u = user(); return scannerLink(u && u.role); };
 const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, look: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, count: true,
-  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do; count.js: inventory count; joinbox.js: needs a look. prices stays done so a saved menu key does not say soon; the page is the Prices tab on Materials.
+  payments: true, quotes: true, balances: true, clients: true, consignment: true }; // pay.js: payments, quotes, balances, clients; consign.js: consignment; todo.js: to do; count.js: COUNT tab on Inventory; joinbox.js: needs a look. prices and count stay done so a saved menu key does not say soon.
 function matPrices(u) { const roles = window.OYPNav && window.OYPNav.MAT_PRICE_ROLES; return !!(u && roles && roles[u.role]); }
+function countTab(u) { const roles = window.OYPNav && window.OYPNav.COUNT_ROLES; return !!(u && roles && roles[u.role]); }
 // Menu order on this device, per signed-in name. Empty = today's menu. The scanner keeps the shared list in nav.js.
 const navKey = u => 'oypNavOrder:' + (u && u.username || 'device');
 function readNavOrder(u) {
@@ -173,7 +174,8 @@ const navHideKey = u => 'oypNavHide:' + (u && u.username || 'device');
 function readNavHide(u) {
   try {
     const a = JSON.parse(localStorage.getItem(navHideKey(u)) || 'null');
-    return Array.isArray(a) ? a.filter(x => typeof x === 'string') : [];
+    const canon = (u && NAV[u.role] || []).map(n => n[0]);
+    return Array.isArray(a) ? a.filter(x => typeof x === 'string' && canon.indexOf(x) >= 0) : [];
   } catch (e) { return []; }
 }
 function writeNavHide(u, keys) {
@@ -333,13 +335,17 @@ function route() {
   const u = user();
   if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; warm(); return; }
   const cur0 = (location.hash.match(/^#\/(\w+)/) || [])[1];
-  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'todo' || cur0 === 'count' || cur0 === 'scanner'))) { // staff: simple home; Appointments, To do, Inventory count, and Scanner open in the back office (Production: Susan + admins only)
+  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'todo' || cur0 === 'count' || cur0 === 'jos' || cur0 === 'scanner'))) { // staff: simple home; Appointments, To do, Inventory (COUNT only), and Scanner open in the back office (Production: Susan + admins only)
     show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
   }
   show('vOffice'); $('title').textContent = 'Back office';
   if (cur0 === 'users' && NAV[u.role].some(n => n[0] === 'settings')) { history.replaceState(null, '', '#/settings/staff'); } // old Staff logins page: now Settings › Staff accounts
   if (cur0 === 'review' || cur0 === 'look') { // both pages are Inventory tabs: REVIEW, and DEBUG for held scans
     try { sessionStorage.setItem('oypInvView', cur0 === 'look' ? 'debug' : 'review'); } catch (e) {}
+    history.replaceState(null, '', '#/jos');
+  }
+  if (cur0 === 'count' && countTab(u)) { // Inventory count is the COUNT tab. Old links and bookmarks land there.
+    try { sessionStorage.setItem('oypInvView', 'count'); } catch (e) {}
     history.replaceState(null, '', '#/jos');
   }
   if (cur0 === 'prices' && matPrices(u)) { // Material prices is the Prices tab on Materials. Log and history keep their hash so prices.js can read it.
@@ -349,13 +355,14 @@ function route() {
   const canon = NAV[u.role], cur = (location.hash.match(/^#\/(\w+)/) || [])[1];
   const ALIAS = { clients: 'customers', joborders: 'jos', materials: 'inventory' }; // old / friendly links keep working
   const want = canon.some(n => n[0] === cur) ? cur : ALIAS[cur] && canon.some(n => n[0] === ALIAS[cur]) ? ALIAS[cur] : null;
-  const page = (cur === 'prices' && matPrices(u)) ? 'inventory' : (want || canon[0][0]); // opening a page still starts at today's first item when the link is not a menu item
+  const staffJos = u.role === 'staff' && (cur0 === 'count' || cur0 === 'jos' || cur === 'jos'); // staff Inventory is the COUNT tab, including a refresh of #/jos and an old #/count link
+  const page = staffJos ? 'jos' : (cur === 'prices' && matPrices(u)) ? 'inventory' : (want || canon[0][0]); // opening a page still starts at today's first item when the link is not a menu item
   if (cur && want && want !== cur) history.replaceState(null, '', '#/' + want);
-  $('title').textContent = page === 'todo' ? 'TO DO' : page === 'count' ? 'INVENTORY COUNT' : 'Back office';
+  $('title').textContent = page === 'todo' ? 'TO DO' : 'Back office';
   renderNav(u, page); // desktop sidebar: items scroll; the name block stays at the bottom
   if (window.OYPJoInbox && (u.role === 'admin' || u.role === 'production_manager')) window.OYPJoInbox.refreshBadge();
   if (window.OYPReview && window.OYPReview.refreshNav && (u.role === 'admin' || u.role === 'production_manager')) window.OYPReview.refreshNav();
-  const title = canon.find(n => n[0] === page)[1];
+  const title = (canon.find(n => n[0] === page) || ['', 'Inventory'])[1];
   schedulePrefetch(canon, page);
   // nothing saved for this page yet (first visit, or just after a change): a light placeholder, not the last page's content
   if ((PAGE_READS[page] || []).some(([a, f]) => { const d = f ? f() : {}; return d && !cacheGet(ckey(a, d)); })) $('main').innerHTML = `<h2>${esc(title)}</h2>` + skel();

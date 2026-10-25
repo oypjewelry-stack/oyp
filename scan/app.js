@@ -100,7 +100,7 @@ const NAV_FALLBACK = { SITE: STAFF_URL, STAFF: STAFF_URL, OFFICE_NAV: { // same 
   admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']],
   production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
-  staff: [['home', 'Home'], ['appts', 'Appointments'], ['scanner', 'Scanner']] } };
+  staff: [['home', 'Home'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['scanner', 'Scanner']] } };
 function menuUser(N, role) {
   let saved = null;
   try { saved = N.readUser && N.readUser(); } catch (e) {}

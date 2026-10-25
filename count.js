@@ -1,5 +1,5 @@
-/* OYP back office: Inventory count (#/count).
-   The UHF handheld is a keyboard wedge. It types an EPC (hex) and Enter into the focused field.
+/* OYP back office: Inventory count, shown on Inventory's COUNT tab.
+   #/count still opens that tab. The UHF handheld is a keyboard wedge. It types an EPC (hex) and Enter into the focused field.
    Reads stay in this page until Finish. A repeat EPC is ignored on the phone, before any request.
    Server: paste/InventoryCount.gs (countLoad, linkEpc, countFinish). See paste/SETUP-inventory-count.txt. */
 (function (root) {
@@ -138,7 +138,10 @@ function pieceHtml(client, jo) {
   if (root.OYP && root.OYP.piece) return root.OYP.piece(client, jo);
   return id ? '<b class="cn">' + esc(id) + '</b>' : '';
 }
-function onCount() { return /^#\/count(?:$|[/?])/.test(location.hash); }
+function onCount() {
+  if (typeof location !== 'undefined' && location && /^#\/count(?:$|[/?])/.test(location.hash || '')) return true;
+  return !!(root.OYPInv && root.OYPInv.countOn && root.OYPInv.countOn());
+}
 function loadErr(r) {
   if (!r || r.error === 'Unknown action') return PASTE;
   return (r && r.error) || 'Could not load';
