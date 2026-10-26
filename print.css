@@ -145,7 +145,7 @@ button.pill.oyp-layopen{min-height:44px;height:44px;min-width:44px;box-sizing:bo
 .pr-range{display:flex;flex-wrap:wrap;gap:calc(8px * var(--sp,1));align-items:center}
 .pr-range input,.pr-range select{border:1.5px solid #111;border-radius:calc(12px * var(--rad,1));padding:0 12px;font-family:var(--body,'Bodoni Moda',Georgia,serif);font-size:16px;font-weight:400;background:#fff;color:#111;width:auto;min-width:7.5em;height:40px;box-sizing:border-box}
 .set .pr-range input:not([type=checkbox]),.set .pr-range select,.set .pr-link select{width:auto;min-width:7.5em;box-sizing:border-box;height:40px;padding:0 12px;font-family:var(--body,'Bodoni Moda',Georgia,serif);font-size:16px;font-weight:400;border:1.5px solid #111;border-radius:calc(12px * var(--rad,1));background:#fff;color:#111}
-.pr-page #printRange .setrow{align-items:end}
+.pr-page #printOne .setrow,.pr-page #printRange .setrow{align-items:end}
 .pr-page #prRangeN{margin:calc(8px * var(--sp,1)) 0 0}
 .pr-previews{display:grid;grid-template-columns:1fr 1fr;gap:calc(24px * var(--sp,1));align-items:start;margin:calc(22px * var(--sp,1)) 0 0}
 .pr-col{display:flex;flex-direction:column;min-width:0}

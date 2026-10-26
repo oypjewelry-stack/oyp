@@ -403,9 +403,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=31') && index.includes('print-label.js?v=14') && index.includes('nav.js?v=68') && index.includes('app.js?v=43') && index.includes('settings.js?v=21') && index.includes('print.css?v=20') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=20') && read('sim/swipe-preview.html').includes('print.css?v=20'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=14') && read('nav.js').includes('print.js?v=31') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=31') && read('staff/print-test.html').includes('print-label.js?v=14') && read('staff/print-test.html').includes('print.css?v=20') && read('staff/print-test.html').includes('nav.js?v=68') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=33') && index.includes('print-label.js?v=14') && index.includes('nav.js?v=70') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=21') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=21') && read('sim/swipe-preview.html').includes('print.css?v=21'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=14') && read('nav.js').includes('print.js?v=33') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=33') && read('staff/print-test.html').includes('print-label.js?v=14') && read('staff/print-test.html').includes('print.css?v=21') && read('staff/print-test.html').includes('nav.js?v=70') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -532,7 +532,11 @@ ctx.printReadRows_ = function () { return { sh: batchSheet, rows: sheetRows, hea
 const beforeBatch = sheetRows.length;
 const preview = ctx.printEnqueueBatch_({ from: '26-280', to: '26-300', kind: 'jo_card', preview: 1 }, { username: 'ada' });
 const ordered = ctx.printBatchJobs_({ from: '26-280', to: '26-300', kind: 'jewelry_tag' });
-eq(preview.ok && preview.preview && preview.count === 5 && batchWrites.length === 0 && sheetRows.length === beforeBatch, 'a range preview counts existing JOs and writes nothing');
+eq(preview.ok && preview.preview && preview.count === 5 && preview.jos.join(',') === '26-280,26-281,26-283,26-283A,26-300' && batchWrites.length === 0 && sheetRows.length === beforeBatch, 'a range preview counts existing JOs and writes nothing');
+const oneMiss = ctx.printEnqueueBatch_({ from: '26-283B', to: '26-283B', kind: 'jo_card', preview: 1 }, { username: 'ada' });
+const oneHit = ctx.printEnqueueBatch_({ from: '26-280', to: '26-280', kind: 'jewelry_tag', preview: 1 }, { username: 'ada' });
+eq(oneMiss.ok && oneMiss.preview && oneMiss.jos.indexOf('26-283B') < 0 && oneMiss.jos.indexOf('26-283') >= 0 && oneMiss.jos.indexOf('26-283A') >= 0 && batchWrites.length === 0, 'a single number lists the JOs that exist and does not write');
+eq(oneHit.ok && oneHit.jos.join(',') === '26-280', 'a single existing number is the only JO in that preview');
 eq(ordered.ok && ordered.jobs.map(j => j.jo).join(',') === '26-280,26-281,26-283,26-283A,26-300', 'a range keeps JO order and skips missing numbers');
 const ranged = ctx.printEnqueueBatch_({ from: '26-280', to: '26-300', kind: 'jo_card' }, { username: 'ada' });
 eq(ranged.ok && ranged.queued === 5 && ranged.auto.jo_card === false && batchWrites.length === 1 && batchWrites[0].lines.length === 5 && batchWrites[0].numRows === 5, 'a manual range queues while auto-print is off, in one setValues');
@@ -1530,8 +1534,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v31') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v31') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v33') >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v33') >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
@@ -1791,7 +1795,7 @@ drain().then(function () {
   const layCss = (read('print.css').split('.oyp-lay{')[1] || '');
   eq(layCss.includes('.oyp-layhandle{') && layCss.includes('min-width:34px') && layCss.includes('min-height:44px') && layCss.includes('.oyp-laybtn{') && layCss.includes('.oyp-laypick{'), 'layout editor controls are at least 34px');
   eq(read('print.js').includes('Edit layout') && read('print.js').includes('printLayoutSet') && read('print.js').includes('id="prLayTag"') && read('print.js').includes('id="prLayCard"') && read('print.js').includes('o.layout'), 'the layout editor is on the preview and in Settings, and the print uses the saved layout');
-  eq(!read('print.js').includes('printItemSave') && !read('print.js').includes('jobReviewSave') && read('print.js').split('openPreview(').length === 3, 'the preview does not call a save action, and only the kind choice opens it');
+  eq(!read('print.js').includes('printItemSave') && !read('print.js').includes('jobReviewSave') && read('print.js').split('openPreview(').length === 4, 'the preview does not call a save action; the kind choice and Print one open it');
   eq(read('paste/PrintItemSave.gs').includes("action !== 'printItemSave'") && read('paste/PrintItemSave.gs').includes('jo is the row key') && read('paste/SETUP-print.txt').includes('PrintItemSave.gs'), 'the item save script is written for the next paste and is not wired');
   eq(read('paste/PrintLayout.gs').includes("a !== 'printLayout' && a !== 'printLayoutSet'") && read('paste/PrintLayout.gs').includes('print_layout') && read('paste/SETUP-print.txt').includes('PrintLayout.gs') && !read('paste/PrintQueue.gs').includes('printLayoutSet'), 'the layout script is a separate paste and the queue file does not claim it');
   const tag = armKind(bootPrint({

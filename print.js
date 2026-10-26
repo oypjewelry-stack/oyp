@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 31;
+var PRINT_JS = 33;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -1747,6 +1747,43 @@ function printStickers(list) {
     return r;
   });
 }
+/* One JO, above Print a range. The kind is chosen here. The preview opens next, and nothing is queued until that sheet is confirmed. */
+function mountOne(el) {
+  if (!el || el.getAttribute('data-wired')) return;
+  el.setAttribute('data-wired', '1');
+  el.innerHTML = '<div class="setrow"><div class="setl"><span class="lab">Print one</span><span class="muted">One JO. The preview opens first. Nothing is queued until you confirm.</span></div>'
+    + '<div class="setv pr-range"><input id="prOneJo" placeholder="26-287" aria-label="JO number" autocomplete="off" autocapitalize="characters" spellcheck="false">'
+    + '<select id="prOneKind" aria-label="Sticker type"><option value="jewelry_tag">Jewelry tag</option><option value="jo_card">JO sticker</option><option value="both" selected>Both</option></select>'
+    + '<button type="button" class="pill sm" id="prOneGo">Print</button></div></div>'
+    + '<p class="muted" id="prOneN"></p>';
+  var input = document.getElementById('prOneJo');
+  if (input) input.oninput = function () {
+    var note = document.getElementById('prOneN');
+    if (note) note.textContent = '';
+  };
+  var go = document.getElementById('prOneGo');
+  if (!go) return;
+  go.onclick = function () {
+    var note = document.getElementById('prOneN');
+    var jo = joFrom((input && input.value) || '');
+    if (!jo) {
+      if (note) note.textContent = 'Use a JO number like 26-287.';
+      return;
+    }
+    go.disabled = true;
+    enqueueBatch({ from: jo, to: jo, kind: 'jo_card', preview: 1 }).then(function (r) {
+      go.disabled = false;
+      if (!note) return;
+      if (!r || r.ok === false) { note.textContent = (r && r.error) || 'Could not check that JO.'; return; }
+      var jos = r.jos, found = Array.isArray(jos) ? jos.indexOf(jo) >= 0 : (r.count || 0) > 0;
+      if (!found) { note.textContent = 'No JO with that number.'; return; }
+      note.textContent = '';
+      var kind = (document.getElementById('prOneKind') || {}).value || 'both';
+      if (kind !== 'jo_card' && kind !== 'jewelry_tag' && kind !== 'both') kind = 'both';
+      openPreview(itemsForChoice([jo], kind));
+    });
+  };
+}
 function mountRange(el) {
   if (!el || el.getAttribute('data-wired')) return;
   el.setAttribute('data-wired', '1');
@@ -3278,6 +3315,7 @@ function mountQueue(el) {
   if (!el) return;
   el.setAttribute('data-oyp-q', '1');
   el.innerHTML = queueHtml(state.last);
+  mountOne(document.getElementById('printOne'));
   mountRange(document.getElementById('printRange'));
   refresh();
 }
@@ -3314,7 +3352,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=20';
+  link.href = (base || '') + 'print.css?v=21';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {

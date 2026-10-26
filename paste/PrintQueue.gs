@@ -409,7 +409,11 @@ function printEnqueueBatch_(req, user) {
   if (!user || !user.username) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
   var plan = printBatchJobs_(req);
   if (!plan.ok) return plan;
-  if (req && (req.preview === 1 || req.preview === true || req.preview === '1')) return { ok: true, preview: true, count: plan.jobs.length, auto: printAutoMap_() };
+  if (req && (req.preview === 1 || req.preview === true || req.preview === '1')) {
+    var names = [], ni;
+    for (ni = 0; ni < plan.jobs.length; ni++) if (names.indexOf(plan.jobs[ni].jo) < 0) names.push(plan.jobs[ni].jo);
+    return { ok: true, preview: true, count: plan.jobs.length, jos: names, auto: printAutoMap_() };
+  }
   return printLock_(function () {
     var pack = printReadRows_(), now = new Date().toISOString(), by = user.username;
     var fresh = [], re = [], skipped = 0, i, one;
