@@ -60,7 +60,7 @@ if (draw) {
   eq(a.width === head && a.height === 160 && a.offsetX === ox && a.labelW === 240 && a.labelH === 160 && a.tail === 0, model + ' JO card is ' + head + '×160, label 240×160, offset ' + ox);
   eq(same(a.data, b.data) && same(a.data, c.data), model + ' JO card pixels ignore the client name');
   eq(noName(a) && a.lines[0] === '26-287' && a.lines.indexOf('DUE 21 OCT') >= 0, model + ' JO card text is the JO and the due date');
-  eq(a.qrBox && a.qrBox.size >= L.px(16) && a.qrBox.size <= a.labelH - L.px(1) * 2, model + ' JO card QR fills the 20 mm height down to the margins');
+  eq(a.qrBox && a.qrBox.size >= L.px(10) && a.qrBox.y >= L.px(3) && a.qrBox.y + a.qrBox.size <= a.labelH - L.px(3), model + ' JO card QR keeps its quiet zone 3 mm inside the 20 mm feed');
   eq(clearMargin(a), model + ' JO card ink stays about 1 mm inside the edges');
   eq(decode(a) === '26-287', model + ' JO card QR is 26-287');
   const t = L.render(Object.assign({ model, client: 'Elena Tan' }, tag));
@@ -89,7 +89,7 @@ function clearMargin(img) {
   }
   return true;
 }
-/* Readable cable label: flag on the left, blank tail on the right, dashed fold through the middle. */
+/* Readable cable label: flag on the left, blank tail on the right, no fold guide. */
 function paperPx(img, x, y) {
   if (!img.paper || x < 0 || y < 0 || x >= img.paperW || y >= img.paperH) return 255;
   return img.paper[(y * img.paperW + x) * 4];
@@ -98,12 +98,10 @@ function readableTag(img) {
   if (img.paperW !== 560 || img.paperH !== 240) return false;
   for (let y = 0; y < img.paperH; y++) for (let x = img.labelH; x < img.paperW; x++) if (paperPx(img, x, y) !== 255) return false;
   const fold = 120;
-  let dash = 0, gap = 0;
-  for (let x = 8; x < 192; x++) { if (paperPx(img, x, fold) === 0) dash++; else gap++; }
-  if (dash < 40 || gap < 20) return false;
+  for (let x = 8; x < 192; x++) if (paperPx(img, x, fold) === 0) return false;
   const box = img.qrBox;
   if (!box) return false;
-  return box.y >= img.labelH - box.size - L.px(2);
+  return box.y >= img.labelH - box.size - L.px(3);
 }
 eq(clearMargin(wide) && clearMargin(longStones), 'tag ink stays about 1 mm inside the flag edges');
 function sideMargins(img) {
@@ -134,6 +132,55 @@ const noPrice = L.render({
   weight: 7, jo: '26-002', sku: '18-498', location: 'A.R3'
 });
 eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
+const readTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 18500, name: 'Oval sapphire ring', item_type: 'Ring', metal: 'Gold', karat: '18K', stones: 'Sapphire', weight: '20', jo: '26-287', sku: '18-498', location: 'Showroom' });
+eq(readTag.specPx === 16 && readTag.joPx === 14 && readTag.qrBox && readTag.qrBox.size >= L.px(9) && readTag.qrBox.size <= L.px(10) && readTag.lines.indexOf('Sapphire') >= 0 && readTag.lines.indexOf('26-287') >= 0 && readTag.lines.indexOf('Showroom') >= 0 && readTag.lines.indexOf('20g') >= 0 && readTag.lines.indexOf('₱18,500.00') >= 0 && readTag.lines.indexOf('Oval sapphire ring') >= 0 && readTag.lines.indexOf('GOLD') >= 0 && decode(readTag) === '26-287', 'a short stone, JO, location, and weight print larger, and the price, description, and metal stay');
+function paperGray(img) {
+  let gray = 0;
+  const d = img.paper || [];
+  for (let i = 0; i < d.length; i += 4) if (d[i] !== 0 && d[i] !== 255) gray++;
+  return gray;
+}
+function fringe(img) {
+  let n = 0;
+  for (let i = 0; i < img.data.length; i += 4) {
+    const r = img.data[i];
+    if (r > 160 && r < 250) n++;
+  }
+  return n;
+}
+const crispPrev = L.preview(readTag, { scale: 4 });
+const softPrev = L.preview(readTag, { scale: 4, smooth: true });
+eq(paperGray(readTag) === 0, 'the jewelry bitmap is true black on white at 203 dpi');
+const tagScene = L.tagScene({ kind: 'jewelry_tag', model: 'B1', price: 18500, name: 'Oval sapphire ring', item_type: 'Ring', metal: 'Gold', karat: '18K', stones: 'Sapphire', weight: '20', jo: '26-287', sku: '18-498', location: 'Showroom' });
+const sceneWords = tagScene.texts.map(function (t) { return t.text; });
+const qrRects = tagScene.rects.filter(function (r) { return r.role === 'qr'; });
+const logoRects = tagScene.rects.filter(function (r) { return r.role === 'logo'; });
+eq(tagScene.width === 560 && tagScene.height === 240 && sceneWords.indexOf('Sapphire') >= 0 && sceneWords.indexOf('26-287') >= 0 && sceneWords.indexOf('Showroom') >= 0 && sceneWords.indexOf('20g') >= 0 && sceneWords.indexOf('Oval sapphire ring') >= 0, 'the jewelry tag keeps its words as text records');
+const foldGone = !tagScene.rects.some(r => r.role === 'fold');
+const wordAt = {
+  '₱18,500.00': [8, 22.75, 17], 'Oval sapphire ring': [8, 44.5, 15], RING: [8, 111, 12], GOLD: [83, 111, 12], '18K': [170, 111, 12],
+  Sapphire: [8, 140.5, 16], '26-287': [8, 178.5, 14], '18-498': [8, 191.5, 14], Showroom: [8, 204.5, 14], '20g': [8, 217.5, 14]
+};
+const unmoved = tagScene.texts.every(t => {
+  const at = wordAt[t.text];
+  return at && t.x === at[0] && t.y === at[1] && t.size === at[2];
+}) && tagScene.texts.length === 10 && readTag.qrBox && readTag.qrBox.x === 80 && readTag.qrBox.y === 109 && readTag.qrBox.size === 75;
+eq(foldGone && unmoved, 'removing the fold guide leaves every jewelry word and the QR where they were');
+function foldGuide(img) {
+  const x0 = img.offsetX - (img.shiftX || 0);
+  for (let y = 0; y < img.labelH; y++) {
+    let pat = '';
+    for (let x = 0; x < Math.min(80, img.labelW); x++) pat += img.data[(y * img.width + x0 + x) * 4] === 0 ? '1' : '0';
+    if (pat.includes('111001110011100111')) return true;
+  }
+  return false;
+}
+eq(!foldGuide(L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21' })) && !foldGuide(L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', layout: L.normalizeLayout('jo_card', null) })), 'the JO sticker has no dotted fold guide');
+eq(qrRects.length > 20 && qrRects.every(function (r) { return r.w === r.h && r.w >= 2 && r.w <= 4; }) && logoRects.length > 10 && logoRects.every(function (r) { return r.w === 1 && r.h === 1; }), 'the QR and the logo are vector rectangles, not a bitmap');
+eq(fringe(crispPrev) * 20 < fringe(softPrev), 'a jewelry preview stays nearest-neighbour unless smoothing is requested');
+const longTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 125000, name: 'Oval sapphire cluster ring with a hidden gallery and a two-line description', item_type: 'Necklace', metal: 'Yellow gold', karat: '18KWG', stones: 'Oval sapphire 2.40ct with tapered baguette shoulders and a hidden halo', weight: '12345', jo: '26-1234A', sku: 'SKU-998877', location: 'Philippine Showroom Vault' });
+const longLoc = longTag.lines.filter(s => /Philippine|Showroom|Vault/.test(s));
+eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longLoc.length === 2 && longLoc.join(' ') === 'Philippine Showroom Vault' && longLoc.every(s => s.indexOf('...') < 0) && longTag.joPx === 14 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
 function outsideFlaps(img) {
   const rects = L.flapRects(img);
   for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
@@ -160,6 +207,44 @@ function flapInk(img) {
 }
 const flaps = flapInk(fullTag);
 eq(!outsideFlaps(fullTag) && tailWhite(fullTag), 'no black pixel falls outside the two flap rectangles');
+eq(!outsideFlaps(readTag) && !outsideFlaps(longTag) && tailWhite(readTag) && tailWhite(longTag), 'the larger stone, JO, location, weight, and QR stay inside the flaps');
+/* The quiet-zone square, not just the dark modules. A JO card keeps that square
+   3 mm inside the 20 mm feed. Jewelry uses the 25 mm flag, not the tail. */
+function qrOnLabel(img) {
+  const b = img.qrBox;
+  if (!b || !(b.size > 0)) return false;
+  const x0 = img.offsetX - (img.shiftX || 0);
+  const across = b.x >= x0 && b.x + b.size <= x0 + img.labelW;
+  const feed = b.y >= 0 && b.y + b.size <= img.labelH;
+  if (!(across && feed)) return false;
+  /* JO sticker: the gap cuts the trailing rows of the 20 mm feed. */
+  if (img.kind === 'jo_card' || img.preset === '30x20') {
+    const m = L.px(3);
+    return b.y >= m && b.y + b.size <= img.labelH - m;
+  }
+  return true;
+}
+function sceneQrInside(scene) {
+  return (scene.rects || []).filter(r => r.role === 'qr').every(r => r.x >= 0 && r.y >= 0 && r.x + r.w <= scene.width && r.y + r.h <= scene.height);
+}
+['B1', 'B31'].forEach(model => ['26-287', '26-1234A'].forEach(jo => {
+  const cardImg = L.render({ kind: 'jo_card', model, jo, due: '2026-10-21' });
+  const tagImg = L.render({ kind: 'jewelry_tag', model, jo, stones: 'Sapphire', location: 'Showroom', weight: '20', sku: '18-498' });
+  const cardLayImg = L.render({ kind: 'jo_card', model, jo, due: '2026-10-21', layout: L.normalizeLayout('jo_card', null) });
+  const tagLayImg = L.render({ kind: 'jewelry_tag', model, jo, stones: 'Sapphire', location: 'Showroom', weight: '20', layout: L.normalizeLayout('jewelry_tag', null) });
+  eq(qrOnLabel(cardImg) && decode(cardImg) === jo, model + ' JO card ' + jo + ' keeps the whole QR, quiet zone included, on the 30×20 label');
+  eq(qrOnLabel(tagImg) && decode(tagImg) === jo, model + ' jewelry tag ' + jo + ' keeps the whole QR, quiet zone included, on the 25×30 flag');
+  eq(qrOnLabel(cardLayImg) && qrOnLabel(tagLayImg) && decode(cardLayImg) === jo && decode(tagLayImg) === jo, model + ' saved layouts for ' + jo + ' keep both QR codes inside the label');
+  eq(sceneQrInside(L.tagScene({ kind: 'jewelry_tag', model, jo, stones: 'Sapphire' })), model + ' jewelry tag ' + jo + ' draws every QR module inside the on-screen label');
+}));
+const hugeTagLay = JSON.parse(JSON.stringify(L.normalizeLayout('jewelry_tag', null)));
+hugeTagLay.qr.x = 0; hugeTagLay.qr.y = 0; hugeTagLay.qr.qr = 30;
+const hugeCardLay = JSON.parse(JSON.stringify(L.normalizeLayout('jo_card', null)));
+hugeCardLay.qr.x = 0; hugeCardLay.qr.y = 0; hugeCardLay.qr.qr = 20;
+const hugeTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-287', layout: hugeTagLay });
+const hugeCard = L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', layout: hugeCardLay });
+eq(qrOnLabel(hugeTag) && decode(hugeTag) === '26-287' && hugeTag.qrBox.size >= L.px(9), 'an enlarged jewelry QR stays on the flag instead of running onto the tail');
+eq(qrOnLabel(hugeCard) && decode(hugeCard) === '26-287', 'an enlarged JO QR stays inside the 30×20 label');
 eq(flaps.left > 40 && flaps.right > 40 && flaps.span > L.px(15), 'each flap carries ink along the feed, not a strip across the top');
 function paperReads(img, jo) {
   const view = L.paperView(img);
@@ -193,11 +278,11 @@ const lay1 = L.render(Object.assign({ layout: layPrice }, layItem));
 const layQr = JSON.parse(JSON.stringify(layBase));
 layQr.qr.x = 40;
 layQr.qr.y = 8;
-layQr.qr.qr = 12;
+layQr.qr.qr = 14;
 const lay2 = L.render(Object.assign({ layout: layQr }, layItem));
 eq(packed(lay0) !== packed(lay1) && lay1.lines.indexOf('₱11,500.00') >= 0 && lay1.lines.indexOf('ELENA') < 0, 'the encoded bitmap changes when the layout moves the price');
 eq(packed(lay0) !== packed(lay2) && lay2.qrBox && lay0.qrBox && lay2.qrBox.size > lay0.qrBox.size && decode(lay2) === '26-002', 'the encoded bitmap changes when the layout enlarges the QR');
-eq(paperPx(lay0, 8, 120) === 0 && paperPx(lay0, 12, 120) === 255 && paperPx(lay0, 300, 40) === 255 && decode(lay0) === '26-002', 'the default layout keeps the NIIMBOT fold, a blank tail, and a scannable QR');
+eq(paperPx(lay0, 8, 120) === 255 && paperPx(lay0, 12, 120) === 255 && paperPx(lay0, 300, 40) === 255 && decode(lay0) === '26-002', 'the default layout has no fold guide, a blank tail, and a scannable QR');
 eq(!outsideFlaps(lay0), 'a saved layout still keeps every black pixel inside the flap rectangles');
 const cardLay = L.normalizeLayout('jo_card', null);
 const cardA = L.render({ kind: 'jo_card', model: 'B31', jo: '26-002', due: '2026-10-27', layout: cardLay });
@@ -264,7 +349,7 @@ letterJos.forEach(jo => {
   fs.writeFileSync(path.join(outDir, 'b1-jewelry-tag-' + jo + '.png'), png(tagImg));
 });
 const px287 = letterImgs['26-287'].card.joPx, pxB = letterImgs['26-287B'].card.joPx, pxA = letterImgs['26-1234A'].card.joPx, pxShort = letterImgs['11-520'].card.joPx;
-eq(pxShort > px287 && px287 > 19 && px287 < 21 && px287 > pxB && pxB > pxA && pxA >= 12 && pxA < 16, 'a JO card keeps today\'s size when the line fits, and shrinks a 7-character JO plus a letter');
+eq(pxShort > px287 && px287 > pxB && pxB > pxA && pxA >= 16 && px287 > 24 && px287 < 40, 'a JO card grows into the width beside the QR, and a longer JO shrinks');
 eq(letterImgs['26-1234A'].tag.lines.indexOf('26-1234A') >= 0 && letterImgs['26-287'].tag.lines.indexOf('26-287') >= 0 && letterImgs['26-1234A'].tag.joPx > 0 && letterImgs['26-1234A'].tag.joPx <= letterImgs['26-287'].tag.joPx, 'a jewelry tag keeps the whole JO, and a longer JO does not grow');
 const base = L.render(Object.assign({ model: 'B31' }, card));
 const moved = L.render(Object.assign({ model: 'B31', shiftX: L.px(0.5), shiftY: L.px(-1) }, card));
@@ -283,7 +368,7 @@ const outside = pxAt(cardView, pad + 1, pad + 1);
 eq(cardView.width === (240 + L.px(4) * 2) * 4 && cardView.height === (160 + L.px(4) * 2) * 4 && tagView.width === (240 + L.px(4) * 2) * 4 && tagView.height === (L.px(25) + L.px(8) + L.px(4) * 2) * 4, 'a preview is the label, with gray around it');
 eq(corner[0] < 180 && corner[0] > 100 && paper[0] > 250 && outside[0] < 180, 'the sticker is a white rounded rectangle on mid-gray');
 const shown = L.render(Object.assign({ model: 'B1' }, tag));
-eq(tagView.tail === 360 && paperPx(shown, 8, 120) === 0 && paperPx(shown, 12, 120) === 255 && paperPx(shown, 300, 40) === 255, 'the jewelry preview keeps the flaps and a short tail stub, with a printed dashed fold and a blank tail');
+eq(tagView.tail === 360 && paperPx(shown, 8, 120) === 255 && paperPx(shown, 12, 120) === 255 && paperPx(shown, 300, 40) === 255, 'the jewelry preview keeps the flaps and a short tail stub, with no fold guide and a blank tail');
 const shifted = L.preview(moved, { scale: 1, smooth: false });
 const still = L.preview(base, { scale: 1, smooth: false });
 function inkX(img) {
@@ -403,9 +488,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=33') && index.includes('print-label.js?v=14') && index.includes('nav.js?v=70') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=21') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=21') && read('sim/swipe-preview.html').includes('print.css?v=21'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=14') && read('nav.js').includes('print.js?v=33') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=33') && read('staff/print-test.html').includes('print-label.js?v=14') && read('staff/print-test.html').includes('print.css?v=21') && read('staff/print-test.html').includes('nav.js?v=70') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=36') && index.includes('print-label.js?v=21') && index.includes('nav.js?v=77') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=21') && read('nav.js').includes('print.js?v=36') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=36') && read('staff/print-test.html').includes('print-label.js?v=21') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=77') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -425,7 +510,9 @@ if (mainNav && mainNav !== read('nav.js')) {
   eq(assetVer(read('scan/index.html'), 'nav.js') !== assetVer(gitShow('scan/index.html'), 'nav.js'), 'nav.js changed since main, so the scanner bumps the absolute nav.js URL');
 }
 eq(read('print.js').includes('offsetMm') && read('staff/print-test.html').includes('prOff'), 'offsets are saved per model and shown on the print test page');
+eq(/\.oyp-prevstage canvas,\.oyp-prevbig\{[^}]*image-rendering:pixelated/.test(read('print.css')) && /\.oyp-qprev\{[^}]*image-rendering:pixelated/.test(read('print.css')) && read('print.js').includes('{ scale: 4, smooth: false }') && !read('print.js').includes('smooth: true'), 'preview canvases keep the 203 dpi pixels crisp');
 eq(read('staff/print-test.html').includes('OYPLabel.preview') && read('print.js').includes('oyp-qprev'), 'print test and the queue preview the sticker, not the printhead');
+eq(read('staff/print-test.html').includes("s.kind === 'jewelry_tag'") && read('staff/print-test.html').includes('OYPLabel.tagScene') && read('staff/print-test.html').includes('OYPPrint.mountTag') && read('print.js').includes('mountTag: mountTag') && read('print.js').includes('createTextNode') && !read('print.js').includes("svgEl('text')"), 'the print test jewelry tag is HTML text, and the QR and logo stay SVG');
 const testPage = read('staff/print-test.html'), testCss = read('print.css');
 const b31At = testPage.indexOf('B31 Printer for 30x20 - Test'), b1Card = testPage.indexOf('B1 Printer for 30x20 - Test'), b1Tag = testPage.indexOf('B1 Printer for Jewelry Tag - Test');
 eq(b31At > 0 && testPage.indexOf('B31 calibration') > b31At && b1Card > testPage.indexOf('B31 calibration') && b1Tag > b1Card && testPage.indexOf('B1 calibration') > b1Tag, 'print test titles name the B31 card, the B1 card, and the B1 jewelry tag');
@@ -1534,8 +1621,8 @@ drain().then(function () {
   const pr = { innerHTML: '', _p: '', getAttribute() { return this._p; }, setAttribute(name, value) { if (name === 'data-paint') this._p = value; } };
   stuck.sandbox.document.getElementById = function (id) { return id === 'prLinks' ? pr : null; };
   return drain().then(function () {
-    eq(stuck.logs.indexOf('[oyp-print] print.js v33') >= 0, 'the print station logs the print.js version');
-    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v33') >= 0, 'the print station shows the print.js version');
+    eq(stuck.logs.indexOf('[oyp-print] print.js v' + printVer) >= 0, 'the print station logs the print.js version');
+    eq(pr.innerHTML.indexOf('id="prBuild"') >= 0 && pr.innerHTML.indexOf('print.js v' + printVer) >= 0, 'the print station shows the print.js version');
     eq(stuck.clients.length === 1 && stuck.notes.indexOf('B1 reconnected') >= 0 && pr.innerHTML.indexOf('>B1<') >= 0 && pr.innerHTML.indexOf('data-slot-act="disconnect"') >= 0 && pr.innerHTML.indexOf('Reconnecting') >= 0 && pr.innerHTML.indexOf('>Retry<') >= 0, 'a stuck B31 connect does not block the B1, and Reconnecting keeps Retry');
     const live = stuck.clients[0];
     eq(live.beats >= 1 && live.heartbeatTimer, 'the idle B1 heartbeat is running');
@@ -1720,9 +1807,9 @@ drain().then(function () {
 }).then(function () {
   function armKind(env) {
     const sheets = [];
-    env.sandbox.document.createElement = function () {
-      const el = { className: '', id: '', textContent: '', style: {}, children: [], attrs: {}, parentNode: null, onclick: null };
-      el.setAttribute = function (k, v) { el.attrs[k] = String(v); };
+    function makeEl(name) {
+      const el = { nodeName: String(name || 'div').toLowerCase(), className: '', id: '', textContent: '', style: {}, children: [], attrs: {}, parentNode: null, onclick: null };
+      el.setAttribute = function (k, v) { el.attrs[k] = String(v); if (k === 'class') el.className = String(v); };
       el.getAttribute = function (k) { return Object.prototype.hasOwnProperty.call(el.attrs, k) ? el.attrs[k] : null; };
       el.appendChild = function (child) { el.children.push(child); child.parentNode = el; return child; };
       el.remove = function () {
@@ -1735,6 +1822,11 @@ drain().then(function () {
         if (s >= 0) sheets.splice(s, 1);
       };
       return el;
+    }
+    env.sandbox.document.createElement = function (name) { return makeEl(name); };
+    env.sandbox.document.createElementNS = function (_ns, name) { return makeEl(name); };
+    env.sandbox.document.createTextNode = function (text) {
+      return { nodeName: '#text', nodeType: 3, textContent: String(text == null ? '' : text), data: String(text == null ? '' : text), children: [], parentNode: null };
     };
     env.sandbox.document.body.appendChild = function (el) { sheets.push(el); el.parentNode = env.sandbox.document.body; return el; };
     env.sandbox.document.getElementById = function (id) {
@@ -1801,6 +1893,7 @@ drain().then(function () {
   const tag = armKind(bootPrint({
     queue: { ok: true, items: [], spec: { client: 'Ada Lopez', price: '11500', description: 'Silver Necklace', item_type: 'Earring', metal: 'Gold', karat: '14K', stones: 'Cubic Zirconia', weight_g: '7', sku: '18-498', location: 'A.R3' } }
   }));
+  tag.sandbox.OYPLabel = L;
   const pending = tag.sandbox.OYPPrint.askPrint(['26-287B', '26-288', '26-289']);
   const primary = (function walk(n) {
     if (n && n.attrs && n.attrs['aria-current'] === 'true') return n;
@@ -1825,6 +1918,32 @@ drain().then(function () {
     eq(count && count.textContent === '1 / 3' && nums.join(',') === '1,2,3' && find(tag, 'data-print', 'all').textContent === 'Print all (3)' && find(tag, 'data-print', 'one').textContent === 'Print this one', 'the strip is numbered, the counter is 1 / 3, and both print buttons are there');
     eq(save && save.disabled === true && save.attrs.disabled === 'disabled' && note && note.textContent.indexOf('this print only') >= 0, 'Save to item is disabled, and the note says this print only');
     eq(fields.indexOf('price=11500') >= 0 && fields.indexOf('name=Silver Necklace') >= 0 && fields.indexOf('type=Earring') >= 0 && fields.indexOf('metal=Gold') >= 0 && fields.indexOf('karat=14K') >= 0 && fields.indexOf('stones=Cubic Zirconia') >= 0 && fields.indexOf('weight=7') >= 0 && fields.indexOf('jo=26-287B') >= 0 && fields.indexOf('sku=18-498') >= 0 && fields.indexOf('location=A.R3') >= 0 && fields.indexOf('Ada Lopez') < 0, 'the tag fields load from the item, and the client name is not one of them');
+    function nodesNamed(env, name) {
+      const out = [];
+      function walk(n) {
+        if (n && String(n.nodeName || '').toLowerCase() === name) out.push(n);
+        ((n && n.children) || []).forEach(walk);
+      }
+      env.sheets.forEach(walk);
+      return out;
+    }
+    function htmlText(env) {
+      const out = [];
+      function walk(n, inSvg) {
+        if (!n) return;
+        const name = String(n.nodeName || '').toLowerCase();
+        const svg = inSvg || name === 'svg';
+        if (n.nodeType === 3 && !svg && String(n.textContent || '').length) out.push(n);
+        (n.children || []).forEach(function (c) { walk(c, svg); });
+      }
+      env.sheets.forEach(function (s) { walk(s, false); });
+      return out;
+    }
+    const tagNodes = htmlText(tag);
+    const tagTexts = tagNodes.map(function (n) { return n.textContent; });
+    const tagRects = nodesNamed(tag, 'rect');
+    eq(nodesNamed(tag, 'text').length === 0 && tagNodes.length > 0 && tagNodes.every(function (n) { return String(n.parentNode && n.parentNode.nodeName || '').toLowerCase() === 'span'; }) && tagTexts.indexOf('Cubic Zirconia') >= 0 && tagTexts.indexOf('26-287B') >= 0 && tagTexts.indexOf('A.R3') >= 0 && tagTexts.indexOf('7g') >= 0 && tagTexts.indexOf('Silver Necklace') >= 0 && tagTexts.indexOf('Ada Lopez') < 0, 'the preview tag text is HTML text nodes');
+    eq(nodesNamed(tag, 'canvas').length === 0 && nodesNamed(tag, 'img').length === 0 && nodesNamed(tag, 'image').length === 0 && tagRects.some(function (n) { return n.attrs['data-role'] === 'qr' && n.attrs.width === n.attrs.height; }) && tagRects.some(function (n) { return n.attrs['data-role'] === 'logo'; }) && tagRects.every(function (n) { return n.attrs['data-role'] === 'qr' || n.attrs['data-role'] === 'logo'; }), 'the preview has no canvas or image; SVG rectangles are only the QR and the logo');
     eq(find(tag, 'data-nav', 'prev').disabled === true, 'previous is disabled on the first tag');
     eq(!batch(tag) && !tag.calls.some(function (b) { return b.action === 'printItemSave' || b.op === 'printItemSave' || b.action === 'jobReviewSave'; }), 'the kind choice still has not queued or saved');
     click(tag, 'data-nav', 'next');

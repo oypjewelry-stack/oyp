@@ -8,7 +8,7 @@
 <script src="../design.js?v=6"></script>
 <link rel="stylesheet" href="../app.css?v=65">
 <link rel="stylesheet" href="../settings.css?v=11">
-<link rel="stylesheet" href="../print.css?v=21">
+<link rel="stylesheet" href="../print.css?v=24">
 <link rel="icon" type="image/png" href="../favicon.png"><link rel="apple-touch-icon" href="../apple-touch-icon.png">
 </head><body>
 <header class="top">
@@ -44,9 +44,9 @@
 <div id="toast" class="toast hidden"></div>
 <script src="../vendor/qrcode.js?v=1"></script>
 <script src="../vendor/niimbluelib-0.47.1.js?v=1"></script>
-<script src="../print-label.js?v=14"></script>
-<script src="../print.js?v=33"></script>
-<script src="../nav.js?v=70"></script>
+<script src="../print-label.js?v=21"></script>
+<script src="../print.js?v=36"></script>
+<script src="../nav.js?v=77"></script>
 <script>
 (function () {
   var menu = document.getElementById('menu');
@@ -97,11 +97,8 @@
     var card = document.createElement('div');
     card.className = 'dcard';
     var sh = OYPPrint.shiftPx(s.model || 'B31');
-    var rendered = OYPLabel.render(Object.assign({}, s, { shiftX: sh.x, shiftY: sh.y }));
-    var view = OYPLabel.preview(rendered, { scale: 4, smooth: true });
-    var canvas = view.canvas;
-    canvas.className = 'pr-sticker';
-    canvas.setAttribute('aria-label', s.title);
+    var opts = Object.assign({}, s, { shiftX: sh.x, shiftY: sh.y });
+    var lines = [];
     var title = document.createElement('div');
     title.className = 'dtitle';
     var h = document.createElement('b');
@@ -110,12 +107,25 @@
     card.appendChild(title);
     var stage = document.createElement('div');
     stage.className = 'pr-stage';
-    stage.appendChild(canvas);
+    if (s.kind === 'jewelry_tag' && OYPLabel.tagScene && OYPPrint.mountTag) {
+      var scene = OYPLabel.tagScene(opts);
+      lines = scene.lines || [];
+      var svg = OYPPrint.mountTag(stage, scene, 'pr-sticker');
+      if (svg) svg.setAttribute('aria-label', s.title);
+    } else {
+      var rendered = OYPLabel.render(opts);
+      lines = rendered.lines || [];
+      var view = OYPLabel.preview(rendered, { scale: 4, smooth: true });
+      var canvas = view.canvas;
+      canvas.className = 'pr-sticker';
+      canvas.setAttribute('aria-label', s.title);
+      stage.appendChild(canvas);
+    }
     card.appendChild(stage);
     var p = document.createElement('p');
     p.className = 'muted';
     var off = OYPPrint.offsetMm(s.model || 'B31');
-    p.textContent = (rendered.lines.length ? rendered.lines.join(' · ') : 'Border and centre mark') + ' · ' + (s.model || 'B31') + ' offset ' + off.x.toFixed(1) + ' mm horizontal, ' + off.y.toFixed(1) + ' mm vertical';
+    p.textContent = (lines.length ? lines.join(' · ') : 'Border and centre mark') + ' · ' + (s.model || 'B31') + ' offset ' + off.x.toFixed(1) + ' mm horizontal, ' + off.y.toFixed(1) + ' mm vertical';
     card.appendChild(p);
     var row = document.createElement('div');
     row.className = 'fbtns oyp-pr-acts';

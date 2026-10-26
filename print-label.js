@@ -1,6 +1,7 @@
 /* Niimbot sticker bitmaps. 203 dpi, print direction "top": canvas width is the printhead,
-   canvas height is the feed. The 30 mm label is centred. Text is Inter Bold (OFL), drawn with
-   fillText at 4x and reduced to the 1-bit label. QR modules stay crisp rectangles.
+   canvas height is the feed. The 30 mm label is centred. The thermal head still receives a
+   1-bit raster. On screen, a jewelry tag's words are HTML text. SVG is only the QR
+   modules and the logo bits. Inter Bold (OFL) is the face.
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
    Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs the flag upright,
    25 mm wide by 30 mm high, with the 45 mm tail to the right of that picture.
@@ -34,6 +35,14 @@ var SPEC_MIN = 14;
 var JO_MAX = 40;
 var SCALE = 4;
 var FAMILY = 'OYPLabel, Inter, "Helvetica Neue", Arial, sans-serif';
+/* Small jewelry lines only (stone, JO, SKU, location, weight). Inter Bold is the
+   only face shipped; a requested Black would be a synthetic bold and look muddy.
+   A sub-pixel stroke under the fill, a little letter-spacing, and a higher
+   coverage cut keep the 1-bit stems solid instead of a gray halo. Price, the
+   description, and the metal row stay on the lighter pass. */
+var CRISP_TRACK = 0.55;
+var CRISP_STROKE = 0.8;
+var CRISP_THRESH = 9;
 
 function joCode(s) {
   var m = String(s || '').toUpperCase().match(/(\d{2})\s*[-,.\/ ]?\s*(\d{3,4})([A-Z])?/);
@@ -133,33 +142,47 @@ var LOGO_ROWS = [
   '000001111111110000011100000001100000'
 ];
 function blitBits(img, rows, x, y) {
-  var r, c, row;
+  var r, c, row, cap;
   for (r = 0; r < rows.length; r++) {
     row = rows[r];
-    for (c = 0; c < row.length; c++) if (row.charAt(c) === '1') img.set(x + c, y + r);
+    for (c = 0; c < row.length; c++) if (row.charAt(c) === '1') {
+      img.set(x + c, y + r);
+      cap = root.__oypCapture;
+      if (cap) cap.rects.push({ x: x + c, y: y + r, w: 1, h: 1, role: 'logo' });
+    }
   }
 }
 function dashes(img, x, y, w) {
-  var on = 3, gap = 2, i = 0, n;
+  var on = 3, gap = 2, i = 0, n, cap;
   while (i < w) {
     n = Math.min(on, w - i);
     img.rect(x + i, y, n, 1);
+    cap = root.__oypCapture;
+    if (cap) cap.rects.push({ x: x + i, y: y, w: n, h: 1, role: 'fold' });
     i += on + gap;
   }
 }
 /* Words wrap to maxLines. The last line ellipsizes when the rest does not fit. */
-function wrapLines(text, maxW, size, maxLines, bold) {
+function wrapLines(text, maxW, size, maxLines, bold, track) {
   var words = text.split(' ').filter(Boolean), lines = [], cur = '', i, trial;
   if (!words.length || maxLines < 1) return lines;
   for (i = 0; i < words.length; i++) {
     trial = cur ? cur + ' ' + words[i] : words[i];
-    if (metricsOf(trial, size, bold).w <= maxW) { cur = trial; continue; }
+    if (metricsOf(trial, size, bold, track).w <= maxW) { cur = trial; continue; }
     if (cur && lines.length < maxLines - 1) { lines.push(cur); cur = ''; i--; continue; }
-    lines.push(ellipsis(cur ? cur + ' ' + words.slice(i).join(' ') : words.slice(i).join(' '), maxW, size, bold));
+    lines.push(ellipsis(cur ? cur + ' ' + words.slice(i).join(' ') : words.slice(i).join(' '), maxW, size, bold, track));
     return lines;
   }
   if (cur) lines.push(cur);
   return lines;
+}
+function blockHeight(lines, size, bold, track) {
+  var tall = 0, i, m;
+  for (i = 0; i < lines.length; i++) {
+    m = metricsOf(lines[i], size, bold, track);
+    tall += Math.ceil(m.ascent + m.descent) + (i ? 2 : 0);
+  }
+  return tall;
 }
 /* Up to three spec lines. Missing fields are skipped. Metal and karat share a line. Size and weight share the last. */
 function specLines(opts) {
@@ -208,14 +231,18 @@ function canvasFor(kind, head, model) {
     width: head, height: labelH + tail, preset: p.id
   };
 }
-/* Largest QR that fits maxPx. Quiet zone 4 when it fits, otherwise 3, module at least 3. */
+/* Largest QR that fits maxPx, quiet zone included. Never larger than maxPx:
+   the old fallback (module 2, quiet 4) could be taller than the 20 mm card,
+   and the bitmap then dropped the bottom of the code. */
 function chooseQr(mods, maxPx) {
-  var best = { mod: 2, quiet: 4, size: qrSize(mods, 2, 4) }, m, q, size;
-  for (m = 8; m >= 3; m--) for (q = 4; q >= 2; q--) {
+  var best = null, m, q, size;
+  for (m = 8; m >= 1; m--) for (q = 4; q >= 2; q--) {
     size = qrSize(mods, m, q);
-    if (size <= maxPx && size > best.size) best = { mod: m, quiet: q, size: size };
+    if (size <= maxPx && (!best || size > best.size)) best = { mod: m, quiet: q, size: size };
   }
-  return best;
+  if (best) return best;
+  size = qrSize(mods, 1, 2);
+  return { mod: 1, quiet: 2, size: size <= maxPx ? size : maxPx };
 }
 
 function Img(w, h) {
@@ -233,10 +260,14 @@ Img.prototype.rect = function (x, y, w, h) {
   for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) this.set(x + xx, y + yy);
 };
 Img.prototype.qr = function (mods, x, y, mod, quiet) {
-  var n = mods.length, q = quiet || 0;
+  var n = mods.length, q = quiet || 0, cap, rx, ry;
   for (var row = 0; row < n; row++) for (var col = 0; col < n; col++) {
     if (mods[row].charAt(col) !== '1') continue;
-    this.rect(x + (col + q) * mod, y + (row + q) * mod, mod, mod);
+    rx = x + (col + q) * mod;
+    ry = y + (row + q) * mod;
+    this.rect(rx, ry, mod, mod);
+    cap = root.__oypCapture;
+    if (cap) cap.rects.push({ x: rx, y: ry, w: mod, h: mod, role: 'qr' });
   }
 };
 Img.prototype.frame = function (x, y, w, h, t) {
@@ -310,12 +341,20 @@ function fontCss(size, bold) {
   var weight = (bold === 0 || bold === false) ? '400' : '700';
   return weight + ' ' + (size * SCALE) + 'px ' + FAMILY;
 }
-function metricsOf(text, size, bold) {
+/* The scratch context is reused, so letter-spacing is set on every measure.
+   A crisp stroke is centered on the outline; its width is added so a tracked
+   line still wraps before it meets the QR. */
+function setTrack(ctx, track) {
+  var value = ((+track || 0) * SCALE) + 'px';
+  try { ctx.letterSpacing = value; } catch (e) {}
+}
+function metricsOf(text, size, bold, track) {
   var ctx = measureCtx();
   ctx.font = fontCss(size, bold);
+  setTrack(ctx, track);
   var m = ctx.measureText(text || 'H');
   return {
-    w: m.width / SCALE,
+    w: m.width / SCALE + (track ? CRISP_STROKE : 0),
     ascent: (m.actualBoundingBoxAscent || size * SCALE * 0.72) / SCALE,
     descent: (m.actualBoundingBoxDescent || size * SCALE * 0.05) / SCALE
   };
@@ -325,13 +364,13 @@ function sizeThatFits(text, maxW, start, min) {
   while (size > min && metricsOf(text, size).w > maxW) size -= 1;
   return metricsOf(text, size).w <= maxW ? size : 0;
 }
-function ellipsis(text, maxW, size, bold) {
-  if (metricsOf(text, size, bold).w <= maxW) return text;
+function ellipsis(text, maxW, size, bold, track) {
+  if (metricsOf(text, size, bold, track).w <= maxW) return text;
   var cut = text;
-  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold).w > maxW) cut = cut.slice(0, -1);
+  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold, track).w > maxW) cut = cut.slice(0, -1);
   cut = cut.replace(/\s+$/, '');
   var out = (cut || text.charAt(0)) + '...';
-  while (out.length > 4 && metricsOf(out, size, bold).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
+  while (out.length > 4 && metricsOf(out, size, bold, track).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
   return out;
 }
 /* One size for every spec line. Shrink until the longest fits, then ellipsis. */
@@ -436,35 +475,71 @@ function stampText(img, runs, box) {
     }
   }
 }
-/* Same 4× threshold as stampText, in the image's own pixels. run.y is the top of the line. */
+/* Same 4× sample as stampText, in the image's own pixels. run.y is the top of the line.
+   Plain runs (price, name, metal) keep the old 6-of-16 cut. Crisp runs stroke then
+   fill, and a pixel is black only when CRISP_THRESH of 16 samples are dark, so the
+   gray fringe stays white and the stem stays one solid width. */
 function stampLocal(img, runs) {
   if (!runs.length) return;
   var tw = img.w * SCALE, th = img.h * SCALE;
   var canvas = makeCanvas(tw, th);
   var ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, tw, th);
-  ctx.fillStyle = '#000000';
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
-  runs.forEach(function (run) {
-    ctx.font = fontCss(run.size, run.bold);
-    var m = ctx.measureText(run.text);
-    var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
-    ctx.fillText(run.text, Math.round(run.x * SCALE), Math.round(run.y * SCALE + ascent));
-  });
-  var data = ctx.getImageData(0, 0, tw, th).data;
-  var y, x, dy, dx, dark, si;
-  for (y = 0; y < img.h; y++) {
-    for (x = 0; x < img.w; x++) {
-      dark = 0;
-      for (dy = 0; dy < SCALE; dy++) for (dx = 0; dx < SCALE; dx++) {
-        si = ((y * SCALE + dy) * tw + (x * SCALE + dx)) * 4;
-        if (data[si] < 150) dark++;
+  var anyPlain = false, anyCrisp = false, i;
+  for (i = 0; i < runs.length; i++) {
+    if (runs[i].crisp) anyCrisp = true;
+    else anyPlain = true;
+  }
+  function pass(crisp, thresh) {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, tw, th);
+    ctx.fillStyle = '#000000';
+    ctx.strokeStyle = '#000000';
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    setTrack(ctx, 0);
+    runs.forEach(function (run) {
+      if (!!run.crisp !== crisp) return;
+      ctx.font = fontCss(run.size, run.bold);
+      setTrack(ctx, run.track);
+      var m = ctx.measureText(run.text);
+      var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
+      if (root.__oypCapture && run.text) {
+        var fontUp = m.fontBoundingBoxAscent || ascent;
+        root.__oypCapture.texts.push({
+          text: run.text,
+          x: run.x,
+          y: run.y + ascent / SCALE,
+          ascent: fontUp / SCALE,
+          size: run.size,
+          track: run.track || 0,
+          weight: (run.bold === 0 || run.bold === false) ? 400 : 700
+        });
       }
-      if (dark >= 6) img.set(x, y);
+      var x = Math.round(run.x * SCALE);
+      var y = Math.round(run.y * SCALE + ascent);
+      if (crisp) {
+        ctx.lineWidth = CRISP_STROKE * SCALE;
+        ctx.lineJoin = 'round';
+        ctx.miterLimit = 2;
+        ctx.strokeText(run.text, x, y);
+      }
+      ctx.fillText(run.text, x, y);
+    });
+    var data = ctx.getImageData(0, 0, tw, th).data;
+    var y, x, dy, dx, dark, si;
+    for (y = 0; y < img.h; y++) {
+      for (x = 0; x < img.w; x++) {
+        dark = 0;
+        for (dy = 0; dy < SCALE; dy++) for (dx = 0; dx < SCALE; dx++) {
+          si = ((y * SCALE + dy) * tw + (x * SCALE + dx)) * 4;
+          if (data[si] < 150) dark++;
+        }
+        if (dark >= thresh) img.set(x, y);
+      }
     }
   }
+  if (anyPlain) pass(false, 6);
+  if (anyCrisp) pass(true, CRISP_THRESH);
 }
 /* Saved positions are millimetres from the top-left of the readable label.
    No opts.layout keeps the built-in NIIMBOT drawer below. A layout draws each
@@ -489,17 +564,17 @@ var LAYOUT_BASE = {
   jewelry_tag: {
     price: { show: 1, x: 1, y: 1, size: 17, bold: 1, align: 'left', w: 14, wrap: 1 },
     logo: { show: 1, x: 19.5, y: 1 },
-    name: { show: 1, x: 1, y: 4.1, size: 15, bold: 1, align: 'left', w: 23, wrap: 1 },
+    name: { show: 1, x: 1, y: 4.1, size: 15, bold: 1, align: 'left', w: 23, wrap: 2 },
     type: { show: 1, x: 1, y: 11.2, size: 12, bold: 1, align: 'left', w: 7, wrap: 1 },
     metal: { show: 1, x: 9, y: 11.2, size: 12, bold: 1, align: 'center', w: 7, wrap: 1 },
     karat: { show: 1, x: 16.5, y: 11.2, size: 12, bold: 1, align: 'right', w: 7.5, wrap: 1 },
-    fold: { show: 1, x: 1, y: 15, w: 23 },
-    stones: { show: 1, x: 1, y: 16, size: 10, bold: 1, align: 'left', w: 23, wrap: 3 },
-    weight: { show: 1, x: 1, y: 27.2, size: 9, bold: 1, align: 'left', w: 10, wrap: 1 },
-    jo: { show: 1, x: 8, y: 23.2, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
-    sku: { show: 1, x: 8, y: 24.6, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
-    location: { show: 1, x: 8, y: 26, size: 9, bold: 1, align: 'right', w: 9.2, wrap: 1 },
-    qr: { show: 1, x: 17.8, y: 22.8, qr: 6.2 },
+    fold: { show: 0, x: 1, y: 15, w: 23 },
+    stones: { show: 1, x: 1, y: 16, size: 16, bold: 1, align: 'left', w: 23, wrap: 3 },
+    weight: { show: 1, x: 1, y: 26.6, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
+    jo: { show: 1, x: 1, y: 20.4, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
+    sku: { show: 1, x: 1, y: 22.5, size: 14, bold: 1, align: 'left', w: 13, wrap: 1 },
+    location: { show: 1, x: 1, y: 24.5, size: 14, bold: 1, align: 'left', w: 13, wrap: 2 },
+    qr: { show: 1, x: 13.6, y: 19.6, qr: 9.4 },
     line: { show: 0, x: 1, y: 20, size: 9, bold: 1, align: 'left', w: 16, wrap: 1 }
   },
   jo_card: {
@@ -535,8 +610,13 @@ function elementDefaults(kind) {
   return out;
 }
 function layoutFields(kind) {
-  var card = kind === 'jo_card', out = [], i;
-  for (i = 0; i < LAYOUT_FIELDS.length; i++) if (card || !LAYOUT_FIELDS[i].card) out.push(LAYOUT_FIELDS[i]);
+  var card = kind === 'jo_card', out = [], i, field;
+  for (i = 0; i < LAYOUT_FIELDS.length; i++) {
+    field = LAYOUT_FIELDS[i];
+    if (!card && field.card) continue;
+    if (!card && field.id === 'fold') continue;
+    out.push(field);
+  }
   return out;
 }
 function clampMm(v, fallback, min, max) {
@@ -595,16 +675,34 @@ function elementText(id, opts) {
   return '';
 }
 function fitQrBox(mods, boxPx) {
-  var mod = 1, best = 1, size;
+  var mod = 1, best = 0, size;
   while (mod < 16) {
     size = qrSize(mods, mod, 2);
     if (size > boxPx) break;
     best = mod;
     mod++;
   }
+  if (!best) return null;
   return { mod: best, quiet: 2, size: qrSize(mods, best, 2) };
 }
-function paintLayout(img, layout, opts, kind) {
+/* Top-left of the quiet-zone square, inside bounds. A request bigger than the
+   label shrinks until the quiet zone fits; it is not drawn past the edge. */
+function placeQr(mods, x, y, request, bounds) {
+  var room = Math.max(1, Math.min(bounds.w, bounds.h));
+  var want = Math.max(1, request | 0);
+  var fit = fitQrBox(mods, Math.min(want, room)) || fitQrBox(mods, room);
+  var mod = fit ? fit.mod : 1, quiet = fit ? fit.quiet : 2;
+  var size = fit ? fit.size : Math.min(room, qrSize(mods, 1, 2));
+  var px0 = x, py0 = y;
+  if (px0 < bounds.x) px0 = bounds.x;
+  if (py0 < bounds.y) py0 = bounds.y;
+  if (px0 + size > bounds.x + bounds.w) px0 = bounds.x + bounds.w - size;
+  if (py0 + size > bounds.y + bounds.h) py0 = bounds.y + bounds.h - size;
+  if (px0 < bounds.x) px0 = bounds.x;
+  if (py0 < bounds.y) py0 = bounds.y;
+  return { x: px0, y: py0, mod: mod, quiet: quiet, size: size };
+}
+function paintLayout(img, layout, opts, kind, bounds) {
   var fields = layoutFields(kind);
   var runs = [], placed = [], lines = [];
   var specPx = 0, joPx = 0, qrInfo = null, i, field, el, text, x, y, w, size, wrapN, bold, block, cursor, li, m, tw, tx, lineH;
@@ -619,6 +717,9 @@ function paintLayout(img, layout, opts, kind) {
       continue;
     }
     if (field.kind === 'fold') {
+      /* The jewelry tag no longer prints the fold guide. Its y still marks
+         where the rows sit, so hiding the dashes does not move them. */
+      if (kind === 'jewelry_tag') continue;
       x = px(el.x); y = px(el.y); w = Math.max(1, px(el.w || 1));
       dashes(img, x, y, w);
       placed.push({ id: 'fold', x: x, y: y > 3 ? y - 3 : 0, w: w, h: 8 });
@@ -627,10 +728,15 @@ function paintLayout(img, layout, opts, kind) {
     if (field.kind === 'qr') {
       text = elementText('qr', opts);
       x = px(el.x); y = px(el.y); w = Math.max(8, px(el.qr || 6));
+      var boxBounds = bounds || { x: 0, y: 0, w: img.w, h: img.h };
+      /* A code that sits wholly on the jewelry tail stays there. One that crosses
+         the flag edge is pulled onto the flag, so the tail does not cut it. */
+      if (boxBounds.flag && x >= boxBounds.x + boxBounds.w) boxBounds = { x: boxBounds.x + boxBounds.w, y: 0, w: img.w - (boxBounds.x + boxBounds.w), h: img.h };
       if (text) {
-        var mods = makeQr(text), fit = fitQrBox(mods, w);
-        img.qr(mods, x, y, fit.mod, fit.quiet);
-        qrInfo = { x: x, y: y, size: fit.size, text: text };
+        var mods = makeQr(text), fit = placeQr(mods, x, y, w, boxBounds);
+        img.qr(mods, fit.x, fit.y, fit.mod, fit.quiet);
+        qrInfo = { x: fit.x, y: fit.y, size: fit.size, text: text };
+        x = fit.x; y = fit.y; w = fit.size;
       }
       placed.push({ id: 'qr', x: x, y: y, w: w, h: w });
       continue;
@@ -638,23 +744,49 @@ function paintLayout(img, layout, opts, kind) {
     text = elementText(field.id, opts);
     x = px(el.x); y = px(el.y); w = Math.max(4, px(el.w || 4));
     size = el.size | 0; wrapN = el.wrap | 0 || 1; bold = el.bold ? 1 : 0;
+    block = [];
+    var track = 0;
+    if (text && kind === 'jewelry_tag' && (field.id === 'stones' || field.id === 'jo' || field.id === 'sku' || field.id === 'location' || field.id === 'weight')) {
+      track = CRISP_TRACK;
+      var minSize = field.id === 'stones' ? 11 : 10;
+      var maxH = 0, fitGuard = 0, fitTall;
+      function roomUntil(id) {
+        var next = layout[id];
+        if (!next || !next.show) return 0;
+        return px(next.y) - y - 2;
+      }
+      if (field.id === 'stones') maxH = roomUntil('qr');
+      else if (field.id === 'jo') maxH = roomUntil('sku');
+      else if (field.id === 'sku') maxH = roomUntil('location');
+      else if (field.id === 'location') maxH = roomUntil('weight');
+      else if (field.id === 'weight') maxH = px(29) - y;
+      if (maxH < 0) maxH = 0;
+      if (field.id === 'stones' && maxH && maxH < 8) maxH = 8;
+      while (size > minSize && wrapN <= 1 && metricsOf(text, size, bold, track).w > w) size--;
+      while (fitGuard++ < 24) {
+        block = wrapN <= 1 ? [metricsOf(text, size, bold, track).w <= w ? text : ellipsis(text, w, size, bold, track)] : wrapLines(text, w, size, wrapN, bold, track);
+        fitTall = blockHeight(block, size, bold, track);
+        if (!maxH || fitTall <= maxH || size <= minSize && wrapN <= 1) break;
+        if (size > minSize) { size--; continue; }
+        if (wrapN > 1) { wrapN--; continue; }
+        break;
+      }
+    } else if (text) block = wrapN <= 1 ? [ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
     if (field.id === 'stones') specPx = size;
     if (field.id === 'jo') joPx = size;
-    block = [];
-    if (text) block = wrapN <= 1 ? [ellipsis(text, w, size, bold)] : wrapLines(text, w, size, wrapN, bold);
     if (!block.length) {
       placed.push({ id: field.id, x: x, y: y, w: w, h: Math.max(8, size) });
       continue;
     }
     cursor = y;
     for (li = 0; li < block.length; li++) {
-      m = metricsOf(block[li], size, bold);
+      m = metricsOf(block[li], size, bold, track);
       tw = m.w;
       if (el.align === 'right') tx = x + w - tw;
       else if (el.align === 'center') tx = x + (w - tw) / 2;
       else tx = x;
       lineH = Math.ceil(m.ascent + m.descent);
-      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold });
+      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold, crisp: track ? 1 : 0, track: track });
       lines.push(block[li]);
       cursor += lineH + 2;
     }
@@ -676,10 +808,30 @@ function rotatePaper(img, box, paper) {
     }
   }
 }
+/* Paper x is the feed. After the printer offset, that axis still has to stay
+   on the 25 mm flag. The tail is past contentW, and that is the edge that
+   cuts the bottom of the printed QR. */
+function flagBounds(flagW, flagH, shiftY) {
+  var x0 = Math.max(0, -(shiftY || 0));
+  var x1 = Math.min(flagW, flagW - (shiftY || 0));
+  if (x1 < x0) x1 = x0;
+  return { x: x0, y: 0, w: Math.max(1, x1 - x0), h: flagH, flag: 1 };
+}
+/* y is the feed on a JO card. The bitmap is the full 20 mm, and the gap cuts
+   the trailing rows, so a quiet zone that ends on that edge prints as only
+   the top of the code. Keep it 3 mm inside both feed edges. shiftY is added
+   when the pixels are drawn. */
+function feedBounds(w, h, shiftY) {
+  var inset = px(3);
+  var y0 = Math.max(0, -(shiftY || 0)) + inset;
+  var y1 = Math.min(h, h - (shiftY || 0)) - inset;
+  if (y1 < y0) y1 = y0;
+  return { x: 0, y: y0, w: w, h: Math.max(1, y1 - y0) };
+}
 function drawJewelryLayout(img, box, opts) {
   var contentW = box.labelH, contentH = box.labelW;
   var paper = new Img(contentW + box.tail, contentH);
-  var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag');
+  var drawn = paintLayout(paper, normalizeLayout('jewelry_tag', opts.layout), opts, 'jewelry_tag', flagBounds(contentW, contentH, box.inkShift || 0));
   var qrBox = null;
   if (drawn.qr) qrBox = { x: box.offsetX + (contentH - drawn.qr.y - drawn.qr.size), y: drawn.qr.x, size: drawn.qr.size };
   rotatePaper(img, box, paper);
@@ -687,7 +839,7 @@ function drawJewelryLayout(img, box, opts) {
 }
 function drawCardLayout(img, box, opts) {
   var sheet = new Img(box.labelW, box.labelH);
-  var drawn = paintLayout(sheet, normalizeLayout('jo_card', opts.layout), opts, 'jo_card');
+  var drawn = paintLayout(sheet, normalizeLayout('jo_card', opts.layout), opts, 'jo_card', feedBounds(box.labelW, box.labelH, box.inkShift || 0));
   var dy, dx, pi, qrBox = null;
   for (dy = 0; dy < sheet.h; dy++) {
     for (dx = 0; dx < sheet.w; dx++) {
@@ -733,13 +885,23 @@ function drawJewelry(img, box, opts) {
   blitBits(paper, LOGO_ROWS, right - logoW, top);
 
   if (name) {
-    var nameSize = sizeThatFits(name, innerW, 15, 11) || 11;
-    if (metricsOf(name, nameSize).w > innerW) name = ellipsis(name, innerW, nameSize);
     var nameY = top + logoH + 6;
-    var nameM = metricsOf(name, nameSize);
-    runs.push({ text: name, x: left, y: nameY, size: nameSize });
-    lines.push(name);
-    nameBottom = nameY + Math.ceil(nameM.ascent + nameM.descent);
+    var nameRoom = Math.max(12, (foldY - pad - 20) - nameY);
+    var nameSize = 15;
+    var nameLines = wrapLines(name, innerW, nameSize, 2);
+    while (nameSize > 11 && blockHeight(nameLines, nameSize) > nameRoom) {
+      nameSize--;
+      nameLines = wrapLines(name, innerW, nameSize, 2);
+    }
+    if (blockHeight(nameLines, nameSize) > nameRoom) nameLines = [ellipsis(name, innerW, nameSize)];
+    var nameCursor = nameY, ni;
+    for (ni = 0; ni < nameLines.length; ni++) {
+      var nameM = metricsOf(nameLines[ni], nameSize);
+      runs.push({ text: nameLines[ni], x: left, y: nameCursor, size: nameSize });
+      lines.push(nameLines[ni]);
+      nameCursor += Math.ceil(nameM.ascent + nameM.descent) + 2;
+    }
+    nameBottom = nameCursor;
   }
 
   if (spread.length) {
@@ -778,85 +940,101 @@ function drawJewelry(img, box, opts) {
     });
   }
 
+  /* Lower flap. Stone starts at 16 px (2.0 mm, 5.7 pt). JO, location, and weight
+     start at 14 px (1.8 mm, 5.0 pt). The QR uses 3 px modules, about 9.4 mm on a
+     short JO, and stops 2 mm short of the flag edge that feeds into the tail.
+     That edge is the bottom of the printed code. A line shrinks only when the
+     full words would leave the flag or cover the QR. Price, the description,
+     the metal row, and the logo stay as they are. */
+  var STONE_PX = 16, STONE_MIN = 11, META_PX = 14, META_MIN = 10;
   var mods = jo ? makeQr(jo) : null;
-  var mod = 2, quiet = 2;
+  var mod = 3, quiet = 2;
   var qpix = mods ? qrSize(mods, mod, quiet) : 0;
-  var codes = [];
-  if (jo) codes.push(jo);
-  if (sku) codes.push(sku);
-  if (loc) codes.push(loc);
-  var metaSize = 9;
-  var codeMax = Math.max(8, (qpix ? right - 4 - qpix : right) - left - 36);
-  while (metaSize > 7 && codes.some(function (t) { return metricsOf(t, metaSize).w > codeMax; })) metaSize--;
-  codes = codes.map(function (t) {
-    if (t === jo && metricsOf(t, metaSize).w <= codeMax) return t;
-    return metricsOf(t, metaSize).w <= codeMax ? t : ellipsis(t, codeMax, metaSize);
-  });
-  if (jo && codes.length && codes[0] !== jo && metricsOf(jo, 7).w <= codeMax) {
-    metaSize = 7;
-    codes[0] = jo;
-  }
-  joPx = jo ? metaSize : 0;
-  var clusterBottom = bottom;
-  var clusterH = qpix || (codes.length ? codes.length * 12 : 0);
-  var clusterTop = clusterBottom - clusterH;
   var stoneTop = foldY + pad;
+  var tailGap = px(2);
+  var maxQr = Math.min(bottom - stoneTop - 4 - STONE_PX, contentW - tailGap - pad);
+  while (mods && mod > 1 && qpix > maxQr) {
+    mod--;
+    qpix = qrSize(mods, mod, quiet);
+  }
+  var qx0 = qpix ? contentW - tailGap - qpix : 0;
+  var qy0 = qpix ? bottom - qpix : 0;
+  if (mods && qpix) {
+    var held = placeQr(mods, qx0, qy0, qpix, flagBounds(contentW, contentH, box.inkShift || 0));
+    mod = held.mod; quiet = held.quiet; qpix = held.size; qx0 = held.x; qy0 = held.y;
+  }
+  var colRight = qpix ? qx0 - 4 : right;
+  var colW = Math.max(8, colRight - left);
+  function fitMeta(text, wrapN) {
+    var size = META_PX, linesAt, track = CRISP_TRACK;
+    if (wrapN > 1 && metricsOf(text, size, undefined, track).w > colW) {
+      linesAt = wrapLines(text, colW, size, wrapN, undefined, track);
+      if (linesAt.length && linesAt.join(' ').indexOf('...') < 0) return { lines: linesAt, size: size };
+    }
+    while (size > META_MIN && metricsOf(text, size, undefined, track).w > colW) size--;
+    if (metricsOf(text, size, undefined, track).w <= colW) return { lines: [text], size: size };
+    if (wrapN > 1) {
+      linesAt = wrapLines(text, colW, META_MIN, wrapN, undefined, track);
+      return { lines: linesAt.length ? linesAt : [ellipsis(text, colW, META_MIN, undefined, track)], size: META_MIN };
+    }
+    return { lines: [ellipsis(text, colW, META_MIN, undefined, track)], size: META_MIN };
+  }
+  var meta = [];
+  if (jo) meta.push(fitMeta(jo, 1));
+  if (sku) meta.push(fitMeta(sku, 1));
+  if (loc) meta.push(fitMeta(loc, 2));
+  if (weight) meta.push(fitMeta(weight, 1));
+  joPx = jo ? meta[0].size : 0;
+  var metaGap = 2, metaH = 0, mi, mj;
+  for (mi = 0; mi < meta.length; mi++) {
+    for (mj = 0; mj < meta[mi].lines.length; mj++) {
+      metaH += Math.ceil(metricsOf(meta[mi].lines[mj], meta[mi].size, undefined, CRISP_TRACK).ascent + metricsOf(meta[mi].lines[mj], meta[mi].size, undefined, CRISP_TRACK).descent) + (metaH ? metaGap : 0);
+    }
+  }
+  var clusterBottom = bottom;
+  var clusterH = Math.max(qpix, metaH);
+  var clusterTop = clusterBottom - clusterH;
   var stoneRoom = clusterTop - 4 - stoneTop;
   var stoneLines = [];
   if (stones && stoneRoom > 8) {
-    specPx = 10;
-    while (specPx > 8) {
-      var trial = wrapLines(stones, innerW, specPx, 3);
-      var tall = 0, li;
-      for (li = 0; li < trial.length; li++) {
-        var tm = metricsOf(trial[li], specPx);
-        tall += Math.ceil(tm.ascent + tm.descent) + (li ? 2 : 0);
-      }
-      if (tall <= stoneRoom) { stoneLines = trial; break; }
-      specPx--;
-    }
-    if (!stoneLines.length) {
-      specPx = 8;
-      stoneLines = wrapLines(stones, innerW, specPx, 3);
+    specPx = STONE_PX;
+    var stoneWrap = 3, stoneGuard = 0;
+    while (stoneGuard++ < 24) {
+      var trial = stoneWrap <= 1 ? [metricsOf(stones, specPx, undefined, CRISP_TRACK).w <= innerW ? stones : ellipsis(stones, innerW, specPx, undefined, CRISP_TRACK)] : wrapLines(stones, innerW, specPx, stoneWrap, undefined, CRISP_TRACK);
+      if (blockHeight(trial, specPx, undefined, CRISP_TRACK) <= stoneRoom) { stoneLines = trial; break; }
+      if (specPx > STONE_MIN) { specPx--; continue; }
+      if (stoneWrap > 1) { stoneWrap--; continue; }
+      stoneLines = trial;
+      break;
     }
     var sy = stoneTop;
     stoneLines.forEach(function (t) {
-      var m = metricsOf(t, specPx);
-      runs.push({ text: t, x: left, y: sy, size: specPx });
+      var m = metricsOf(t, specPx, undefined, CRISP_TRACK);
+      runs.push({ text: t, x: left, y: sy, size: specPx, crisp: 1, track: CRISP_TRACK });
       lines.push(t);
       sy += Math.ceil(m.ascent + m.descent) + 2;
     });
   }
 
-  var codeGap = 2;
-  var codeH = 0;
-  codes.forEach(function (t, i) {
-    var m = metricsOf(t, metaSize);
-    codeH += Math.ceil(m.ascent + m.descent) + (i ? codeGap : 0);
+  var metaTop = qpix ? (bottom - qpix) + Math.max(0, Math.round((qpix - metaH) / 2)) : clusterTop;
+  if (metaTop + metaH > bottom) metaTop = bottom - metaH;
+  if (metaTop < clusterTop) metaTop = clusterTop;
+  var metaY = metaTop;
+  meta.forEach(function (row) {
+    row.lines.forEach(function (t) {
+      var m = metricsOf(t, row.size, undefined, CRISP_TRACK);
+      runs.push({ text: t, x: left, y: metaY, size: row.size, crisp: 1, track: CRISP_TRACK });
+      lines.push(t);
+      metaY += Math.ceil(m.ascent + m.descent) + metaGap;
+    });
   });
-  var codeY = qpix ? clusterTop + Math.max(0, Math.round((qpix - codeH) / 2)) : clusterTop;
-  var codesRight = qpix ? right - qpix - 4 : right;
-  codes.forEach(function (t) {
-    var m = metricsOf(t, metaSize);
-    var w = m.w;
-    runs.push({ text: t, x: Math.round(codesRight - w), y: codeY, size: metaSize });
-    lines.push(t);
-    codeY += Math.ceil(m.ascent + m.descent) + codeGap;
-  });
-  if (weight) {
-    var wm = metricsOf(weight, metaSize);
-    var weightY = clusterBottom - Math.ceil(wm.ascent + wm.descent);
-    runs.push({ text: weight, x: left, y: weightY, size: metaSize });
-    lines.push(weight);
-  }
 
   stampLocal(paper, runs);
-  dashes(paper, left, foldY, innerW);
+  /* foldY still places the metal row and the stone. The dashed guide is not drawn. */
   var qrBox = null;
   if (mods) {
-    var qx = right - qpix, qy = bottom - qpix;
-    paper.qr(mods, qx, qy, mod, quiet);
-    qrBox = { x: box.offsetX + (contentH - qy - qpix), y: qx, size: qpix };
+    paper.qr(mods, qx0, qy0, mod, quiet);
+    qrBox = { x: box.offsetX + (contentH - qy0 - qpix), y: qx0, size: qpix };
   }
   rotatePaper(img, box, paper);
   return { lines: lines, specPx: specPx, joPx: joPx, qr: jo, qrBox: qrBox, paper: paper };
@@ -879,6 +1057,7 @@ function render(opts) {
   var img = new Img(box.width, box.height);
   var shiftX = opts.shiftX | 0, shiftY = (opts.shiftY | 0) + (box.biasY || 0);
   box.offsetX += shiftX;
+  box.inkShift = shiftY;
   var rawSet = img.set.bind(img);
   img.set = function (x, y) { rawSet(x, y + shiftY); };
   var lines = [];
@@ -919,10 +1098,16 @@ function render(opts) {
     sheetOut = cardLay.sheet;
     placed = cardLay.placed || [];
   } else {
-    /* QR stays the size that fills the 20 mm height. Its left ink margin is
-       repeated on the right, and the JO shrinks into the width that is left. */
+    /* The bitmap is the full 20 mm feed, and the gap cuts the trailing rows.
+       A code that fills that height loses its bottom. Four millimetres of
+       clear feed leaves the quiet zone inside the 3 mm the gap needs, including
+       the B31's 0.5 mm shift. The left ink margin is repeated on the right,
+       and the JO shrinks into the width that is left. */
     var mods2 = jo ? makeQr(jo) : null;
-    var qrMax = box.labelH - px(1.5) * 2;
+    var cardRoom = feedBounds(box.labelW, box.labelH, shiftY);
+    var qrMax = box.labelH - px(4) * 2;
+    if (qrMax > cardRoom.h) qrMax = cardRoom.h;
+    if (qrMax > cardRoom.w) qrMax = cardRoom.w;
     var picked = mods2 ? chooseQr(mods2, qrMax) : { mod: 3, quiet: 4, size: 0 };
     var mod2 = picked.mod, quiet2 = picked.quiet, qpix2 = picked.size;
     var gap2 = qpix2 ? 4 : 0;
@@ -966,8 +1151,15 @@ function render(opts) {
     var textX2 = x0 + pad + qpix2 + gap2;
     if (jo) runs.push({ text: lines[0], x: textX2, y: textY2, size: joPx });
     if (subFit) runs.push({ text: subFit.text, x: textX2, y: textY2 + jm2.ascent + jm2.descent + 4, size: subFit.size });
-    var qrY2 = Math.round((box.labelH - qpix2) / 2);
-    if (mods2) qrBox = { x: x0 + pad, y: qrY2, size: qpix2 };
+    var qrY2 = qpix2 ? Math.round((box.labelH - qpix2) / 2) : 0;
+    var qrX2 = pad;
+    if (mods2) {
+      if (qrX2 < cardRoom.x) qrX2 = cardRoom.x;
+      if (qrY2 < cardRoom.y) qrY2 = cardRoom.y;
+      if (qrX2 + qpix2 > cardRoom.x + cardRoom.w) qrX2 = cardRoom.x + cardRoom.w - qpix2;
+      if (qrY2 + qpix2 > cardRoom.y + cardRoom.h) qrY2 = cardRoom.y + cardRoom.h - qpix2;
+      qrBox = { x: x0 + qrX2, y: qrY2, size: qpix2 };
+    }
     stampText(img, runs, box);
     if (mods2) img.qr(mods2, qrBox.x, qrBox.y, mod2, quiet2);
   }
@@ -1102,7 +1294,9 @@ function paperView(rendered) {
 function preview(rendered, opts) {
   opts = opts || {};
   var scale = opts.scale > 0 ? opts.scale : 4;
-  var smooth = opts.smooth !== false;
+  /* Smoothing is opt-in. The default scales the 203 dpi 1-bit bitmap by whole
+     pixels, so a CSS preview can use image-rendering: pixelated and stay black. */
+  var smooth = opts.smooth === true;
   var labelW = rendered.labelW, labelH = rendered.labelH, tail = rendered.tail || 0;
   var jewelry = rendered.kind === 'jewelry_tag' && tail;
   var readable = !jewelry && rendered.paperW > 0 && rendered.paper;
@@ -1162,8 +1356,30 @@ function preview(rendered, opts) {
   };
 }
 
+/* Readable jewelry tag for the screen. Words are text records the page draws as HTML.
+   QR modules and the logo are rectangles the page draws as SVG. The Niimbot send path
+   still uses render()'s 1-bit raster. */
+function tagScene(opts) {
+  opts = Object.assign({ kind: 'jewelry_tag' }, opts || {});
+  opts.kind = 'jewelry_tag';
+  var capture = { texts: [], rects: [] };
+  root.__oypCapture = capture;
+  var rendered;
+  try { rendered = render(opts); }
+  finally { root.__oypCapture = null; }
+  return {
+    width: rendered.paperW || 0,
+    height: rendered.paperH || 0,
+    texts: capture.texts,
+    rects: capture.rects,
+    placed: rendered.placed || [],
+    lines: rendered.lines || []
+  };
+}
+
 root.OYPLabel = {
   render: render, toCanvas: toCanvas, preview: preview, labelCanvas: labelCanvas, exitCanvas: exitCanvas, tagOutline: tagOutline, flapRects: flapRects, px: px, joCode: joCode, specLines: specLines, smallLine: smallLine,
+  tagScene: tagScene,
   normalizeLayout: normalizeLayout, elementDefaults: elementDefaults, layoutFields: layoutFields, paperMm: paperMm,
   ready: ready, PRESETS: PRESETS, HEADS: HEADS, SPEC_PX: SPEC_PX, canvasFor: canvasFor, placeBias: placeBias, paperView: paperView
 };
