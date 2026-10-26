@@ -118,8 +118,22 @@ function ivMergeDrafts(jobs) {
 }
 function ivReviewCount() { return IV.r && IV.r.jobs ? IV.r.jobs.filter(j => j.review || j.pending_review).length : 0; }
 function ivDebugCount() { return window.OYPJoInbox && window.OYPJoInbox.count ? window.OYPJoInbox.count() : 0; }
-function ivChipKeys() { return Object.keys(IVIEWS).filter(k => k !== 'debug' || ivEdit()); }
+function ivCountRole(u) {
+  const roles = window.OYPNav && window.OYPNav.COUNT_ROLES;
+  return !!(u && roles && roles[u.role]);
+}
+function ivChipKeys() {
+  if (IV.u && IV.u.role === 'staff') return ['count'];
+  const keys = Object.keys(IVIEWS).filter(k => k !== 'debug' || ivEdit());
+  if (ivCountRole(IV.u)) keys.push('count');
+  return keys;
+}
 function ivChipCount(k) { return k === 'debug' ? ivDebugCount() : (IV.r && IV.r.jobs ? IV.r.jobs.filter(IVIEWS[k][1]).length : 0); }
+function ivHead(text) {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('title');
+  if (el) el.textContent = text;
+}
 function ivPaintNav() {
   if (typeof document === 'undefined') return;
   const onInv = !!document.querySelector('.ivchips');
@@ -165,10 +179,14 @@ async function ivMountReview(main, j) {
 function ivMoveLocs() { return ((IV.r && IV.r.locations) || []).filter(l => l[0] && l[0] !== 'archived'); }
 async function renderJos(main, u) {
   const { call, esc } = window.OYP, live = window.OYP.here(); IV.u = u; // live(): still on this route (app.js)
+  if (u && u.role === 'staff') { IV.view = 'count'; ivDraw(main); return; } // staff open the COUNT tab only; the inventory list stays with the roles that had Inventory
   { // app.js serves the last answer at once and refreshes it in the background
     if (!IV.r) main.innerHTML = '<h2>Inventory</h2><div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i><i></i></div>';
     const r = await call('invList'); if (!live()) return;
-    if ((!r || !r.ok) && !IV.r) { main.innerHTML = `<h2>Inventory</h2><p class="muted">${esc(oldBackend(r) ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return; }
+    if ((!r || !r.ok) && !IV.r) {
+      if (IV.view === 'count' && ivCountRole(u)) { ivDraw(main); return; }
+      main.innerHTML = `<h2>Inventory</h2><p class="muted">${esc(oldBackend(r) ? PASTE_NOTE : r.error || 'Could not load')}</p>`; return;
+    }
     if (r && r.ok) { IV.r = r; IV.at = Date.now(); }
     if (IV.r && ivEdit() && window.OYPReview && window.OYPReview.drafts) {
       try {
@@ -180,11 +198,13 @@ async function renderJos(main, u) {
     if (IV.want && IV.r && IV.r.jobs.some(j => j.jo === IV.want)) { IV.view = 'review'; IV.open = IV.want; }
     IV.want = '';
     if (IV.view === 'debug' && !ivEdit()) IV.view = 'all';
+    if (IV.view === 'count' && !ivCountRole(u)) IV.view = 'all';
   }
   ivDraw(main);
 }
 function ivChipsHtml(esc) {
   return `<div class="rvchips ivchips">${ivChipKeys().map(k => {
+    if (k === 'count') return `<button class="fchip tap ${IV.view === 'count' ? 'on' : ''}" data-iv="count">COUNT</button>`;
     const n = ivChipCount(k);
     const mark = (k === 'review' || k === 'debug') && n ? ' tbr' : '';
     const attr = k === 'debug' ? ' data-ivcount="debug"' : '';
@@ -212,8 +232,25 @@ async function ivMountDebug(main) {
   if (seq !== IV.dbgSeq || !host.isConnected) return;
   ivPaintNav();
 }
+function ivDrawCount(main) {
+  const { esc } = window.OYP, title = IV.u && IV.u.role === 'accounting' ? 'Inventory (view)' : 'Inventory';
+  ivHead('INVENTORY COUNT');
+  main.innerHTML = `<div class="iv">
+    <div class="dhead"><h2>${esc(title)}</h2></div>
+    ${ivChipsHtml(esc)}
+    <div id="ivCount"></div>
+  </div>`;
+  ivWire(main);
+  const host = main.querySelector('#ivCount');
+  if (host && window.OYPCount && window.OYPCount.render) window.OYPCount.render(host, IV.u);
+}
 function ivDraw(main) {
   if (window.OYP.popover) window.OYP.closePopover();
+  if (IV.view === 'count') {
+    if (ivCountRole(IV.u)) { ivDrawCount(main); return; }
+    IV.view = 'all';
+  }
+  ivHead('Back office');
   if (IV.view === 'debug') {
     if (!ivEdit()) IV.view = 'all';
     else { ivDrawDebug(main); return; }
@@ -1265,7 +1302,7 @@ window.OYPInv = { renderJos: (m, u) => {
   IV.open = null; ivCloseView(); IV.sel.clear(); IV.scanned = []; IV.anchor = ''; IV.picking = false; IV.offer = ''; IV.want = '';
   try {
     const askView = sessionStorage.getItem('oypInvView');
-    if (askView === 'review' || askView === 'debug') IV.view = askView;
+    if (askView === 'review' || askView === 'debug' || (askView === 'count' && ivCountRole(u))) IV.view = askView;
     sessionStorage.removeItem('oypInvView');
     const raw = sessionStorage.getItem('oypReviewOpen');
     if (raw) {
@@ -1275,7 +1312,8 @@ window.OYPInv = { renderJos: (m, u) => {
     }
   } catch (e) {}
   return renderJos(m, u);
-}, renderMats: (m, u) => renderMaterials(m, u), openViewer: ivOpenViewer, paintNav: ivPaintNav };
+}, renderMats: (m, u) => renderMaterials(m, u), openViewer: ivOpenViewer, paintNav: ivPaintNav,
+  countOn: () => IV.view === 'count' && /^#\/jos(?:$|[/?])/.test(location.hash) };
 
 /* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
    The search box takes the same scan when it is focused: a fast wedge, or a full JO and Enter.
@@ -1353,7 +1391,7 @@ function ivFindScan(p) {
   return ivFindBase(p.base);
 }
 function ivById(id) { return id ? ((IV.r.jobs || []).find(j => j.jo === id) || ivFindBase(id)) : null; }
-function ivScanOn() { return !!(IV.r && ivEdit() && /^#\/jos(?:$|[/?])/.test(location.hash)); }
+function ivScanOn() { return !!(IV.r && ivEdit() && IV.view !== 'count' && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
 function ivRefocus(main) { const s = main.querySelector('#ivQ'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
 function ivFlash(jo) {

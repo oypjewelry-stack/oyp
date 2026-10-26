@@ -8,10 +8,10 @@ const SITE = STAFF; // kept for older scanner builds that read OYPNav.SITE
 const SCANNER = 'https://oypjewelry.com/scan/';
 // Default order with nothing saved on this device, and the order Reset returns to. A role still only sees the items it already had.
 const NAV = {
-  admin: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['count', 'Inventory count'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it. REVIEW and DEBUG live inside Inventory. Material prices is the Prices tab on Materials.
-  production_manager: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['count', 'Inventory count'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['balances', 'Balances']],
+  admin: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it. REVIEW, DEBUG, and COUNT live inside Inventory. Material prices is the Prices tab on Materials.
+  production_manager: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['balances', 'Balances']],
   accounting: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
-  staff: [['home', 'Home'], ['todo', 'To do'], ['appts', 'Appointments'], ['count', 'Inventory count'], ['scanner', 'Scanner']] // staff keep their simple home; Appointments and Inventory count open in the back office. No Production (Susan + admins only)
+  staff: [['home', 'Home'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['scanner', 'Scanner']] // staff keep their simple home. Appointments and Inventory open in the back office. Inventory shows only the COUNT tab. No Production (Susan + admins only)
 };
 // back-office only: kept out of the scanner menu (the scanner reads OYPNav.NAV); the back office reads OFFICE_NAV
 const OFFICE_ONLY = { production: true, consignment: true, todo: true };
@@ -21,6 +21,7 @@ const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', a
 const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, look: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, count: true, payments: true, quotes: true, balances: true, clients: true, consignment: true };
 // Roles that had the Material prices menu item. Prices is now a tab on Materials; a role absent here sees only Stock.
 const MAT_PRICE_ROLES = { admin: true, production_manager: true };
+const COUNT_ROLES = { admin: true, production_manager: true, staff: true }; // roles that had Inventory count. Accounting did not. A saved menu key "count" is ignored: it is no longer in the list.
 // link to the scanner that tells it whose menu to show (the role only picks menu items; every page still checks the sign-in)
 const scannerLink = role => SCANNER + (role ? '?role=' + encodeURIComponent(role) : '');
 function escNav(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
@@ -103,7 +104,7 @@ function sideHtml(user, page, home) {
   }
   return '<div class="sidenav" id="sideNav">' + navParts(user, page, home) + '</div>' + who;
 }
-root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, MAT_PRICE_ROLES, scannerLink, readUser: readUser, ordered: ordered, menuHtml: menuHtml, sideHtml: sideHtml, printerItemHtml: printerItemHtml, scannerTailHtml: scannerTailHtml };
+root.OYPNav = { SITE, STAFF, SCANNER, NAV: SCAN_NAV, OFFICE_NAV, ROLE_LABEL, MAT_PRICE_ROLES, COUNT_ROLES, scannerLink, readUser: readUser, ordered: ordered, menuHtml: menuHtml, sideHtml: sideHtml, printerItemHtml: printerItemHtml, scannerTailHtml: scannerTailHtml };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.OYPNav;
 // The scanner cannot take a repo change from this site, but it already loads this file.
 // JO card zones (scan-zones.js) ride along so a phone can label every section of the card without a scanner release.
