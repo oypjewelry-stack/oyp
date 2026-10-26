@@ -129,11 +129,37 @@ function printCache_() {
     return CacheService.getScriptCache();
   } catch (e) { return null; }
 }
+/* Last row of PrintQueue, or null when the tab cannot be read. Does not create the tab and does not write. */
+function printRevRows_() {
+  var ss, sh, n;
+  try {
+    if (typeof ss_ === 'function') ss = ss_();
+    else if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.getActive) ss = SpreadsheetApp.getActive();
+  } catch (e0) { return null; }
+  try {
+    if (!ss || !ss.getSheetByName) return null;
+    sh = ss.getSheetByName('PrintQueue');
+    if (!sh || typeof sh.getLastRow !== 'function') return null;
+    n = sh.getLastRow();
+  } catch (e1) { return null; }
+  if (n == null || n === '' || isNaN(Number(n))) return null;
+  return String(n);
+}
+/* The page stores rev as a string and re-reads only when it changes (!==).
+   The cache counter is what our own writes bump. A row appended straight onto the tab does not,
+   so the string the page sees is that counter, a dot, and getLastRow(). */
+function printRevShow_(raw) {
+  var row;
+  if (raw == null || raw === '') return null;
+  raw = String(raw);
+  row = printRevRows_();
+  return row == null ? raw : raw + '.' + row;
+}
 function printRevRead_() {
-  var c = printCache_();
+  var c = printCache_(), v;
   if (!c) return null;
-  var v = c.get(PRINT_REV_KEY);
-  return v == null || v === '' ? null : String(v);
+  v = c.get(PRINT_REV_KEY);
+  return printRevShow_(v);
 }
 function printRevBump_() {
   var c = printCache_();
@@ -146,7 +172,7 @@ function printRevEnsure_() {
   var c = printCache_();
   if (!c) return null;
   c.put(PRINT_REV_KEY, '1', 21600);
-  return '1';
+  return printRevShow_('1');
 }
 function printBrief_(req) {
   if (!req) return false;

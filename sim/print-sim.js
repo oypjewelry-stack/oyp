@@ -575,6 +575,34 @@ eq(ctx.printRevRead_() !== revBefore, 'creating a row bumps the rev');
 const revHeld = ctx.printRevRead_();
 ctx.printEnqueue_('26-291', 'jo_card', 'ada', {});
 eq(ctx.printRevRead_() === revHeld, 'a duplicate enqueue does not bump the rev');
+let snapLast = 2;
+let snapInserts = 0;
+let snapWrites = 0;
+let snapHide = false;
+const snapSheet = {
+  getLastRow() { return snapLast; },
+  getRange() { return { setValues() { snapWrites++; }, setNumberFormat() { return this; }, getValues() { return []; } }; }
+};
+ctx.ss_ = function () {
+  return {
+    getSheetByName(name) { return !snapHide && name === 'PrintQueue' ? snapSheet : null; },
+    insertSheet() { snapInserts++; throw new Error('rev read must not create a sheet'); }
+  };
+};
+const snapSeen = ctx.printRevRead_();
+const snapBrief = ctx.printQueue_({ brief: 1 }, { username: 'ada' });
+eq(snapSeen === revBag.oypPrintRev + '.2' && snapBrief.brief === true && snapBrief.rev === snapSeen && !snapBrief.items && snapWrites === 0 && snapInserts === 0, 'a brief rev is the cache counter plus the last row, and it does not write');
+const snapCache = revBag.oypPrintRev;
+snapLast = 3;
+sheetRows.push({ print_id: 'pq-snap', jo: '26-500', kind: 'jo_card', status: 'queued', created_by: 'scansnap' });
+const snapAfter = ctx.printRevRead_();
+const snapBriefAfter = ctx.printQueue_({ brief: 1 }, { username: 'ada' });
+eq(snapAfter !== snapSeen && snapAfter === snapCache + '.3' && snapBriefAfter.rev === snapAfter && revBag.oypPrintRev === snapCache && ctx.printRevRead_() === snapAfter, 'a row appended on the sheet changes the rev and does not bump the cache');
+snapHide = true;
+const snapMissing = ctx.printQueue_({ brief: 1 }, { username: 'ada' });
+eq(snapMissing.rev === snapCache && snapInserts === 0, 'a missing PrintQueue tab leaves the cache rev and does not create the tab');
+delete ctx.ss_;
+eq(read('print.js').includes("String(r.rev) !== String(state.rev == null ? '' : state.rev)") && read('print.js').includes('state.rev = String(r.rev)') && !/Number\(r\.rev\)|parseInt\(r\.rev|parseInt\(state\.rev/.test(read('print.js')), 'the page compares rev with !== as a string and does not parse it');
 const propBag = {};
 ctx.PropertiesService = { getScriptProperties() { return { getProperty(k) { return Object.prototype.hasOwnProperty.call(propBag, k) ? propBag[k] : null; }, setProperty(k, v) { propBag[k] = String(v); } }; } };
 propBag.print_auto = '0';
