@@ -1,9 +1,10 @@
-/* ScanSnap stickers. New file. Do not replace PrintQueue.gs or JoInbox.gs.
-   Print jewelry tag queues jewelry_tag (B1 jewelry tag).
-   Print QR tag queues jo_card (B31 JO sticker, 30x20, QR on the left). The queue has no qr_tag kind.
-   Both default ON when the key is missing. The owner turns them off for a backlog batch.
+/* ScanSnap stickers. New file. Do not replace JoInbox.gs.
+   Print QR tag queues jo_card (B31 JO sticker, 30x20, QR on the left) when the scan is filed.
+   Print jewelry tag queues jewelry_tag (B1 jewelry tag) only after that JO is confirmed into JobOrders.
+   The queue has no qr_tag kind. Both keys default ON when the key is missing. Unchecked never queues that sticker.
    Keys scanner.snap_jewelry and scanner.snap_qr live in Script Properties, and on the Settings tab when that tab already has key and value columns.
-   A repeat of the same JO + tag + scan file id does not call the queue again.
+   A repeat of the same JO + jo_card + scan file id does not call the queue again.
+   A jewelry tag already queued or already printed for that JO is not added again (printEnqueue_ dedupes per JO + kind).
    printEnqueue_ is called with manual:true so the phone's print_auto switches are left alone. */
 var SNAP_JEWELRY_KEY = 'scanner.snap_jewelry';
 var SNAP_QR_KEY = 'scanner.snap_qr';
@@ -205,15 +206,15 @@ function snapSeenAdd_(id) {
   }
   sh.getRange(row, 1, 1, 2).setValues([[id, new Date().toISOString()]]);
 }
-/* Call this once after a ScanSnap file becomes a JO. jo is the filed number. fileId is that scan's Drive file id. */
+/* Call this once after a ScanSnap file becomes a JO. jo is the filed number. fileId is that scan's Drive file id.
+   This queues the JO sticker only. The jewelry tag waits until the JO is confirmed. */
 function snapPrintAfterFile_(jo, fileId) {
-  var plan, seen, i, row, id, calls;
+  var plan, i, row, id, calls;
   jo = snapNorm_(jo);
   fileId = String(fileId || '');
   if (!jo || !fileId) return { ok: false, error: 'Need a JO and a scan file', calls: 0 };
   if (typeof printEnqueue_ !== 'function') return { ok: true, calls: 0, queue: false };
   plan = [
-    [SNAP_JEWELRY_KEY, 'jewelry_tag'],
     [SNAP_QR_KEY, 'jo_card']
   ];
   calls = 0;
@@ -229,4 +230,20 @@ function snapPrintAfterFile_(jo, fileId) {
     } catch (e1) {}
   }
   return { ok: true, calls: calls };
+}
+/* Call this once after joInboxConfirm or joInboxFix has written the JO into JobOrders.
+   jo is the confirmed number. No scan file id: printEnqueue_ skips a jewelry tag already queued or printed for this JO. */
+function snapPrintAfterConfirm_(jo) {
+  var res;
+  jo = snapNorm_(jo);
+  if (!jo) return { ok: false, error: 'Need a JO', calls: 0 };
+  if (!snapFlag_(SNAP_JEWELRY_KEY)) return { ok: true, calls: 0 };
+  if (typeof printEnqueue_ !== 'function') return { ok: true, calls: 0, queue: false };
+  try {
+    res = printEnqueue_(jo, 'jewelry_tag', 'scansnap', { manual: true });
+  } catch (e1) {
+    return { ok: true, calls: 0 };
+  }
+  if (res && res.created) return { ok: true, calls: 1 };
+  return { ok: true, calls: 0, skipped: true };
 }

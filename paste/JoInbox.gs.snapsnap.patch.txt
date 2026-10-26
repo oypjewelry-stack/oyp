@@ -1,6 +1,6 @@
-JoInbox.gs — one function at the bottom, then one call. Do not replace the file.
+JoInbox.gs — two functions at the bottom, then two calls. Do not replace the file.
 
-JoInbox.gs is not in this repo. There is no copy under paste/ or elsewhere in /workspace, so the call cannot name the real variables. Paste the function as written. On the one call line, use the two variables your filing function already has.
+JoInbox.gs is not in this repo. Paste the functions as written. On each call line, use the variable that function already has.
 
 Paste this at the bottom of JoInbox.gs:
 
@@ -10,10 +10,23 @@ function snapPrintAfterFiled_(jo, fileId) {
   } catch (eSnap) {}
 }
 
-Then ONE line on the success path, after the new JO is saved and that scan's Drive file id is still in scope:
+function snapPrintAfterConfirmed_(jo) {
+  try {
+    if (typeof snapPrintAfterConfirm_ === 'function') snapPrintAfterConfirm_(jo);
+  } catch (eSnap) {}
+}
+
+Call 1. On the success path that files a ScanSnap scan as a JO (the path that used to queue both stickers). This queues the QR sticker only. The jewelry tag is not queued here.
 
   snapPrintAfterFiled_(FILED_JO, SCAN_FILE_ID);
 
 FILED_JO is the variable that holds the job number just filed (26-287 or 26-287B).
 SCAN_FILE_ID is the variable that holds that scan's Drive file id.
-A second run with the same JO, tag, and file id does not queue again. The try/catch stays inside the function, so a missing ScanSnapPrint paste cannot fail the file.
+
+Call 2. On the success path of joInboxConfirm and of joInboxFix, after that function has written the JO into JobOrders. That is the step that moves a JO READS (check) row (STATUS AUTO or NEEDS CONFIRM) into JobOrders. Do not call this from joInboxDiscard, joInboxPush, or the scan-file path. If one helper writes the JobOrders row for both confirm and fix, one call at the end of that helper is enough. If another function also copies a JO READS row into JobOrders, call this same line there too, after the write.
+
+  snapPrintAfterConfirmed_(CONFIRMED_JO);
+
+CONFIRMED_JO is the variable that holds the confirmed job number (the number just saved on JobOrders, letter included).
+The jewelry tag is queued only when scanner.snap_jewelry is on. A tag already queued or already printed for that JO is not added again. A field on the JobOrders row that is still marked (guess) is left blank on the tag.
+The try/catch stays inside the functions, so a missing ScanSnapPrint paste cannot fail the file or the confirm.
