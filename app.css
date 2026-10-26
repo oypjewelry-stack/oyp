@@ -67,7 +67,7 @@ td .lnk{background:none;border:0;font-family:var(--label);font-weight:500;font-s
 .addrow input,.addrow select{border:1.5px solid #111;border-radius:calc(12px*var(--rad));padding:calc(10px*var(--sp)) calc(12px*var(--sp));font-family:var(--body);font-size:calc(17px*var(--fs));background:#fff}
 .codebox{border:1.5px solid var(--gold);border-radius:calc(14px*var(--rad));padding:calc(18px*var(--sp)) calc(22px*var(--sp));margin:0 0 calc(24px*var(--sp));max-width:calc(520px*var(--cw));background:#fffdf6}
 .codebox .c{font-family:var(--label);font-size:calc(40px*var(--fs));letter-spacing:.3em;margin:calc(6px*var(--sp)) 0}
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;color:#fff;font-family:var(--label);font-size:calc(14px*var(--fs));padding:calc(12px*var(--sp)) calc(20px*var(--sp));border-radius:calc(20px*var(--rad));z-index:30}
+.toast{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:#111;color:#fff;font-family:var(--label);font-size:calc(14px*var(--fs));padding:calc(12px*var(--sp)) calc(20px*var(--sp) + env(safe-area-inset-right,0px)) calc(12px*var(--sp)) calc(20px*var(--sp) + env(safe-area-inset-left,0px));border-radius:calc(20px*var(--rad));z-index:30}
 /* Edit layout: one 34px pill per back-office page. Grips and Hide stay hidden until it is on. */
 .layrow{position:sticky;top:61px;z-index:9;display:flex;justify-content:flex-end;max-width:calc(1200px*var(--cw));margin:0 0 calc(12px*var(--sp));background:#fff;padding:calc(4px*var(--sp)) 0}
 button.laypill.pill.sm{height:34px;min-height:34px;width:auto;box-sizing:border-box;padding:0 14px;font-family:var(--label);font-weight:500;font-size:14px;letter-spacing:0;text-transform:none;line-height:1;display:inline-flex;align-items:center;justify-content:center}
@@ -368,7 +368,7 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 }
 .iview .ivframe{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden}
 .iview .ivpan{transform-origin:center center}
-.iview img{display:block;max-width:100vw;max-height:100vh;background:#fff;user-select:none;-webkit-user-drag:none}
+.iview img{display:block;max-width:100vw;max-height:100vh;max-height:100dvh;background:#fff;user-select:none;-webkit-user-drag:none}
 .iview .ivx{display:grid;place-items:center;padding:0;margin:0;position:absolute;z-index:2;top:12px;right:12px;width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;cursor:pointer}
 .iview .ivtools{position:absolute;z-index:2;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:10px}
 .iview .ivz{display:grid;place-items:center;padding:0;margin:0;width:44px;height:44px;border:0;border-radius:22px;background:#fff;color:#111;cursor:pointer}
@@ -540,7 +540,7 @@ button.swbtn.swdanger{background:#b3261e;color:#fff;border-color:#b3261e}
 .snapnote[hidden]{display:none}
 .snaphint{margin:calc(12px*var(--sp)) 0 0}
 .snapresult{font-family:var(--label);font-size:calc(15px*var(--fs));margin:calc(10px*var(--sp)) 0 0;min-height:1.2em}
-.scanframe{display:block;width:100%;min-height:70vh;height:calc(100vh - 220px);border:0;background:#fff}
+.scanframe{display:block;width:100%;min-height:70vh;height:calc(100vh - 220px);height:calc(100dvh - 220px);border:0;background:#fff}
 /* iOS Safari zooms the page when a focused field computes under 16px, then leaves that zoom in place.
    Floor text fields on a phone. A field that is already larger stays larger. Do not lock the viewport with maximum-scale. */
 @media (max-width:760px){
