@@ -64,12 +64,30 @@ function shortDate(s) {
   if (!m) return clean(s).slice(0, 16);
   return String(+m[3]) + ' ' + (MON[+m[2] - 1] || '');
 }
-/* One small line under the JO. Due date, else a date, else the stage. Empty if none of those is set. */
-function smallLine(opts) {
+/* A value still marked (guess), or an empty cell, is not printed. */
+function markedGuess(v) {
+  return /\(\s*guess\s*\)/i.test(String(v == null ? '' : v));
+}
+function cardField(v) {
+  var s = textOf(v);
+  if (!s || markedGuess(s)) return '';
+  return s;
+}
+/* Item name on the JO sticker: name, otherwise description. A guess or an empty cell stays blank. */
+function cardName(opts) {
   opts = opts || {};
-  if (opts.due) return clean('DUE ' + shortDate(opts.due));
-  if (opts.date) return clean(shortDate(opts.date));
-  if (opts.stage) return clean(opts.stage).slice(0, 16);
+  return cardField(opts.name) || cardField(opts.description);
+}
+/* Weight on the JO sticker comes from weight_g. A guess or an empty cell stays blank. */
+function cardWeight(opts) {
+  opts = opts || {};
+  var raw = opts.weight_g;
+  if (raw == null || String(raw).trim() === '') raw = opts.weight;
+  if (raw == null || String(raw).trim() === '' || markedGuess(raw)) return '';
+  return weightText(raw);
+}
+/* The due line is not printed on the JO sticker. Callers and a saved layout still ask for it. */
+function smallLine() {
   return '';
 }
 /* Kept for callers. The jewelry tag no longer prints this under the JO. The client name is not a field. */
@@ -594,18 +612,18 @@ var LAYOUT_BASE = {
   jo_card: {
     price: { show: 0, x: 1, y: 1, size: 12, bold: 1, align: 'left', w: 14, wrap: 1 },
     logo: { show: 0, x: 24, y: 1 },
-    name: { show: 0, x: 1, y: 4, size: 12, bold: 1, align: 'left', w: 16, wrap: 1 },
+    name: { show: 1, x: 14.5, y: 11.2, size: 11, bold: 1, align: 'left', w: 14.2, wrap: 2 },
     type: { show: 0, x: 1, y: 7, size: 10, bold: 1, align: 'left', w: 8, wrap: 1 },
     metal: { show: 0, x: 10, y: 7, size: 10, bold: 1, align: 'center', w: 8, wrap: 1 },
     karat: { show: 0, x: 19, y: 7, size: 10, bold: 1, align: 'right', w: 8, wrap: 1 },
     fold: { show: 0, x: 1, y: 10, w: 28 },
     stones: { show: 0, x: 1, y: 11, size: 9, bold: 1, align: 'left', w: 16, wrap: 2 },
-    weight: { show: 0, x: 1, y: 16, size: 9, bold: 1, align: 'left', w: 8, wrap: 1 },
+    weight: { show: 1, x: 14.5, y: 16.2, size: 11, bold: 1, align: 'left', w: 14.2, wrap: 1 },
     jo: { show: 1, x: 14.5, y: 3.2, size: 34, bold: 1, align: 'left', w: 14.2, wrap: 1 },
     sku: { show: 0, x: 18.6, y: 13, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
     location: { show: 0, x: 18.6, y: 15, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
     qr: { show: 1, x: 1, y: 1.5, qr: 17 },
-    line: { show: 1, x: 14.5, y: 11.4, size: 12, bold: 1, align: 'left', w: 14.2, wrap: 1 }
+    line: { show: 0, x: 14.5, y: 11.4, size: 12, bold: 1, align: 'left', w: 14.2, wrap: 1 }
   }
 };
 function copyFields(src) {
@@ -670,6 +688,31 @@ function normalizeLayout(kind, saved) {
     }
     if (el.qr != null) el.qr = clampMm(src.qr != null ? src.qr : el.qr, el.qr, 2, Math.min(paper.w, paper.h));
   }
+  if (kind === 'jo_card') {
+    var keepOn = { qr: 1, jo: 1, name: 1, weight: 1 };
+    for (id in base) {
+      if (!Object.prototype.hasOwnProperty.call(base, id)) continue;
+      if (!keepOn[id]) base[id].show = 0;
+    }
+    base.qr.show = 1;
+    base.jo.show = 1;
+    base.name.show = 1;
+    base.weight.show = 1;
+    if (base.name.x < 12) {
+      base.name.x = 14.5;
+      base.name.y = 11.2;
+      base.name.w = 14.2;
+      base.name.size = 11;
+      base.name.wrap = 2;
+    }
+    if (base.weight.x < 12) {
+      base.weight.x = 14.5;
+      base.weight.y = 16.2;
+      base.weight.w = 14.2;
+      base.weight.size = 11;
+      base.weight.wrap = 1;
+    }
+  }
   return base;
 }
 /* Text for one element. The client name is not a field. */
@@ -724,6 +767,7 @@ function paintLayout(img, layout, opts, kind, bounds) {
     field = fields[i];
     el = layout[field.id];
     if (!el || !el.show) continue;
+    if (kind === 'jo_card' && field.id !== 'qr' && field.id !== 'jo' && field.id !== 'name' && field.id !== 'weight') continue;
     if (field.kind === 'logo') {
       x = px(el.x); y = px(el.y);
       blitBits(img, LOGO_ROWS, x, y);
@@ -756,6 +800,8 @@ function paintLayout(img, layout, opts, kind, bounds) {
       continue;
     }
     text = elementText(field.id, opts);
+    if (kind === 'jo_card' && field.id === 'name') text = cardName(opts);
+    if (kind === 'jo_card' && field.id === 'weight') text = cardWeight(opts);
     x = px(el.x); y = px(el.y); w = Math.max(4, px(el.w || 4));
     size = el.size | 0; wrapN = el.wrap | 0 || 1; bold = el.bold ? 1 : 0;
     block = [];
@@ -1176,7 +1222,8 @@ function render(opts) {
     var gap2 = qpix2 ? 4 : 0;
     var leftInk2 = qpix2 ? pad + quiet2 * mod2 : pad;
     var target2 = Math.max(8, box.labelW - 1 - leftInk2 - (pad + qpix2 + gap2));
-    var sub = smallLine(opts);
+    var nameText = cardName(opts);
+    var weightLine = cardWeight(opts);
     var innerH = box.labelH - pad * 2;
     var cardJo = null;
     if (jo) {
@@ -1184,36 +1231,69 @@ function render(opts) {
       joPx = cardJo.size;
       lines.push(cardJo.text);
     }
-    var subFit = null;
-    function fitSub() {
-      if (!sub || !cardJo) return null;
-      var subStart = Math.max(12, Math.min(22, joPx - 6));
-      var fit = sizeForInk(sub, cardJo.span.right, subStart, 9);
-      if (fit.size >= joPx) return null;
-      return fit;
-    }
-    subFit = fitSub();
     var guardCard = 0;
     while (jo && cardJo && guardCard < 40) {
       var jmTry = metricsOf(lines[0], joPx, 1, joTrack(joPx), JO_FAMILY);
-      var smTry = subFit ? metricsOf(subFit.text, subFit.size) : null;
-      var tallC = jmTry.ascent + jmTry.descent + (smTry ? 4 + smTry.ascent + smTry.descent : 0);
-      if (tallC <= innerH || joPx <= 16) break;
+      if (jmTry.ascent + jmTry.descent <= innerH || joPx <= 16) break;
       joPx -= 1;
       cardJo = sizeForInk(lines[0], target2, joPx, 16, JO_FAMILY);
       joPx = cardJo.size;
       lines[0] = cardJo.text;
-      subFit = fitSub();
       guardCard++;
     }
-    if (subFit) lines.push(subFit.text);
+    var nameSize = 12, weightSize = 12, nameWrap = 2, nameLines = [], weightShown = '';
+    function packFacts() {
+      nameLines = [];
+      weightShown = '';
+      if (nameText) nameLines = wrapLines(nameText, target2, nameSize, nameWrap, 1);
+      if (nameText && !nameLines.length) nameLines = [ellipsis(nameText, target2, nameSize, 1)];
+      if (weightLine) weightShown = metricsOf(weightLine, weightSize, 1).w <= target2 ? weightLine : ellipsis(weightLine, target2, weightSize, 1);
+    }
+    packFacts();
     var jm2 = jo ? metricsOf(lines[0], joPx, 1, joTrack(joPx), JO_FAMILY) : { ascent: 0, descent: 0 };
-    var sm2 = subFit ? metricsOf(subFit.text, subFit.size) : null;
-    var block2 = jm2.ascent + jm2.descent + (sm2 ? 4 + sm2.ascent + sm2.descent : 0);
+    function lineBox(text, size) {
+      var fm = metricsOf(text, size, 1);
+      return fm.ascent + fm.descent;
+    }
+    function stackH() {
+      var h = 0, parts = 0, fi;
+      if (jo) { h += jm2.ascent + jm2.descent; parts++; }
+      for (fi = 0; fi < nameLines.length; fi++) {
+        if (parts) h += 3;
+        h += lineBox(nameLines[fi], nameSize);
+        parts++;
+      }
+      if (weightShown) {
+        if (parts) h += 3;
+        h += lineBox(weightShown, weightSize);
+      }
+      return h;
+    }
+    var guardFacts = 0;
+    while (stackH() > innerH && guardFacts < 12) {
+      guardFacts++;
+      if (nameWrap > 1) { nameWrap = 1; packFacts(); continue; }
+      if (nameSize > 9) { nameSize--; packFacts(); continue; }
+      if (weightSize > 9) { weightSize--; packFacts(); continue; }
+      break;
+    }
+    var fi2;
+    for (fi2 = 0; fi2 < nameLines.length; fi2++) lines.push(nameLines[fi2]);
+    if (weightShown) lines.push(weightShown);
+    var block2 = stackH();
     var textY2 = pad + Math.max(0, Math.round((innerH - block2) / 2));
     var textX2 = x0 + pad + qpix2 + gap2;
-    if (jo) runs.push({ text: lines[0], x: textX2, y: textY2, size: joPx, bold: 1, family: JO_FAMILY, track: joTrack(joPx) });
-    if (subFit) runs.push({ text: subFit.text, x: textX2, y: textY2 + jm2.ascent + jm2.descent + 4, size: subFit.size });
+    var cursor2 = textY2;
+    if (jo) {
+      runs.push({ text: lines[0], x: textX2, y: cursor2, size: joPx, bold: 1, family: JO_FAMILY, track: joTrack(joPx) });
+      cursor2 += jm2.ascent + jm2.descent + 3;
+    }
+    for (fi2 = 0; fi2 < nameLines.length; fi2++) {
+      var nm = metricsOf(nameLines[fi2], nameSize, 1);
+      runs.push({ text: nameLines[fi2], x: textX2, y: cursor2, size: nameSize, bold: 1 });
+      cursor2 += nm.ascent + nm.descent + 3;
+    }
+    if (weightShown) runs.push({ text: weightShown, x: textX2, y: cursor2, size: weightSize, bold: 1 });
     var qrY2 = qpix2 ? Math.round((box.labelH - qpix2) / 2) : 0;
     var qrX2 = pad;
     if (mods2) {
