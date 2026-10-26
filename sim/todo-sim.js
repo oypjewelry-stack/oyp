@@ -526,7 +526,7 @@ check(adminNav.indexOf("['dashboard', 'Dashboard']") >= 0 && adminNav.indexOf("[
 ['todoAdd', 'todoUpdate', 'todoUndo', 'todoDelete'].forEach(action => {
   check(!new RegExp(action + '\\s*:').test(appSrc), action + ' is not a client read');
 });
-check(fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.js?v=6') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.css?v=7') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('dash.js?v=35'), 'the new page assets are cache-busted');
+check(fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.js?v=6') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('todo.css?v=8') && fs.readFileSync(path.join(root, 'staff/index.html'), 'utf8').includes('dash.js?v=35'), 'the new page assets are cache-busted');
 delete global.document;
 const navMod = require(path.join(root, 'nav.js'));
 const phone = navMod.menuHtml(ada, 'todo', '');

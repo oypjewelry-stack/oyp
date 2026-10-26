@@ -284,7 +284,7 @@ function ivDraw(main) {
     <p class="muted">${IV.view === 'review' ? 'Items marked REVIEW. Approve one here and it leaves this list.' : 'Every JO and finished piece. Tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     ${ivChipsHtml(esc)}
-    <input id="ivQ" class="rvq" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire">
+    ${ivQRow(esc)}
     ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
     <div class="ivfilt"><div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
@@ -477,17 +477,28 @@ function ivWire(main) {
   const $ = s => main.querySelector(s);
   const stop = e => e.stopPropagation();
   main.querySelectorAll('[data-iv]').forEach(b => b.onclick = () => { IV.view = b.dataset.iv; ivDraw(main); });
-  if ($('#ivQ')) $('#ivQ').oninput = e => { IV.q = e.target.value; const pos = e.target.selectionStart; ivDraw(main); const q = $('#ivQ'); q.focus(); q.setSelectionRange(pos, pos); };
+  if ($('#ivQ')) $('#ivQ').oninput = e => {
+    IV.q = e.target.value;
+    const pos = e.target.selectionStart;
+    ivDraw(main);
+    const q = $('#ivQ');
+    if (!q) return;
+    try { q.focus({ preventScroll: true }); } catch (err) { q.focus(); }
+    try { q.setSelectionRange(pos, pos); } catch (err) {}
+  };
   if ($('#ivQ')) $('#ivQ').onkeydown = e => {
     if (e.isComposing) return;
     if (e.key === 'Backspace' || e.key === 'Delete') { ivQReset(); return; }
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) ivQNote();
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) ivQNote(!ivSoftOpen());
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const raw = e.target.value;
-    if (!ivEdit() || !(ivQFast(raw) || ivFullJo(raw))) return;
-    IV.q = '';
+    if (!ivEdit() || !ivScanEnter(raw)) return;
+    IV.q = ivQKeep(raw);
     ivQReset();
+    try { e.target.value = IV.q; } catch (err) {}
+    ivCaretEnd(e.target);
+    try { e.target.blur(); } catch (err) {}
     ivScanCommit(raw, true);
   };
   if ($('#ivStage')) $('#ivStage').onchange = e => { IV.stage = e.target.value; if (IV.stage && IV.view !== 'all' && IV.view !== 'making') IV.view = 'all'; ivDraw(main); };
@@ -1381,24 +1392,59 @@ window.OYPInv = { renderJos: (m, u) => {
 }, renderMats: (m, u) => renderMaterials(m, u), openViewer: ivOpenViewer, paintNav: ivPaintNav,
   countOn: () => IV.view === 'count' && /^#\/jos(?:$|[/?])/.test(location.hash) };
 
-/* Handheld scanner (keyboard wedge): fast keystrokes, then Enter, while no field is focused.
-   The search box takes the same scan when it is focused: a fast wedge, or a full JO and Enter.
-   Any other Enter leaves the text as a filter.
+/* Handheld scanner (keyboard wedge). The search box stays inputmode=search so a tap can
+   bring the software keyboard up. There is no Scan/Type switch.
+   A scan is either a wedge (several keys at most 50ms apart, then Enter) or the same wedge
+   from a hardware keyboard while the software keyboard is closed. iOS does not tell the page
+   that a Bluetooth scanner is paired; a tall visualViewport is that signal. A slow word is
+   still typing, so a closed keyboard never commits on its own.
+   Enter keeps the number in the box, does not select it, and blurs the field. The next tap
+   is a normal focus. iOS decides whether that tap shows the software keyboard. While a
+   hardware scanner is connected, Safari shows its own keyboard button. A button in this
+   page cannot call that up, so this page does not draw a keyboard button.
    A sticker's QR is the JO itself (26-287 or 26-287A) or a link / prefixed text that contains one
    (jo=26-287, or a path ending in /26-287). The same read is in consign.js.
    A sticker QR is the JO with its version letter (26-287B). That scan selects the 26-287B tile.
    A scan with no letter still folds to the base. If several tiles share that base, the newest letter is the one selected. */
-const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_MAX = 400;
-let scanBuf = '', scanAt = 0, qLastAt = 0, qBurstLen = 0;
-function ivQNote() {
+const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_HARD_ENTER = 400, SCAN_MAX = 400;
+let scanBuf = '', scanAt = 0, scanHard = false, qLastAt = 0, qBurstLen = 0, qHard = false;
+function ivSoftOpen() {
+  const vv = window.visualViewport;
+  if (!vv) return false;
+  const h = window.innerHeight || 0;
+  if (!h) return false;
+  return vv.height < h * 0.75;
+}
+function ivQForgetMode() {
+  try { localStorage.removeItem('oypIvQMode'); } catch (e) {}
+}
+function ivQKeep(raw) {
+  const p = joParts(raw);
+  return p ? p.base + (p.letter || '') : String(raw || '');
+}
+function ivQRow(esc) {
+  ivQForgetMode();
+  return `<div class="ivqrow"><input id="ivQ" class="rvq" inputmode="search" enterkeyhint="search" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire"></div>`;
+}
+function ivQNote(hard) {
   const now = Date.now();
-  qBurstLen = !qLastAt || now - qLastAt > SCAN_GAP ? 1 : qBurstLen + 1;
+  if (!qLastAt || now - qLastAt > SCAN_GAP) { qBurstLen = 1; qHard = !!hard; }
+  else { qBurstLen += 1; if (hard) qHard = true; }
   qLastAt = now;
 }
-function ivQReset() { qLastAt = 0; qBurstLen = 0; }
+function ivQReset() { qLastAt = 0; qBurstLen = 0; qHard = false; }
 function ivQFast(raw) {
   raw = String(raw || '');
   return raw.length >= 5 && qBurstLen === raw.length && !!qLastAt && Date.now() - qLastAt <= SCAN_ENTER;
+}
+function ivHardwareBurst(raw) {
+  raw = String(raw || '');
+  // Same 50ms wedge, but the scanner's Enter may lag. Only when this burst
+  // arrived while the software keyboard was closed.
+  return !ivSoftOpen() && qHard && raw.length >= 5 && qBurstLen === raw.length && !!qLastAt && Date.now() - qLastAt <= SCAN_HARD_ENTER;
+}
+function ivScanEnter(raw) {
+  return ivQFast(raw) || ivFullJo(raw) || ivHardwareBurst(raw);
 }
 function ivFullJo(raw) {
   const s = String(raw || '').trim();
@@ -1459,7 +1505,19 @@ function ivFindScan(p) {
 function ivById(id) { return id ? ((IV.r.jobs || []).find(j => j.jo === id) || ivFindBase(id)) : null; }
 function ivScanOn() { return !!(IV.r && ivEdit() && IV.view !== 'count' && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
-function ivRefocus(main) { const s = main.querySelector('#ivQ'); if (s) try { s.focus({ preventScroll: true }); } catch (e) { s.focus(); } }
+function ivCaretEnd(el) {
+  if (!el || typeof el.setSelectionRange !== 'function') return;
+  const n = String(el.value || '').length;
+  try { el.setSelectionRange(n, n); } catch (e) {}
+}
+function ivReleaseSearch(main) {
+  const box = main && main.querySelector('#ivQ');
+  if (!box) return;
+  // Drop a stuck iOS focus zoom and leave the field alone. The next tap is a real focus,
+  // which is what can bring the software keyboard back. Do not focus it from here.
+  ivCaretEnd(box);
+  try { box.blur(); } catch (e) {}
+}
 function ivFlash(jo) {
   const grid = document.getElementById('ivGrid');
   if (grid) {
@@ -1477,7 +1535,7 @@ function ivTake(main, job, base, fromBox) {
   IV.offer = ''; IV.sel.add(job.jo); IV.anchor = job.jo; IV.picking = true;
   IV.scanned = [job.jo].concat(IV.scanned.filter(id => id !== job.jo));
   window.OYP.toast(already ? 'already selected' : base + ' selected (' + IV.sel.size + ')');
-  ivDraw(main); if (fromBox) ivRefocus(main); ivFlash(job.jo);
+  ivDraw(main); if (fromBox) ivReleaseSearch(main); ivFlash(job.jo);
 }
 function ivScanCommit(raw, fromBox) {
   const main = document.getElementById('main');
@@ -1489,14 +1547,14 @@ function ivScanCommit(raw, fromBox) {
   if (!job) {
     const had = IV.offer; IV.offer = '';
     window.OYP.toast('JO ' + (label || '—') + ' not in Inventory');
-    if (had) ivDraw(main);
-    if (fromBox) ivRefocus(main);
+    if (had || IV.q) ivDraw(main);
+    if (fromBox) ivReleaseSearch(main);
     return;
   }
   if (!ivShown().some(j => j.jo === job.jo)) {
     IV.offer = job.jo;
     window.OYP.toast('JO ' + job.jo + ' is hidden by a filter');
-    ivDraw(main); if (fromBox) ivRefocus(main);
+    ivDraw(main); if (fromBox) ivReleaseSearch(main);
     return;
   }
   ivTake(main, job, job.jo, fromBox);
@@ -1517,18 +1575,27 @@ window.addEventListener('resize', () => {
 });
 document.addEventListener('keydown', e => {
   if (!ivScanOn() || ivField(document.activeElement) || e.isComposing) return;
+  const hard = !ivSoftOpen();
   if (e.key === 'Enter') {
-    const raw = scanBuf, fast = !!(raw && Date.now() - scanAt <= SCAN_ENTER);
+    const raw = scanBuf;
+    const dt = raw ? Date.now() - scanAt : Infinity;
+    const fast = dt <= SCAN_ENTER;
+    const hardware = hard && scanHard && raw.length >= 5 && dt <= SCAN_HARD_ENTER;
+    const jo = ivFullJo(raw);
     scanBuf = '';
-    if (!fast) return;
+    scanHard = false;
+    if (!(fast || hardware || jo)) return;
     e.preventDefault(); e.stopPropagation();
+    IV.q = ivQKeep(raw);
+    ivQReset();
     ivScanCommit(raw, false);
     return;
   }
   if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
   const now = Date.now();
-  if (scanBuf && now - scanAt > SCAN_GAP) scanBuf = '';
+  if (scanBuf && now - scanAt > SCAN_GAP) { scanBuf = ''; scanHard = false; }
   scanBuf += e.key; scanAt = now;
+  if (hard) scanHard = true;
   if (scanBuf.length > SCAN_MAX) scanBuf = scanBuf.slice(-SCAN_MAX);
 }, true);
 })();

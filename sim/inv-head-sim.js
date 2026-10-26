@@ -21,13 +21,13 @@ const index = read('staff/index.html');
 const head = inv.slice(inv.indexOf('main.innerHTML = `<div class="iv'), inv.indexOf('function ivCard'));
 eq(head.includes('class="ivfilt"') && head.includes('class="ivfiltacts"') && head.includes('id="ivChoose"'), 'Select lives in the filter actions');
 eq(head.includes('<span class="dheadacts"><span class="lab">') && !head.includes('dheadacts"><span class="lab">${esc(plural(L.length, \'item\'))}</span><button'), 'the title row keeps the count and does not keep Select');
-eq(head.indexOf('class="ivchips"') < head.indexOf('id="ivQ"') && head.indexOf('id="ivQ"') < head.indexOf('class="ivfilt"'), 'tabs and search stay above the filters');
+eq(head.indexOf('class="ivchips"') < head.indexOf('${ivQRow(esc)}') && head.indexOf('${ivQRow(esc)}') < head.indexOf('class="ivfilt"') && inv.includes('id="ivQ"'), 'tabs and search stay above the filters');
 eq(app.includes("main.querySelector('.ivfiltacts')") && app.includes('slot.appendChild(row)') && app.includes('main.insertBefore(row, main.firstChild)'), 'Edit layout moves into Inventory and stays at the top of every other page');
 eq(app.includes("btn.textContent = on ? 'Done' : 'Edit layout'") && app.includes("toast('Layout saved')"), 'Edit layout still toggles and saves');
 eq(inv.includes("if ($('#ivChoose')) $('#ivChoose').onclick") && inv.includes('IV.choose = !IV.choose') && inv.includes('class="ivbar"'), 'Select still enters select mode and the toolbar stays');
 eq(css.includes('.ivfilt{display:flex;align-items:flex-end') && css.includes('.ivfilt .ivsels{flex-wrap:nowrap}') && css.includes('@media (max-width:760px){.ivfilt{flex-direction:column;align-items:stretch}'), 'desktop keeps one filter line and mobile stacks the buttons under it');
-eq(index.includes('app.css?v=66') && index.includes('app.js?v=43') && index.includes('inv.js?v=33'), 'changed files are cache-busted');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=66'), 'the customer page stays on app.css?v=29');
+eq(index.includes('app.css?v=68') && index.includes('app.js?v=43') && index.includes('inv.js?v=35'), 'changed files are cache-busted');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=68'), 'the customer page stays on app.css?v=29');
 
 const jobs = [];
 for (let i = 0; i < 18; i++) {
