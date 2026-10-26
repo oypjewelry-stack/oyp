@@ -1,7 +1,8 @@
 /* Niimbot sticker bitmaps. 203 dpi, print direction "top": canvas width is the printhead,
    canvas height is the feed. The 30 mm label is centred. The thermal head still receives a
    1-bit raster. On screen, a jewelry tag's words are HTML text. SVG is only the QR
-   modules and the logo bits. Inter Bold (OFL) is the face.
+   modules and the logo bits. Inter Bold (OFL) is the face for the other words.
+   The JO number is Liberation Sans Bold, an Arial Bold with an open 6, 8, and 0.
    The client name is never read. JO card: 30×20 (240×160), QR on the left, tall.
    Jewelry tag: T30*25+45 cable label. The NIIMBOT app designs the flag upright,
    25 mm wide by 30 mm high, with the 45 mm tail to the right of that picture.
@@ -35,12 +36,18 @@ var SPEC_MIN = 14;
 var JO_MAX = 40;
 var SCALE = 4;
 var FAMILY = 'OYPLabel, Inter, "Helvetica Neue", Arial, sans-serif';
-/* Small jewelry lines only (stone, JO, SKU, location, weight). Inter Bold is the
-   only face shipped; a requested Black would be a synthetic bold and look muddy.
+/* JO number only. Liberation Sans Bold has the open counters of Arial Bold,
+   so a 6 does not close into an 8 or a 0 the way Inter Bold does at this pitch. */
+var JO_FAMILY = 'OYPJo, "Liberation Sans", Arial, sans-serif';
+/* Small jewelry lines (stone, SKU, location, weight). Inter Bold is that face.
    A sub-pixel stroke under the fill, a little letter-spacing, and a higher
    coverage cut keep the 1-bit stems solid instead of a gray halo. Price, the
-   description, and the metal row stay on the lighter pass. */
+   description, and the metal row stay on the lighter pass. The JO number does
+   not take that stroke: the stroke closes the 6. */
 var CRISP_TRACK = 0.55;
+/* Wider than the crisp track, and it scales with the em so a big sticker number
+   and a smaller tag number stay equally open. */
+function joTrack(size) { return Math.round((+size || 0) * 4) / 100; }
 var CRISP_STROKE = 0.8;
 var CRISP_THRESH = 9;
 
@@ -302,14 +309,15 @@ function drawCentre(img, x, y, w, h) {
   img.rect(cx - 1, cy - 1, 3, 3);
 }
 
-function fontUrl() {
-  if (typeof document === 'undefined') return '';
+function fontUrl(file) {
+  var rel = file || 'vendor/Inter-Bold.woff2?v=1';
+  if (typeof document === 'undefined') return rel;
   var tags = document.getElementsByTagName('script'), i, src;
   for (i = tags.length - 1; i >= 0; i--) {
     src = tags[i].src || '';
-    if (/print-label\.js(\?|$)/.test(src)) return src.replace(/[^/]*$/, '') + 'vendor/Inter-Bold.woff2?v=1';
+    if (/print-label\.js(\?|$)/.test(src)) return src.replace(/[^/]*$/, '') + rel;
   }
-  return 'vendor/Inter-Bold.woff2?v=1';
+  return rel;
 }
 function ensureNodeFont() {
   if (root.__oypFontReady || typeof require !== 'function') return;
@@ -319,6 +327,7 @@ function ensureNodeFont() {
   if (!napi) return;
   var path = require('path');
   napi.GlobalFonts.registerFromPath(path.join(__dirname, 'vendor', 'Inter-Bold.ttf'), 'OYPLabel');
+  napi.GlobalFonts.registerFromPath(path.join(__dirname, 'vendor', 'LiberationSans-Bold.ttf'), 'OYPJo');
   root.__oypCreateCanvas = napi.createCanvas;
   root.__oypFontReady = true;
 }
@@ -337,9 +346,9 @@ function measureCtx() {
   if (!scratch) scratch = makeCanvas(8, 8).getContext('2d');
   return scratch;
 }
-function fontCss(size, bold) {
+function fontCss(size, bold, family) {
   var weight = (bold === 0 || bold === false) ? '400' : '700';
-  return weight + ' ' + (size * SCALE) + 'px ' + FAMILY;
+  return weight + ' ' + (size * SCALE) + 'px ' + (family || FAMILY);
 }
 /* The scratch context is reused, so letter-spacing is set on every measure.
    A crisp stroke is centered on the outline; its width is added so a tracked
@@ -348,9 +357,9 @@ function setTrack(ctx, track) {
   var value = ((+track || 0) * SCALE) + 'px';
   try { ctx.letterSpacing = value; } catch (e) {}
 }
-function metricsOf(text, size, bold, track) {
+function metricsOf(text, size, bold, track, family) {
   var ctx = measureCtx();
-  ctx.font = fontCss(size, bold);
+  ctx.font = fontCss(size, bold, family);
   setTrack(ctx, track);
   var m = ctx.measureText(text || 'H');
   return {
@@ -364,13 +373,13 @@ function sizeThatFits(text, maxW, start, min) {
   while (size > min && metricsOf(text, size).w > maxW) size -= 1;
   return metricsOf(text, size).w <= maxW ? size : 0;
 }
-function ellipsis(text, maxW, size, bold, track) {
-  if (metricsOf(text, size, bold, track).w <= maxW) return text;
+function ellipsis(text, maxW, size, bold, track, family) {
+  if (metricsOf(text, size, bold, track, family).w <= maxW) return text;
   var cut = text;
-  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold, track).w > maxW) cut = cut.slice(0, -1);
+  while (cut.length > 1 && metricsOf(cut.replace(/\s+$/, '') + '...', size, bold, track, family).w > maxW) cut = cut.slice(0, -1);
   cut = cut.replace(/\s+$/, '');
   var out = (cut || text.charAt(0)) + '...';
-  while (out.length > 4 && metricsOf(out, size, bold, track).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
+  while (out.length > 4 && metricsOf(out, size, bold, track, family).w > maxW) out = out.slice(0, -4).replace(/\s+$/, '') + '...';
   return out;
 }
 /* One size for every spec line. Shrink until the longest fits, then ellipsis. */
@@ -385,9 +394,9 @@ function fitLine(text, maxW, start, min) {
   return { text: ellipsis(text, maxW, min), size: min };
 }
 /* Right edge of the ink, in label pixels, for text drawn at x = 0. Same 4× threshold as stampText. */
-function inkSpan(text, size) {
-  var m = metricsOf(text, size);
-  var tw = Math.max(2, Math.ceil(m.w + 4));
+function inkSpan(text, size, track, family) {
+  var m = metricsOf(text, size, family ? 1 : undefined, track, family);
+  var tw = Math.max(2, Math.ceil(m.w + 8));
   var th = Math.max(2, Math.ceil(m.ascent + m.descent + 4));
   var canvas = makeCanvas(tw * SCALE, th * SCALE);
   var ctx = canvas.getContext('2d');
@@ -396,7 +405,8 @@ function inkSpan(text, size) {
   ctx.fillStyle = '#000000';
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
-  ctx.font = fontCss(size);
+  ctx.font = fontCss(size, family ? 1 : undefined, family);
+  setTrack(ctx, track);
   var ascent = ctx.measureText(text).actualBoundingBoxAscent || size * SCALE * 0.72;
   ctx.fillText(text, 0, Math.round(ascent));
   var data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -412,7 +422,8 @@ function inkSpan(text, size) {
   return { right: maxX < 0 ? 0 : maxX };
 }
 /* Largest size whose ink ends on targetRight, at most 1 px short and never past it. */
-function sizeForInk(text, targetRight, start, min) {
+function sizeForInk(text, targetRight, start, min, face) {
+  function spanAt(sz) { return inkSpan(text, sz, face ? joTrack(sz) : 0, face || ''); }
   var lo, hi, mid, span, best, guard;
   if (!text) return null;
   if (start < min) start = min;
@@ -423,22 +434,22 @@ function sizeForInk(text, targetRight, start, min) {
   while (hi - lo > 0.05 && guard < 28) {
     guard++;
     mid = (lo + hi) / 2;
-    span = inkSpan(text, mid);
+    span = spanAt(mid);
     if (span.right > targetRight) hi = mid;
     else { best = { size: mid, span: span }; lo = mid; }
   }
   if (!best) {
-    span = inkSpan(text, min);
+    span = spanAt(min);
     if (span.right > targetRight) {
-      text = ellipsis(text, Math.max(8, targetRight), min);
-      span = inkSpan(text, min);
+      text = ellipsis(text, Math.max(8, targetRight), min, face ? 1 : undefined, face ? joTrack(min) : 0, face || '');
+      span = spanAt(min);
     }
     return { text: text, size: min, span: span };
   }
   span = best.span;
   while (span.right < targetRight - 1 && best.size + 0.1 <= start + 0.001) {
     mid = Math.round((best.size + 0.1) * 1000) / 1000;
-    span = inkSpan(text, mid);
+    span = spanAt(mid);
     if (span.right > targetRight) break;
     best = { size: mid, span: span };
   }
@@ -456,8 +467,10 @@ function stampText(img, runs, box) {
   ctx.fillStyle = '#000000';
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
+  setTrack(ctx, 0);
   runs.forEach(function (run) {
-    ctx.font = fontCss(run.size, run.bold);
+    ctx.font = fontCss(run.size, run.bold, run.family);
+    setTrack(ctx, run.track);
     var m = ctx.measureText(run.text);
     var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
     ctx.fillText(run.text, Math.round((run.x - box.offsetX) * SCALE), Math.round(run.y * SCALE + ascent));
@@ -499,7 +512,7 @@ function stampLocal(img, runs) {
     setTrack(ctx, 0);
     runs.forEach(function (run) {
       if (!!run.crisp !== crisp) return;
-      ctx.font = fontCss(run.size, run.bold);
+      ctx.font = fontCss(run.size, run.bold, run.family);
       setTrack(ctx, run.track);
       var m = ctx.measureText(run.text);
       var ascent = m.actualBoundingBoxAscent || run.size * SCALE * 0.72;
@@ -512,7 +525,8 @@ function stampLocal(img, runs) {
           ascent: fontUp / SCALE,
           size: run.size,
           track: run.track || 0,
-          weight: (run.bold === 0 || run.bold === false) ? 400 : 700
+          weight: (run.bold === 0 || run.bold === false) ? 400 : 700,
+          family: run.family || ''
         });
       }
       var x = Math.round(run.x * SCALE);
@@ -587,11 +601,11 @@ var LAYOUT_BASE = {
     fold: { show: 0, x: 1, y: 10, w: 28 },
     stones: { show: 0, x: 1, y: 11, size: 9, bold: 1, align: 'left', w: 16, wrap: 2 },
     weight: { show: 0, x: 1, y: 16, size: 9, bold: 1, align: 'left', w: 8, wrap: 1 },
-    jo: { show: 1, x: 18.6, y: 4.2, size: 22, bold: 1, align: 'left', w: 10.4, wrap: 1 },
+    jo: { show: 1, x: 14.5, y: 3.2, size: 34, bold: 1, align: 'left', w: 14.2, wrap: 1 },
     sku: { show: 0, x: 18.6, y: 13, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
     location: { show: 0, x: 18.6, y: 15, size: 10, bold: 1, align: 'left', w: 10, wrap: 1 },
     qr: { show: 1, x: 1, y: 1.5, qr: 17 },
-    line: { show: 1, x: 18.6, y: 10.2, size: 12, bold: 1, align: 'left', w: 10.4, wrap: 1 }
+    line: { show: 1, x: 14.5, y: 11.4, size: 12, bold: 1, align: 'left', w: 14.2, wrap: 1 }
   }
 };
 function copyFields(src) {
@@ -746,7 +760,29 @@ function paintLayout(img, layout, opts, kind, bounds) {
     size = el.size | 0; wrapN = el.wrap | 0 || 1; bold = el.bold ? 1 : 0;
     block = [];
     var track = 0;
-    if (text && kind === 'jewelry_tag' && (field.id === 'stones' || field.id === 'jo' || field.id === 'sku' || field.id === 'location' || field.id === 'weight')) {
+    var family = '';
+    if (text && field.id === 'jo') {
+      /* Plain fill in the open face. No stroke: a stroke fills the 6.
+         The size shrinks until the whole number sits in the field. */
+      family = JO_FAMILY;
+      bold = 1;
+      var joMin = 12, joGuard = 0, joTall = 0, joMaxH = 0, joNext;
+      if (kind === 'jewelry_tag') {
+        joNext = layout.sku;
+        joMaxH = (joNext && joNext.show) ? px(joNext.y) - y - 2 : 0;
+        if (joMaxH < 0) joMaxH = 0;
+      }
+      while (size > joMin && metricsOf(text, size, bold, joTrack(size), family).w > w) size--;
+      while (joGuard++ < 24) {
+        track = joTrack(size);
+        block = [metricsOf(text, size, bold, track, family).w <= w ? text : ellipsis(text, w, size, bold, track, family)];
+        joTall = Math.ceil(metricsOf(block[0], size, bold, track, family).ascent + metricsOf(block[0], size, bold, track, family).descent);
+        if (!joMaxH || joTall <= joMaxH || size <= joMin) break;
+        if (size > joMin) { size--; continue; }
+        break;
+      }
+      track = joTrack(size);
+    } else if (text && kind === 'jewelry_tag' && (field.id === 'stones' || field.id === 'sku' || field.id === 'location' || field.id === 'weight')) {
       track = CRISP_TRACK;
       var minSize = field.id === 'stones' ? 11 : 10;
       var maxH = 0, fitGuard = 0, fitTall;
@@ -780,13 +816,13 @@ function paintLayout(img, layout, opts, kind, bounds) {
     }
     cursor = y;
     for (li = 0; li < block.length; li++) {
-      m = metricsOf(block[li], size, bold, track);
+      m = metricsOf(block[li], size, bold, track, family);
       tw = m.w;
       if (el.align === 'right') tx = x + w - tw;
       else if (el.align === 'center') tx = x + (w - tw) / 2;
       else tx = x;
       lineH = Math.ceil(m.ascent + m.descent);
-      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold, crisp: track ? 1 : 0, track: track });
+      runs.push({ text: block[li], x: Math.round(tx), y: cursor, size: size, bold: bold, crisp: family ? 0 : (track ? 1 : 0), track: track, family: family });
       lines.push(block[li]);
       cursor += lineH + 2;
     }
@@ -940,13 +976,14 @@ function drawJewelry(img, box, opts) {
     });
   }
 
-  /* Lower flap. Stone starts at 16 px (2.0 mm, 5.7 pt). JO, location, and weight
-     start at 14 px (1.8 mm, 5.0 pt). The QR uses 3 px modules, about 9.4 mm on a
-     short JO, and stops 2 mm short of the flag edge that feeds into the tail.
+  /* Lower flap. Stone starts at 16 px (2.0 mm, 5.7 pt). The JO starts larger
+     than the SKU, in the open face, and shrinks only to stay in the column.
+     Location and weight start at 14 px (1.8 mm, 5.0 pt). The QR uses 3 px modules,
+     about 9.4 mm on a short JO, and stops 2 mm short of the flag edge that feeds into the tail.
      That edge is the bottom of the printed code. A line shrinks only when the
      full words would leave the flag or cover the QR. Price, the description,
      the metal row, and the logo stay as they are. */
-  var STONE_PX = 16, STONE_MIN = 11, META_PX = 14, META_MIN = 10;
+  var STONE_PX = 16, STONE_MIN = 11, META_PX = 14, META_MIN = 10, JO_TAG_PX = 22;
   var mods = jo ? makeQr(jo) : null;
   var mod = 3, quiet = 2;
   var qpix = mods ? qrSize(mods, mod, quiet) : 0;
@@ -979,13 +1016,25 @@ function drawJewelry(img, box, opts) {
     }
     return { lines: [ellipsis(text, colW, META_MIN, undefined, track)], size: META_MIN };
   }
+  function fitJoLine(text) {
+    var size = JO_TAG_PX, track = joTrack(size);
+    while (size > 12 && metricsOf(text, size, 1, joTrack(size), JO_FAMILY).w > colW) size--;
+    track = joTrack(size);
+    if (metricsOf(text, size, 1, track, JO_FAMILY).w <= colW) return { lines: [text], size: size, track: track };
+    return { lines: [ellipsis(text, colW, 12, 1, joTrack(12), JO_FAMILY)], size: 12, track: joTrack(12) };
+  }
+  var joLine = jo ? fitJoLine(jo) : null;
   var meta = [];
-  if (jo) meta.push(fitMeta(jo, 1));
   if (sku) meta.push(fitMeta(sku, 1));
   if (loc) meta.push(fitMeta(loc, 2));
   if (weight) meta.push(fitMeta(weight, 1));
-  joPx = jo ? meta[0].size : 0;
+  joPx = joLine ? joLine.size : 0;
   var metaGap = 2, metaH = 0, mi, mj;
+  if (joLine) {
+    for (mj = 0; mj < joLine.lines.length; mj++) {
+      metaH += Math.ceil(metricsOf(joLine.lines[mj], joLine.size, 1, joLine.track, JO_FAMILY).ascent + metricsOf(joLine.lines[mj], joLine.size, 1, joLine.track, JO_FAMILY).descent) + (metaH ? metaGap : 0);
+    }
+  }
   for (mi = 0; mi < meta.length; mi++) {
     for (mj = 0; mj < meta[mi].lines.length; mj++) {
       metaH += Math.ceil(metricsOf(meta[mi].lines[mj], meta[mi].size, undefined, CRISP_TRACK).ascent + metricsOf(meta[mi].lines[mj], meta[mi].size, undefined, CRISP_TRACK).descent) + (metaH ? metaGap : 0);
@@ -1020,6 +1069,14 @@ function drawJewelry(img, box, opts) {
   if (metaTop + metaH > bottom) metaTop = bottom - metaH;
   if (metaTop < clusterTop) metaTop = clusterTop;
   var metaY = metaTop;
+  if (joLine) {
+    joLine.lines.forEach(function (t) {
+      var m = metricsOf(t, joLine.size, 1, joLine.track, JO_FAMILY);
+      runs.push({ text: t, x: left, y: metaY, size: joLine.size, bold: 1, track: joLine.track, family: JO_FAMILY });
+      lines.push(t);
+      metaY += Math.ceil(m.ascent + m.descent) + metaGap;
+    });
+  }
   meta.forEach(function (row) {
     row.lines.forEach(function (t) {
       var m = metricsOf(t, row.size, undefined, CRISP_TRACK);
@@ -1040,12 +1097,18 @@ function drawJewelry(img, box, opts) {
   return { lines: lines, specPx: specPx, joPx: joPx, qr: jo, qrBox: qrBox, paper: paper };
 }
 
-var ready = (function () {
-  if (typeof document === 'undefined' || typeof FontFace === 'undefined') return Promise.resolve(false);
+function loadFace(name, url) {
   try {
-    var face = new FontFace('OYPLabel', 'url(' + fontUrl() + ')', { weight: '700', style: 'normal' });
+    var face = new FontFace(name, 'url(' + url + ')', { weight: '700', style: 'normal' });
     return face.load().then(function (f) { document.fonts.add(f); return true; }).catch(function () { return false; });
   } catch (e) { return Promise.resolve(false); }
+}
+var ready = (function () {
+  if (typeof document === 'undefined' || typeof FontFace === 'undefined') return Promise.resolve(false);
+  return Promise.all([
+    loadFace('OYPLabel', fontUrl()),
+    loadFace('OYPJo', fontUrl('vendor/LiberationSans-Bold.woff2?v=1'))
+  ]).then(function (ok) { return !!(ok[0] && ok[1]); });
 })();
 
 function render(opts) {
@@ -1117,7 +1180,7 @@ function render(opts) {
     var innerH = box.labelH - pad * 2;
     var cardJo = null;
     if (jo) {
-      cardJo = sizeForInk(jo, target2, 72, 12); // a 7-character JO plus a letter (26-1234A) is wider than the old 16 px floor
+      cardJo = sizeForInk(jo, target2, 72, 12, JO_FAMILY); // a 7-character JO plus a letter (26-1234A) is wider than the old 16 px floor
       joPx = cardJo.size;
       lines.push(cardJo.text);
     }
@@ -1132,24 +1195,24 @@ function render(opts) {
     subFit = fitSub();
     var guardCard = 0;
     while (jo && cardJo && guardCard < 40) {
-      var jmTry = metricsOf(lines[0], joPx);
+      var jmTry = metricsOf(lines[0], joPx, 1, joTrack(joPx), JO_FAMILY);
       var smTry = subFit ? metricsOf(subFit.text, subFit.size) : null;
       var tallC = jmTry.ascent + jmTry.descent + (smTry ? 4 + smTry.ascent + smTry.descent : 0);
       if (tallC <= innerH || joPx <= 16) break;
       joPx -= 1;
-      cardJo = sizeForInk(lines[0], target2, joPx, 16);
+      cardJo = sizeForInk(lines[0], target2, joPx, 16, JO_FAMILY);
       joPx = cardJo.size;
       lines[0] = cardJo.text;
       subFit = fitSub();
       guardCard++;
     }
     if (subFit) lines.push(subFit.text);
-    var jm2 = jo ? metricsOf(lines[0], joPx) : { ascent: 0, descent: 0 };
+    var jm2 = jo ? metricsOf(lines[0], joPx, 1, joTrack(joPx), JO_FAMILY) : { ascent: 0, descent: 0 };
     var sm2 = subFit ? metricsOf(subFit.text, subFit.size) : null;
     var block2 = jm2.ascent + jm2.descent + (sm2 ? 4 + sm2.ascent + sm2.descent : 0);
     var textY2 = pad + Math.max(0, Math.round((innerH - block2) / 2));
     var textX2 = x0 + pad + qpix2 + gap2;
-    if (jo) runs.push({ text: lines[0], x: textX2, y: textY2, size: joPx });
+    if (jo) runs.push({ text: lines[0], x: textX2, y: textY2, size: joPx, bold: 1, family: JO_FAMILY, track: joTrack(joPx) });
     if (subFit) runs.push({ text: subFit.text, x: textX2, y: textY2 + jm2.ascent + jm2.descent + 4, size: subFit.size });
     var qrY2 = qpix2 ? Math.round((box.labelH - qpix2) / 2) : 0;
     var qrX2 = pad;

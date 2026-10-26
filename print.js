@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 37;
+var PRINT_JS = 38;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -901,6 +901,7 @@ function buildTag(scene, className) {
       word.style.top = tagPct(t.y - ascent, scene.height);
       word.style.fontSize = tagCqw(t.size, scene.width);
       word.style.fontWeight = String(t.weight || 700);
+      if (t.family) word.style.fontFamily = t.family;
       if (t.track) word.style.letterSpacing = tagCqw(t.track, scene.width);
     }
     word.appendChild(tagTextNode(t.text));

@@ -143,7 +143,7 @@ const noPrice = L.render({
 });
 eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
 const readTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 18500, name: 'Oval sapphire ring', item_type: 'Ring', metal: 'Gold', karat: '18K', stones: 'Sapphire', weight: '20', jo: '26-287', sku: '18-498', location: 'Showroom' });
-eq(readTag.specPx === 16 && readTag.joPx === 14 && readTag.qrBox && readTag.qrBox.size >= L.px(9) && readTag.qrBox.size <= L.px(10) && readTag.lines.indexOf('Sapphire') >= 0 && readTag.lines.indexOf('26-287') >= 0 && readTag.lines.indexOf('Showroom') >= 0 && readTag.lines.indexOf('20g') >= 0 && readTag.lines.indexOf('₱18,500.00') >= 0 && readTag.lines.indexOf('Oval sapphire ring') >= 0 && readTag.lines.indexOf('GOLD') >= 0 && decode(readTag) === '26-287', 'a short stone, JO, location, and weight print larger, and the price, description, and metal stay');
+eq(readTag.specPx === 16 && readTag.joPx === 22 && readTag.qrBox && readTag.qrBox.size >= L.px(9) && readTag.qrBox.size <= L.px(10) && readTag.lines.indexOf('Sapphire') >= 0 && readTag.lines.indexOf('26-287') >= 0 && readTag.lines.indexOf('Showroom') >= 0 && readTag.lines.indexOf('20g') >= 0 && readTag.lines.indexOf('₱18,500.00') >= 0 && readTag.lines.indexOf('Oval sapphire ring') >= 0 && readTag.lines.indexOf('GOLD') >= 0 && decode(readTag) === '26-287', 'a short stone, JO, location, and weight print larger, and the price, description, and metal stay');
 function paperGray(img) {
   let gray = 0;
   const d = img.paper || [];
@@ -169,7 +169,7 @@ eq(tagScene.width === 560 && tagScene.height === 240 && sceneWords.indexOf('Sapp
 const foldGone = !tagScene.rects.some(r => r.role === 'fold');
 const wordAt = {
   '₱18,500.00': [8, 22.75, 17], 'Oval sapphire ring': [8, 44.5, 15], RING: [8, 111, 12], GOLD: [83, 111, 12], '18K': [170, 111, 12],
-  Sapphire: [8, 140.5, 16], '26-287': [8, 178.5, 14], '18-498': [8, 191.5, 14], Showroom: [8, 204.5, 14], '20g': [8, 217.5, 14]
+  Sapphire: [8, 140.5, 16], '26-287': [8, 181.5, 22], '18-498': [8, 194.5, 14], Showroom: [8, 207.5, 14], '20g': [8, 220.5, 14]
 };
 const unmoved = tagScene.texts.every(t => {
   const at = wordAt[t.text];
@@ -190,7 +190,7 @@ eq(qrRects.length > 20 && qrRects.every(function (r) { return r.w === r.h && r.w
 eq(fringe(crispPrev) * 20 < fringe(softPrev), 'a jewelry preview stays nearest-neighbour unless smoothing is requested');
 const longTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 125000, name: 'Oval sapphire cluster ring with a hidden gallery and a two-line description', item_type: 'Necklace', metal: 'Yellow gold', karat: '18KWG', stones: 'Oval sapphire 2.40ct with tapered baguette shoulders and a hidden halo', weight: '12345', jo: '26-1234A', sku: 'SKU-998877', location: 'Philippine Showroom Vault' });
 const longLoc = longTag.lines.filter(s => /Philippine|Showroom|Vault/.test(s));
-eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longLoc.length === 2 && longLoc.join(' ') === 'Philippine Showroom Vault' && longLoc.every(s => s.indexOf('...') < 0) && longTag.joPx === 14 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
+eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longLoc.length === 2 && longLoc.join(' ') === 'Philippine Showroom Vault' && longLoc.every(s => s.indexOf('...') < 0) && longTag.joPx === 20 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
 function outsideFlaps(img) {
   const rects = L.flapRects(img);
   for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
@@ -359,8 +359,9 @@ letterJos.forEach(jo => {
   fs.writeFileSync(path.join(outDir, 'b1-jewelry-tag-' + jo + '.png'), png(tagImg));
 });
 const px287 = letterImgs['26-287'].card.joPx, pxB = letterImgs['26-287B'].card.joPx, pxA = letterImgs['26-1234A'].card.joPx, pxShort = letterImgs['11-520'].card.joPx;
-eq(pxShort > px287 && px287 > pxB && pxB > pxA && pxA >= 16 && px287 > 24 && px287 < 40, 'a JO card grows into the width beside the QR, and a longer JO shrinks');
+eq(Math.abs(pxShort - px287) < 0.5 && px287 > pxB && pxB > pxA && pxA >= 16 && px287 > 32 && px287 < 42, 'a JO card fills the width beside the QR, and a longer JO shrinks');
 eq(letterImgs['26-1234A'].tag.lines.indexOf('26-1234A') >= 0 && letterImgs['26-287'].tag.lines.indexOf('26-287') >= 0 && letterImgs['26-1234A'].tag.joPx > 0 && letterImgs['26-1234A'].tag.joPx <= letterImgs['26-287'].tag.joPx, 'a jewelry tag keeps the whole JO, and a longer JO does not grow');
+eq(letterImgs['26-287'].card.qrBox.size === 87 && letterImgs['26-287'].tag.qrBox.size === 75 && read('print-label.js').includes('LiberationSans-Bold.ttf') && read('print-label.js').includes('JO_FAMILY') && read('print.js').includes('word.style.fontFamily = t.family'), 'the open JO face does not shrink either QR');
 const base = L.render(Object.assign({ model: 'B31' }, card));
 const moved = L.render(Object.assign({ model: 'B31', shiftX: L.px(0.5), shiftY: L.px(-1) }, card));
 eq(moved.offsetX === base.offsetX + L.px(0.5) && moved.qrBox.y === base.qrBox.y - L.px(1), 'a saved offset moves the JO card on the head');
@@ -498,9 +499,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=37') && index.includes('print-label.js?v=21') && index.includes('nav.js?v=77') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=68') && index.includes('settings.css?v=12') && index.includes('inv.js?v=35') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=21') && read('nav.js').includes('print.js?v=37') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=37') && read('staff/print-test.html').includes('print-label.js?v=21') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=77') && read('staff/print-test.html').includes('app.css?v=68'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=38') && index.includes('print-label.js?v=22') && index.includes('nav.js?v=78') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=68') && index.includes('settings.css?v=12') && index.includes('inv.js?v=35') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=22') && read('nav.js').includes('print.js?v=38') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=38') && read('staff/print-test.html').includes('print-label.js?v=22') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=78') && read('staff/print-test.html').includes('app.css?v=68'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
