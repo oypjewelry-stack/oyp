@@ -26,6 +26,18 @@ const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (
 
 /* =================== Inventory (#/jos) =================== */
 const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, sketch: {}, open: null, at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [], extra: 0, dropped: new Set(), revSeq: 0, want: '', dbgSeq: 0 };
+let ivPhotoKey = null, ivPhotoDown = null;
+function ivPhotoListen(key, down) {
+  if (ivPhotoKey) document.removeEventListener('keydown', ivPhotoKey, true);
+  if (ivPhotoDown) document.removeEventListener('pointerdown', ivPhotoDown, true);
+  ivPhotoKey = key;
+  ivPhotoDown = down;
+  if (key) document.addEventListener('keydown', key, true);
+  if (down) document.addEventListener('pointerdown', down, true);
+}
+function ivPencilSvg() {
+  return '<span class="ivpface"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>';
+}
 const MAKING = { working: 1, queue: 1 };
 const IVIEWS = {
   all: ['All', j => j.location !== 'archived'],
@@ -512,6 +524,10 @@ function ivThumbs(main, L) { // piece photos, or a page-2 stand-in when this rol
     paint(el, src, item) {
       const k = el.dataset.th; IV.thumbs[k] = src || '';
       IV.sketch[k] = !!(src && item && item.sketch);
+      if (src && item && !item.sketch && item.id && IV.r) {
+        const job = IV.r.jobs.find(x => x.jo === k);
+        if (job) job.product_photo_file_id = item.id;
+      }
       const cap = el.querySelector(':scope > span');
       if (cap) cap.remove();
       if (src) {
@@ -537,13 +553,20 @@ function ivPhotos(main, j) {
       noted: item => {
         big.classList.toggle('sketch', !!item.sketch);
         IV.sketch[j.jo] = !!item.sketch;
-        const btn = big.querySelector('.ivadd');
-        if (btn && !btn.disabled) btn.textContent = (item && item.sketch) || !(big.querySelector('img') && big.querySelector('img').src) ? 'Add photo' : 'Change photo';
+        if (item && !item.sketch && item.id) j.product_photo_file_id = item.id;
+        const sheet = big.closest('.ivsbox') || big.parentNode;
+        const add = sheet && sheet.querySelector('.ivphmenu .ivadd');
+        const real = ivHasRealPhoto(j, item);
+        if (add && !add.disabled) add.textContent = real ? 'Change photo' : 'Add photo';
+        const del = sheet && sheet.querySelector('.ivphmenu .ivdel');
+        if (del && !del.disabled) del.hidden = !real;
       }
     });
     ivAddPhoto(main, j, big);
     big.onclick = e => {
-      if (e.target.closest('.phorig, .phtools, button, a, .ivaddmsg')) return;
+      const host = big.closest('.ivsbox') || big.parentNode;
+      if (host && host._ivMenuShut) { host._ivMenuShut = false; return; }
+      if (e.target.closest('.phorig, .phtools, button, a, .ivaddmsg, .ivdelask, .ivphmenu, .ivpencil')) return;
       const img = big.querySelector('img');
       if (!img || !img.src) return;
       const items = ivGallery(j.jo);
@@ -557,12 +580,22 @@ function ivPhotos(main, j) {
   }
   ivFillExtra(main, j);
 }
+function ivHasRealPhoto(j, item) {
+  if (!j || !j.product_photo_file_id) return false;
+  if (item && item.sketch) return false;
+  if (IV.sketch[j.jo] && !(item && item.id && !item.sketch)) return false;
+  return true;
+}
 function ivAddPhoto(main, j, big) {
-  if (!ivEdit() || !big || !j) return;
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'ivadd';
-  btn.textContent = IV.thumbs[j.jo] && !IV.sketch[j.jo] ? 'Change photo' : 'Add photo';
+  if (!ivEdit() || !big || !j) { ivPhotoListen(null, null); return; }
+  const realNow = ivHasRealPhoto(j) && !!IV.thumbs[j.jo] && !IV.sketch[j.jo];
+  const pen = document.createElement('button');
+  pen.type = 'button';
+  pen.className = 'ivpencil';
+  pen.setAttribute('aria-label', 'Edit photo');
+  pen.setAttribute('aria-haspopup', 'menu');
+  pen.setAttribute('aria-expanded', 'false');
+  pen.innerHTML = ivPencilSvg();
   const file = document.createElement('input');
   file.type = 'file';
   file.accept = 'image/*';
@@ -583,30 +616,163 @@ function ivAddPhoto(main, j, big) {
     msg.classList.toggle('err', !!bad);
     msg.hidden = !text;
   };
+  let menu = sheet && sheet.querySelector('.ivphmenu');
+  let add, del;
+  if (!menu && sheet) {
+    menu = document.createElement('div');
+    menu.className = 'ivphmenu';
+    menu.hidden = true;
+    menu.setAttribute('role', 'menu');
+    add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'ivadd';
+    add.setAttribute('role', 'menuitem');
+    del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'ivdel';
+    del.setAttribute('role', 'menuitem');
+    del.textContent = 'Remove photo';
+    menu.appendChild(add);
+    menu.appendChild(del);
+    if (msg) msg.insertAdjacentElement('afterend', menu);
+    else big.insertAdjacentElement('afterend', menu);
+  } else if (menu) {
+    add = menu.querySelector('.ivadd');
+    del = menu.querySelector('.ivdel');
+    menu.hidden = true;
+  }
+  if (add) add.textContent = realNow ? 'Change photo' : 'Add photo';
+  if (del) del.hidden = !realNow;
+  let ask = sheet && sheet.querySelector('.ivdelask');
+  if (!ask && sheet) {
+    ask = document.createElement('div');
+    ask.className = 'ivdelask';
+    ask.hidden = true;
+    const q = document.createElement('p');
+    q.textContent = 'Remove this photo? The drawing from the JO card comes back. The file stays in Drive.';
+    const row = document.createElement('div');
+    row.className = 'row';
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'ivdelgo';
+    go.textContent = 'Remove';
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.className = 'ivdelno';
+    no.textContent = 'Cancel';
+    row.appendChild(go);
+    row.appendChild(no);
+    ask.appendChild(q);
+    ask.appendChild(row);
+    const after = menu || msg;
+    if (after) after.insertAdjacentElement('afterend', ask);
+    else big.insertAdjacentElement('afterend', ask);
+  } else if (ask) ask.hidden = true;
+  const closeMenu = () => {
+    if (!menu) return;
+    menu.hidden = true;
+    pen.setAttribute('aria-expanded', 'false');
+  };
   big.appendChild(file);
-  big.appendChild(btn);
-  btn.onclick = e => {
+  big.appendChild(pen);
+  pen.onclick = e => {
     e.preventDefault();
     e.stopPropagation();
-    if (!btn.disabled) file.click();
+    if (pen.disabled || !menu) return;
+    menu.hidden = !menu.hidden;
+    pen.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
+    if (!menu.hidden && ask) ask.hidden = true;
   };
+  if (add) add.onclick = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+    if (!pen.disabled) file.click();
+  };
+  if (del) del.onclick = e => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (del.disabled || del.hidden) return;
+    closeMenu();
+    if (ask) ask.hidden = false;
+  };
+  if (ask) {
+    const no = ask.querySelector('.ivdelno');
+    const go = ask.querySelector('.ivdelgo');
+    if (no) no.onclick = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      ask.hidden = true;
+    };
+    if (go) go.onclick = async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pen.disabled || !window.OYPPhotos || !window.OYPPhotos.removePhoto) return;
+      pen.disabled = true;
+      if (del) del.disabled = true;
+      const r = await window.OYPPhotos.removePhoto(j.jo);
+      pen.disabled = false;
+      if (del) del.disabled = false;
+      if (!r || r.removed !== true) {
+        ask.hidden = true;
+        if (r && r.ok === true && r.removed === false) return;
+        say((r && r.error) || "Photo removal isn't switched on yet", true);
+        return;
+      }
+      ask.hidden = true;
+      closeMenu();
+      j.product_photo_file_id = '';
+      say('', false);
+      ivApplySketch(j.jo, r.src || '');
+      if (main.querySelector('#ivSheet')) ivPhotos(main, j);
+    };
+  }
+  ivPhotoListen(e => {
+    if (e.key !== 'Escape') return;
+    if (ask && !ask.hidden) { ask.hidden = true; e.preventDefault(); e.stopPropagation(); return; }
+    if (menu && !menu.hidden) { closeMenu(); e.preventDefault(); e.stopPropagation(); }
+  }, e => {
+    if (!menu || menu.hidden) return;
+    const t = e.target;
+    if (t && t.closest && t.closest('.ivphmenu, .ivpencil, .ivdelask')) return;
+    closeMenu();
+    if (sheet && t && big.contains(t)) sheet._ivMenuShut = true;
+  });
   file.onchange = async () => {
     const picked = file.files && file.files[0];
     file.value = '';
     if (!picked || !window.OYPPhotos || !window.OYPPhotos.setPhoto) return;
     if (picked.type && picked.type.indexOf('image/') !== 0) { say('Choose a photo', true); return; }
-    btn.disabled = true;
-    const r = await window.OYPPhotos.setPhoto(j.jo, picked, { progress: t => { btn.textContent = 'Uploading…'; say(t, false); } });
-    btn.disabled = false;
+    pen.disabled = true;
+    closeMenu();
+    const r = await window.OYPPhotos.setPhoto(j.jo, picked, { progress: t => { say(t, false); } });
+    pen.disabled = false;
     if (!r || !r.ok) {
-      btn.textContent = IV.thumbs[j.jo] && !IV.sketch[j.jo] ? 'Change photo' : 'Add photo';
+      if (add) add.textContent = IV.thumbs[j.jo] && !IV.sketch[j.jo] ? 'Change photo' : 'Add photo';
       say((r && r.error) || 'Could not save the photo', true);
       return;
     }
     say('', false);
+    if (r.id) j.product_photo_file_id = r.id;
     ivApplyProfile(j.jo, r.src);
     if (main.querySelector('#ivSheet')) ivPhotos(main, j);
   };
+}
+function ivApplySketch(jo, src) {
+  IV.thumbs[jo] = src || '';
+  IV.sketch[jo] = !!src;
+  const sel = '[data-th="' + String(jo).replace(/"/g, '') + '"]';
+  document.querySelectorAll(sel).forEach(el => {
+    if (src) {
+      el.style.backgroundImage = 'url("' + String(src).replace(/"/g, '') + '")';
+      el.classList.add('has', 'sketch');
+    } else {
+      el.style.backgroundImage = '';
+      el.classList.remove('has', 'sketch');
+    }
+  });
+  const view = document.getElementById('ivView');
+  if (view && view._jo === jo && view._setSketch) view._setSketch(src);
 }
 function ivApplyProfile(jo, src) {
   IV.thumbs[jo] = src || '';
@@ -760,6 +926,26 @@ function ivOpenViewer(o) {
       root.classList.remove('sketch');
       root.setAttribute('aria-label', 'Photo');
       img.src = src;
+    }
+  };
+  root._setSketch = src => {
+    const piece = items.find(it => it.key === 'piece');
+    if (!piece) return;
+    piece.src = src || '';
+    piece.sketch = true;
+    piece.full = () => {
+      const P = window.OYPPhotos;
+      if (P && P.peek) {
+        const hit = P.peek({ jo: root._jo, sketch: true, size: 1600, kind: 'card' });
+        if (hit) return Promise.resolve(hit);
+      }
+      return Promise.resolve(src || '');
+    };
+    if (items[index] === piece) {
+      root.classList.add('sketch');
+      root.setAttribute('aria-label', 'Sketch from JO card');
+      if (src) img.src = src;
+      else img.removeAttribute('src');
     }
   };
   const showAt = () => {

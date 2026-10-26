@@ -34,26 +34,31 @@ eq(true, 'PhotoSet.gs parses');
 eq(!/\bconst\b|\blet\b|=>|`/.test(gs), 'PhotoSet.gs stays on var and function, like PhotoFast');
 eq(!/setTrashed|\.trash\(/.test(gs), 'PhotoSet never deletes the previous Drive file');
 eq(gs.includes("product_photo_file_id: fileId") && gs.includes('updated_at: t') && gs.includes('updated_by: user.username') && gs.includes('drive_folder_id'), 'the sheet write is the photo id, the audit columns, and a folder id only when needed');
+eq(gs.includes('req.remove === true') && gs.indexOf('req.remove === true') < gs.indexOf('createFile'), 'removal is handled before any Drive file is created');
+eq(gs.includes("psAudit_(user.username, 'photoRemove'") && gs.includes('old_id: oldOnly') && gs.includes('removed: true') && gs.includes('removed: false') && gs.includes("product_photo_file_id: ''"), 'removal clears the cell, audits the old file id, and reports removed');
 eq(gs.includes('pfj2:') && gs.includes('pfc2:') && gs.includes("'pf1:'") && gs.includes('removeAll'), 'thumbnail cache keys for that JO are cleared');
 eq(gs.includes("audit_(by, action, jo, device, detail)") && gs.includes("getSheetByName('AuditLog')"), 'the change is written to AuditLog');
 eq(patch.includes(fastLine) && patch.includes(setLine) && patch.indexOf(setLine) > patch.indexOf(fastLine), 'the Auth hook is one line under the PhotoFast hook');
 eq(steps.includes('https://script.google.com/home/projects/17TdK0I66eGV_3XpM8OSPw9L7BlEbknYvJKI8JEMecrSCxLh4bhdihCXJ/edit') && steps.includes('Manage deployments') && steps.includes('pencil') && steps.includes('New version') && steps.includes('Do not use New deployment'), 'the paste steps name the editor and Manage deployments, pencil, New version');
 eq(steps.includes("Photo upload isn't switched on yet"), 'the steps name the message shown until the paste is deployed');
+eq(steps.includes("Photo removal isn't switched on yet") && steps.includes('Replace the whole PhotoSet file') && steps.includes('Do not edit Auth.gs') && steps.includes('photoRemove'), 'the update steps say replace PhotoSet, leave Auth.gs, and name the removal message');
 eq(!app.includes('photoSet') && !fast.includes('photoSet'), 'photoSet is not added to the read cache');
 eq(photos.includes("toDataURL('image/jpeg', 0.85)") && photos.includes('PHOTO_MAX = 1600') && photos.includes('PHOTO_PART = 80000'), 'a chosen photo is resized to 1600px jpeg 0.85 and split under the cache limit');
 eq(setFn.includes("Photo upload isn't switched on yet") && setFn.indexOf('dropStandIn(jo)') > setFn.indexOf("Photo upload isn't switched on yet"), 'an unknown photoSet drops nothing');
 eq(!cardFn.includes('Add photo') && !cardFn.includes('ivadd') && !cardFn.includes('Change photo'), 'list cards do not grow an Add photo button or a caption');
-eq(inv.includes('Add photo') && inv.includes('Change photo') && inv.includes("accept = 'image/*'") && inv.includes("className = 'ivadd'") && inv.includes('if (!ivEdit()'), 'the detail frame has the button for admin and production manager');
+eq(inv.includes('Add photo') && inv.includes('Change photo') && inv.includes('Remove photo') && inv.includes("accept = 'image/*'") && inv.includes("className = 'ivpencil'") && inv.includes("className = 'ivadd'") && inv.includes("className = 'ivdel'") && inv.includes("aria-label', 'Edit photo'") && inv.includes('if (!ivEdit()'), 'the detail frame has one pencil for admin and production manager');
+eq(inv.includes('Remove this photo? The drawing from the JO card comes back. The file stays in Drive.') && inv.includes('removePhoto') && inv.includes("e.key !== 'Escape'") && photos.includes('remove: true') && photos.includes("Photo removal isn't switched on yet"), 'confirm copy calls photoSet remove, and Escape closes the menu');
+eq(!cardFn.includes('Remove photo') && !cardFn.includes('ivpencil'), 'list cards do not grow a pencil or a Remove photo button');
 eq(!inv.includes('capture'), 'the phone sheet offers the camera and the library');
 eq(inv.includes('root._jo') && inv.includes('root._setProfile') && inv.includes("it.key === 'piece'"), 'a saved photo replaces the first slide in an open viewer');
-eq(css.includes('.ivph.big.phstage.sketch{padding-bottom:52px}') && css.includes('.ivadd{position:absolute;z-index:4;right:8px;bottom:8px;'), 'the button sits in the padding under a sketch');
+eq(css.includes('.ivph.big.phstage.sketch{padding-bottom:60px}') && css.includes('.ivpencil{position:absolute;z-index:4;right:8px;bottom:8px;') && css.includes('width:44px;height:44px') && css.includes('.ivpface{') && css.includes('width:34px;height:34px') && css.includes('border:1px solid #e3e3e3') && css.includes('color:var(--icon)') && css.includes('background:rgba(255,255,255,.92)') && css.includes('box-shadow:none') && css.includes('.ivpencil:hover,.ivpencil:focus-visible,.ivpencil:active,.ivpencil.is-down{color:#767676}') && css.includes('border-color:#cfcfcf') && css.includes('border-radius:50%') && css.includes('place-items:center') && css.includes('.ivphmenu .ivdel{color:#b3261e}'), 'the pencil is a quiet circle in the gutter under a sketch, and Remove photo is danger-colored');
 const sheetFn = inv.slice(inv.indexOf('function ivSheet'), inv.indexOf('function ivRange'));
 eq(sheetFn.indexOf('function ivSheet') === 0 && !sheetFn.includes('background-image'), 'the detail frame does not paint the list thumb behind the photo');
 eq(photos.includes("el.style.backgroundImage = 'none'"), 'a shown detail image clears any background image');
 const preview = read('sim/photo-set-preview.html');
-eq(preview.includes('photos.js?v=15') && preview.includes('inv.js?v=27') && preview.includes('sketchclean.js?v=1') && preview.includes('app.css?v=61'), 'the layout fixture loads the same files');
-eq(index.includes('photos.js?v=15') && index.includes('inv.js?v=27') && index.includes('app.css?v=61') && read('staff/print-test.html').includes('app.css?v=61'), 'changed files are cache-busted');
-eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=61'), 'the customer page stays on app.css?v=29');
+eq(preview.includes('photos.js?v=16') && preview.includes('inv.js?v=30') && preview.includes('sketchclean.js?v=1') && preview.includes('app.css?v=63'), 'the layout fixture loads the same files');
+eq(index.includes('photos.js?v=16') && index.includes('inv.js?v=30') && index.includes('app.css?v=63') && read('staff/print-test.html').includes('app.css?v=63'), 'changed files are cache-busted');
+eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=63'), 'the customer page stays on app.css?v=29');
 
 const bag = {};
 const cache = {
@@ -125,7 +130,9 @@ const jobs = [
   { _row: 3, jo: '26-426', description: 'chain', drive_folder_id: '', product_photo_file_id: '', photo_file_id: '', piece_photo_file_id: '' },
   { _row: 4, jo: '26-427', description: 'band', drive_folder_id: 'fold425', product_photo_file_id: 'old427', photo_file_id: '', piece_photo_file_id: '' },
   { _row: 5, jo: '26-430', description: 'stud', drive_folder_id: '', product_photo_file_id: '', photo_file_id: '', piece_photo_file_id: '' },
-  { _row: 6, jo: '26-431', description: 'hoop', drive_folder_id: 'trashedFold', product_photo_file_id: 'old431', photo_file_id: '', piece_photo_file_id: '' }
+  { _row: 6, jo: '26-431', description: 'hoop', drive_folder_id: 'trashedFold', product_photo_file_id: 'old431', photo_file_id: '', piece_photo_file_id: '' },
+  { _row: 7, jo: '26-432', description: 'remove me', drive_folder_id: 'fold425', product_photo_file_id: 'old432', photo_file_id: 'shot432', piece_photo_file_id: 'piece432' },
+  { _row: 8, jo: '26-433', description: 'empty photo', drive_folder_id: 'fold425', product_photo_file_id: '', photo_file_id: 'keep433', piece_photo_file_id: '' }
 ];
 const gsBox = {
   DriveApp: {
@@ -235,6 +242,52 @@ gsBox.withLock_ = fn => { locks++; return fn(); };
 gsBox.audit_ = undefined;
 const logged = call(admin, { jo: '26-426', data: 'QUJD' });
 eq(logged.ok && auditRows.length === 1 && auditRows[0][2] === 'photoSet' && auditRows[0][5] === logged.id, 'when audit_ is missing the row is appended to AuditLog');
+gsBox.audit_ = (by, action, jo, device, detail) => { audits.push({ by: by, action: action, jo: jo, device: device, detail: detail }); };
+
+function deniedRemove(user, msg) {
+  const before = { created: created.length, sets: sets.length, locks: locks, waits: lockWaits.length, trashed: trashed.length };
+  const r = call(user, { jo: '26-432', remove: true });
+  eq(r.ok === false && r.code === 'FORBIDDEN' && created.length === before.created && sets.length === before.sets && locks === before.locks && lockWaits.length === before.waits && trashed.length === before.trashed, msg);
+}
+deniedRemove({ username: 's', role: 'staff' }, 'staff cannot remove a photo');
+deniedRemove({ username: 'c', role: 'accounting' }, 'accounting cannot remove a photo');
+deniedRemove({ username: 'e', role: 'executive' }, 'an executive cannot remove a photo');
+eq(jobs.find(j => j.jo === '26-432').product_photo_file_id === 'old432', 'a refused removal leaves the photo cell');
+
+const emptyBefore = { sets: sets.length, created: created.length, audits: audits.length, trashed: trashed.length };
+const emptyRow = call(admin, { jo: '26-433', remove: true });
+eq(emptyRow.ok === true && emptyRow.removed === false && emptyRow.jo === '26-433' && sets.length === emptyBefore.sets && created.length === emptyBefore.created && audits.length === emptyBefore.audits && trashed.length === emptyBefore.trashed, 'an empty photo cell is a no-op and does not touch the file');
+eq(jobs.find(j => j.jo === '26-433').photo_file_id === 'keep433' && jobs.find(j => j.jo === '26-433').description === 'empty photo', 'the empty-row no-op leaves every other cell');
+
+bag['pfj1:26-432'] = 'a';
+bag['pfj2:26-432'] = 'b';
+bag['pfd1:26-432'] = 'c';
+bag['pfd2:26-432'] = 'd';
+bag['pfc1:26-432'] = 'e';
+bag['pfc2:26-432'] = 'f';
+bag['pf1:300:old432'] = 't';
+bag['pf1:1600:old432'] = 'm';
+bag['pf1:300:old432#n'] = '2';
+bag['pf1:300:old432#0'] = 'aa';
+bag['pf1:1600:shot432'] = 's';
+bag['pf1:300:piece432'] = 'p';
+bag['pfj1:26-425'] = 'keep-other';
+const remBefore = { created: created.length, trashed: trashed.length };
+const removed = call(admin, { jo: '26-432', remove: true });
+const row432 = jobs.find(j => j.jo === '26-432');
+const remPatch = sets[sets.length - 1].patch;
+eq(removed.ok === true && removed.removed === true && removed.jo === '26-432' && removed.old_id === 'old432', 'removal returns the old file id');
+eq(created.length === remBefore.created && trashed.length === remBefore.trashed, 'removal never creates or trashes a Drive file');
+eq(Object.keys(remPatch).sort().join() === 'product_photo_file_id,updated_at,updated_by' && remPatch.product_photo_file_id === '' && remPatch.updated_by === 'a', 'removal writes only the cleared photo cell and the audit columns');
+eq(row432.product_photo_file_id === '' && row432.description === 'remove me' && row432.photo_file_id === 'shot432' && row432.piece_photo_file_id === 'piece432' && row432.drive_folder_id === 'fold425', 'description, the other file ids, and the folder stay');
+eq(!bag['pfj1:26-432'] && !bag['pfj2:26-432'] && !bag['pfd1:26-432'] && !bag['pfd2:26-432'] && !bag['pfc1:26-432'] && !bag['pfc2:26-432'] && !bag['pf1:300:old432'] && !bag['pf1:1600:old432'] && !bag['pf1:300:old432#0'] && !bag['pf1:1600:shot432'] && !bag['pf1:300:piece432'] && bag['pfj1:26-425'] === 'keep-other', 'removal clears the same thumbnail cache keys as an upload');
+eq(audits.some(a => a.action === 'photoRemove' && a.jo === '26-432' && a.detail === 'old432' && a.by === 'a' && a.device === 'dev1'), 'AuditLog photoRemove stores the old file id');
+eq(call(admin, { remove: true }).error === 'Missing JO' && call(admin, { jo: '26-999', remove: true }).error === 'Not found' && created.length === remBefore.created, 'a removal without a JO row writes nothing');
+
+gsBox.audit_ = undefined;
+const loggedRemove = call(admin, { jo: '26-427', remove: true });
+eq(loggedRemove.ok === true && loggedRemove.removed === true && loggedRemove.old_id && auditRows.some(row => row[2] === 'photoRemove' && row[5] === loggedRemove.old_id) && created.length === remBefore.created && trashed.length === 0, 'when audit_ is missing, photoRemove is appended and the file stays');
+gsBox.audit_ = (by, action, jo, device, detail) => { audits.push({ by: by, action: action, jo: jo, device: device, detail: detail }); };
 
 const SKETCH = 'data:image/jpeg;base64,SKETCH425';
 const REAL = 'data:image/jpeg;base64,REAL425';
@@ -285,14 +338,29 @@ const ctx = {
   }
 };
 ctx.window = ctx;
+const PAGE2 = 'data:image/jpeg;base64,PAGE2DRAWING';
 ctx.window.OYP = {
   call(action, body) {
     calls.push({ action: action, data: body });
+    if (action === 'photoThumbs') {
+      const piece = {};
+      (body.piece || []).forEach(jo => {
+        piece[jo] = { id: 'page' + jo, src: PAGE2, found: false, sketch: true };
+      });
+      return Promise.resolve({ ok: true, piece: piece, scan: {}, cards: {}, drawing: {} });
+    }
     if (action !== 'photoSet') return Promise.resolve({ ok: false, error: 'Unknown action' });
+    if (body && body.remove === true) {
+      if (mode === 'remove') return Promise.resolve({ ok: true, removed: true, jo: body.jo, old_id: 'file425' });
+      if (mode === 'remove-empty') return Promise.resolve({ ok: true, removed: false, jo: body.jo });
+      if (mode === 'ignore-ok') return Promise.resolve({ ok: true, id: 'file425', jo: body.jo });
+      if (mode === 'ignore-bad') return Promise.resolve({ ok: false, error: 'That file is not a photo' });
+      return Promise.resolve({ ok: false, error: 'Unknown action' });
+    }
     if (mode === 'unknown') return Promise.resolve({ ok: false, error: 'Unknown action' });
     if (mode === 'chunk') {
       if (body.part < body.parts - 1) return Promise.resolve({ ok: true, part: body.part, parts: body.parts });
-      return Promise.resolve({ ok: true, id: 'file425', jo: body.jo });
+      return Promise.resolve({ ok: true, id: 'file500', jo: body.jo });
     }
     return Promise.resolve({ ok: true, id: 'file425', jo: body.jo });
   }
@@ -311,6 +379,19 @@ function httpGet(url) {
       res.on('end', () => resolve(d));
     }).on('error', reject);
   });
+}
+
+function quietPencil(m) {
+  return m.pw === 44 && m.ph === 44 && m.fw === 34 && m.fh === 34 && m.sw === 18 && m.sh === 18
+    && Math.abs(m.dx) <= 0.5 && Math.abs(m.dy) <= 0.5
+    && Math.abs(m.cdx) <= 0.5 && Math.abs(m.cdy) <= 0.5
+    && m.ink === 'rgb(154, 154, 154)' && m.ring === 'rgb(227, 227, 227)'
+    && m.fill === 'rgba(255, 255, 255, 0.92)'
+    && m.shadow === 'none' && m.penShadow === 'none';
+}
+function louderPencil(m) {
+  return m.ink === 'rgb(118, 118, 118)' && m.ring === 'rgb(207, 207, 207)' && m.fill === 'rgb(255, 255, 255)'
+    && m.shadow === 'none' && m.penShadow === 'none';
 }
 
 /* Opens the real inventory sheet at 390px. A wide stand-in used to leave the list thumb painted behind the img. */
@@ -402,10 +483,10 @@ async function detailFrames() {
       return md5;
     };
     const sketchCases = [
-      ['26-441', 'tall', 'inv_sketch_tall_add_390'],
-      ['26-442', 'wide', 'inv_sketch_wide_add_390'],
-      ['26-444', 'square', 'inv_sketch_square_add_390'],
-      ['26-443', 'white', 'inv_sketch_white_add_390']
+      ['26-441', 'tall', 'inv_sketch_tall_soft_390'],
+      ['26-442', 'wide', 'inv_sketch_wide_soft_390'],
+      ['26-444', 'square', 'inv_sketch_square_soft_390'],
+      ['26-443', 'white', 'inv_sketch_white_soft_390']
     ];
     for (const [jo, name, file] of sketchCases) {
       const state = await evalJson('window.__open(' + JSON.stringify(jo) + ')');
@@ -414,26 +495,109 @@ async function detailFrames() {
       const m = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
       console.log('measure', name, JSON.stringify(m));
       eq(m.imgs === 1 && m.bg === 'none' && m.imgBg === 'none', name + ' frame has one image and no background-image');
-      eq(m.label === 'Add photo' && m.sketch === true && m.imgPos === 'static', name + ' stand-in is in flow and labeled Add photo');
-      eq(m.overlap === false && m.origOverlap === false && m.gap >= 4 && m.origGap >= 4, name + ' button and Open original sit clear of the image');
-      eq(Math.abs(m.pad - 52) < 1 && Math.abs(m.frameH - m.imgH - m.pad) < 2, name + ' frame height is the image plus the 52px gutter');
+      eq(m.label === 'Add photo' && m.sketch === true && m.imgPos === 'static' && m.removeHidden === true && m.menuOn === false && m.askOn === false, name + ' stand-in is in flow, with Add photo in the closed menu and no Remove photo');
+      eq(m.pencil === true && quietPencil(m), name + ' pencil icon is centered in the quiet circle (' + m.dx + ', ' + m.dy + ')');
+      eq(m.overlap === false && m.origOverlap === false && m.gap >= 4 && m.origGap >= 4, name + ' pencil and Open original sit clear of the drawing');
+      eq(Math.abs(m.pad - 60) < 1 && Math.abs(m.frameH - m.imgH - m.pad) < 2, name + ' frame height is the image plus the gutter');
       eq(m.aspectDelta < 0.03 && m.nw > 0 && m.nh > 0, name + ' displayed aspect matches the image');
       if (name === 'white') eq(m.nw === 4 && m.nh === 3, 'a card with no drawing is the white 4 by 3 stand-in');
       if (name === 'square') eq(Math.abs(m.nw / m.nh - 1) < 0.02, 'the square drawing stays square');
       if (name === 'wide') eq(m.nw / m.nh > 1.15, 'the wide drawing stays wide');
       await shot(file);
     }
-    const realState = await evalJson('window.__open("26-500")');
+    const sketchMenu = await evalJson('window.__open("26-442")');
+    eq(sketchMenu === 'ready' && await evalJson('window.__menu()') === 'open', 'the pencil opens the menu on a drawing');
+    const noPhoto = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    console.log('measure', 'menu-sketch', JSON.stringify(noPhoto));
+    eq(noPhoto.menuOn === true && noPhoto.label === 'Add photo' && noPhoto.removeHidden === true && noPhoto.overlap === false && noPhoto.gap >= 4, 'a drawing menu offers Add photo and hides Remove photo');
+    await shot('inv_menu_sketch_soft_390');
+    eq(await evalJson('window.__esc()') === true, 'Escape closes the menu');
+    const realState = await evalJson('window.__open("26-500", {label:"Change photo"})');
     eq(realState === 'ready', 'real photo detail is ready');
     if (realState === 'ready') {
       const m = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
       console.log('measure', 'real', JSON.stringify(m));
       eq(m.imgs === 1 && m.bg === 'none' && m.imgBg === 'none', 'a real photo is one image with no background-image');
-      eq(m.label === 'Change photo' && m.sketch === false && m.imgPos === 'absolute' && m.overlap === true, 'Change photo stays in the corner of a real photo');
-      await shot('inv_real_change_390');
+      eq(m.menuOn === false && m.label === 'Change photo' && m.removeHidden === false && m.sketch === false && m.imgPos === 'absolute' && m.overlap === true, 'the closed pencil sits on a real photo, and the menu knows it can change or remove');
+      eq(quietPencil(m), 'the real-photo pencil icon is centered (' + m.dx + ', ' + m.dy + ')');
+      await shot('inv_pencil_soft_390');
+      const doc = await send('DOM.getDocument', { depth: 0 });
+      const found = await send('DOM.querySelector', { nodeId: doc.root.nodeId, selector: '#ivSheet .ivpencil' });
+      await send('CSS.enable');
+      const tone = async state => {
+        await send('CSS.forcePseudoState', { nodeId: found.nodeId, forcedPseudoClasses: state ? [state] : [] });
+        await evalJson('new Promise(r => requestAnimationFrame(() => r(1)))');
+        return JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      };
+      const hover = await tone('hover');
+      eq(louderPencil(hover), 'hover uses a slightly stronger gray (' + hover.ink + ' ' + hover.ring + ' ' + hover.fill + ')');
+      const focus = await tone('focus-visible');
+      eq(louderPencil(focus), 'focus uses a slightly stronger gray (' + focus.ink + ' ' + focus.ring + ')');
+      const press = await tone('active');
+      eq(louderPencil(press), 'press uses a slightly stronger gray (' + press.ink + ' ' + press.ring + ')');
+      await tone('');
+      await evalJson('var pen=document.querySelector("#ivSheet .ivpencil"); if (pen) pen.classList.add("is-down"); 1');
+      const down = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      eq(louderPencil(down), 'the pointer press uses a slightly stronger gray (' + down.ink + ' ' + down.ring + ')');
+      await evalJson('var pen=document.querySelector("#ivSheet .ivpencil"); if (pen) pen.classList.remove("is-down"); 1');
+      await wait(80);
+      const rest = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+      eq(quietPencil(rest), 'the pencil returns to the quiet gray (' + rest.ink + ' ' + rest.pw + 'x' + rest.fw + ' dx ' + rest.dx + ')');
     }
-    const hashes = shots.map(s => s.md5);
-    eq(hashes.length === 5 && new Set(hashes).size === 5, 'the five detail shots are different files');
+    const hashes = shots.slice(0, 4).map(s => s.md5);
+    eq(hashes.length === 4 && new Set(hashes).size === 4, 'the four sketch frames are different files');
+    eq(await evalJson('window.__menu()') === 'open', 'the pencil opens the menu on a real photo');
+    const asked = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    eq(asked.menuOn === true && asked.label === 'Change photo' && asked.removeHidden === false && asked.removeLabel === 'Remove photo' && asked.danger === 'rgb(179, 38, 30)', 'the real-photo menu offers Change photo and danger-styled Remove photo');
+    await shot('inv_menu_photo_soft_390');
+    eq(await evalJson('window.__menu()') === 'open' && await evalJson('window.__outside()') === true, 'a tap outside closes the menu');
+    const ask390 = await evalJson('window.__ask()');
+    eq(ask390 === 'open', 'Remove photo opens the confirm');
+    const confirmed = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    eq(confirmed.askOn === true && confirmed.menuOn === false && confirmed.askText === 'Remove this photo? The drawing from the JO card comes back. The file stays in Drive.', 'the confirm names the drawing and says the file stays');
+    const cancelled = JSON.parse(await evalJson('JSON.stringify(window.__cancel())'));
+    eq(cancelled.grew === false && cancelled.askOn === false && cancelled.same === true, 'cancel closes the confirm and does not call photoSet');
+    const failedRemove = JSON.parse(await evalJson('window.__failRemove().then(function (r) { return JSON.stringify(r); })'));
+    console.log('fail remove', JSON.stringify(failedRemove));
+    eq(failedRemove.msg === "Photo removal isn't switched on yet" && failedRemove.same === true && failedRemove.sketch === false && failedRemove.calls === 1, 'an old server shows the removal message and keeps the photo');
+    const reopened = await evalJson('window.__open("26-500", {label:"Change photo"})');
+    eq(reopened === 'ready', 'the real photo is still open after the old server refuses');
+    await send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 900, deviceScaleFactor: 2, mobile: false });
+    await evalJson('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))');
+    const wide = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    eq(wide.menuOn === false && wide.label === 'Change photo' && quietPencil(wide) && wide.overlap === true, 'the pencil stays centered on the real photo at 1024 (' + wide.dx + ', ' + wide.dy + ')');
+    await shot('inv_pencil_soft_1024');
+    eq(await evalJson('window.__menu()') === 'open', 'the menu opens at 1024');
+    await shot('inv_menu_photo_soft_1024');
+    eq(await evalJson('window.__esc()') === true, 'Escape closes the menu at 1024');
+    eq(await evalJson('window.__open("26-442")') === 'ready' && await evalJson('window.__menu()') === 'open', 'a drawing menu opens at 1024');
+    const wideSketch = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    eq(wideSketch.menuOn === true && wideSketch.label === 'Add photo' && wideSketch.removeHidden === true && wideSketch.overlap === false && quietPencil(wideSketch), 'at 1024 a drawing menu has Add photo only and the pencil stays clear (' + wideSketch.dx + ', ' + wideSketch.dy + ')');
+    await shot('inv_menu_sketch_soft_1024');
+    eq(await evalJson('window.__open("26-500", {label:"Change photo"})') === 'ready', 'the real photo is back for removal');
+    const removed = JSON.parse(await evalJson('window.__viewerRemove().then(function (r) { return JSON.stringify(r); })'));
+    console.log('viewer remove', JSON.stringify(removed));
+    eq(removed.ok === true && removed.hadSketch === false && removed.changed === true && removed.label === 'Add photo', 'removal swaps the list, the detail, and viewer slide 1 to the stand-in');
+    await evalJson('var sbox=document.querySelector("#ivSheet .ivsbox"); if (sbox) sbox.scrollTop=0; 1');
+    const afterWide = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    eq(afterWide.label === 'Add photo' && afterWide.menuOn === false && afterWide.sketch === true && afterWide.removeHidden === true && afterWide.bg === 'none' && afterWide.overlap === false && quietPencil(afterWide), 'after removal the detail frame is the sketch and Remove photo is gone');
+    await shot('inv_remove_soft_1024');
+    await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+    await evalJson('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(1))))');
+    await evalJson('var sbox=document.querySelector("#ivSheet .ivsbox"); if (sbox) sbox.scrollTop=0; 1');
+    const afterNarrow = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    eq(afterNarrow.sketch === true && afterNarrow.menuOn === false && quietPencil(afterNarrow) && afterNarrow.overlap === false, 'after removal the 390 pencil is centered and clear of the drawing (' + afterNarrow.dx + ', ' + afterNarrow.dy + ')');
+    await shot('inv_remove_soft_390');
+    const staffReady = await evalJson('window.__asStaff()');
+    eq(staffReady === 'ready', 'inventory can render as staff');
+    const staffOpen = await evalJson('window.__open("26-501", {staff:true})');
+    eq(staffOpen === 'ready', 'a staff detail opens the real photo');
+    const staffM = JSON.parse(await evalJson('JSON.stringify(window.__measure())'));
+    eq(staffM.pencil === false && staffM.label === '' && staffM.removeLabel === '' && staffM.sketch === false, 'the pencil stays hidden for staff');
+    const design = ['inv_pencil_soft_390', 'inv_menu_photo_soft_390', 'inv_menu_sketch_soft_390', 'inv_pencil_soft_1024', 'inv_menu_photo_soft_1024', 'inv_menu_sketch_soft_1024', 'inv_remove_soft_1024', 'inv_remove_soft_390'];
+    const designShots = design.map(name => shots.find(s => s.name === name));
+    const designHashes = designShots.map(s => s && s.md5);
+    eq(designShots.every(Boolean) && new Set(designHashes).size === designHashes.length, 'pencil, menu, and after-removal shots differ at both widths');
     shots.forEach(s => console.log('shot', s.name, s.md5, s.bytes));
   } finally {
     try { if (ws) ws.close(); } catch (e) {}
@@ -472,6 +636,31 @@ async function detailFrames() {
   eq(chunked.ok && sent.length === 2 && sent[0].data.part === 0 && sent[1].data.part === 1 && sent[0].data.parts === 2 && sent[0].data.upload === sent[1].data.upload && /^[a-z0-9]{16}$/.test(sent[0].data.upload), 'a long photo is uploaded in order and shares one upload id');
   eq(notes.indexOf('Uploading 1/2') >= 0 && notes.indexOf('Uploading 2/2') >= 0, 'progress names each chunk');
   eq(P.peek({ jo: '26-500', kind: 'piece', size: 300 }) === big, 'the chunked photo is the new profile');
+
+  const keptSrc = P.peek({ jo: '26-425', kind: 'piece', size: 300, fallback: true });
+  const keptStore = store['oypPh:file425'];
+  const keptJo = data.get('jo:26-425|300');
+  const callsAt = calls.length;
+  mode = 'unknown';
+  const offRemove = await P.removePhoto('26-425');
+  eq(offRemove.ok === false && offRemove.error === "Photo removal isn't switched on yet" && calls[calls.length - 1].data.remove === true && calls.length === callsAt + 1, 'an unknown remove shows Photo removal isn\'t switched on yet');
+  eq(P.peek({ jo: '26-425', kind: 'piece', size: 300, fallback: true }) === keptSrc && store['oypPh:file425'] === keptStore && data.get('jo:26-425|300') === keptJo, 'that message drops nothing');
+  mode = 'ignore-ok';
+  const ignored = await P.removePhoto('26-425');
+  eq(ignored.ok === false && ignored.error === "Photo removal isn't switched on yet" && P.peek({ jo: '26-425', kind: 'piece', size: 300 }) === keptSrc, 'a save-shaped reply with no removed flag is not a removal');
+  mode = 'ignore-bad';
+  const bad = await P.removePhoto('26-425');
+  const idb425 = data.get('file425|300');
+  eq(bad.ok === false && bad.error === "Photo removal isn't switched on yet" && idb425 === REAL && store['oypPh:file425'] === REAL && data.get('jo:26-425|300') === REAL, 'a validation error from the old server changes nothing');
+  mode = 'remove-empty';
+  const already = await P.removePhoto('26-425');
+  eq(already.ok === true && already.removed === false && P.peek({ jo: '26-425', kind: 'piece', size: 300 }) === keptSrc && store['oypPhJ:26-425'] === 'file425', 'an empty cell from the updated server is not the switched-on message');
+  mode = 'remove';
+  const gone = await P.removePhoto('26-425');
+  await wait(40);
+  const stand = P.peek({ jo: '26-425', kind: 'piece', size: 300, fallback: true });
+  eq(gone.ok === true && gone.removed === true && gone.old_id === 'file425' && gone.src === PAGE2 && stand === PAGE2, 'a removed photo is replaced by the page-2 stand-in');
+  eq(!data.has('jo:26-425|300') && !data.has('file425|300') && !store['oypPhJ:26-425'] && !store['oypPh:file425'], 'memory, IndexedDB, and localStorage drop the real photo');
 
   const noted = [];
   const classes = new Set();

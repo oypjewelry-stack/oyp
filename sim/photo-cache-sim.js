@@ -20,7 +20,7 @@ eq(photos.includes('openCursor') && photos.includes("'sk:'") && photos.includes(
 eq(photos.includes('14 * 24 * 60 * 60 * 1000') && photos.includes('sketchStale') && photos.includes('dropStandIn'), 'stand-ins expire after 14 days and a real photo drops the stand-in');
 eq(photos.includes("rootMargin: '800px'") && photos.includes('i < 16') && photos.includes("img.decoding = 'async'") && photos.includes('queueMicrotask'), 'the first tiles start on a microtask, look 800px ahead, and decode async');
 eq(photos.includes("MEM.set('sketch:'") && photos.includes('!item.sketch') && photos.includes("MEM.set('jo:'"), 'a stand-in stays off the profile key');
-eq(index.includes('photos.js?v=15'), 'photos.js cache number is bumped');
+eq(index.includes('photos.js?v=16'), 'photos.js cache number is bumped');
 eq(photos.includes('SHARP_CAP = 900') && photos.includes("toDataURL('image/jpeg', 0.82)") && photos.includes('SHARP_RUN_MAX = 1') && photos.includes('SHARP_MEM_MAX = 12') && photos.includes('SHARP_IDB_MAX = 80') && photos.includes('QuotaExceeded'), 'list tiles upgrade to a device-pixel JPEG capped at 900');
 eq(photos.includes('function sharpTier') && photos.includes('need <= 300') && photos.includes('need <= 600') && photos.includes('cropSketch(src)') && photos.includes("addEventListener('resize'") && photos.includes("addEventListener('orientationchange'"), 'tiers are 300, 600 and 900, and a resize measures the tiles again');
 eq(photos.includes('PRE_WAIT = 300') && photos.includes('function preReady'), 'a stuck IndexedDB open releases the list after 300ms');
