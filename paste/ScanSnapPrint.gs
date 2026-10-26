@@ -231,8 +231,9 @@ function snapPrintAfterFile_(jo, fileId) {
   }
   return { ok: true, calls: calls };
 }
-/* Call this once after joInboxConfirm or joInboxFix has written the JO into JobOrders.
-   jo is the confirmed number. No scan file id: printEnqueue_ skips a jewelry tag already queued or printed for this JO. */
+/* Call this once after the confirm step that accepts the JO details and has written them into JobOrders
+   (joInboxConfirm, and joInboxFix when that path saves the same confirmed details). No Print tag button.
+   jo is the confirmed number. An empty field stays blank. printEnqueue_ skips a jewelry tag already queued or printed for this JO. */
 function snapPrintAfterConfirm_(jo) {
   var res;
   jo = snapNorm_(jo);

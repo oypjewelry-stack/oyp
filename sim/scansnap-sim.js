@@ -20,7 +20,7 @@ const gs = read('paste/ScanSnapPrint.gs');
 const hook = read('paste/JoInbox.gs.snapsnap.patch.txt');
 const auth = read('paste/Auth.gs.snapsnap.patch.txt');
 
-eq(index.includes('scansnap.js?v=3') && index.includes('app.js?v=43') && index.includes('app.css?v=68') && index.includes('nav.js?v=78'), 'the scanner page is cache-busted');
+eq(index.includes('scansnap.js?v=4') && index.includes('app.js?v=43') && index.includes('app.css?v=68') && index.includes('nav.js?v=78'), 'the scanner page is cache-busted');
 eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=68'), 'the customer page stays on app.css?v=29');
 eq(app.includes("page === 'scanner'") && app.includes('OYPScanSnap.render') && !app.includes('OYPJoInbox.render'), 'Scanner is a back-office page and Needs a look is not rendered from the router');
 eq(app.includes('snapPrintGet: 1') && !/snapPrintSet\s*:/.test(app), 'snapPrintGet is a fresh read and snapPrintSet stays a write');
@@ -43,7 +43,7 @@ eq(Snap.NOT_SAVED === "Changes aren't saved yet.", 'the page says changes are no
 const html = Snap.snapHtml();
 eq(html.includes('>Scan snap<') && html.indexOf('>Scan snap<') < html.indexOf('>Mobile<') && html.includes('class="fchip tap on"') && html.includes('data-stab="snap"'), 'Scan snap is the first tab and it starts selected');
 eq(html.includes('id="snapJewelry" checked') && html.includes('>Print jewelry tag<') && html.includes('id="snapQr" checked') && html.includes('>Print QR tag<'), 'both boxes start checked');
-eq(html.includes('id="snapWhen"') && html.includes(Snap.WHEN) && Snap.WHEN.indexOf('after you confirm') >= 0 && Snap.WHEN.indexOf('never queues') >= 0 && Snap.WHEN.indexOf('when the scan is filed') >= 0, 'the page says the jewelry tag queues after confirmation and the QR tag prints when the scan is filed');
+eq(html.includes('id="snapWhen"') && html.includes(Snap.WHEN) && Snap.WHEN.indexOf('when you confirm the JO details') >= 0 && Snap.WHEN.indexOf('Unchecked, it does not') >= 0 && Snap.WHEN.indexOf('Empty fields stay blank') >= 0 && Snap.WHEN.indexOf('when the scan is filed') >= 0 && html.indexOf('Print tag') < 0, 'the page says the jewelry tag queues when the details are confirmed, with no Print tag button');
 eq(html.includes('saved yet.') && html.indexOf('id="snapNote" hidden') < 0 && html.includes('>' + Snap.CHECK + '<') && html.includes(Snap.HINT) && html.indexOf('Scan now') < 0, 'before a save the note, the check button, and the hint are on the page');
 eq(Snap.mobileHtml().includes('../scan/index.html') && Snap.mobileHtml().includes('title="Mobile scanner"') && Snap.mobileSrc('admin') === '../scan/index.html?role=admin', 'Mobile loads the existing scanner page');
 eq(Snap.resultText({ ok: true, filed: 2, waiting: 1, problem: 0 }) === '2 new scans filed, 1 waiting', 'a check reports new scans and how many are waiting');
@@ -345,7 +345,7 @@ async function chromeAt(width, port, pageUrl, art) {
     eq(!!m, 'Scan snap is on screen at ' + width);
     if (!m) return {};
     console.log('snap', width, JSON.stringify(m));
-    eq(m.tab === 'Scan snap' && m.j === true && m.q === true && m.jDis === false && m.noteHidden === false && m.note === "Changes aren't saved yet." && m.hint === 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.' && m.when === 'The jewelry tag queues after you confirm the JO. Unchecked, it never queues. The QR tag prints when the scan is filed.' && m.check === 'CHECK FOR NEW SCANS' && m.frame === false, 'before the paste both boxes are checked and the note is showing at ' + width);
+    eq(m.tab === 'Scan snap' && m.j === true && m.q === true && m.jDis === false && m.noteHidden === false && m.note === "Changes aren't saved yet." && m.hint === 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.' && m.when === 'The jewelry tag queues when you confirm the JO details. Unchecked, it does not. Empty fields stay blank. The QR tag prints when the scan is filed.' && m.check === 'CHECK FOR NEW SCANS' && m.frame === false, 'before the paste both boxes are checked and the note is showing at ' + width);
     eq(m.overflow <= 1, 'Scan snap does not overflow at ' + width);
     const clicked = await evalJson(`(async () => {
       document.getElementById('snapJewelry').click();

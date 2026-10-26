@@ -1,13 +1,13 @@
 /* Scanner menu: Scan snap (default) and Mobile.
    Scan snap files the Fujitsu ScanSnap drop in JO Inbox. CHECK FOR NEW SCANS runs joInboxRun at once, the same check as the 5-minute trigger.
    Print jewelry tag and Print QR tag default on. The server keeps them (snapPrintGet / snapPrintSet) so the trigger sees them.
-   Checked jewelry queues the tag after the JO is confirmed. Unchecked never queues it. The QR tag prints when the scan is filed.
+   Checked jewelry queues the tag when she confirms the JO details. Unchecked does not. Empty fields stay blank. The QR tag prints when the scan is filed. There is no separate Print tag button.
    Until that paste is in, both stay checked and the page says the change is not saved.
    Mobile loads the phone scanner (scan/index.html) and does not change it. */
 (function (root) {
 'use strict';
 const HINT = 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.';
-const WHEN = 'The jewelry tag queues after you confirm the JO. Unchecked, it never queues. The QR tag prints when the scan is filed.';
+const WHEN = 'The jewelry tag queues when you confirm the JO details. Unchecked, it does not. Empty fields stay blank. The QR tag prints when the scan is filed.';
 const CHECK = 'CHECK FOR NEW SCANS';
 const NOT_SAVED = "Changes aren't saved yet.";
 const S = { user: null, ready: false, jewelry: true, qr: true, run: { busy: false, text: '' } };

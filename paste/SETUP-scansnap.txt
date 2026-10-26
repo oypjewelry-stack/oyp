@@ -2,14 +2,14 @@ Scan snap checkboxes — what to paste.
 
 The staff page already shows Scan snap and Mobile. Both boxes start checked. Until this paste is deployed, the page says changes are not saved yet, and unchecking does nothing on the server.
 
-The QR tag (JO sticker) prints when the scan is filed. The jewelry tag queues after you confirm the JO, so the tag can read the name, weight, metal, and stones from JobOrders. A field still marked (guess) is left blank. It is not printed with the mark stripped off.
+The QR tag (JO sticker) prints when the scan is filed. The jewelry tag queues when she confirms the JO details as correct, in that same step, with the details just written to JobOrders. There is no Print tag button. A field she left empty stays blank. A field still marked (guess) stays blank too. It is not printed with the mark stripped off.
 
 Replace the whole script (code only)
   Apps Script: open ScanSnapPrint, replace it with paste/ScanSnapPrint.gs (the whole file).
   Save. Do not run a setup function. The first filed scan creates a SnapSeen tab (columns id, at) if that tab is not already there. Each JO + jo_card + scan file is one row, and the same id is its own short Script Property (oypSnap.<id>). Nothing is dropped: a rolling list would forget an old file and queue the QR sticker again. The Settings tab is not created. Drive files are not changed. The two setting rows below are written only when someone saves a checkbox and Settings already has key and value columns.
 
 What the two keys are
-  scanner.snap_jewelry    Print jewelry tag    queues kind jewelry_tag (the B1 jewelry tag) after the JO is confirmed
+  scanner.snap_jewelry    Print jewelry tag    queues kind jewelry_tag (the B1 jewelry tag) when she confirms the JO details. Unchecked means that confirm queues no tag.
   scanner.snap_qr         Print QR tag         queues kind jo_card (the B31 JO sticker, 30x20, QR on the left) when the scan is filed
   The print queue has those two kinds. There is no third sticker named qr_tag.
   A missing key stays ON. Script Properties hold the values so the 5-minute trigger can read them.
@@ -20,7 +20,7 @@ Hooks
   1. JoInbox.gs — paste/JoInbox.gs.snapsnap.patch.txt
      Paste both functions at the bottom.
      Call snapPrintAfterFiled_(FILED_JO, SCAN_FILE_ID) after a ScanSnap file has been saved as a new JO. That call queues the QR sticker only.
-     Call snapPrintAfterConfirmed_(CONFIRMED_JO) at the end of joInboxConfirm and joInboxFix, after the JO has been written into JobOrders. That is the step that moves a JO READS (check) row, STATUS AUTO or NEEDS CONFIRM, into JobOrders. CONFIRMED_JO is the variable that holds the number just saved. Do not call it before that write, and do not call it from discard, from Send to To review, or from the scan-file path.
+     Call snapPrintAfterConfirmed_(CONFIRMED_JO) at the end of the confirm step that accepts the details (joInboxConfirm, and joInboxFix when that path saves the same details), after the JO has been written into JobOrders. That is the step that moves a JO READS (check) row, STATUS AUTO or NEEDS CONFIRM, into JobOrders. CONFIRMED_JO is the variable that holds the number just saved. Do not call it before that write, and do not call it from discard, from Send to To review, or from the scan-file path. Do not add a Print tag button.
      printEnqueue_ then reads JobOrders. A jewelry tag already queued or already printed for that JO is not added again. A failed tag is put back in the queue, which is the queue's existing rule.
   2. PrintQueue.gs — paste/PrintQueue.gs.guess.patch.txt
      Paste the pick() change so a JobOrders cell marked (guess) stays off the tag. Do not replace PrintQueue.gs if you apply that patch. Replacing the whole file with paste/PrintQueue.gs is the same change.

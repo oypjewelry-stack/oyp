@@ -23,10 +23,10 @@ Call 1. On the success path that files a ScanSnap scan as a JO (the path that us
 FILED_JO is the variable that holds the job number just filed (26-287 or 26-287B).
 SCAN_FILE_ID is the variable that holds that scan's Drive file id.
 
-Call 2. On the success path of joInboxConfirm and of joInboxFix, after that function has written the JO into JobOrders. That is the step that moves a JO READS (check) row (STATUS AUTO or NEEDS CONFIRM) into JobOrders. Do not call this from joInboxDiscard, joInboxPush, or the scan-file path. If one helper writes the JobOrders row for both confirm and fix, one call at the end of that helper is enough. If another function also copies a JO READS row into JobOrders, call this same line there too, after the write.
+Call 2. On the success path that confirms the JO details as correct and has written those details into JobOrders. On the staff page that is joInboxConfirm (the number was left as read) and joInboxFix (she edited the number, then accepted the card). Both are that confirm step. There is no Print tag button. Do not call this from joInboxDiscard, joInboxPush, or the scan-file path. If one helper writes the JobOrders row for both confirm and fix, one call at the end of that helper is enough.
 
   snapPrintAfterConfirmed_(CONFIRMED_JO);
 
 CONFIRMED_JO is the variable that holds the confirmed job number (the number just saved on JobOrders, letter included).
-The jewelry tag is queued only when scanner.snap_jewelry is on. A tag already queued or already printed for that JO is not added again. A field on the JobOrders row that is still marked (guess) is left blank on the tag.
+The jewelry tag queues right then, only when scanner.snap_jewelry is on. Unchecked means this call queues nothing. A tag already queued or already printed for that JO is not added again. A field she left empty stays blank. A field still marked (guess) stays blank too. The tag reads the other fields from the JobOrders row this confirm just wrote.
 The try/catch stays inside the functions, so a missing ScanSnapPrint paste cannot fail the file or the confirm.
