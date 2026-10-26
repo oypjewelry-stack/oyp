@@ -25,6 +25,7 @@ eq(dash.includes('oypDashLoc:') && dash.includes('oypDashOrder:') && dash.includ
 eq(dash.includes("setHidden: setLocHidden") && dash.includes('data-shide'), 'each section and location tile hides on its own');
 eq(!settings.includes('id="layEdit"') && !settings.includes('id="layArch"') && !settings.includes('id="layMore"'), 'Settings does not keep a second Edit layout switch');
 eq(app.includes("btn.textContent = on ? 'Done' : 'Edit layout'") && app.includes("toast('Layout saved')") && !app.includes('id="layBar"') && !css.includes('.laybar{'), 'one pill says Edit layout, then Done, and confirms with Layout saved');
+eq(/const EDIT_LAYOUT_ENABLED = false/.test(app) && app.includes('if (!EDIT_LAYOUT_ENABLED)') && app.includes("btn.id = 'layEditBtn'"), 'one constant hides every Edit layout pill and the pill code stays');
 eq(css.includes('button.laypill.pill.sm{height:34px') && css.includes('.layx,.laygrip,.layctl,.layshows{display:none!important}') && css.includes('html.layedit button.layx{display:inline-flex!important'), 'the pill is 34px and the controls stay hidden until editing');
 eq(!/Edit layout/.test(nav), 'Edit layout is not a side-menu item');
 eq(!/dmove|dgrip/.test(app + dash + settings), 'no move arrows are drawn');
@@ -34,7 +35,7 @@ eq(!/\.dcard>\.dtitle h3\{[^}]*font-size:\s*19px/.test(css), 'section titles are
 eq(css.includes('--d-htodo-fp') && css.includes('--d-hboard-fp') && css.includes('--d-hloc-fp') && css.includes('--d-hsales-fp') && css.includes('--d-hconsign-fp') && css.includes('--d-hmsgs-fp') && css.includes('--d-hpay-fp') && css.includes('--d-hkpi-fp'), 'each dashboard title has its own size');
 eq(css.includes('.dcard[data-dsec="todo"]>.dtitle h3') && css.includes('.dcard[data-dsec="board"]>.dtitle h3') && !css.includes('--d-hmenu-fp,var(--d-htodo'), 'a dashboard title does not share the menu header size');
 eq(settings.includes('Dashboard headers') && settings.includes("['hkpi', 'htodo', 'hboard', 'hloc', 'hsales', 'hconsign', 'hmsgs', 'hpay']"), 'the controls live in Design');
-eq(index.includes('app.js?v=43') && index.includes('app.css?v=69') && index.includes('dash.js?v=35') && index.includes('settings.js?v=22') && index.includes('design.js?v=6') && index.includes('todo.css?v=8') && index.includes('todo.js?v=6'), 'changed assets are cache-busted');
+eq(index.includes('app.js?v=44') && index.includes('app.css?v=69') && index.includes('dash.js?v=35') && index.includes('settings.js?v=22') && index.includes('design.js?v=6') && index.includes('todo.css?v=8') && index.includes('todo.js?v=6'), 'changed assets are cache-busted');
 
 const props = {};
 const store = {};
@@ -194,8 +195,10 @@ async function chromeAt(width, port, pageUrl, shots) {
       localStorage.setItem('oypSessionExp', '2099-01-01T00:00:00.000Z');
       localStorage.setItem('oypUser', JSON.stringify({ username: 'ada', display_name: 'Ada', role: 'admin' }));
       localStorage.setItem('oypDevice', 'd-layout');
+      localStorage.setItem('oypDashOrder:ada', JSON.stringify(['todo','loc','board','sales','consign','msgs','pay']));
     } catch (e) {}` });
     await send('Page.navigate', { url: pageUrl });
+    const layOn = /const EDIT_LAYOUT_ENABLED = true/.test(read('app.js'));
     let ready = null;
     for (let i = 0; i < 50; i++) {
       ready = await evalJs(`(() => {
@@ -203,13 +206,40 @@ async function chromeAt(width, port, pageUrl, shots) {
         const board = document.querySelector('[data-dsec="board"]');
         const loc = document.querySelector('[data-dsec="loc"]');
         const busy = document.querySelector('[aria-busy="true"]');
-        if (!b || !board || !loc || busy) return null;
-        return b.textContent;
-      })()`);
+        if (!board || !loc || busy) return null;
+        if (layOn && !b) return null;
+        const shown = !!(b && getComputedStyle(b).display !== 'none' && b.getBoundingClientRect().height > 0);
+        const ids = [...document.querySelectorAll('#dsecs > [data-dsec]')].map(s => s.dataset.dsec).join();
+        return { text: b ? b.textContent : '', shown, ids };
+      })()`.replace('layOn', layOn ? 'true' : 'false'));
       if (ready) break;
       await sleep(200);
     }
-    check(ready === 'Edit layout', 'at ' + width + 'px the pill reads Edit layout');
+    if (!layOn) {
+      check(ready && ready.shown === false && ready.text === '', 'at ' + width + 'px Edit layout is hidden');
+      check(ready && ready.ids.indexOf('loc') >= 0 && ready.ids.indexOf('loc') < ready.ids.indexOf('board'), 'at ' + width + 'px the saved section order still applies (' + (ready && ready.ids) + ')');
+      const menu = await evalJs(`(() => {
+        const menu = document.getElementById('menu');
+        document.getElementById('btnMenu').click();
+        const last = menu.lastElementChild;
+        const logoutLast = !!(last && last.matches('[data-logout]') && /Log out/.test(last.textContent));
+        const side = document.getElementById('sideNav');
+        const kids = side ? [...side.children] : [];
+        const si = kids.findIndex(el => el.querySelector && el.querySelector('[data-nkey="settings"]'));
+        const printerNext = si >= 0 && kids[si + 1] && kids[si + 1].matches('a[data-oyp-printer]');
+        const whoOut = document.querySelector('#side [data-logout]');
+        document.getElementById('btnMenu').click();
+        return { logoutLast, printerNext, who: whoOut && whoOut.textContent, editing: document.documentElement.classList.contains('layedit') };
+      })()`);
+      check(menu && menu.logoutLast && menu.printerNext && menu.who === 'Log out' && menu.editing === false, 'at ' + width + 'px Log out is last, Printer stays under Settings, and editing stays off');
+      const shot = async name => {
+        const pic = await send('Page.captureScreenshot', { format: 'png' });
+        fs.writeFileSync(path.join(shots, name), Buffer.from(pic.data, 'base64'));
+      };
+      await shot('layout_normal_' + (width < 800 ? '390' : 'desktop') + '.png');
+      return notes;
+    }
+    check(ready && ready.text === 'Edit layout' && ready.shown === true, 'at ' + width + 'px the pill reads Edit layout');
     const normal = await evalJs(`(() => {
       const b = document.getElementById('layEditBtn');
       const hide = document.querySelector('[data-shide]');

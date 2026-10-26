@@ -739,10 +739,13 @@ function popover(anchor, items) {
 window.addEventListener('hashchange', closePopover);
 window.OYP = { call, esc, toast, toastUndo, archiveJos, popover, closePopover, swipe: (window.OYPSwipe && window.OYPSwipe.mount) || function () {}, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 // Edit layout is off on every load. The pill on each back-office page turns it on. Done saves and turns it off.
+// One switch. false hides every Edit layout pill. The pill code stays. Saved orders still apply. Flip to true to show the pills again.
+const EDIT_LAYOUT_ENABLED = false;
 const LE = {
   on: false, fns: [],
   editing() { const u = user(); return this.on && !!(u && u.role === 'admin'); },
   set(v) {
+    if (!EDIT_LAYOUT_ENABLED) v = false;
     const u = user();
     v = !!v && !!(u && u.role === 'admin');
     if (v === this.on) { placeLayPill(); return; }
@@ -831,6 +834,11 @@ const LE = {
 };
 window.OYPLayoutEdit = LE;
 function placeLayPill() {
+  if (!EDIT_LAYOUT_ENABLED) {
+    const row = document.getElementById('layRow');
+    if (row) row.remove();
+    return;
+  }
   const main = $('main');
   const office = $('vOffice') && !$('vOffice').classList.contains('hidden');
   const u = user();

@@ -1,5 +1,5 @@
-/* Inventory header: Select and Edit layout sit on the filter row.
-   Edit layout stays above the title on every other back-office page.
+/* Inventory header: Select sits on the filter row. Edit layout is hidden by EDIT_LAYOUT_ENABLED.
+   The pill code stays, and the dashboard still paints its saved sections.
    Run: node sim/inv-head-sim.js */
 'use strict';
 const fs = require('fs');
@@ -22,11 +22,12 @@ const head = inv.slice(inv.indexOf('main.innerHTML = `<div class="iv'), inv.inde
 eq(head.includes('class="ivfilt"') && head.includes('class="ivfiltacts"') && head.includes('id="ivChoose"'), 'Select lives in the filter actions');
 eq(head.includes('<span class="dheadacts"><span class="lab">') && !head.includes('dheadacts"><span class="lab">${esc(plural(L.length, \'item\'))}</span><button'), 'the title row keeps the count and does not keep Select');
 eq(head.indexOf('class="ivchips"') < head.indexOf('${ivQRow(esc)}') && head.indexOf('${ivQRow(esc)}') < head.indexOf('class="ivfilt"') && inv.includes('id="ivQ"'), 'tabs and search stay above the filters');
-eq(app.includes("main.querySelector('.ivfiltacts')") && app.includes('slot.appendChild(row)') && app.includes('main.insertBefore(row, main.firstChild)'), 'Edit layout moves into Inventory and stays at the top of every other page');
+eq(app.includes("main.querySelector('.ivfiltacts')") && app.includes('slot.appendChild(row)') && app.includes('main.insertBefore(row, main.firstChild)'), 'Edit layout still moves into Inventory and stays at the top of every other page when the switch is on');
 eq(app.includes("btn.textContent = on ? 'Done' : 'Edit layout'") && app.includes("toast('Layout saved')"), 'Edit layout still toggles and saves');
+eq(/const EDIT_LAYOUT_ENABLED = false/.test(app) && app.includes('if (!EDIT_LAYOUT_ENABLED)'), 'one constant hides the pill without removing it');
 eq(inv.includes("if ($('#ivChoose')) $('#ivChoose').onclick") && inv.includes('IV.choose = !IV.choose') && inv.includes('class="ivbar"'), 'Select still enters select mode and the toolbar stays');
 eq(css.includes('.ivfilt{display:flex;align-items:flex-end') && css.includes('.ivfilt .ivsels{flex-wrap:nowrap}') && css.includes('@media (max-width:760px){.ivfilt{flex-direction:column;align-items:stretch}'), 'desktop keeps one filter line and mobile stacks the buttons under it');
-eq(index.includes('app.css?v=69') && index.includes('app.js?v=43') && index.includes('inv.js?v=35'), 'changed files are cache-busted');
+eq(index.includes('app.css?v=69') && index.includes('app.js?v=44') && index.includes('inv.js?v=35'), 'changed files are cache-busted');
 eq(read('index.html').includes('app.css?v=30') && !read('index.html').includes('app.css?v=69'), 'the customer page stays on app.css?v=30');
 
 const jobs = [];
@@ -115,12 +116,14 @@ const MEASURE = `(() => {
   const q = document.getElementById('ivQ');
   const chips = document.querySelector('.ivchips');
   const sum = document.querySelector('.ivsum');
-  if (!sels.length || !choose || !lay || !h || !lab || !main || !filt) return null;
+  if (!sels.length || !choose || !h || !lab || !main || !filt) return null;
   const rowT = Math.min.apply(null, sels.map(s => s.getBoundingClientRect().top));
   const rowB = Math.max.apply(null, sels.map(s => s.getBoundingClientRect().bottom));
   const rowR = Math.max.apply(null, sels.map(s => s.getBoundingClientRect().right));
   const pad = parseFloat(getComputedStyle(main).paddingTop) || 0;
-  const hb = box(h), lb = box(lab), cb = box(choose), yb = box(lay), fb = box(filt);
+  const hb = box(h), lb = box(lab), cb = box(choose), fb = box(filt);
+  const yb = lay ? box(lay) : null;
+  const layShown = !!(lay && getComputedStyle(lay).display !== 'none' && yb && yb.h > 0);
   const overlap = b => b.t < rowB - 0.5 && b.b > rowT + 0.5;
   const below = b => b.t >= rowB - 1;
   return {
@@ -128,19 +131,19 @@ const MEASURE = `(() => {
     title: h.textContent,
     count: lab.textContent,
     choose: choose.textContent,
-    lay: lay.textContent,
-    inSlot: !!(choose.closest('.ivfiltacts') && lay.closest('.ivfiltacts')),
+    lay: layShown ? lay.textContent : '',
+    inSlot: !!(choose.closest('.ivfiltacts') && !layShown),
     inHead: !!document.querySelector('.dhead #ivChoose'),
     gap: Math.round((hb.t - main.getBoundingClientRect().top - pad) * 10) / 10,
     countOverlap: lb.t < hb.b && lb.b > hb.t,
     chooseOverlap: overlap(cb),
-    layOverlap: overlap(yb),
+    layOverlap: layShown && overlap(yb),
     chooseBelow: below(cb),
-    layBelow: below(yb),
+    layBelow: layShown && below(yb),
     chooseRight: cb.l >= rowR - 1,
-    layRight: yb.l >= rowR - 1,
-    pair: cb.t < yb.b && cb.b > yb.t,
-    right: Math.round((fb.r - Math.max(cb.r, yb.r)) * 10) / 10,
+    layRight: layShown && yb.l >= rowR - 1,
+    pair: cb.h > 0 && !layShown,
+    right: Math.round((fb.r - cb.r) * 10) / 10,
     overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     order: hb.b <= (sum ? sum.getBoundingClientRect().top + 1 : hb.b) && chips.getBoundingClientRect().bottom <= q.getBoundingClientRect().top + 1 && q.getBoundingClientRect().bottom <= rowT + 1,
     rowT: rowT, rowB: rowB, cb: cb, yb: yb
@@ -215,19 +218,19 @@ async function chromeAt(width, port, pageUrl, art) {
     let m = null;
     for (let i = 0; i < 80; i++) {
       m = await evalJson(MEASURE);
-      if (m && m.lay === 'Edit layout' && m.choose === 'Select') break;
+      if (m && m.lay === '' && m.choose === 'Select') break;
       m = null;
       await sleep(100);
     }
     eq(!!m, 'the inventory header is ready at ' + width);
     if (!m) return;
     console.log('measure', width, JSON.stringify(m));
-    eq(m.title === 'Inventory' && m.count === '18 items' && m.inSlot === true && m.inHead === false, 'the title keeps 18 items and both buttons sit in the filter row at ' + width);
+    eq(m.title === 'Inventory' && m.count === '18 items' && m.inSlot === true && m.inHead === false, 'the title keeps 18 items and Select stays in the filter row at ' + width);
     eq(m.gap < 8 && m.countOverlap === true && m.order === true, 'the title row has no leftover gap and the summary, tabs, and search stay put at ' + width + ' (gap ' + m.gap + ')');
     eq(m.overflow <= 1, 'the page does not overflow sideways at ' + width + ' (' + m.overflow + ')');
-    eq(m.pair === true && m.right <= 2 && m.right >= -1, 'the two buttons share a line and sit on the right at ' + width);
-    if (m.wide) eq(m.chooseOverlap === true && m.layOverlap === true && m.chooseRight === true && m.layRight === true, 'both buttons overlap the dropdown row at ' + width);
-    else eq(m.chooseBelow === true && m.layBelow === true && m.chooseOverlap === false && m.layOverlap === false, 'both buttons sit below the dropdowns at ' + width);
+    eq(m.pair === true && m.right <= 2 && m.right >= -1 && m.lay === '', 'Select sits on the right and Edit layout is hidden at ' + width);
+    if (m.wide) eq(m.chooseOverlap === true && m.chooseRight === true && m.layOverlap === false, 'Select stays on the dropdown row at ' + width);
+    else eq(m.chooseBelow === true && m.chooseOverlap === false && m.layBelow === false, 'Select sits below the dropdowns at ' + width);
     await evalJson('window.scrollTo(0,0); 1');
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: width < 800 });
     await sleep(60);
@@ -246,8 +249,8 @@ async function chromeAt(width, port, pageUrl, art) {
         const choose = document.getElementById('ivChoose');
         const lay = document.getElementById('layEditBtn');
         const on = document.querySelector('.iv.choose') && document.querySelector('.ivall');
-        const layText = lay && lay.textContent;
-        const slot = !!(choose && choose.closest('.ivfiltacts') && lay && lay.closest('.ivfiltacts'));
+        const layText = lay && getComputedStyle(lay).display !== 'none' ? lay.textContent : '';
+        const slot = !!(choose && choose.closest('.ivfiltacts') && !lay);
         document.querySelector('[data-ck]').click();
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         const bar = !!document.querySelector('.ivbar');
@@ -256,33 +259,29 @@ async function chromeAt(width, port, pageUrl, art) {
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         const back = document.getElementById('ivChoose').textContent;
         const off = !document.querySelector('.iv.choose') && !document.querySelector('.ivbar');
-        document.getElementById('layEditBtn').click();
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const editing = document.documentElement.classList.contains('layedit') && document.getElementById('layEditBtn').textContent;
-        document.getElementById('layEditBtn').click();
-        await new Promise(r => setTimeout(r, 40));
-        const toast = document.getElementById('toast');
-        return { on: !!on, layText, slot, choose: choose.textContent, bar, print, back, off, editing, toast: toast && toast.textContent, lay: document.getElementById('layEditBtn').textContent };
+        const editing = document.documentElement.classList.contains('layedit');
+        return { on: !!on, layText, slot, choose: choose.textContent, bar, print, back, off, editing };
       })()`);
       console.log('clicks', JSON.stringify(picked));
-      eq(picked && picked.on && picked.choose === 'Done' && picked.layText === 'Edit layout' && picked.slot, 'Select enters select mode without toggling Edit layout');
+      eq(picked && picked.on && picked.choose === 'Done' && !picked.layText && picked.slot, 'Select enters select mode while Edit layout stays hidden');
       eq(picked && picked.bar && picked.print === 'Print stickers (1)' && picked.back === 'Select' && picked.off, 'the select toolbar still prints one sticker and Done leaves select mode');
-      eq(picked && picked.editing === 'Done' && picked.toast === 'Layout saved' && picked.lay === 'Edit layout', 'Edit layout still toggles to Done and saves');
+      eq(picked && picked.editing === false, 'Edit layout does not turn on');
       const dash = await evalJson(`(async () => {
         location.hash = '#/dashboard';
         for (let i = 0; i < 40; i++) {
-          const lay = document.getElementById('layEditBtn');
           const board = document.querySelector('[data-dsec="board"]');
-          if (lay && board && !document.querySelector('.ivfiltacts')) {
-            const row = document.getElementById('layRow');
-            return { parent: row.parentElement && row.parentElement.id, first: row.parentElement.firstElementChild === row, text: lay.textContent };
+          const lay = document.getElementById('layEditBtn');
+          if (board && !document.querySelector('.ivfiltacts') && !document.querySelector('[aria-busy="true"]')) {
+            const shown = !!(lay && getComputedStyle(lay).display !== 'none' && lay.getBoundingClientRect().height > 0);
+            const ids = [...document.querySelectorAll('#dsecs > [data-dsec]')].map(s => s.dataset.dsec).join();
+            return { shown, ids };
           }
           await new Promise(r => setTimeout(r, 100));
         }
         return null;
       })()`);
       console.log('dashboard', JSON.stringify(dash));
-      eq(dash && dash.parent === 'main' && dash.first === true && dash.text === 'Edit layout', 'the dashboard still has Edit layout at the top of the page');
+      eq(dash && dash.shown === false && dash.ids.indexOf('board') >= 0, 'the dashboard paints its sections with no Edit layout pill');
     }
   } finally {
     try { if (ws) ws.close(); } catch (e) {}
