@@ -243,14 +243,15 @@ function ivDraw(main) {
       <button type="button" class="lnk" id="ivClear">Clear</button>
     </div>` : '';
   main.innerHTML = `<div class="iv${IV.choose ? ' choose' : ''}${n ? ' hasbar' : ''}">
-    <div class="dhead"><h2>${esc(title)}</h2><span class="dheadacts"><span class="lab">${esc(plural(L.length, 'item'))}</span><button type="button" class="pill sm outline" id="ivChoose">${IV.choose ? 'Done' : 'Select'}</button></span></div>
+    <div class="dhead"><h2>${esc(title)}</h2><span class="dheadacts"><span class="lab">${esc(plural(L.length, 'item'))}</span></span></div>
     <p class="muted">${IV.view === 'review' ? 'Items marked REVIEW. Approve one here and it leaves this list.' : 'Every JO and finished piece. Tap one to see its details.'}</p>
     <p class="ivsum">${sum.map(esc).join(' · ')}</p>
     ${ivChipsHtml(esc)}
     <input id="ivQ" class="rvq" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire">
     ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
-    <div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
+    <div class="ivfilt"><div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
       ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
+      <div class="ivfiltacts"><button type="button" class="pill sm outline" id="ivChoose">${IV.choose ? 'Done' : 'Select'}</button></div></div>
     ${IV.choose && L.length ? `<label class="ivall"><input type="checkbox" id="ivAll" ${allOn ? 'checked' : ''}><span>Select all</span></label>${n ? `<span class="ivcount">${n} selected</span>` : ''}` : ''}
     <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can, edit)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
     ${bar}

@@ -829,8 +829,11 @@ function placeLayPill() {
   const show = !!(main && office && u && u.role === 'admin');
   let row = document.getElementById('layRow');
   if (!show) { if (row) row.remove(); return; }
-  if (!row || row.parentNode !== main) {
-    if (row) row.remove();
+  // Inventory keeps this pill on the filter row. Every other page still gets it above the title.
+  const slot = main.querySelector('.ivfiltacts');
+  const loadingInv = !slot && /^#\/jos\b/.test(location.hash) && !!main.querySelector('[aria-busy="true"]');
+  if (loadingInv) { if (row && row.parentNode === main) row.remove(); return; }
+  if (!row) {
     row = document.createElement('div');
     row.id = 'layRow';
     row.className = 'layrow';
@@ -844,7 +847,8 @@ function placeLayPill() {
     };
     row.appendChild(btn);
   }
-  if (main.firstChild !== row) main.insertBefore(row, main.firstChild);
+  if (slot) { if (row.parentNode !== slot) slot.appendChild(row); }
+  else if (row.parentNode !== main || main.firstChild !== row) main.insertBefore(row, main.firstChild);
   const btn = row.querySelector('#layEditBtn');
   const on = LE.editing();
   btn.textContent = on ? 'Done' : 'Edit layout';
