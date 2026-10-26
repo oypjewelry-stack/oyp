@@ -301,6 +301,10 @@ function printLookup_() {
   } catch (e2) {}
   return { jobs: jobs, names: names };
 }
+/* A cell still marked (guess) is not a spec. The whole value stays off the sticker. Do not print the words around the mark. */
+function printMarkedGuess_(v) {
+  return /\(\s*guess\s*\)/i.test(String(v == null ? '' : v));
+}
 function printSpecsFor_(jo, look) {
   var out = {}, want = printNormJo_(jo), hit;
   look = look || printLookup_();
@@ -308,10 +312,14 @@ function printSpecsFor_(jo, look) {
   hit = look.jobs[want] || look.jobs[want.replace(/[A-Z]$/, '')];
   if (!hit) return out;
   function pick(keys) {
-    var i, v;
+    var i, v, s;
     for (i = 0; i < keys.length; i++) {
       v = hit[keys[i]];
-      if (v != null && String(v).trim() !== '') return keys[i].indexOf('due') === 0 ? printDay_(v) : String(v).trim();
+      if (v == null || String(v).trim() === '') continue;
+      if (printMarkedGuess_(v)) continue;
+      s = keys[i].indexOf('due') === 0 ? printDay_(v) : String(v).trim();
+      if (!s || printMarkedGuess_(s)) continue;
+      return s;
     }
     return '';
   }

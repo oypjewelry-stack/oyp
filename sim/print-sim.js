@@ -474,6 +474,31 @@ const d1 = ctx.printDecorate_({ print_id: 'pq-1', jo: '26-287', kind: 'jewelry_t
 const d2 = ctx.printDecorate_({ print_id: 'pq-2', jo: '26-287', kind: 'jo_card', status: 'queued' }, look);
 eq(jobReads === 2 && d1.client === 'Elena Tan' && d2.client === 'Elena Tan', 'the queue reads JobOrders and Clients once and shows the name on screen');
 eq(d1.due_date === '2026-10-27' && d1.metal === 'yellow gold' && d1.stone_size === '0.5ct' && d1.price === '11500' && d1.description === 'Silver Necklace' && d1.item_type === 'earring' && d1.sku === '18-498' && d1.location === 'A.R3' && d1.stones === 'Cubic Zirconia 1.25mm x 30', 'a Date due is a day, and the tag fields are joined');
+ctx.jobRows_ = function (name) {
+  if (name === 'JobOrders') return [
+    { jo: '26-412', name: 'Ring', metal: 'Gold (guess)', karat: '18k (Guess)', weight_g: '20 (guess)', weight: '4 (guess)', stones: 'diamond (GUESS)', description: 'Band', stone_type: 'ruby (guess)', client_name: 'Ada (guess)', location: 'vault guess', item_type: 'Ring (guessed)', grade: '( guess )', due_date: '2026-10-21 (guess)' },
+    { jo: '26-413', name: 'Band', metal: '', karat: '', weight_g: '', weight: '', stones: '', description: '', stone_type: '', item_type: '' }
+  ];
+  return [];
+};
+const guessedLook = ctx.printLookup_();
+const guessed = ctx.printSpecsFor_('26-412', guessedLook);
+eq(guessed.name === 'Ring' && guessed.description === 'Band' && guessed.location === 'vault guess' && guessed.item_type === 'Ring (guessed)' && guessed.metal === '' && guessed.karat === '' && guessed.weight_g === '' && guessed.stones === '' && guessed.stone_type === '' && guessed.grade === '' && guessed.due_date === '' && guessed.client === '', 'a field marked (guess) is left blank and a real value stays');
+const guessedTag = ctx.printDecorate_({ print_id: 'pq-g', jo: '26-412', kind: 'jewelry_tag', status: 'queued' }, guessedLook);
+eq(guessedTag.name === 'Ring' && guessedTag.description === 'Band' && !guessedTag.metal && !guessedTag.weight_g && !guessedTag.stones && !guessedTag.karat, 'the queued tag does not carry a guessed metal, weight, or stone');
+eq(!ctx.printSpecsFor_('26-999', guessedLook).name && !ctx.printSpecsFor_('26-999', guessedLook).metal, 'a JO that is not in JobOrders still has no tag specs');
+const open = ctx.printSpecsFor_('26-413', guessedLook);
+eq(open.name === 'Band' && open.metal === '' && open.karat === '' && open.weight_g === '' && open.stones === '' && open.description === '' && open.item_type === '', 'a field she left empty stays blank');
+const openTag = ctx.printDecorate_({ print_id: 'pq-e', jo: '26-413', kind: 'jewelry_tag', status: 'queued' }, guessedLook);
+eq(openTag.name === 'Band' && !openTag.metal && !openTag.weight_g && !openTag.stones && !openTag.karat, 'the queued tag does not fill an empty metal, weight, or stone');
+if (draw) {
+  const gRender = L.render({ model: 'B1', kind: 'jewelry_tag', jo: guessedTag.jo, name: guessedTag.name, description: guessedTag.description, item_type: guessedTag.item_type, metal: guessedTag.metal || '', karat: guessedTag.karat || '', weight: guessedTag.weight_g || '', stones: guessedTag.stones || '', location: guessedTag.location });
+  const gText = gRender.lines.join('\n');
+  eq(gText.indexOf('Ring') >= 0 && gText.indexOf('(guess)') < 0 && gText.toUpperCase().indexOf('GOLD') < 0 && gText.indexOf('20') < 0, 'the tag prints the confirmed name and leaves a guessed metal and weight off the sticker');
+  const eRender = L.render({ model: 'B1', kind: 'jewelry_tag', jo: openTag.jo, name: openTag.name, description: openTag.description || '', item_type: openTag.item_type || '', metal: openTag.metal || '', karat: openTag.karat || '', weight: openTag.weight_g || '', stones: openTag.stones || '' });
+  const eText = eRender.lines.join('\n');
+  eq(eText.indexOf('Band') >= 0 && !eRender.lines.some(function (line) { return /gold|\d+\s*g\b/i.test(line); }), 'an empty metal and weight stay off the tag');
+}
 if (draw) {
   const r1 = L.render(Object.assign({ model: 'B1', kind: 'jewelry_tag' }, { jo: d1.jo, price: d1.price, description: d1.description, item_type: d1.item_type, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stones: d1.stones, stone: d1.stone_type, stone_size: d1.stone_size, sku: d1.sku, location: d1.location, size: d1.size }));
   const r2 = L.render({ model: 'B1', kind: 'jewelry_tag', jo: d1.jo, price: d1.price, description: d1.description, item_type: d1.item_type, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stones: d1.stones, stone: d1.stone_type, stone_size: d1.stone_size, sku: d1.sku, location: d1.location, size: d1.size, client: d1.client });

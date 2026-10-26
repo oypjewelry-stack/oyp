@@ -20,7 +20,7 @@ const gs = read('paste/ScanSnapPrint.gs');
 const hook = read('paste/JoInbox.gs.snapsnap.patch.txt');
 const auth = read('paste/Auth.gs.snapsnap.patch.txt');
 
-eq(index.includes('scansnap.js?v=2') && index.includes('app.js?v=43') && index.includes('app.css?v=68') && index.includes('nav.js?v=79'), 'the scanner page is cache-busted');
+eq(index.includes('scansnap.js?v=4') && index.includes('app.js?v=43') && index.includes('app.css?v=68') && index.includes('nav.js?v=79'), 'the scanner page is cache-busted');
 eq(read('index.html').includes('app.css?v=29') && !read('index.html').includes('app.css?v=68'), 'the customer page stays on app.css?v=29');
 eq(app.includes("page === 'scanner'") && app.includes('OYPScanSnap.render') && !app.includes('OYPJoInbox.render'), 'Scanner is a back-office page and Needs a look is not rendered from the router');
 eq(app.includes('snapPrintGet: 1') && !/snapPrintSet\s*:/.test(app), 'snapPrintGet is a fresh read and snapPrintSet stays a write');
@@ -43,6 +43,7 @@ eq(Snap.NOT_SAVED === "Changes aren't saved yet.", 'the page says changes are no
 const html = Snap.snapHtml();
 eq(html.includes('>Scan snap<') && html.indexOf('>Scan snap<') < html.indexOf('>Mobile<') && html.includes('class="fchip tap on"') && html.includes('data-stab="snap"'), 'Scan snap is the first tab and it starts selected');
 eq(html.includes('id="snapJewelry" checked') && html.includes('>Print jewelry tag<') && html.includes('id="snapQr" checked') && html.includes('>Print QR tag<'), 'both boxes start checked');
+eq(html.includes('id="snapWhen"') && html.includes(Snap.WHEN) && Snap.WHEN.indexOf('when you confirm the JO details') >= 0 && Snap.WHEN.indexOf('Unchecked, it does not') >= 0 && Snap.WHEN.indexOf('Empty fields stay blank') >= 0 && Snap.WHEN.indexOf('when the scan is filed') >= 0 && html.indexOf('Print tag') < 0, 'the page says the jewelry tag queues when the details are confirmed, with no Print tag button');
 eq(html.includes('saved yet.') && html.indexOf('id="snapNote" hidden') < 0 && html.includes('>' + Snap.CHECK + '<') && html.includes(Snap.HINT) && html.indexOf('Scan now') < 0, 'before a save the note, the check button, and the hint are on the page');
 eq(Snap.mobileHtml().includes('../scan/index.html') && Snap.mobileHtml().includes('title="Mobile scanner"') && Snap.mobileSrc('admin') === '../scan/index.html?role=admin', 'Mobile loads the existing scanner page');
 eq(Snap.resultText({ ok: true, filed: 2, waiting: 1, problem: 0 }) === '2 new scans filed, 1 waiting', 'a check reports new scans and how many are waiting');
@@ -51,8 +52,8 @@ eq(Snap.resultText({ ok: true, waiting: true, message: 'The scanner is still sen
 eq(Snap.resultText({ ok: false, error: 'Unknown action' }) === 'Needs the latest script paste', 'the check before the paste says the script is not in yet');
 eq(Snap.resultText({ ok: false, error: 'No connection. Check the internet and try again.', code: 'NET' }).indexOf('No connection') >= 0, 'a dropped connection stays an error');
 
-eq(!/\bconst\b|\blet\b|=>|`/.test(gs) && gs.includes('scanner.snap_jewelry') && gs.includes('scanner.snap_qr') && gs.includes("printEnqueue_(jo, row[1], 'scansnap', { manual: true })"), 'the paste is Apps Script style and queues through printEnqueue_');
-eq(hook.includes('function snapPrintAfterFiled_') && hook.includes('snapPrintAfterFiled_(FILED_JO, SCAN_FILE_ID)') && auth.includes('isSnapPrintAction_') && gs.includes("insertSheet(SNAP_SEEN_SHEET)") && gs.includes('SnapSeen') && !gs.includes('oypSnapSeen') && !gs.includes('SNAP_SEEN_CAP'), 'the hook is one call and each seen id is its own property plus a SnapSeen row');
+eq(!/\bconst\b|\blet\b|=>|`/.test(gs) && gs.includes('scanner.snap_jewelry') && gs.includes('scanner.snap_qr') && gs.includes("printEnqueue_(jo, row[1], 'scansnap', { manual: true })") && gs.includes("printEnqueue_(jo, 'jewelry_tag', 'scansnap', { manual: true })"), 'the paste is Apps Script style and queues through printEnqueue_');
+eq(hook.includes('function snapPrintAfterFiled_') && hook.includes('snapPrintAfterFiled_(FILED_JO, SCAN_FILE_ID)') && hook.includes('function snapPrintAfterConfirmed_') && hook.includes('snapPrintAfterConfirmed_(CONFIRMED_JO)') && hook.includes('joInboxConfirm') && hook.includes('joInboxFix') && hook.indexOf('joInboxDiscard') >= 0 && auth.includes('isSnapPrintAction_') && gs.includes('function snapPrintAfterConfirm_') && gs.includes("insertSheet(SNAP_SEEN_SHEET)") && gs.includes('SnapSeen') && !gs.includes('oypSnapSeen') && !gs.includes('SNAP_SEEN_CAP'), 'the file hook queues the sticker and the confirm hook queues the tag after JobOrders');
 eq(scanApp.includes('function breakOut') && scanApp.includes('target="_top"') && scanApp.includes("href[1] === '#'"), 'office links in the scanner menu leave the Mobile frame');
 
 const bag = {};
@@ -132,15 +133,19 @@ eq(filed.calls === 0 && calls.length === 0, 'a repeat while unchecked still queu
 got = ctx.snapPrintSet_({ jewelry: true, qr: true }, boss);
 eq(got.ok && got.jewelry === true && got.qr === true, 'a production manager can turn both back on');
 filed = ctx.snapPrintAfterFile_('26-428', 'fileA');
-eq(filed.calls === 2 && calls.length === 2 && calls[0].kind === 'jewelry_tag' && calls[1].kind === 'jo_card' && calls.every(c => c.actor === 'scansnap' && c.manual === true && c.jo === '26-428'), 'checked queues the jewelry tag and the JO sticker once');
+eq(filed.calls === 1 && calls.length === 1 && calls[0].kind === 'jo_card' && calls.every(c => c.actor === 'scansnap' && c.manual === true && c.jo === '26-428') && rows.filter(r => r.kind === 'jewelry_tag').length === 0, 'a filed scan queues the JO sticker and does not queue the jewelry tag');
 filed = ctx.snapPrintAfterFile_('26-428', 'fileA');
-eq(filed.calls === 0 && calls.length === 2 && rows.length === 2, 'the same JO, tag, and scan file do not queue again');
+eq(filed.calls === 0 && calls.length === 1 && rows.length === 1, 'the same JO, sticker, and scan file do not queue again');
 ctx.snapPrintAfterFile_('26-428', 'fileB');
-eq(rows.length === 2 && rows.filter(r => r.kind === 'jewelry_tag').length === 1 && rows.filter(r => r.kind === 'jo_card').length === 1, 'a second file of the same JO does not add a second queue row');
+eq(rows.length === 1 && rows.filter(r => r.kind === 'jo_card').length === 1, 'a second file of the same JO does not add a second sticker');
+const confirmed = ctx.snapPrintAfterConfirm_('26-428');
+const tagCall = calls.filter(c => c.kind === 'jewelry_tag');
+eq(confirmed.calls === 1 && tagCall.length === 1 && tagCall[0].manual === true && tagCall[0].actor === 'scansnap' && tagCall[0].jo === '26-428' && rows.filter(r => r.jo === '26-428' && r.kind === 'jewelry_tag').length === 1, 'confirming the JO queues the jewelry tag once');
+eq(ctx.snapPrintAfterConfirm_('26-428').calls === 0 && rows.filter(r => r.jo === '26-428' && r.kind === 'jewelry_tag').length === 1, 'confirming the same JO again does not queue a second tag');
 let missed = 0, huge = false, blob = false;
 for (let i = 0; i < 300; i++) {
   const one = ctx.snapPrintAfterFile_('27-' + (1000 + i), 'drive' + i);
-  if (!one.ok || one.calls !== 2) missed++;
+  if (!one.ok || one.calls !== 1) missed++;
 }
 const replay = ctx.snapPrintAfterFile_('27-1000', 'drive0');
 Object.keys(bag).forEach(function (k) {
@@ -151,7 +156,15 @@ eq(missed === 0 && replay.calls === 0 && !blob && !huge, 'three hundred scans st
 ctx.snapPrintSet_({ jewelry: false, qr: true }, admin);
 calls.length = 0;
 ctx.snapPrintAfterFile_('26-500', 'fileC');
-eq(calls.length === 1 && calls[0].kind === 'jo_card', 'jewelry off queues only the QR sticker');
+eq(calls.length === 1 && calls[0].kind === 'jo_card', 'jewelry off still queues the QR sticker at scan time');
+const held = calls.length;
+eq(ctx.snapPrintAfterConfirm_('26-500').calls === 0 && calls.length === held, 'jewelry off never queues a tag at confirmation');
+ctx.snapPrintSet_({ jewelry: true, qr: false }, admin);
+calls.length = 0;
+eq(ctx.snapPrintAfterFile_('26-501', 'fileD').calls === 0 && calls.length === 0, 'qr off does not queue a sticker when the scan is filed');
+const later = ctx.snapPrintAfterConfirm_('26 501');
+eq(later.calls === 1 && calls.length === 1 && calls[0].kind === 'jewelry_tag' && calls[0].jo === '26-501' && calls[0].manual === true, 'jewelry on queues the tag when the JO is confirmed');
+eq(ctx.snapPrintAfterConfirm_('').calls === 0 && ctx.snapPrintAfterConfirm_('26-501').calls === 0 && rows.filter(r => r.jo === '26-501' && r.kind === 'jewelry_tag').length === 1, 'a blank confirm does nothing and a second confirm does not duplicate the tag');
 
 sheets.Settings = new Sheet([['key', 'value', 'changed_at', 'changed_by']]);
 sheets.SettingsLog = new Sheet([['at', 'by', 'key', 'old_value', 'new_value', 'note']]);
@@ -179,6 +192,15 @@ eq(sheeted.calls === 1 && sheets.SnapSeen && sheets.SnapSeen.grid.some(r => Stri
 ctx.snapSeenMem_.map = {};
 delete bag['oypSnap.' + seenId];
 eq(ctx.snapPrintAfterFile_('26-900', 'fileSheet').calls === 0, 'SnapSeen alone stops the same JO, tag, and scan file');
+const qctx = {};
+vm.createContext(qctx);
+vm.runInContext(read('paste/PrintQueue.gs'), qctx);
+const printed = [{ jo: '26-412', kind: 'jewelry_tag', status: 'printed', print_id: 'pq-old' }];
+const againPrinted = qctx.printRowsEnqueue_(printed, '26-412', 'jewelry_tag', 'scansnap', '2026-10-26T00:00:00.000Z', false, true);
+eq(!againPrinted.created && againPrinted.skipped && printed.length === 1 && printed[0].status === 'printed', 'a jewelry tag already printed for that JO is not queued again');
+const queued = [{ jo: '26-413', kind: 'jewelry_tag', status: 'queued', print_id: 'pq-q' }];
+const againQueued = qctx.printRowsEnqueue_(queued, '26-413', 'jewelry_tag', 'scansnap', '2026-10-26T00:00:00.000Z', false, true);
+eq(!againQueued.created && queued.length === 1 && againQueued.item.print_id === 'pq-q', 'a jewelry tag already queued for that JO is not queued again');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function httpGet(url) {
@@ -303,14 +325,15 @@ async function chromeAt(width, port, pageUrl, art) {
         const q = document.getElementById('snapQr');
         const note = document.getElementById('snapNote');
         const hint = document.getElementById('snapHint');
+        const when = document.getElementById('snapWhen');
         const btn = document.getElementById('snapNow');
         const on = document.querySelector('#scanTabs .fchip.on');
-        if (!j || !q || !note || !hint || !on || !btn) return null;
+        if (!j || !q || !note || !hint || !when || !on || !btn) return null;
         const main = document.getElementById('main');
         return {
           j: j.checked, q: q.checked, jDis: j.disabled,
           note: note.textContent, noteHidden: note.hidden,
-          hint: hint.textContent, check: btn.textContent, tab: on.textContent,
+          hint: hint.textContent, when: when.textContent, check: btn.textContent, tab: on.textContent,
           frame: !!document.querySelector('.scanframe'),
           overflow: main ? main.scrollWidth - main.clientWidth : 0
         };
@@ -322,7 +345,7 @@ async function chromeAt(width, port, pageUrl, art) {
     eq(!!m, 'Scan snap is on screen at ' + width);
     if (!m) return {};
     console.log('snap', width, JSON.stringify(m));
-    eq(m.tab === 'Scan snap' && m.j === true && m.q === true && m.jDis === false && m.noteHidden === false && m.note === "Changes aren't saved yet." && m.hint === 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.' && m.check === 'CHECK FOR NEW SCANS' && m.frame === false, 'before the paste both boxes are checked and the note is showing at ' + width);
+    eq(m.tab === 'Scan snap' && m.j === true && m.q === true && m.jDis === false && m.noteHidden === false && m.note === "Changes aren't saved yet." && m.hint === 'Scanned something? Tap to file it now instead of waiting up to 5 minutes.' && m.when === 'The jewelry tag queues when you confirm the JO details. Unchecked, it does not. Empty fields stay blank. The QR tag prints when the scan is filed.' && m.check === 'CHECK FOR NEW SCANS' && m.frame === false, 'before the paste both boxes are checked and the note is showing at ' + width);
     eq(m.overflow <= 1, 'Scan snap does not overflow at ' + width);
     const clicked = await evalJson(`(async () => {
       document.getElementById('snapJewelry').click();
