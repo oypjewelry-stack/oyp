@@ -69,7 +69,7 @@ if (draw) {
   const c = L.render(Object.assign({ model, client: 'Maria Santos' }, card));
   eq(a.width === head && a.height === 160 && a.offsetX === ox && a.labelW === 240 && a.labelH === 160 && a.tail === 0, model + ' JO card is ' + head + '×160, label 240×160, offset ' + ox);
   eq(same(a.data, b.data) && same(a.data, c.data), model + ' JO card pixels ignore the client name');
-  eq(noName(a) && a.lines[0] === '26-287' && a.lines.indexOf('DUE 21 OCT') >= 0, model + ' JO card text is the JO and the due date');
+  eq(noName(a) && a.lines.length === 1 && a.lines[0] === '26-287' && a.lines.indexOf('DUE 21 OCT') < 0, model + ' JO card text is the JO when there is no name or weight');
   eq(a.qrBox && a.qrBox.size >= L.px(10) && a.qrBox.y >= L.px(3) && a.qrBox.y + a.qrBox.size <= a.labelH - L.px(3), model + ' JO card QR keeps its quiet zone 3 mm inside the 20 mm feed');
   eq(clearMargin(a), model + ' JO card ink stays about 1 mm inside the edges');
   eq(decode(a) === '26-287', model + ' JO card QR is 26-287');
@@ -143,7 +143,7 @@ const noPrice = L.render({
 });
 eq(readableTag(fullTag) && fullTag.lines.indexOf('₱11,500.00') === 0 && fullTag.lines.indexOf('Silver Necklace') >= 0 && fullTag.lines.indexOf('EARRING') >= 0 && fullTag.lines.indexOf('GOLD') >= 0 && fullTag.lines.indexOf('14KWG') >= 0 && fullTag.lines.indexOf('7g') >= 0 && fullTag.lines.indexOf('26-002') >= 0 && fullTag.lines.indexOf('18-498') >= 0 && fullTag.lines.indexOf('A.R3') >= 0 && fullTag.lines.indexOf('ELENA') < 0 && decode(fullTag) === '26-002', 'a full tag matches the template fields and leaves the client name off');
 const readTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 18500, name: 'Oval sapphire ring', item_type: 'Ring', metal: 'Gold', karat: '18K', stones: 'Sapphire', weight: '20', jo: '26-287', sku: '18-498', location: 'Showroom' });
-eq(readTag.specPx === 16 && readTag.joPx === 14 && readTag.qrBox && readTag.qrBox.size >= L.px(9) && readTag.qrBox.size <= L.px(10) && readTag.lines.indexOf('Sapphire') >= 0 && readTag.lines.indexOf('26-287') >= 0 && readTag.lines.indexOf('Showroom') >= 0 && readTag.lines.indexOf('20g') >= 0 && readTag.lines.indexOf('₱18,500.00') >= 0 && readTag.lines.indexOf('Oval sapphire ring') >= 0 && readTag.lines.indexOf('GOLD') >= 0 && decode(readTag) === '26-287', 'a short stone, JO, location, and weight print larger, and the price, description, and metal stay');
+eq(readTag.specPx === 16 && readTag.joPx === 22 && readTag.qrBox && readTag.qrBox.size >= L.px(9) && readTag.qrBox.size <= L.px(10) && readTag.lines.indexOf('Sapphire') >= 0 && readTag.lines.indexOf('26-287') >= 0 && readTag.lines.indexOf('Showroom') >= 0 && readTag.lines.indexOf('20g') >= 0 && readTag.lines.indexOf('₱18,500.00') >= 0 && readTag.lines.indexOf('Oval sapphire ring') >= 0 && readTag.lines.indexOf('GOLD') >= 0 && decode(readTag) === '26-287', 'a short stone, JO, location, and weight print larger, and the price, description, and metal stay');
 function paperGray(img) {
   let gray = 0;
   const d = img.paper || [];
@@ -169,7 +169,7 @@ eq(tagScene.width === 560 && tagScene.height === 240 && sceneWords.indexOf('Sapp
 const foldGone = !tagScene.rects.some(r => r.role === 'fold');
 const wordAt = {
   '₱18,500.00': [8, 22.75, 17], 'Oval sapphire ring': [8, 44.5, 15], RING: [8, 111, 12], GOLD: [83, 111, 12], '18K': [170, 111, 12],
-  Sapphire: [8, 140.5, 16], '26-287': [8, 178.5, 14], '18-498': [8, 191.5, 14], Showroom: [8, 204.5, 14], '20g': [8, 217.5, 14]
+  Sapphire: [8, 140.5, 16], '26-287': [8, 181.5, 22], '18-498': [8, 194.5, 14], Showroom: [8, 207.5, 14], '20g': [8, 220.5, 14]
 };
 const unmoved = tagScene.texts.every(t => {
   const at = wordAt[t.text];
@@ -190,7 +190,7 @@ eq(qrRects.length > 20 && qrRects.every(function (r) { return r.w === r.h && r.w
 eq(fringe(crispPrev) * 20 < fringe(softPrev), 'a jewelry preview stays nearest-neighbour unless smoothing is requested');
 const longTag = L.render({ kind: 'jewelry_tag', model: 'B1', price: 125000, name: 'Oval sapphire cluster ring with a hidden gallery and a two-line description', item_type: 'Necklace', metal: 'Yellow gold', karat: '18KWG', stones: 'Oval sapphire 2.40ct with tapered baguette shoulders and a hidden halo', weight: '12345', jo: '26-1234A', sku: 'SKU-998877', location: 'Philippine Showroom Vault' });
 const longLoc = longTag.lines.filter(s => /Philippine|Showroom|Vault/.test(s));
-eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longLoc.length === 2 && longLoc.join(' ') === 'Philippine Showroom Vault' && longLoc.every(s => s.indexOf('...') < 0) && longTag.joPx === 14 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
+eq(longTag.lines.indexOf('26-1234A') >= 0 && longTag.lines.indexOf('12345g') >= 0 && longLoc.length === 2 && longLoc.join(' ') === 'Philippine Showroom Vault' && longLoc.every(s => s.indexOf('...') < 0) && longTag.joPx === 20 && longTag.specPx >= 11 && longTag.specPx <= 16 && longTag.lines.some(s => s.indexOf('...') >= 0) && decode(longTag) === '26-1234A' && clearMargin(longTag), 'a long stone, a long location, a 5-digit weight, and a long description stay on the tag');
 function outsideFlaps(img) {
   const rects = L.flapRects(img);
   for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
@@ -299,7 +299,11 @@ const cardA = L.render({ kind: 'jo_card', model: 'B31', jo: '26-002', due: '2026
 const cardMoved = JSON.parse(JSON.stringify(cardLay));
 cardMoved.jo.y = 14;
 const cardB = L.render({ kind: 'jo_card', model: 'B31', jo: '26-002', due: '2026-10-27', layout: cardMoved });
-eq(packed(cardA) !== packed(cardB) && cardA.lines.indexOf('26-002') >= 0 && cardA.lines.indexOf('DUE 27 OCT') >= 0 && decode(cardA) === '26-002', 'the encoded JO bitmap changes when that layout moves the JO');
+eq(packed(cardA) !== packed(cardB) && cardA.lines.indexOf('26-002') >= 0 && cardA.lines.indexOf('DUE 27 OCT') < 0 && cardA.lines.join(' ').indexOf('OCT') < 0 && decode(cardA) === '26-002', 'the encoded JO bitmap changes when that layout moves the JO, and the due date stays off');
+const forcedLay = L.normalizeLayout('jo_card', { line: { show: 1, x: 14.5, y: 11 }, location: { show: 1, x: 14.5, y: 14 }, logo: { show: 1 }, name: { show: 0, x: 1, y: 1 } });
+eq(forcedLay.line.show === 0 && forcedLay.location.show === 0 && forcedLay.logo.show === 0 && forcedLay.name.show === 1 && forcedLay.name.x === 14.5 && forcedLay.weight.show === 1 && forcedLay.qr.show === 1 && forcedLay.jo.show === 1, 'a saved JO card layout only shows the QR, the JO, the name, and the weight');
+const forcedImg = L.render({ kind: 'jo_card', model: 'B31', jo: '26-002', due: '2026-10-27', date: '2026-10-01', stage: 'QC', location: 'A.R3', sku: '18-498', price: 11500, name: 'Pearl stud', weight_g: 4, layout: { line: { show: 1 }, location: { show: 1, x: 14.5, y: 14 }, logo: { show: 1 } } });
+eq(forcedImg.lines.indexOf('26-002') >= 0 && forcedImg.lines.indexOf('Pearl stud') >= 0 && forcedImg.lines.indexOf('4g') >= 0 && forcedImg.lines.join(' ').indexOf('DUE') < 0 && forcedImg.lines.indexOf('A.R3') < 0 && forcedImg.lines.indexOf('18-498') < 0 && !forcedImg.lines.some(s => s.indexOf('₱') >= 0 || s.indexOf('QC') >= 0), 'a saved layout cannot print the due date, location, SKU, or price on the JO sticker');
 eq(!noPrice.lines.some(s => s.indexOf('₱') >= 0 || s.indexOf('0.00') >= 0 || s.indexOf('11,500') >= 0) && noPrice.lines.indexOf('Silver Necklace') >= 0 && noPrice.lines.indexOf('26-002') >= 0, 'a missing price stays blank');
 const shiftedTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-002', shiftX: L.px(0.5), shiftY: L.px(-1) });
 const stillTag = L.render({ kind: 'jewelry_tag', model: 'B1', jo: '26-002' });
@@ -359,8 +363,9 @@ letterJos.forEach(jo => {
   fs.writeFileSync(path.join(outDir, 'b1-jewelry-tag-' + jo + '.png'), png(tagImg));
 });
 const px287 = letterImgs['26-287'].card.joPx, pxB = letterImgs['26-287B'].card.joPx, pxA = letterImgs['26-1234A'].card.joPx, pxShort = letterImgs['11-520'].card.joPx;
-eq(pxShort > px287 && px287 > pxB && pxB > pxA && pxA >= 16 && px287 > 24 && px287 < 40, 'a JO card grows into the width beside the QR, and a longer JO shrinks');
+eq(Math.abs(pxShort - px287) < 0.5 && px287 > pxB && pxB > pxA && pxA >= 16 && px287 > 32 && px287 < 42, 'a JO card fills the width beside the QR, and a longer JO shrinks');
 eq(letterImgs['26-1234A'].tag.lines.indexOf('26-1234A') >= 0 && letterImgs['26-287'].tag.lines.indexOf('26-287') >= 0 && letterImgs['26-1234A'].tag.joPx > 0 && letterImgs['26-1234A'].tag.joPx <= letterImgs['26-287'].tag.joPx, 'a jewelry tag keeps the whole JO, and a longer JO does not grow');
+eq(letterImgs['26-287'].card.qrBox.size === 87 && letterImgs['26-287'].tag.qrBox.size === 75 && read('print-label.js').includes('LiberationSans-Bold.ttf') && read('print-label.js').includes('JO_FAMILY') && read('print.js').includes('word.style.fontFamily = t.family'), 'the open JO face does not shrink either QR');
 const base = L.render(Object.assign({ model: 'B31' }, card));
 const moved = L.render(Object.assign({ model: 'B31', shiftX: L.px(0.5), shiftY: L.px(-1) }, card));
 eq(moved.offsetX === base.offsetX + L.px(0.5) && moved.qrBox.y === base.qrBox.y - L.px(1), 'a saved offset moves the JO card on the head');
@@ -473,8 +478,19 @@ if (draw) {
   const r1 = L.render(Object.assign({ model: 'B1', kind: 'jewelry_tag' }, { jo: d1.jo, price: d1.price, description: d1.description, item_type: d1.item_type, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stones: d1.stones, stone: d1.stone_type, stone_size: d1.stone_size, sku: d1.sku, location: d1.location, size: d1.size }));
   const r2 = L.render({ model: 'B1', kind: 'jewelry_tag', jo: d1.jo, price: d1.price, description: d1.description, item_type: d1.item_type, karat: d1.karat, metal: d1.metal, weight: d1.weight_g, stones: d1.stones, stone: d1.stone_type, stone_size: d1.stone_size, sku: d1.sku, location: d1.location, size: d1.size, client: d1.client });
   eq(same(r1.data, r2.data) && noName(r2) && r2.lines.indexOf('₱11,500.00') >= 0 && r2.lines.indexOf('Silver Necklace') >= 0 && r2.lines.indexOf('EARRING') >= 0 && r2.lines.indexOf('A.R3') >= 0 && r2.lines.indexOf('18-498') >= 0, 'a decorated row prints the tag fields and ignores the client name');
-  const card2 = L.render({ model: 'B31', kind: 'jo_card', jo: '26-287', due: d1.due_date });
-  eq(card2.lines.indexOf('DUE 27 OCT') >= 0, 'a JO card due line reads DUE 27 OCT');
+  const card2 = L.render({ model: 'B31', kind: 'jo_card', jo: '26-287', due: d1.due_date, date: '2026-10-01', stage: 'QC', description: d1.description, weight_g: d1.weight_g, location: d1.location, sku: d1.sku, price: d1.price });
+  eq(card2.lines.indexOf('26-287') >= 0 && card2.lines.indexOf('Silver Necklace') >= 0 && card2.lines.indexOf('3.2g') >= 0 && card2.lines.join(' ').indexOf('DUE') < 0 && card2.lines.join(' ').indexOf('OCT') < 0 && card2.lines.indexOf('A.R3') < 0 && card2.lines.indexOf('18-498') < 0 && card2.lines.join(' ').indexOf('11,500') < 0 && card2.qrBox.size === 87, 'a JO card prints the description and the weight, and leaves the due date, location, and SKU off');
+  const named = L.render({ model: 'B31', kind: 'jo_card', jo: '26-412', name: 'Oval sapphire ring', description: 'ignored description', weight_g: '12.4', due: '2026-10-21', location: 'A.R3' });
+  const bare412 = L.render({ model: 'B31', kind: 'jo_card', jo: '26-412', due: '2026-10-21', location: 'A.R3' });
+  eq(named.lines[0] === '26-412' && named.lines.indexOf('Oval sapphire ring') >= 0 && named.lines.indexOf('12.4g') >= 0 && named.lines.indexOf('ignored description') < 0 && named.lines.join(' ').indexOf('DUE') < 0 && named.lines.indexOf('A.R3') < 0 && named.joPx > 32 && named.joPx < 42 && named.joPx === bare412.joPx && named.qrBox.size === 87 && named.qrBox.size === bare412.qrBox.size && named.qrBox.y === bare412.qrBox.y && named.qrBox.x === bare412.qrBox.x, 'the JO sticker uses the name and weight_g and keeps the large JO and the QR');
+  const guessed = L.render({ model: 'B31', kind: 'jo_card', jo: '26-412', name: 'Ring (guess)', description: 'Also (guess)', weight_g: '9 (guess)', weight: '9', due: '2026-11-01', location: 'vault' });
+  eq(guessed.lines.length === 1 && guessed.lines[0] === '26-412', 'a guessed name and a guessed weight stay blank, and the weight does not fall through');
+  const guessName = L.render({ model: 'B31', kind: 'jo_card', jo: '26-412', name: '(guess)', description: 'Clean band', weight: '7 g' });
+  eq(guessName.lines.indexOf('Clean band') >= 0 && guessName.lines.indexOf('7g') >= 0 && guessName.lines.join(' ').indexOf('guess') < 0 && guessName.lines.length === 3, 'a guessed name falls through to the description, and an empty weight_g uses weight');
+  const emptyFacts = L.render({ model: 'B31', kind: 'jo_card', jo: '26-412', name: '   ', description: '', weight_g: '', due: '2026-10-21', location: 'A.R3' });
+  eq(emptyFacts.lines.length === 1 && emptyFacts.lines[0] === '26-412', 'an empty name and weight leave those lines blank');
+  const longName = L.render({ model: 'B31', kind: 'jo_card', jo: '26-412', name: 'Oval sapphire and diamond halo ring with a long gallery and milgrain edge', weight_g: 20, due: '2026-12-01', location: 'Showroom' });
+  eq(longName.lines[0] === '26-412' && longName.lines.indexOf('20g') >= 0 && longName.lines.length >= 3 && longName.lines.length <= 4 && longName.joPx === named.joPx && longName.qrBox.size === named.qrBox.size && longName.qrBox.y === named.qrBox.y && longName.qrBox.x === named.qrBox.x && longName.lines.join(' ').indexOf('DUE') < 0 && longName.lines.indexOf('Showroom') < 0, 'a long item name wraps under the JO without shrinking the number or the QR');
 }
 let locks = 0;
 ctx.withLock_ = function (fn) { locks++; return fn(); };
@@ -498,9 +514,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=37') && index.includes('print-label.js?v=21') && index.includes('nav.js?v=77') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=68') && index.includes('settings.css?v=12') && index.includes('inv.js?v=35') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=21') && read('nav.js').includes('print.js?v=37') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=37') && read('staff/print-test.html').includes('print-label.js?v=21') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=77') && read('staff/print-test.html').includes('app.css?v=68'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=38') && index.includes('print-label.js?v=23') && index.includes('nav.js?v=79') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=68') && index.includes('settings.css?v=12') && index.includes('inv.js?v=35') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=23') && read('nav.js').includes('print.js?v=38') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=38') && read('staff/print-test.html').includes('print-label.js?v=23') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=79') && read('staff/print-test.html').includes('app.css?v=68'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
