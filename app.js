@@ -33,7 +33,7 @@ async function net(action, data) {
 const CACHED = { dashboard: 1, todoList: 1, contactList: 1, jobReviewList: 1, costRates: 1, priceGet: 1, invList: 1, prodBoard: 1, matList: 1,
   pplList: 1, admShopList: 1, payData: 1, settingsGet: 1, apptList: 1, listUsers: 1, prodWorkers: 1, admCustList: 1, consignList: 1, joInboxList: 1 };
 const READS = Object.assign({ me: 1, admCustAudit: 1, apptClients: 1, costQuotes: 1, dashDrill: 1, invThumbs: 1, jobClientSearch: 1, jobPhoto: 1,
-  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, photoThumbs: 1, photoFile: 1, portalSteps: 1, consignSearch: 1, printQueue: 1, countLoad: 1, joInboxPhoto: 1, joInboxStatus: 1 }, CACHED); // countLoad, printQueue, photoThumbs, photoFile, joInboxPhoto, and joInboxStatus are fresh (not in CACHED). linkEpc and countFinish stay writes. printMark, printEnqueue, and printReprint stay writes. joInboxConfirm, joInboxFix, joInboxDiscard, and joInboxPush stay writes.
+  jobSearch: 1, matHistory: 1, payReceipt: 1, priceHistory: 1, priceJobCost: 1, prodJob: 1, prodPhoto: 1, photoThumbs: 1, photoFile: 1, portalSteps: 1, consignSearch: 1, printQueue: 1, countLoad: 1, joInboxPhoto: 1, joInboxStatus: 1, snapPrintGet: 1 }, CACHED); // countLoad, printQueue, photoThumbs, photoFile, joInboxPhoto, joInboxStatus, and snapPrintGet are fresh (not in CACHED). linkEpc and countFinish stay writes. printMark, printEnqueue, and printReprint stay writes. joInboxConfirm, joInboxFix, joInboxDiscard, and joInboxPush stay writes. snapPrintSet and joInboxRun stay writes.
 const C = { mem: new Map(), fly: new Map(), gen: 0, servedStale: 0, touched: 0, redraw: 0, busy: 0 };
 const FRESH = 20e3, MAX_AGE = 12 * 36e5, CP = 'oypC1:';
 const ns = () => { const t = localStorage.getItem(K.s) || ''; let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return CP + (h >>> 0).toString(36) + ':'; };
@@ -200,7 +200,7 @@ function writeNavOrder(u, keys, canon) {
 function orderedNav(u) { return window.OYPNav.ordered(u); }
 function navLink(k, t, page) {
   const count = k === 'jos' ? '<span class="ncount" data-ncount="review" hidden></span>' : '';
-  if (k === 'scanner') return `<a href="${scanUrl()}" data-nkey="scanner">${esc(t)}</a>`;
+  if (k === 'scanner') return `<a href="#/scanner" data-nkey="scanner" class="${page === 'scanner' ? 'on' : ''}">${esc(t)}</a>`;
   return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}${count}</a>`;
 }
 function navLabel(a) {
@@ -333,7 +333,7 @@ function route() {
   const u = user();
   if (!u) { cacheClear(); show('vLogin'); $('title').textContent = 'Sign in'; warm(); return; }
   const cur0 = (location.hash.match(/^#\/(\w+)/) || [])[1];
-  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'todo' || cur0 === 'count'))) { // staff: simple home; Appointments, To do, and Inventory count open in the back office (Production: Susan + admins only)
+  if (u.role === 'staff' || !NAV[u.role]) if (!(u.role === 'staff' && NAV.staff && (cur0 === 'appts' || cur0 === 'todo' || cur0 === 'count' || cur0 === 'scanner'))) { // staff: simple home; Appointments, To do, Inventory count, and Scanner open in the back office (Production: Susan + admins only)
     show('vStaff'); $('title').textContent = 'OYP Jewelry'; $('hi').textContent = 'Hi, ' + u.display_name; $('lnkScan').href = scanUrl(); return;
   }
   show('vOffice'); $('title').textContent = 'Back office';
@@ -369,6 +369,7 @@ function route() {
   if (page === 'jos' && window.OYPInv) return window.OYPInv.renderJos($('main'), u); // inv.js: Inventory (all JOs / pieces)
   if (page === 'inventory' && window.OYPInv) return window.OYPInv.renderMats($('main'), u); // inv.js: Materials. Stock, and Prices when this role had Material prices.
   if (page === 'count' && window.OYPCount) return window.OYPCount.render($('main'), u); // count.js: RFID inventory count
+  if (page === 'scanner' && window.OYPScanSnap) return window.OYPScanSnap.render($('main'), u); // scansnap.js: Scan snap and Mobile tabs
   if (window.OYPPay && window.OYPPay.pages.includes(page)) return window.OYPPay.render($('main'), u, page); // pay.js
   if (page === 'users') return usersPage();
   if (page === 'customers') return customersPage();

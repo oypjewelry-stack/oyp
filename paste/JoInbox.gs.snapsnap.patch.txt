@@ -1,0 +1,19 @@
+JoInbox.gs — one function at the bottom, then one call. Do not replace the file.
+
+JoInbox.gs is not in this repo. There is no copy under paste/ or elsewhere in /workspace, so the call cannot name the real variables. Paste the function as written. On the one call line, use the two variables your filing function already has.
+
+Paste this at the bottom of JoInbox.gs:
+
+function snapPrintAfterFiled_(jo, fileId) {
+  try {
+    if (typeof snapPrintAfterFile_ === 'function') snapPrintAfterFile_(jo, fileId);
+  } catch (eSnap) {}
+}
+
+Then ONE line on the success path, after the new JO is saved and that scan's Drive file id is still in scope:
+
+  snapPrintAfterFiled_(FILED_JO, SCAN_FILE_ID);
+
+FILED_JO is the variable that holds the job number just filed (26-287 or 26-287B).
+SCAN_FILE_ID is the variable that holds that scan's Drive file id.
+A second run with the same JO, tag, and file id does not queue again. The try/catch stays inside the function, so a missing ScanSnapPrint paste cannot fail the file.

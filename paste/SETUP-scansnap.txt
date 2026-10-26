@@ -1,0 +1,31 @@
+Scan snap checkboxes — what to paste.
+
+The staff page already shows Scan snap and Mobile. Both boxes start checked. Until this paste is deployed, the page says changes are not saved yet, and unchecking does nothing on the server.
+
+New file (code only)
+  Apps Script: + Script, name it ScanSnapPrint, paste paste/ScanSnapPrint.gs (the whole file).
+  Save. Do not run a setup function. The first filed scan creates a SnapSeen tab (columns id, at) if that tab is not already there. Each JO + tag + scan file is one row, and the same id is its own short Script Property (oypSnap.<id>). Nothing is dropped: a rolling list would forget an old file and queue it again. The Settings tab is not created. Drive files are not changed. The two setting rows below are written only when someone saves a checkbox and Settings already has key and value columns.
+
+What the two keys are
+  scanner.snap_jewelry    Print jewelry tag    queues kind jewelry_tag (the B1 jewelry tag)
+  scanner.snap_qr         Print QR tag         queues kind jo_card (the B31 JO sticker, 30x20, QR on the left)
+  The print queue has those two kinds. There is no third sticker named qr_tag.
+  A missing key stays ON. Script Properties hold the values so the 5-minute trigger can read them.
+  When the Settings tab already has key and value columns, the same keys are written there and a SettingsLog row is added if that tab exists. The Settings tab is not created.
+
+Hooks
+  1. JoInbox.gs — paste/JoInbox.gs.snapsnap.patch.txt
+     Paste the function at the bottom, then one call after a ScanSnap file has been saved as a new JO.
+     The call is snapPrintAfterFiled_(FILED_JO, SCAN_FILE_ID).
+     FILED_JO is the variable that holds the filed job number. SCAN_FILE_ID is the variable that holds that scan's Drive file id.
+  2. Auth.gs — paste/Auth.gs.snapsnap.patch.txt
+     One line so snapPrintGet and snapPrintSet reach the new file. Without this line the page keeps saying changes are not saved yet.
+
+Do not replace JoInbox.gs, Auth.gs, PrintQueue.gs, Code.gs, or Settings.gs.
+Do not add snapPrintGet or snapPrintSet to Fast.gs or DashCache.gs.
+The phone scanner is unchanged. Its JO sticker and Jewelry tag switches, and print_auto_jo_card / print_auto_jewelry_tag, are not these keys.
+Unchecked means the hook does not call printEnqueue_ for that tag. Checked calls it once per JO + tag + scan file id, with manual:true, so a repeat of the same file does not queue a second sticker and the phone auto-print switches are not consulted.
+
+Then
+  Deploy > Manage deployments > pencil > Version: New version > Deploy.
+  Do not use New deployment.
