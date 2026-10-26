@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 36;
+var PRINT_JS = 37;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -953,6 +953,16 @@ function previewItem(sticker) {
     size: sticker.size || ''
   };
 }
+/* Encode while the preview is open. Print then reuses the bitmap. */
+function primeSticker(sticker) {
+  if (!sticker || !root.OYPLabel || !root.OYPLabel.render) return;
+  var link = linkFor(sticker.kind);
+  if (!link || !link.connected || tagBlocked(sticker.kind, link)) return;
+  var extra = previewItem(sticker);
+  var item = localItem(sticker.kind, sticker.sourceJo || sticker.jo, 'pq-preview0000', extra);
+  if (sticker.dirty && sticker.dirty.jo) item.jo = sticker.jo;
+  prepareItem(item, link).catch(function () {});
+}
 function rememberEdits(sticker) {
   if (!sticker) return;
   var key = stickerKey(sticker.kind, sticker.sourceJo);
@@ -1619,7 +1629,7 @@ function openPreview(list) {
       dirty: {}
     };
   });
-  var index = 0, alive = true;
+  var index = 0, alive = true, specsReady = Promise.resolve();
   var FIELD_DEFS = [
     ['price', 'Price', 'price'],
     ['name', 'Name', 'name'],
@@ -1734,6 +1744,7 @@ function openPreview(list) {
         sticker[def[2]] = input.value;
         sticker.dirty[def[2]] = true;
         paintSticker(sticker, stage, thumbBtns[index] && thumbBtns[index].host);
+        primeSticker(sticker);
       };
       row.appendChild(cap);
       row.appendChild(input);
@@ -1783,6 +1794,13 @@ function openPreview(list) {
     function paintAll() {
       var i;
       for (i = 0; i < stickers.length; i++) paintSticker(stickers[i], i === index ? stage : null, thumbBtns[i] && thumbBtns[i].host);
+      stickers.forEach(primeSticker);
+    }
+    function stickerPayload(s) {
+      var row = previewItem(s);
+      row.jo = s.sourceJo;
+      row.kind = s.kind;
+      return row;
     }
     function finish(which) {
       if (!alive) return;
@@ -1792,7 +1810,9 @@ function openPreview(list) {
       if (!which) { resolve(null); return; }
       var chosen = which === 'one' ? [stickers[index]] : stickers.slice();
       chosen.forEach(rememberEdits);
-      resolve(printStickers(chosen.map(function (s) { return { jo: s.sourceJo, kind: s.kind }; })));
+      specsReady.then(function () {
+        resolve(printStickers(chosen.map(stickerPayload)));
+      });
     }
     state.previewDone = finish;
     strip.appendChild(prevBtn);
@@ -1813,9 +1833,9 @@ function openPreview(list) {
     sheet.onclick = function () { finish(null); };
     document.body.appendChild(sheet);
     sync();
-    loadSpecs(stickers).then(function (map) {
-      if (!alive) return;
+    specsReady = loadSpecs(stickers).then(function (map) {
       stickers.forEach(function (s) { fillFromSpec(s, map[s.sourceJo]); });
+      if (!alive) return;
       sync();
       return labelReady();
     }).then(function () {
@@ -1878,16 +1898,145 @@ function askPrint(jos) {
     state.kindDone = finish;
   });
 }
+function batchBody(it, id, link) {
+  var body = { jo: it.jo, kind: it.kind };
+  if (id) {
+    body.print_id = id;
+    body.device_id = devId(link);
+  }
+  return body;
+}
+function rowFromBatch(r, id, jo, kind) {
+  var items = (r && r.items) || [], i, it, fallback = null;
+  for (i = 0; i < items.length; i++) {
+    it = items[i];
+    if (!it) continue;
+    if (it.print_id === id) return it;
+    if (!fallback && it.jo === jo && it.kind === kind) fallback = it;
+  }
+  return fallback || (r && r.item) || null;
+}
+function adoptId(tracked, id) {
+  if (!id || tracked.indexOf(id) >= 0) return;
+  tracked.push(id);
+  state.inflight[id] = 1;
+  state.busy[id] = 1;
+}
+/* One sticker, already on its way to the printer. logged is the shared batch write. */
+function printNow(kind, jo, link, id, extra, logged) {
+  var key = stickerKey(kind, jo);
+  if (state.hot[key]) { toast('That sticker is already printing'); return Promise.resolve(); }
+  var item = localItem(kind, jo, id, extra);
+  var tracked = [id];
+  state.hot[key] = id;
+  state.inflight[id] = 1;
+  state.busy[id] = 1;
+  var prep = prepareItem(item, link);
+  logMs('claim', 0, 'local');
+  var printedOk = false, failWhy = '';
+  /* The printer chain ends when the bytes are out. The batch log must not hold the next sticker. */
+  var job = work(link, function () {
+    if (!link.connected) { toast(holdText(kind)); return; }
+    markPrinting(link, true);
+    toast('Printing…');
+    return sendToPrinter(item, prep, link).then(function () {
+      printedOk = true;
+      toast('Printed');
+      markPrinting(link, false);
+    }, function (err) {
+      failWhy = failRow(err);
+      toast(failToast(err));
+      markPrinting(link, false);
+    });
+  });
+  var finished = Promise.resolve(job).then(function () {
+    return Promise.resolve(logged);
+  }, function (err) {
+    markPrinting(link, false);
+    toast(failToast(err));
+    return Promise.resolve(logged);
+  }).then(function (r) {
+    var row = rowFromBatch(r, id, jo, kind);
+    var idOut = (row && row.print_id) || id;
+    adoptId(tracked, idOut);
+    if (!r || r.ok === false) {
+      if (printedOk) toast('Printed, but the queue did not update');
+      return r;
+    }
+    if (printedOk) {
+      state.done[idOut] = 1;
+      state.done[id] = 1;
+      if (row && row.status && row.status !== 'queued' && row.status !== 'failed') return r;
+      markLocal(idOut, 'printed');
+      markLater(idOut, 'printed', '', link);
+      return r;
+    }
+    if (!failWhy) return r;
+    markLocal(idOut, 'failed', failWhy);
+    return callPrint('printMark', { print_id: idOut, mark: 'failed', device_id: devId(link), error: failWhy }).then(function (done) {
+      markFailed(done, 'The sticker failed, and the queue did not update');
+      refresh();
+      return r;
+    });
+  });
+  return finished.finally(function () {
+    delete state.hot[key];
+    tracked.forEach(function (pid) {
+      delete state.inflight[pid];
+      delete state.busy[pid];
+    });
+    if (wantsQueue()) kick();
+    pump();
+  });
+}
+/* Print all / Print this one. A connected printer starts at once. The batch write is the log and does not hold it.
+   Nothing connected still queues {jo, kind} only, the same as before. */
 function printStickers(list) {
   var items = (list || []).filter(function (it) { return it && it.jo && it.kind; });
   if (!items.length) { toast('Select a sticker first'); return Promise.resolve(); }
-  return enqueueBatch({ items: items }).then(function (r) {
-    if (!r || r.ok === false) { toast((r && r.error) || 'Could not queue those stickers'); return r; }
-    toast(queuedText(items, r.skipped));
-    refresh();
-    if (anyUp()) kick();
-    return r;
+  var live = [], cold = [], i, it, link, key, seenHot = false;
+  for (i = 0; i < items.length; i++) {
+    it = items[i];
+    link = linkFor(it.kind);
+    if (link && link.connected && !tagBlocked(it.kind, link)) {
+      key = stickerKey(it.kind, it.jo);
+      if (state.hot[key]) { seenHot = true; continue; }
+      live.push({ it: it, link: link });
+    } else cold.push(it);
+  }
+  if (seenHot && !live.length && !cold.length) {
+    toast('That sticker is already printing');
+    return Promise.resolve();
+  }
+  if (!live.length) {
+    return enqueueBatch({ items: cold.map(function (row) { return { jo: row.jo, kind: row.kind }; }) }).then(function (r) {
+      if (!r || r.ok === false) { toast((r && r.error) || 'Could not queue those stickers'); return r; }
+      toast(queuedText(items, r.skipped));
+      refresh();
+      if (anyUp()) kick();
+      return r;
+    });
+  }
+  var bodies = [], jobs = [], id;
+  for (i = 0; i < live.length; i++) {
+    id = newPrintId();
+    bodies.push(batchBody(live[i].it, id, live[i].link));
+    jobs.push({ it: live[i].it, link: live[i].link, id: id });
+  }
+  for (i = 0; i < cold.length; i++) bodies.push(batchBody(cold[i]));
+  var tEnq = clock();
+  var logged = enqueueBatch({ items: bodies }).then(function (r) {
+    logMs('enqueue', clock() - tEnq, 'batch');
+    if (!r || r.ok === false) toast((r && r.error) || 'Could not queue those stickers');
+    else toast(queuedText(items, r.skipped));
+    return r || { ok: false, error: 'Could not queue those stickers' };
+  }, function () {
+    logMs('enqueue', clock() - tEnq, 'batch');
+    toast('Could not queue those stickers');
+    return { ok: false, error: 'No connection' };
   });
+  for (i = 0; i < jobs.length; i++) printNow(jobs[i].it.kind, jobs[i].it.jo, jobs[i].link, jobs[i].id, jobs[i].it, logged);
+  return logged;
 }
 /* One JO, above Print a range. The kind is chosen here. The preview opens next, and nothing is queued until that sheet is confirmed. */
 function mountOne(el) {
@@ -2021,11 +2170,14 @@ function claimAndPrint(item, link) {
     toast(holdText(item.kind));
     return Promise.resolve();
   }
+  var id = item.print_id;
+  var mine = devId(link);
+  /* The claim request leaves before the bitmap is encoded, so the two overlap. */
+  var tClaim = clock();
+  var claimP = id ? callPrint('printMark', { print_id: id, mark: 'claim', device_id: mine }) : null;
   var prep = prepareItem(item, link);
   var job = work(link, function () {
     if (!link.connected) { markPrinting(link, false); toast(holdText(item.kind)); return; }
-    var id = item.print_id;
-    var mine = devId(link);
     markPrinting(link, true);
     function stop() { markPrinting(link, false); }
     function finish(p) {
@@ -2044,8 +2196,7 @@ function claimAndPrint(item, link) {
       logMs('claim', 0);
       return finish(go(item).catch(function () {}));
     }
-    var tClaim = clock();
-    return finish(callPrint('printMark', { print_id: id, mark: 'claim', device_id: mine }).then(function (r) {
+    return finish(claimP.then(function (r) {
       logMs('claim', clock() - tClaim);
       if (r && r.code === 'TAKEN') {
         state.cool[id] = Date.now() + 1500;
@@ -2297,7 +2448,6 @@ function paint(r, fromServer) {
     drawQueuePreviews(el, r);
     bindQueueSwipe(el);
   });
-  primeQueue(r);
 }
 function paintFrom() { refresh(); }
 function queueNote(r) {
@@ -2521,8 +2671,9 @@ function pump() {
   if (!anyUp() || state.pumping) return;
   state.pumping = true;
   refresh().then(function (r) {
-    if (!r || !wantsQueue()) return;
-    kick();
+    if (r && wantsQueue()) kick();
+    /* Prime after the claim request is out, so the bitmap overlaps that round trip. */
+    if (r && r.items) primeQueue(r);
   }).finally(function () { state.pumping = false; });
 }
 /* On screen, every 1s asks only for the rev. A hidden tab checks every 5th tick. A server without that cheap answer falls back to a full read every 3rd tick that actually runs. */

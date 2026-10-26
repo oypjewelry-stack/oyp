@@ -49,6 +49,16 @@ function noName(img) {
 let draw = true;
 try { L.render({ kind: 'jo_card', model: 'B1', jo: '26-287', due: '2026-10-21' }); }
 catch (e) { draw = false; console.log('skip label bitmaps: ' + (e && e.message || e) + '. Install @napi-rs/canvas to draw them.'); }
+if (draw) {
+  const { performance } = require('perf_hooks');
+  function took(fn) { const t = performance.now(); const v = fn(); return { ms: Math.round((performance.now() - t) * 10) / 10, v: v }; }
+  const tagOpts = { kind: 'jewelry_tag', model: 'B1', jo: '26-287', price: '11500', name: 'Silver Necklace', metal: 'Gold', karat: '14K', stones: 'Cubic Zirconia', weight: '7', location: 'A.R3' };
+  const cardOpts = { kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21' };
+  const renderTag = took(() => L.render(tagOpts));
+  const renderCard = took(() => L.render(cardOpts));
+  const qr = took(() => { const q = global.qrcode(0, 'M'); q.addData('26-287'); q.make(); return q; });
+  eq(renderTag.ms < 250 && renderCard.ms < 250 && qr.ms < 30, 'warm render is ' + renderTag.ms + 'ms for a jewelry tag and ' + renderCard.ms + 'ms for a JO card; QR make is ' + qr.ms + 'ms');
+}
 
 const card = { kind: 'jo_card', jo: '26-287', due: '2026-10-21' };
 const tag = { kind: 'jewelry_tag', jo: '26-287', karat: '18k', metal: 'gold', stone: 'diamond', size: '6', weight: '4.2' };
@@ -488,9 +498,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=36') && index.includes('print-label.js?v=21') && index.includes('nav.js?v=77') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=21') && read('nav.js').includes('print.js?v=36') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=36') && read('staff/print-test.html').includes('print-label.js?v=21') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=77') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=37') && index.includes('print-label.js?v=21') && index.includes('nav.js?v=77') && index.includes('app.js?v=43') && index.includes('settings.js?v=22') && index.includes('print.css?v=24') && index.includes('app.css?v=65') && index.includes('settings.css?v=11') && index.includes('inv.js?v=32') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=24') && read('sim/swipe-preview.html').includes('print.css?v=24'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=21') && read('nav.js').includes('print.js?v=37') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=37') && read('staff/print-test.html').includes('print-label.js?v=21') && read('staff/print-test.html').includes('print.css?v=24') && read('staff/print-test.html').includes('nav.js?v=77') && read('staff/print-test.html').includes('app.css?v=65'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -631,6 +641,13 @@ const rangedAgain = ctx.printEnqueueBatch_({ from: '26-280', to: '26-300', kind:
 eq(rangedAgain.ok && rangedAgain.queued === 0 && rangedAgain.skipped === 5 && batchWrites.length === 1, 'a second range skips stickers already queued');
 const listedBatch = ctx.printEnqueueBatch_({ items: [{ jo: '26-280', kind: 'jo_card' }, { jo: '26-280', kind: 'jo_card' }, { jo: '26-310', kind: 'jewelry_tag' }] }, { username: 'ada' });
 eq(listedBatch.ok && listedBatch.queued === 1 && listedBatch.skipped === 1 && batchWrites.length === 2 && batchWrites[1].lines.length === 1, 'a list queues one new sticker and skips the duplicate');
+const idBatch = ctx.printEnqueueBatch_({ items: [{ jo: '26-330', kind: 'jo_card', print_id: 'pq-clientbatch1', device_id: 'dev-a' }] }, { username: 'ada' });
+const idRow = sheetRows.find(r => r.print_id === 'pq-clientbatch1');
+eq(idBatch.ok && idBatch.items && idBatch.items[0].print_id === 'pq-clientbatch1' && idBatch.items[0].jo === '26-330' && idRow && idRow.device_id === 'dev-a' && !!idRow.printed_at, 'a live batch keeps the client print id, returns it, and claims it for that station');
+const idAgain = ctx.printEnqueueBatch_({ items: [{ jo: '26-330', kind: 'jo_card', print_id: 'pq-clientbatch1', device_id: 'dev-a' }] }, { username: 'ada' });
+eq(idAgain.queued === 0 && idAgain.items[0].print_id === 'pq-clientbatch1' && sheetRows.filter(r => r.jo === '26-330').length === 1, 'the same client print id does not add a second batch row');
+const dupId = ctx.printEnqueueBatch_({ items: [{ jo: '26-330', kind: 'jo_card', print_id: 'pq-otherclient1', device_id: 'dev-b' }] }, { username: 'ada' });
+eq(dupId.skipped === 1 && dupId.items[0].print_id === 'pq-clientbatch1', 'a second id for a waiting sticker returns the row already queued');
 sheetRows.push({ print_id: 'pq-failb', jo: '26-320', kind: 'jo_card', status: 'failed', error: 'x', _r: 3 });
 const failWrites = batchWrites.length;
 const requeued = ctx.printEnqueueBatch_({ items: [{ jo: '26-320', kind: 'jo_card' }] }, { username: 'ada' });
@@ -842,6 +859,15 @@ function bootPrint(opts) {
       if (body.action === 'printEnqueue' || body.op === 'printEnqueue' || body.action === 'printReprint' || body.op === 'printReprint') {
         data = { ok: true, created: true, item: { print_id: opts.aliasId || body.print_id || ('pq-n' + calls.length), jo: body.jo, kind: body.kind, status: 'queued' } };
       }
+      if (body.action === 'printEnqueueBatch' || body.op === 'printEnqueueBatch') {
+        const list = body.items || [];
+        data = {
+          ok: true, queued: list.length, skipped: 0,
+          items: list.map(function (it, i) {
+            return { print_id: (opts.aliasBatch && opts.aliasBatch[i]) || it.print_id || ('pq-b' + calls.length + '-' + i), jo: it.jo, kind: it.kind, status: 'queued' };
+          })
+        };
+      }
       if (body.mark === 'claim') {
         if (opts.taken) data = { ok: false, code: 'TAKEN', error: 'Another printer has this sticker' };
         else {
@@ -857,7 +883,9 @@ function bootPrint(opts) {
       }
       const res = { json() { return Promise.resolve(data); }, clone() { return { json() { return Promise.resolve(data); } }; } };
       const scriptMs = lag ? lag.script : 0;
-      const scriptCall = body.action === 'printEnqueue' || body.op === 'printEnqueue' || body.action === 'printReprint' || body.op === 'printReprint' || body.mark === 'claim' || body.mark === 'printed' || body.mark === 'failed';
+      const batchCall = body.action === 'printEnqueueBatch' || body.op === 'printEnqueueBatch';
+      const queueCall = body.action === 'printQueue' || body.op === 'printQueue';
+      const scriptCall = batchCall || queueCall && opts.lagQueue || body.action === 'printEnqueue' || body.op === 'printEnqueue' || body.action === 'printReprint' || body.op === 'printReprint' || body.mark === 'claim' || body.mark === 'printed' || body.mark === 'failed';
       function finishScript() {
         if (scriptMs) vnow = Math.max(vnow, (finishScript.started || 0) + scriptMs);
         timeline.push({ ev: 'fetch-done', action: body.action || body.op || '', mark: body.mark || '', t: scriptMs ? (finishScript.started || 0) + scriptMs : vnow });
@@ -1757,6 +1785,165 @@ drain().then(function () {
       const sent = neu.calls.filter(function (b) { return b.action === 'printEnqueue' || b.op === 'printEnqueue'; });
       eq(enq && enq.t === 400 && printed.length === 1 && printed[0].print_id === 'pq-serverrow1' && sent[0].print_id !== 'pq-serverrow1', 'enqueue finishes at 400ms and the existing row is the one marked printed');
       eq(marks.sendAt - 30 === 770 && marks.paper - 150 === 770, 'tap to printer is 800ms before and 30ms after; tap to paper is 920ms before and 150ms after');
+    });
+  }).then(function () {
+    const oldAll = bootPrint({
+      lag: lag, lagQueue: true, manualTime: true, drive: true, models: ['B1'],
+      queue: { ok: true, items: [] }, store: store
+    });
+    const t0 = oldAll.now();
+    const stages = {};
+    const enq = oldAll.sandbox.fetch('https://example.test', { method: 'POST', body: JSON.stringify({ action: 'printEnqueueBatch', items: [{ jo: '26-287B', kind: 'jewelry_tag' }] }) });
+    oldAll.flush(400);
+    return drain().then(function () { return enq; }).then(function () {
+      stages.enqueue = oldAll.now() - t0;
+      eq(!oldAll.timeline.some(function (e) { return e.ev === 'send'; }), 'after the batch write the old Print all kicks a queue that does not have the row yet');
+      const brief = oldAll.sandbox.fetch('https://example.test', { method: 'POST', body: JSON.stringify({ action: 'printQueue', brief: 1 }) });
+      oldAll.flush(400);
+      console.log('after brief flush', oldAll.now(), oldAll.timeline.map(function (e) { return e.action + '@' + e.t; }).join(','));
+      return drain().then(function () { return brief; });
+    }).then(function () {
+      stages.brief = oldAll.now() - t0;
+      const full = oldAll.sandbox.fetch('https://example.test', { method: 'POST', body: JSON.stringify({ action: 'printQueue' }) });
+      oldAll.flush(400);
+      return drain().then(function () { return full; });
+    }).then(function () {
+      stages.full = oldAll.now() - t0;
+      const claim = oldAll.sandbox.fetch('https://example.test', { method: 'POST', body: JSON.stringify({ action: 'printMark', mark: 'claim', print_id: 'pq-oldall' }) });
+      oldAll.sandbox.niimbluelib.ImageEncoder.encodeCanvas({ width: 384, height: 10 });
+      oldAll.flush(400);
+      return drain().then(function () { return claim; }).then(function () {
+        stages.send = oldAll.now() - t0;
+        const client = new oldAll.sandbox.niimbluelib.NiimbotBluetoothClient();
+        const job = client.protocol.newPrintTask('B1');
+        const pageP = job.printInit().then(function () { return job.printPage({}); });
+        return drain().then(function () {
+          oldAll.flush(120);
+          return drain().then(function () { return pageP; });
+        }).then(function () {
+          stages.paper = oldAll.now() - t0;
+          eq(stages.enqueue === 400 && stages.brief === 800 && stages.full === 1200 && stages.send === 1600 && stages.paper === 1720, 'old Print all, poll gap 0, script 400ms: batch 400, brief 800, full queue 1200, claim 400 with the 30ms render inside it, printer at 1600, paper at 1720');
+        });
+      });
+    });
+  }).then(function () {
+    function arm(env) {
+      const sheets = [];
+      env.sandbox.document.createElement = function () {
+        const el = { className: '', id: '', textContent: '', value: '', style: {}, children: [], attrs: {}, parentNode: null, onclick: null, disabled: false };
+        el.setAttribute = function (k, v) { el.attrs[k] = String(v); if (k === 'id') el.id = String(v); };
+        el.getAttribute = function (k) { return Object.prototype.hasOwnProperty.call(el.attrs, k) ? el.attrs[k] : null; };
+        el.appendChild = function (child) { el.children.push(child); child.parentNode = el; return child; };
+        el.remove = function () {};
+        el.getContext = function () { return { fillStyle: '#fff', imageSmoothingEnabled: false, fillRect() {}, drawImage() {} }; };
+        return el;
+      };
+      env.sandbox.document.body.appendChild = function (el) { sheets.push(el); return el; };
+      env.sandbox.document.getElementById = function () { return null; };
+      env.sheets = sheets;
+      return env;
+    }
+    function pressKind(env, kind) {
+      function walk(n) {
+        if (n && n.attrs && n.attrs['data-kind'] === kind) return n;
+        const kids = (n && n.children) || [];
+        for (let i = 0; i < kids.length; i++) { const hit = walk(kids[i]); if (hit) return hit; }
+        return null;
+      }
+      walk(env.sheets[env.sheets.length - 1]).onclick({ stopPropagation() {} });
+    }
+    function clickPrint(env, val) {
+      function walk(n) {
+        if (n && n.attrs && n.attrs['data-print'] === val) return n;
+        const kids = (n && n.children) || [];
+        for (let i = 0; i < kids.length; i++) { const hit = walk(kids[i]); if (hit) return hit; }
+        return null;
+      }
+      let btn = null;
+      for (let i = 0; i < env.sheets.length && !btn; i++) btn = walk(env.sheets[i]);
+      btn.onclick({ stopPropagation() {} });
+    }
+    const fast = arm(bootPrint({
+      lag: lag, manualTime: true, drive: true, canvasWidth: 384, models: ['B1'], names: ['B1-HC17121009'],
+      aliasBatch: ['pq-serverbatch1', 'pq-serverbatch2'],
+      queue: { ok: true, items: [], spec: { price: '11500', description: 'Silver Necklace', metal: 'Gold', client: 'Ada Lopez' } },
+      store: { oypPrint: JSON.stringify({ auto: true, model: 'B1', task: 'B1' }) }
+    }));
+    fast.sandbox.OYPPrint.connect('bluetooth');
+    return drain().then(function () {
+      const pending = fast.sandbox.OYPPrint.askPrint(['26-287B', '26-288']);
+      pressKind(fast, 'jewelry_tag');
+      return drain().then(function () {
+        const primed = fast.encodes.length;
+        eq(primed === 2, 'both tags are encoded while the preview is open');
+        const t0 = fast.now();
+        clickPrint(fast, 'all');
+        return drain().then(function () {
+          eq(fast.encodes.length === primed, 'Print all reuses the preview bitmaps');
+          const send = fast.timeline.filter(function (e) { return e.ev === 'send'; })[0];
+          const body = fast.calls.filter(function (b) { return b.op === 'printEnqueueBatch' || b.action === 'printEnqueueBatch'; }).pop();
+          const extra = body && body.items.some(function (it) { return it.price || it.name || it.client || it.description; });
+          const keys = body && body.items[0] && Object.keys(body.items[0]).sort().join(',');
+          eq(send && send.t === t0 && !extra && keys === 'device_id,jo,kind,print_id' && body.items.map(function (it) { return it.jo; }).join(',') === '26-287B,26-288', 'Print all reaches the printer at the click, and the batch log has ids but not the preview fields');
+          eq(!fast.timeline.some(function (e) { return e.ev === 'fetch-done' && e.action === 'printEnqueueBatch'; }), 'the batch write is still in flight when the first sticker starts');
+          fast.sandbox.OYPPrint.printStickers([{ jo: '26-287B', kind: 'jewelry_tag' }, { jo: '26-288', kind: 'jewelry_tag' }]);
+          return drain().then(function () {
+            eq(fast.timeline.filter(function (e) { return e.ev === 'send'; }).length === 1 && fast.calls.filter(function (b) { return b.op === 'printEnqueueBatch' || b.action === 'printEnqueueBatch'; }).length === 1, 'a second Print all while those stickers are printing does not send them again');
+            fast.flush(120);
+            return drain().then(function () {
+              const paper = fast.timeline.filter(function (e) { return e.ev === 'paper'; })[0];
+              const send2 = fast.timeline.filter(function (e) { return e.ev === 'send'; })[1];
+              eq(paper && paper.t - t0 === 120 && send2 && send2.t - t0 === 120, 'the first sticker is on paper at 120ms and the second send starts then');
+              fast.flush(120);
+              return drain().then(function () {
+                const paper2 = fast.timeline.filter(function (e) { return e.ev === 'paper'; })[1];
+                eq(paper2 && paper2.t - t0 === 240 && !fast.timeline.some(function (e) { return e.ev === 'fetch-done' && e.action === 'printEnqueueBatch'; }), 'the second sticker is out at 240ms, with the batch log still in flight');
+                fast.flush(400);
+                return drain().then(function () {
+                  const enq = fast.timeline.filter(function (e) { return e.ev === 'fetch-done' && e.action === 'printEnqueueBatch'; }).pop();
+                  const printed = fast.calls.filter(function (b) { return b.mark === 'printed'; });
+                  eq(enq && enq.t - t0 === 400 && paper2.t < enq.t, 'the batch log finishes at 400ms, after both stickers are out');
+                  eq(printed.length === 2 && printed[0].print_id === 'pq-serverbatch1' && printed[1].print_id === 'pq-serverbatch2' && !fast.calls.some(function (b) { return b.mark === 'claim'; }), 'Print all marks the server rows and does not claim');
+                  return pending;
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  }).then(function () {
+    const scanOpts = {
+      lag: lag, lagQueue: true, manualTime: true, drive: true, brief: true, models: ['B31'], names: ['B31-HB03011342'],
+      queue: { ok: true, items: [] }, rev: '1',
+      store: { oypPrint: JSON.stringify({ auto: true, model: 'B31', task: 'B1' }) }
+    };
+    const scan = bootPrint(scanOpts);
+    scan.sandbox.OYPPrint.connect('bluetooth');
+    return drain().then(function () {
+      scan.flush(400);
+      return drain();
+    }).then(function () {
+      const t0 = scan.now();
+      scanOpts.rev = '2';
+      scanOpts.queue.items.push({ print_id: 'pq-scan1', jo: '26-610', kind: 'jo_card', status: 'queued' });
+      scan.workers[0].onmessage();
+      scan.flush(400);
+      return drain().then(function () {
+        scan.flush(400);
+        return drain().then(function () {
+          scan.flush(400);
+          return drain().then(function () {
+            const send = scan.timeline.filter(function (e) { return e.ev === 'send'; }).pop();
+            eq(send && send.t - t0 === 1200 && scan.calls.some(function (b) { return b.mark === 'claim' && b.print_id === 'pq-scan1'; }), 'ScanSnap, poll gap 0: brief 400 + full queue 400 + claim 400, render inside the claim, printer at 1200ms');
+            scan.flush(120);
+            return drain().then(function () {
+              const paper = scan.timeline.filter(function (e) { return e.ev === 'paper'; }).pop();
+              eq(paper && paper.t - t0 === 1320, 'ScanSnap paper is 1320ms after the poll in this model, and the poll itself waits 0 to 1000ms');
+            });
+          });
+        });
+      });
     });
   });
 }).then(function () {
