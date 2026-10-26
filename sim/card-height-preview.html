@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventory card height</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@500&family=Bodoni+Moda:opsz,wght@6..96,400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../app.css?v=66">
+<style>body{margin:0;background:#fff}#main{padding:12px}</style>
+</head>
+<body>
+<div id="main"></div>
+<script>
+(function () {
+  const LONG = 'Hand-forged 18k yellow gold cuff with a row of blue sapphires and a hidden clasp, sized for a small wrist and finished with a brushed interior.';
+  function jpeg(draw) {
+    const c = document.createElement('canvas');
+    c.width = 640; c.height = 480;
+    draw(c.getContext('2d'), c);
+    return c.toDataURL('image/jpeg', 0.8);
+  }
+  const photo = jpeg(function (g, c) {
+    g.fillStyle = '#e7d7b8';
+    g.fillRect(0, 0, c.width, c.height);
+    g.strokeStyle = '#8d6b2e';
+    g.lineWidth = 18;
+    g.beginPath();
+    g.ellipse(320, 240, 180, 180, 0, 0, Math.PI * 2);
+    g.stroke();
+  });
+  const sketch = jpeg(function (g, c) {
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.strokeStyle = '#161616';
+    g.lineWidth = 8;
+    g.strokeRect(180, 70, 280, 340);
+    g.beginPath();
+    g.ellipse(320, 250, 90, 140, 0, 0, Math.PI * 2);
+    g.stroke();
+  });
+  const PHOTOS = { '26-501': { src: photo, sketch: false, id: 'file-501' }, '26-503': { src: sketch, sketch: true, id: 'file-503' } };
+  window.LIST = {
+    ok: true,
+    can: { cost: true, price: true },
+    stages: [['bench', 'Bench']],
+    locations: [['vault', 'Vault'], ['working', 'In production']],
+    item_types: [['ring', 'Ring'], ['cuff', 'Cuff']],
+    jobs: [
+      { jo: '26-501', client: 'Elena Tan', description: LONG, location: 'vault', item_type: 'cuff', metal: 'Yellow gold', karat: '18', stone_type: 'Sapphire', stone_size: '3mm', cost: 4200, price: 12800, margin_pct: 67 },
+      { jo: '26-502', client: 'Mia', description: 'Ring', location: 'vault', item_type: 'ring', cost: 800, price: 2400 },
+      { jo: '26-503', client: 'Rosa', description: 'Repair of a family band', location: 'working', stage: 'bench', col: 'bench', late: true, type: 'repair', review: true, pending_review: true, item_type: 'ring', metal: 'Platinum', cost: 1500, price: 4800 },
+      { jo: '26-504', client: 'Jon', description: '', location: '', cost: null, price: 900 }
+    ]
+  };
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  window.OYP = {
+    esc: esc,
+    here: function () { return function () { return true; }; },
+    locLabel: function (k, server) { return ({ working: 'In production', vault: 'Vault' })[k] || server || k || ''; },
+    piece: function (name, jo) {
+      return '<span class="piece" title="' + esc(name + ' · ' + jo) + '"><span class="pname">' + esc(name) + '</span><span class="psep"> · </span><span class="pjo">' + esc(jo) + '</span></span>';
+    },
+    toast: function () {},
+    closePopover: function () {},
+    call: function (action) {
+      if (action === 'invList') return Promise.resolve(window.LIST);
+      return Promise.resolve({ ok: true });
+    }
+  };
+  window.OYPPhotos = {
+    watch: function (grid, opts) {
+      grid.querySelectorAll(opts.sel).forEach(function (el) {
+        const row = PHOTOS[el.dataset.th];
+        if (!row) { opts.paint(el, '', null); return; }
+        opts.paint(el, row.src, row);
+      });
+    }
+  };
+  window.OYPJoInbox = { count: function () { return 2; }, render: function (host) { host.textContent = 'Held scans'; } };
+  window.__long = LONG;
+})();
+</script>
+<script src="../inv.js?v=33"></script>
+<script>
+window.OYPInv.renderJos(document.getElementById('main'), { role: 'admin', username: 'ada', display_name: 'Ada' }).then(function () {
+  window.__ready = 'yes';
+});
+</script>
+</body>
+</html>
