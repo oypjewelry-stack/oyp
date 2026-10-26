@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 38;
+var PRINT_JS = 39;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -3655,7 +3655,7 @@ function css() {
   var base = src ? src.replace(/[^/]*$/, '') : '';
   var link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = (base || '') + 'print.css?v=24';
+  link.href = (base || '') + 'print.css?v=25';
   (document.head || document.documentElement).appendChild(link);
 }
 function start() {

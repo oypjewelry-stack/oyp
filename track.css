@@ -47,7 +47,7 @@
 .tqconf,.tqform{margin-top:calc(12px*var(--sp));border-top:1px solid #eee;padding-top:calc(12px*var(--sp))}
 .tqconf p{margin:0 0 calc(6px*var(--sp));font-size:calc(15px*var(--fs))}
 .tqbtns{display:flex;align-items:center;gap:calc(16px*var(--sp));margin-top:calc(10px*var(--sp))}.tqbtns .pill{flex:1}
-.tqform textarea{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:calc(16px*var(--fs));resize:vertical;outline:none;min-height:90px}
+.tqform textarea{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:max(16px,calc(16px*var(--fs)));resize:vertical;outline:none;min-height:90px}
 .tqform textarea:focus{border-color:#111}
 .tq .err:empty{display:none}.tq .err{text-align:left;margin-top:calc(8px*var(--sp))}
 .tq .note{margin-top:calc(12px*var(--sp))}

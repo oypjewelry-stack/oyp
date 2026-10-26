@@ -6,7 +6,7 @@ body.soft .top{background:#f6f6f4;border-bottom-color:#ecebe7}
 .grey{color:#8a8a8a;font-family:var(--label);font-size:calc(15px*var(--fs));line-height:1.5}
 .card{background:#fff;border-radius:calc(22px*var(--rad));padding:calc(22px*var(--sp));box-shadow:0 1px 2px rgba(0,0,0,.03)}
 .field{display:block;margin:calc(14px*var(--sp)) 0 0}.field .lab{margin:0 calc(4px*var(--sp)) calc(6px*var(--sp))}
-.field input{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(13px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:calc(18px*var(--fs));background:#fff;outline:none}
+.field input{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(13px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:max(16px,calc(18px*var(--fs)));background:#fff;outline:none}
 .field input:focus{border-color:#111}
 .pin{letter-spacing:.6em;text-align:center;font-size:calc(24px*var(--fs))!important}
 .links{display:flex;justify-content:space-between;margin-top:calc(16px*var(--sp))}
@@ -76,6 +76,6 @@ a.back{display:inline-block;text-decoration:none}
 .myap .alab{display:block;font-family:var(--head);font-weight:500;font-size:calc(18px*var(--hs));color:#111}
 .myap .ast{display:block;font-family:var(--label);font-weight:600;font-size:calc(14px*var(--fs));margin:calc(4px*var(--sp)) 0 calc(2px*var(--sp));color:#111}
 .myap .apform{margin-top:calc(12px*var(--sp))}
-.myap select,.myap textarea{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(13px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:calc(16px*var(--fs));background:#fff;outline:none}
+.myap select,.myap textarea{width:100%;border:1.5px solid #ddd;border-radius:calc(14px*var(--rad));padding:calc(13px*var(--sp)) calc(14px*var(--sp));font-family:var(--label);font-size:max(16px,calc(16px*var(--fs)));background:#fff;outline:none}
 .myap textarea{min-height:72px;resize:vertical}
 .myap select:focus,.myap textarea:focus{border-color:#111}

@@ -60,7 +60,7 @@ eq(!/CACHE:[^}]*portalAppts/.test(fast), 'portalAppts is not in FAST.CACHE');
 eq(dcache.indexOf('portalAppts: 1') >= 0, 'portalAppts is a DashCache read');
 eq(dcache.indexOf('portalApptRequest') < 0, 'portalApptRequest stays out of DashCache');
 eq(live(path.join(root, 'my/index.html')).indexOf('my.js?v=4') >= 0, 'my.js version bumped');
-eq(live(path.join(root, 'my/index.html')).indexOf('cust.css?v=8') >= 0, 'cust.css version bumped');
+eq(live(path.join(root, 'my/index.html')).indexOf('cust.css?v=9') >= 0, 'cust.css version bumped');
 eq(live(path.join(root, 'my/my.js')).indexOf('Requested, waiting for confirmation') < 0, 'the waiting phrase comes from the server label');
 eq(live(path.join(root, 'my/my.js')).indexOf('Request sent.') >= 0, 'the customer is told the request was sent');
 
