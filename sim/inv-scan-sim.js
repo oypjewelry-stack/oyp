@@ -154,14 +154,15 @@ async function chromeAt(width, port, pageUrl, shots) {
         const q = document.getElementById('ivQ');
         const lay = document.getElementById('layEditBtn');
         const choose = document.getElementById('ivChoose');
-        if (!q || !lay || !choose || document.querySelector('[aria-busy="true"]')) return null;
+        if (!q || !choose || document.querySelector('[aria-busy="true"]')) return null;
+        const shown = !!(lay && getComputedStyle(lay).display !== 'none' && lay.getBoundingClientRect().height > 0);
         const modeBtn = document.getElementById('ivQMode');
-        return q.getAttribute('inputmode') + '|' + lay.textContent + '|' + choose.textContent + '|' + (modeBtn ? 'button' : 'nobutton') + '|' + (localStorage.getItem('oypIvQMode') || '');
+        return q.getAttribute('inputmode') + '|' + (shown ? lay.textContent : 'hidden') + '|' + choose.textContent + '|' + (modeBtn ? 'button' : 'nobutton') + '|' + (localStorage.getItem('oypIvQMode') || '');
       })()`);
       if (ready) break;
       await sleep(150);
     }
-    check(ready === 'search|Edit layout|Select|nobutton|', 'at ' + width + 'px Inventory opens ready to type, with no saved scan mode (' + ready + ')');
+    check(ready === 'search|hidden|Select|nobutton|', 'at ' + width + 'px Inventory opens ready to type, with Edit layout hidden and no saved scan mode (' + ready + ')');
     const fit = async (label) => {
       const box = await evalJs(`(() => {
         const w = window.innerWidth;
@@ -182,7 +183,7 @@ async function chromeAt(width, port, pageUrl, shots) {
       })()`);
       const inside = part => part && part.l >= -1 && part.r <= box.w + 1 && part.w > 0;
       check(box && box.sw <= box.w, label + ' scrollWidth ' + (box && box.sw) + ' <= ' + (box && box.w));
-      check(box && inside(box.top) && inside(box.lay) && inside(box.choose) && inside(box.sum) && inside(box.chips) && inside(box.q) && !box.mode && box.q.w > box.w * 0.8, label + ' header, Edit layout, Select, stats, chips and search stay on screen ' + JSON.stringify(box && { top: box.top, lay: box.lay, choose: box.choose, sum: box.sum, chips: box.chips, q: box.q, mode: box.mode }));
+      check(box && inside(box.top) && !box.lay && inside(box.choose) && inside(box.sum) && inside(box.chips) && inside(box.q) && !box.mode && box.q.w > box.w * 0.8, label + ' header, Select, stats, chips and search stay on screen with Edit layout hidden ' + JSON.stringify(box && { top: box.top, lay: box.lay, choose: box.choose, sum: box.sum, chips: box.chips, q: box.q, mode: box.mode }));
       if (box && box.sels) check(inside(box.sels), label + ' filters stay on screen ' + JSON.stringify(box.sels));
       const small = (box && box.fonts || []).filter(f => !(f.fs >= 16));
       check(box && box.fonts.length > 0 && small.length === 0, label + ' inputs and selects are at least 16px ' + JSON.stringify(small));

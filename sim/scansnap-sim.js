@@ -20,7 +20,7 @@ const gs = read('paste/ScanSnapPrint.gs');
 const hook = read('paste/JoInbox.gs.snapsnap.patch.txt');
 const auth = read('paste/Auth.gs.snapsnap.patch.txt');
 
-eq(index.includes('scansnap.js?v=4') && index.includes('app.js?v=43') && index.includes('app.css?v=69') && index.includes('nav.js?v=80'), 'the scanner page is cache-busted');
+eq(index.includes('scansnap.js?v=4') && index.includes('app.js?v=44') && index.includes('app.css?v=69') && index.includes('nav.js?v=80'), 'the scanner page is cache-busted');
 eq(read('index.html').includes('app.css?v=30') && !read('index.html').includes('app.css?v=69'), 'the customer page stays on app.css?v=30');
 eq(app.includes("page === 'scanner'") && app.includes('OYPScanSnap.render') && !app.includes('OYPJoInbox.render'), 'Scanner is a back-office page and Needs a look is not rendered from the router');
 eq(app.includes('snapPrintGet: 1') && !/snapPrintSet\s*:/.test(app), 'snapPrintGet is a fresh read and snapPrintSet stays a write');
