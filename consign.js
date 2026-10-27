@@ -128,11 +128,51 @@ async function reload(main) {
   return r;
 }
 
+function printWhen() {
+  const d = new Date();
+  let h = d.getHours();
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return MON[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() + ', ' + h + ':' + min + ' ' + ap;
+}
+function printHead(esc) {
+  return `<div class="csprinthead"><span class="cswhen">${esc(printWhen())}</span><span class="cspnum">1/1</span></div>`;
+}
+function makerName(s) {
+  const me = U || {};
+  const named = String((s && s.created_name) || '').trim();
+  if (named) return named;
+  const by = String((s && s.created_by) || '').trim();
+  if (by && me.username && by.toLowerCase() === String(me.username).toLowerCase()) return me.display_name || by;
+  if (!by) return me.display_name || '';
+  if (/\s/.test(by)) return by;
+  return by;
+}
+function signOff(s, esc) {
+  return `<div class="cssigns"><div><div class="csline"></div><span class="lab">Consignee</span><b>${esc(s.consignee || '')}</b></div>
+      <div><div class="csline"></div><span class="lab">OYP Jewelry</span><b>${esc(makerName(s))}</b></div></div>`;
+}
+const PAGE_TITLE = 'OYP Jewelry · Staff';
+function usePrintTitle(on) {
+  document.title = on ? ((S.id || '').trim() || ' ') : PAGE_TITLE;
+}
+let titleWas = '';
+window.addEventListener('beforeprint', () => {
+  titleWas = document.title;
+  if (document.querySelector('.csheet')) document.title = (S.id || '').trim() || ' ';
+});
+window.addEventListener('afterprint', () => {
+  if (S.mode === 'print' || S.mode === 'rprint') document.title = (S.id || '').trim() || ' ';
+  else if (titleWas) document.title = titleWas;
+});
 function draw(main) {
   stopCam();
   if (S.mode === 'new' && !S.draft) S.draft = blankDraft();
   const scanning = S.scan;
-  document.documentElement.classList.toggle('cs-onprint', S.mode === 'print' || S.mode === 'rprint');
+  const printing = S.mode === 'print' || S.mode === 'rprint';
+  document.documentElement.classList.toggle('cs-onprint', printing);
+  usePrintTitle(printing);
   if (S.mode === 'new') main.innerHTML = drawNew();
   else if (S.mode === 'rprint') main.innerHTML = drawReturn();
   else if (S.mode === 'sheet' || S.mode === 'print') main.innerHTML = drawSheet(S.mode === 'print');
@@ -261,22 +301,23 @@ function drawSheet(printing) {
   const body = (s.items || []).map(it => `<tr class="${it.overdue ? 'od' : ''}"><td>${pieceBits(it, printing ? { joOnly: true } : null)}${it.item_id ? `<br><span class="muted">${esc(it.item_id)}</span>` : ''}</td>
     <td>${esc(it.description || '—')}</td>
     ${showVal ? `<td class="r">${it.value != null && it.value !== '' ? esc(peso(it.value)) : '—'}</td>` : ''}
-    <td>${it.status === 'consigned' ? (it.overdue ? '<span class="chip gold">Overdue</span>' : '<span class="chip">Out</span>') : `<span class="chip">${esc(it.status === 'sold' ? 'Sold' : 'Returned')}</span>`}
+    <td>${it.status === 'consigned' ? (it.overdue ? '<span class="chip gold">Overdue</span>' : '<span class="chip">Consigned</span>') : `<span class="chip">${esc(it.status === 'sold' ? 'Sold' : 'Returned')}</span>`}
       ${!printing && itemMoney(it) ? `<span class="csmoney cs-noprint">${esc(itemMoney(it))}</span>` : ''}
       ${!printing && it.status === 'consigned' ? `<button type="button" class="lnk" data-back="${esc(it.line_id)}">Returned</button><button type="button" class="lnk" data-sold="${esc(it.line_id)}">Sold</button>` : ''}
       ${!printing && stillOwes(it) ? `<button type="button" class="lnk cs-noprint" data-pay="${esc(it.line_id)}">Record payment</button>` : ''}</td></tr>`).join('');
   const tot = showVal ? (s.items || []).reduce((n, it) => n + (Number(it.value) || 0), 0) : 0;
-  const sheet = `<article class="csheet">
+  const many = printing && (s.items || []).length > 12;
+  const sheet = `<article class="csheet${many ? ' csmany' : ''}">
+    ${printing ? printHead(esc) : ''}
     <p class="csno"><span class="lab">Consignment</span>${esc(s.consignment_id)}</p>
-    <div class="csbrand"><img src="${esc(logoSrc())}" alt=""><b>OYP Jewelry</b></div>
+    <div class="csbrand"><img src="${esc(logoSrc())}" alt="">${printing ? '' : '<b>OYP Jewelry</b>'}</div>
     <p class="cscontact">8892 1171 · oypjewelry@gmail.com</p>
     <div class="csmeta"><div><span class="lab">Date</span><b>${esc(dayLong(s.date_out))}</b></div>
       <div><span class="lab">Due back</span><b>${esc(s.due_date ? dayLong(s.due_date) : '—')}</b></div></div>
-    <p><span class="lab">Consignee</span><b class="cn">${esc(s.consignee || '—')}</b>${s.phone ? `<br><span class="muted">${esc(s.phone)}</span>` : ''}${s.notes ? `<br>${esc(s.notes)}` : ''}</p>
+    <p class="cswho"><span class="lab">Consignee</span><b class="cn">${esc(s.consignee || '—')}</b>${s.phone ? `<br><span class="muted">${esc(s.phone)}</span>` : ''}${s.notes ? `<br>${esc(s.notes)}` : ''}</p>
     <table><thead><tr><th><span class="lab">JO / item</span></th><th><span class="lab">Description</span></th>${showVal ? '<th class="r"><span class="lab">Agreed value</span></th>' : ''}<th><span class="lab">Status</span></th></tr></thead><tbody>${body}</tbody></table>
     ${showVal ? `<p class="cstot">Total ${esc(peso(tot))}</p>` : ''}
-    <div class="cssigns"><div><div class="csline"></div><span class="lab">Consignee</span><b>${esc(s.consignee || '')}</b></div>
-      <div><div class="csline"></div><span class="lab">OYP Jewelry</span></div></div>
+    ${signOff(s, esc)}
   </article>`;
   if (printing) return `<div class="cs">${sheet}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button>${signButton(s, esc, 'copy')}</div>${signMark(s, esc) ? `<div class="cs-noprint">${signMark(s, esc)}</div>` : ''}</div>`;
   const open = (s.items || []).some(it => it.status === 'consigned');
@@ -302,14 +343,14 @@ function drawReturn() {
   const back = (s.items || []).filter(it => it.status === 'returned');
   const rows = back.map(it => `<tr><td>${pieceBits(it, { joOnly: true })}</td><td>${esc(it.description || '—')}</td><td>${esc(day(it.returned_at) || day(S.r && S.r.today) || '—')}</td></tr>`).join('');
   const slip = `<article class="csheet">
+    ${printHead(esc)}
     <p class="csno"><span class="lab">Return</span>${esc(s.consignment_id)}</p>
     <div class="csbrand"><img src="${esc(logoSrc())}" alt=""><b>OYP Jewelry</b></div>
     <p class="cscontact">8892 1171 · oypjewelry@gmail.com</p>
     <div class="csmeta"><div><span class="lab">Date</span><b>${esc(dayLong((S.r && S.r.today) || ''))}</b></div></div>
-    <p><span class="lab">Consignee</span><b class="cn">${esc(s.consignee || '—')}</b>${s.phone ? `<br><span class="muted">${esc(s.phone)}</span>` : ''}</p>
+    <p class="cswho"><span class="lab">Consignee</span><b class="cn">${esc(s.consignee || '—')}</b>${s.phone ? `<br><span class="muted">${esc(s.phone)}</span>` : ''}</p>
     <table><thead><tr><th><span class="lab">JO / item</span></th><th><span class="lab">Description</span></th><th><span class="lab">Returned</span></th></tr></thead><tbody>${rows || '<tr><td colspan="3">No returned pieces.</td></tr>'}</tbody></table>
-    <div class="cssigns"><div><div class="csline"></div><span class="lab">Consignee</span><b>${esc(s.consignee || '')}</b></div>
-      <div><div class="csline"></div><span class="lab">OYP Jewelry</span></div></div>
+    ${signOff(s, esc)}
   </article>`;
   return `<div class="cs">${slip}<div class="csacts cs-noprint"><button type="button" class="pill sm" id="csDoPrint">PRINT</button><button type="button" class="pill sm outline" id="csBack">BACK</button>${signButton(s, esc, 'return')}</div>${fileMark(s, esc, 'return') ? `<div class="cs-noprint">${fileMark(s, esc, 'return')}</div>` : ''}</div>`;
 }
