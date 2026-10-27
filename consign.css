@@ -97,12 +97,13 @@ html.cs-onprint .cssigns{margin-top:12mm}
   @bottom-center{content:none}
   @bottom-right{content:none}
 }
-/* A long piece list: the live count is the margin box, and the drawn 1/1 is hidden so it is not printed twice. */
+/* A long list: the live count is the top-right margin box, and the drawn 1/1 is hidden so it is not printed twice. */
 @page csmany{
   margin:0;
+  margin-top:12mm;
   @top-left{content:none}
   @top-center{content:none}
-  @top-right{content:counter(page) "/" counter(pages);font-family:Inter,Helvetica,sans-serif;font-size:8pt;color:#888}
+  @top-right{content:counter(page) "/" counter(pages);font-family:Inter,Helvetica,sans-serif;font-size:8pt;color:#888;margin-right:14mm}
   @bottom-left{content:none}
   @bottom-center{content:none}
   @bottom-right{content:none}
