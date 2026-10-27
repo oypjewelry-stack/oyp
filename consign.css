@@ -61,25 +61,66 @@ td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
 .csbrand b{font-family:var(--head);font-weight:500;font-size:calc(28px*var(--hs));letter-spacing:.04em;text-transform:uppercase}
 .cscontact{font-family:var(--label);font-size:calc(13px*var(--fs));color:#333;margin:0 0 calc(16px*var(--sp))}
 .csmeta{display:flex;justify-content:space-between;gap:calc(16px*var(--sp));flex-wrap:wrap;margin-bottom:calc(14px*var(--sp));padding-bottom:calc(12px*var(--sp));border-bottom:1px solid #111}
+.cswho{margin:0}
 .csmeta b{font-family:var(--head);font-weight:500;font-size:calc(20px*var(--hs))}
 .csheet table{max-width:none}
 .cstot{text-align:right;font-family:var(--head);font-weight:500;font-size:calc(18px*var(--hs));margin:calc(12px*var(--sp)) 0 calc(22px*var(--sp))}
 .cssigns{display:grid;grid-template-columns:1fr 1fr;gap:calc(28px*var(--sp));margin-top:calc(28px*var(--sp))}
 .csline{border-bottom:1px solid #111;height:calc(42px*var(--bh));margin-bottom:calc(6px*var(--sp))}
 .cssigns .lab{margin-bottom:calc(2px*var(--sp))}
+.cssigns b{display:block;font-family:var(--body);font-weight:500;font-size:calc(16px*var(--fs));text-transform:none;letter-spacing:0;color:#111;margin-top:2px}
+.csprinthead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;width:100%;margin:0 0 3.15em;margin-bottom:3lh;font-family:var(--label);font-size:calc(11px*var(--fs));font-weight:400;line-height:1.35;letter-spacing:0;text-transform:none;color:#888}
+.cspnum{margin-left:auto;text-align:right}
 html.cs-onprint .top,html.cs-onprint .side,html.cs-onprint .menu,html.cs-onprint #toast{display:none!important}
 html.cs-onprint .office{display:block}
-html.cs-onprint .main{padding:calc(18px*var(--sp))}
-html.cs-onprint .csheet{border:0;border-radius:0;max-width:none;padding:0}
+html.cs-onprint .main{padding:0}
+html.cs-onprint .csheet{border:0;border-radius:0;max-width:none;padding:14mm;box-sizing:border-box}
+html.cs-onprint .csno{margin:0 0 10mm;font-size:calc(20px*var(--hs));letter-spacing:.02em;line-height:1.2}
+html.cs-onprint .csbrand{margin-bottom:10mm}
+html.cs-onprint .cscontact{margin:0 0 10mm}
+html.cs-onprint .csmeta{margin:0;padding-bottom:6mm}
+html.cs-onprint .cswho{margin:7mm 0 0}
+html.cs-onprint .csline{height:18mm}
+html.cs-onprint .cssigns{margin-top:12mm}
 @media (max-width:760px){
   .cssigns{grid-template-columns:1fr}
   .csval{width:100%}
   .csheet{padding:calc(16px*var(--sp))}
 }
+@page{
+  margin:0;
+  size:auto;
+  @top-left{content:none}
+  @top-center{content:none}
+  @top-right{content:none}
+  @bottom-left{content:none}
+  @bottom-center{content:none}
+  @bottom-right{content:none}
+}
+/* A long piece list: the live count is the margin box, and the drawn 1/1 is hidden so it is not printed twice. */
+@page csmany{
+  margin:0;
+  @top-left{content:none}
+  @top-center{content:none}
+  @top-right{content:counter(page) "/" counter(pages);font-family:Inter,Helvetica,sans-serif;font-size:8pt;color:#888}
+  @bottom-left{content:none}
+  @bottom-center{content:none}
+  @bottom-right{content:none}
+}
 @media print{
   .top,.side,.menu,#toast,.cs-noprint{display:none!important}
   .office{display:block!important}
   .main{padding:0!important}
-  .csheet{border:0;border-radius:0;max-width:none;padding:0}
-  body{background:#fff}
+  html,body{margin:0!important;background:#fff}
+  .csheet{border:0;border-radius:0;max-width:none;padding:14mm;box-sizing:border-box}
+  .csno{margin:0 0 10mm;font-size:calc(20px*var(--hs));letter-spacing:.02em;line-height:1.2}
+  .csbrand{margin-bottom:10mm}
+  .cscontact{margin:0 0 10mm}
+  .csmeta{margin:0;padding-bottom:6mm}
+  .cswho{margin:7mm 0 0}
+  .csline{height:18mm}
+  .cssigns{margin-top:12mm}
+  .chip{text-transform:uppercase}
+  .csheet.csmany{page:csmany}
+  .csheet.csmany .cspnum{display:none}
 }
