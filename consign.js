@@ -415,7 +415,7 @@ function rebuildItems(main) {
   if (!save || !S.draft) return;
   const acts = save.parentNode;
   const prev = acts.previousElementSibling;
-  const empty = prev && prev.tagName === 'P' && prev.classList.contains('muted');
+  const empty = prev && prev.tagName === 'P' && prev.classList.contains('muted') ? prev : null;
   if (!S.draft.items.length) {
     const box = $('csItems');
     if (box) box.remove();
