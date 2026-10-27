@@ -18,7 +18,7 @@ const index = read('staff/index.html');
 const scanBlock = inv.slice(inv.indexOf("if ($('#ivQ')) $('#ivQ').onkeydown"), inv.indexOf("if ($('#ivStage'))"));
 const docAt = inv.lastIndexOf("document.addEventListener('keydown'");
 const docBlock = inv.slice(docAt, inv.indexOf('}, true);', docAt));
-eq(index.includes('app.css?v=69') && index.includes('inv.js?v=35') && index.includes('pay.css?v=4') && index.includes('todo.css?v=8') && index.includes('settings.css?v=12'), 'staff pages load the new css and inventory script');
+eq(index.includes('app.css?v=69') && index.includes('inv.js?v=36') && index.includes('pay.css?v=4') && index.includes('todo.css?v=8') && index.includes('settings.css?v=12'), 'staff pages load the new css and inventory script');
 eq(read('staff/print-test.html').includes('app.css?v=69') && read('staff/print-test.html').includes('settings.css?v=12'), 'print test loads the same staff css');
 eq(read('index.html').includes('app.css?v=30') && !read('index.html').includes('app.css?v=69'), 'the customer page stays on app.css?v=30');
 eq(!index.includes('maximum-scale') && !read('staff/print-test.html').includes('maximum-scale'), 'the viewport is not locked with maximum-scale');

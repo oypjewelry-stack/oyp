@@ -1424,7 +1424,7 @@ function ivQKeep(raw) {
 }
 function ivQRow(esc) {
   ivQForgetMode();
-  return `<div class="ivqrow"><input id="ivQ" class="rvq" inputmode="search" enterkeyhint="search" placeholder="Search or scan JO, client, 18k, sapphire…" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire"></div>`;
+  return `<div class="ivqrow"><input id="ivQ" class="rvq" inputmode="search" enterkeyhint="search" placeholder="Search" value="${esc(IV.q)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Search or scan JO, client, 18k, sapphire"></div>`;
 }
 function ivQNote(hard) {
   const now = Date.now();
