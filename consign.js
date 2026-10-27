@@ -68,7 +68,7 @@ function hitLabel(h) {
   return window.OYP.piece(h.jo ? h.client : '', id) || `<b>${window.OYP.esc(id)}</b>`;
 }
 const scanQueue = [];
-let scanBusy = false, qTimer = 0;
+let scanBusy = false, qTimer = 0, scanSeq = 0, scanShown = '';
 let camGen = 0, U = null;
 
 function prices() { return !!(S.r && S.r.prices); }
@@ -266,9 +266,7 @@ function drawNew() {
   const { esc } = window.OYP, d = S.draft || blankDraft(), people = (S.r.consignees || []);
   const hits = (S.hits || []).map((h, i) => `<button type="button" class="cshit" data-hit="${i}">${hitLabel(h)} ${esc(h.description || '')}
     <span class="muted">${esc(h.location || '')}${h.blocked ? ' · ' + esc(h.blocked) : ''}</span></button>`).join('');
-  const lines = d.items.map((it, i) => `<div class="csitem" data-csitem="${i}"><div class="csitemmain">${pieceBits(it)}<span class="muted">${esc(it.description || '')}</span></div>
-    ${prices() ? `<input class="csval" data-val="${i}" inputmode="decimal" value="${esc(it.value || '')}" placeholder="₱" aria-label="Agreed value">` : ''}
-    <button type="button" class="lnk" data-rm="${i}">Remove</button></div>`).join('');
+  const lines = d.items.map((it, i) => itemRow(it, i)).join('');
   return `<div class="cs">
     <button type="button" class="csback" id="csBack">‹ Back</button>
     <div class="dhead cshead"><h2>Consign</h2></div>
@@ -381,9 +379,22 @@ function setupWarn() {
   const miss = (S.r.missing || []).join(', ');
   return `<div class="cswarn">Almost ready: run <b>setupConsignment</b> once in Apps Script. It adds the Consignment tab when that tab is missing.${miss ? ' Missing: ' + miss + '.' : ''}</div>`;
 }
+function noteBits(n, esc) {
+  if (!n) return '';
+  if (!n.dot && !n.sub) return esc(n.text || '');
+  const dot = n.dot ? `<i class="csdot ${esc(n.dot)}" aria-hidden="true"></i>` : '';
+  const sub = n.sub ? `<span class="cssub">${esc(n.sub)}</span>` : '';
+  return `${dot}<span class="cslab">${esc(n.text || '')}</span>${sub}`;
+}
 function noteHtml(where, esc) {
   const n = S.note && S.note.where === where ? S.note : null;
-  return `<p class="csnote${n ? ' ' + n.kind : ''}" id="csScanNote" role="status">${n ? esc(n.text) : ''}</p>`;
+  return `<p class="csnote${n ? ' ' + n.kind : ''}" id="csScanNote" role="status">${noteBits(n, esc)}</p>`;
+}
+function paintNote() {
+  const el = $('csScanNote');
+  if (!el || !S.note) return;
+  el.className = 'csnote' + (S.note.kind ? ' ' + S.note.kind : '');
+  el.innerHTML = noteBits(S.note, window.OYP.esc);
 }
 function tabs() {
   return `<div class="seg csseg" role="tablist">${[['sheets', 'Sheets'], ['people', 'Consignees']].map(([k, l]) => `<button type="button" data-tab="${k}" class="${S.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -405,6 +416,60 @@ function readDraft() {
   S.draft.items.forEach((it, i) => { const el = document.querySelector('[data-val="' + i + '"]'); if (el) it.value = el.value; });
 }
 
+function itemRow(it, i) {
+  const esc = window.OYP.esc;
+  if (it.pending) {
+    const label = it.jo || it.item_id || 'Piece';
+    return `<div class="csitem loading" data-csitem="${i}" data-pending="${esc(it.pending)}"><div class="csitemmain"><b class="cn">${esc(label)}</b><span class="muted">loading…</span></div><button type="button" class="lnk" data-rm="${i}">Remove</button></div>`;
+  }
+  return `<div class="csitem" data-csitem="${i}"><div class="csitemmain">${pieceBits(it)}<span class="muted">${esc(it.description || '')}</span></div>
+    ${prices() ? `<input class="csval" data-val="${i}" inputmode="decimal" value="${esc(it.value || '')}" placeholder="₱" aria-label="Agreed value">` : ''}
+    <button type="button" class="lnk" data-rm="${i}">Remove</button></div>`;
+}
+function itemsBoxHtml() {
+  const lines = ((S.draft && S.draft.items) || []).map((it, i) => itemRow(it, i)).join('');
+  return `<div class="csitems" id="csItems"><div class="dgrp"><span class="lab">Piece</span>${prices() ? '<span class="lab">Agreed value</span>' : ''}</div>${lines}</div>`;
+}
+function removeItem(main, i) {
+  readDraft();
+  if (S.draft && S.draft.items) S.draft.items.splice(i, 1);
+  rebuildItems(main);
+}
+function bindItems(main) {
+  const box = $('csItems');
+  if (!box) return;
+  box.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
+    if (!confirm('Remove this piece from the sheet?')) return;
+    removeItem(main, Number(b.dataset.rm));
+  });
+  if (window.OYP.swipe && !box.dataset.oypswipe) window.OYP.swipe(box, {
+    item: '.csitem',
+    ignore: '.csval',
+    actions: function (row) {
+      const i = Number(row.getAttribute('data-csitem'));
+      return [{ label: 'Remove', confirm: 'Remove this piece from the sheet?', run: function () { removeItem(main, i); } }];
+    }
+  });
+}
+function rebuildItems(main) {
+  const save = $('csSave');
+  if (!save || !S.draft) return;
+  const acts = save.parentNode;
+  const prev = acts.previousElementSibling;
+  const empty = prev && prev.tagName === 'P' && prev.classList.contains('muted') ? prev : null;
+  if (!S.draft.items.length) {
+    const box = $('csItems');
+    if (box) box.remove();
+    if (!empty) acts.insertAdjacentHTML('beforebegin', '<p class="muted">No pieces yet. Search, or scan a JO or item tag.</p>');
+    return;
+  }
+  if (empty) empty.remove();
+  const box = $('csItems');
+  const html = itemsBoxHtml();
+  if (box) box.outerHTML = html;
+  else acts.insertAdjacentHTML('beforebegin', html);
+  bindItems(main);
+}
 function wire(main) {
   const go = id => { S.mode = 'sheet'; S.id = id; S.tab = 'sheets'; draw(main); };
   const nb = $('csNew'); if (nb) nb.onclick = () => { S.mode = 'new'; S.draft = blankDraft(); S.q = ''; S.hits = []; S.tab = 'sheets'; draw(main); };
@@ -443,27 +508,18 @@ function wire(main) {
     S.mode = 'list'; S.pay = null; document.documentElement.classList.remove('cs-onprint'); draw(main);
   };
   const nm = $('csName'); if (nm) nm.oninput = () => { readDraft(); const p = personByName(nm.value); if (p && $('csPhone')) { S.draft.phone = p.phone || ''; $('csPhone').value = S.draft.phone; } };
-  const q = $('csQ'); if (q) { q.oninput = () => { S.q = q.value; clearNote('add'); clearTimeout(qTimer); qTimer = setTimeout(() => search(main), 280); }; q.onkeydown = e => onScanKey(e, main, 'add', q); }
+  const q = $('csQ'); if (q) { q.oninput = () => { S.q = q.value; if (!S.note || S.note.kind !== 'scan') clearNote('add'); clearTimeout(qTimer); qTimer = setTimeout(() => search(main), 280); }; q.onkeydown = e => onScanKey(e, main, 'add', q); }
   main.querySelectorAll('[data-hit]').forEach(b => b.onclick = () => addHit(main, Number(b.dataset.hit)));
-  main.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
-    if (!confirm('Remove this piece from the sheet?')) return;
-    readDraft(); S.draft.items.splice(Number(b.dataset.rm), 1); draw(main);
-  });
-  const draft = document.getElementById('csItems');
-  if (draft && window.OYP.swipe) window.OYP.swipe(draft, {
-    item: '.csitem',
-    ignore: '.csval',
-    actions: function (row) {
-      const i = Number(row.getAttribute('data-csitem'));
-      return [{ label: 'Remove', confirm: 'Remove this piece from the sheet?', run: function () {
-        readDraft();
-        if (S.draft && S.draft.items) S.draft.items.splice(i, 1);
-        draw(main);
-      } }];
-    }
-  });
+  bindItems(main);
   const save = $('csSave'); if (save) save.onclick = () => saveSheet(main);
-  const scan = $('csScan'); if (scan) scan.onclick = () => openScan(main);
+  const scan = $('csScan'); if (scan) scan.onclick = () => {
+    if (S.mode === 'new') {
+      const field = $('csQ');
+      const v = (field && field.value || '').trim();
+      if (v) { clearTimeout(qTimer); if (field) field.value = ''; S.q = ''; pushScan(main, 'add', v); return; }
+    }
+    openScan(main);
+  };
   const pr = $('csPrint'); if (pr) pr.onclick = () => openPrint(main, S.id);
   const rs = $('csReturn'); if (rs) rs.onclick = () => openReturn(main, S.id);
   const find = $('csFind'); if (find) find.onkeydown = e => onFindKey(e, main);
@@ -673,14 +729,22 @@ function focusScan() {
   const el = S.mode === 'new' ? $('csQ') : (S.mode === 'sheet' ? $('csBackCode') : (S.mode === 'list' && S.tab === 'sheets' ? $('csFind') : null));
   if (el) el.focus();
 }
-function setNote(kind, text, where) { S.note = { kind, text, where }; }
+function setNote(kind, text, where, extra) {
+  extra = extra || {};
+  S.note = { kind: kind, text: text, where: where, dot: extra.dot || '', sub: extra.sub || '', id: extra.id || '' };
+}
 function clearNote(where) {
   if (!S.note || S.note.where !== where) return;
   S.note = null;
   const n = $('csScanNote'); if (n) { n.textContent = ''; n.className = 'csnote'; }
 }
 function addedText(h) { return 'Added ' + (h.jo || h.item_id || 'piece') + (h.description ? ' · ' + h.description : ''); }
-function onDraft(h) { return !!(S.draft && (S.draft.items || []).some(it => samePiece(it, h))); }
+function onDraft(h, exceptId) {
+  return !!(S.draft && (S.draft.items || []).some(it => {
+    if (exceptId && it.pending === exceptId) return false;
+    return samePiece(it, h);
+  }));
+}
 function beep(kind) {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -785,43 +849,157 @@ function commitFind(main, raw) {
   beep('ok');
   draw(main);
 }
+function shortReason(text) { return String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80); }
+function ownsScan(job) { return !!(job && job.id && job.id === scanShown); }
+function tellScan(job, kind, text, extra) {
+  extra = extra || {};
+  if (!job || !job.id || ownsScan(job)) {
+    setNote(kind, text, 'add', extra);
+    paintNote();
+  } else if (kind !== 'ok' && window.OYP.toast) window.OYP.toast(text + (extra.sub ? ' · ' + extra.sub : ''));
+  beep(kind === 'ok' ? 'ok' : kind === 'dup' ? 'dup' : 'bad');
+}
+function dropPending(id) {
+  if (!S.draft || !id) return false;
+  const i = S.draft.items.findIndex(it => it.pending === id);
+  if (i < 0) return false;
+  S.draft.items.splice(i, 1);
+  return true;
+}
+function paintHits(main) {
+  const box = $('csHits');
+  if (!box) return;
+  const esc = window.OYP.esc;
+  const hits = S.hits || [];
+  box.innerHTML = hits.length ? `<div class="cshits">${hits.map((h, i) => `<button type="button" class="cshit" data-hit="${i}">${hitLabel(h)} ${esc(h.description || '')} <span class="muted">${esc(h.location || '')}${h.blocked ? ' · ' + esc(h.blocked) : ''}</span></button>`).join('')}</div>` : '';
+  box.querySelectorAll('[data-hit]').forEach(b => b.onclick = () => addHit(main, Number(b.dataset.hit)));
+}
 function pushScan(main, kind, raw) {
   const code = String(raw || '').trim();
-  if (!code) { setNote('bad', 'Type or scan a JO or item number', kind === 'mark' ? 'mark' : 'add'); beep('bad'); paintScan(main, kind === 'mark' ? 'csBackCode' : 'csQ'); return; }
+  if (!code) {
+    if (kind === 'add') {
+      setNote('bad', 'Not scanned', 'add', { dot: 'bad', sub: 'type a JO or item number' });
+      paintNote(); beep('bad'); focusScan();
+      return;
+    }
+    setNote('bad', 'Type or scan a JO or item number', 'mark');
+    beep('bad');
+    paintScan(main, 'csBackCode');
+    return;
+  }
+  if (kind === 'add') {
+    const spec = scanSpec(code);
+    const label = (spec.jo && spec.jo.text) || spec.q;
+    if (!spec.q || (spec.q.length < 2 && !spec.jo)) {
+      setNote('bad', 'Not scanned', 'add', { dot: 'bad', sub: 'type a JO or item number' });
+      paintNote(); beep('bad'); focusScan();
+      return;
+    }
+    const id = 's' + (++scanSeq);
+    readDraft();
+    const box = $('csQ');
+    if (box) box.value = '';
+    S.q = '';
+    if (S.draft) S.draft.items.push({ jo: spec.jo ? spec.jo.text : '', item_id: spec.jo ? '' : spec.q, description: '', value: '', client: '', pending: id });
+    scanShown = id;
+    setNote('scan', 'Scanned ' + label, 'add', { dot: 'ok', sub: 'adding…', id: id });
+    paintNote();
+    rebuildItems(main);
+    focusScan();
+    scanQueue.push({ kind: 'add', code: code, id: id, label: label, status: 'returned' });
+    pumpScan(main);
+    return;
+  }
   scanQueue.push({ kind, code, status: S.markAs === 'sold' ? 'sold' : 'returned' });
   pumpScan(main);
 }
 async function pumpScan(main) {
   if (scanBusy) return;
   scanBusy = true;
-  while (scanQueue.length) {
-    const job = scanQueue.shift();
-    if (job.kind === 'mark') await commitMark(main, job.code, job.status);
-    else await commitAdd(main, job.code);
+  try {
+    while (scanQueue.length) {
+      const job = scanQueue.shift();
+      try {
+        if (job.kind === 'mark') await commitMark(main, job.code, job.status);
+        else await commitAdd(main, job.code, job);
+      } catch (e) {
+        if (job.kind === 'add') {
+          readDraft();
+          dropPending(job.id);
+          rebuildItems(main);
+          tellScan(job, 'bad', 'Not scanned', { dot: 'bad', sub: 'could not search' });
+        }
+      }
+    }
+  } finally {
+    scanBusy = false;
+    focusScan();
   }
-  scanBusy = false;
-  focusScan();
 }
-async function commitAdd(main, raw) {
+async function commitAdd(main, raw, job) {
+  job = job || {};
   const spec = scanSpec(raw);
-  if (!spec.q || (spec.q.length < 2 && !spec.jo)) { setNote('bad', 'Type or scan a JO or item number', 'add'); beep('bad'); paintScan(main, 'csQ'); return; }
+  const id = job.id || '';
   const live = window.OYP.here();
   const r = await window.OYP.call('consignSearch', { q: spec.q });
   if (!live() || S.mode !== 'new' || !S.draft) return;
-  if (!r || !r.ok) { setNote('bad', (r && r.error) || 'Could not search', 'add'); beep('bad'); paintScan(main, 'csQ'); return; }
-  const choice = chooseHit(r.hits || [], spec);
-  if (choice.none) { S.hits = []; setNote('bad', 'Nothing matches' + (spec.jo ? ' ' + spec.jo.text : ''), 'add'); beep('bad'); }
-  else if (choice.many) { S.hits = choice.hits || r.hits || []; setNote('dup', 'More than one match. Tap the piece.', 'add'); beep('dup'); }
-  else if (choice.hit.blocked) { S.hits = []; setNote('dup', choice.hit.blocked, 'add'); beep('dup'); }
-  else if (onDraft(choice.hit)) { S.hits = []; setNote('dup', 'Already on this sheet · ' + (choice.hit.jo || choice.hit.item_id || 'that piece'), 'add'); beep('dup'); }
-  else {
-    readDraft();
-    S.draft.items.push({ jo: choice.hit.jo || '', item_id: choice.hit.item_id || '', description: choice.hit.description || '', value: '', client: choice.hit.client || '' });
-    S.hits = []; S.q = '';
-    setNote('ok', addedText(choice.hit), 'add');
-    beep('ok');
+  readDraft();
+  if (id && !S.draft.items.some(it => it.pending === id)) {
+    if (ownsScan(job) && !scanQueue.length) {
+      S.note = null;
+      const n = $('csScanNote');
+      if (n) { n.textContent = ''; n.className = 'csnote'; }
+    }
+    return;
   }
-  paintScan(main, 'csQ');
+  const fail = sub => {
+    dropPending(id);
+    S.hits = [];
+    rebuildItems(main);
+    paintHits(main);
+    tellScan(job, 'bad', 'Not scanned', { dot: 'bad', sub: sub });
+  };
+  if (!r || !r.ok) { fail(shortReason((r && r.error) || 'could not search')); return; }
+  const choice = chooseHit(r.hits || [], spec);
+  if (choice.none) { fail('not found'); return; }
+  if (choice.many) {
+    dropPending(id);
+    S.hits = choice.hits || r.hits || [];
+    rebuildItems(main);
+    paintHits(main);
+    tellScan(job, 'dup', 'More than one match. Tap the piece.');
+    return;
+  }
+  if (choice.hit.blocked) {
+    dropPending(id);
+    S.hits = [];
+    rebuildItems(main);
+    paintHits(main);
+    tellScan(job, 'dup', choice.hit.blocked);
+    return;
+  }
+  if (onDraft(choice.hit, id)) {
+    dropPending(id);
+    S.hits = [];
+    rebuildItems(main);
+    paintHits(main);
+    tellScan(job, 'dup', 'Already on this sheet · ' + (choice.hit.jo || choice.hit.item_id || 'that piece'));
+    return;
+  }
+  const pending = id ? S.draft.items.find(it => it.pending === id) : null;
+  const row = pending || { value: '' };
+  const h = choice.hit;
+  row.jo = h.jo || '';
+  row.item_id = h.item_id || '';
+  row.description = h.description || '';
+  row.client = h.client || '';
+  if (!row.value) row.value = '';
+  delete row.pending;
+  if (!pending) S.draft.items.push(row);
+  S.hits = [];
+  rebuildItems(main);
+  paintHits(main);
+  tellScan(job, 'ok', addedText(h));
 }
 async function commitMark(main, raw, status) {
   const spec = scanSpec(raw), where = 'mark';
