@@ -276,7 +276,8 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
 .ivclr{background:none;border:0;font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.06em;text-transform:uppercase;text-decoration:underline;cursor:pointer;color:#111;padding:calc(10px*var(--sp)) calc(4px*var(--sp))}
 .ivgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:calc(14px*var(--sp))}
 .ivcard{position:relative;border:1px solid #eee;border-radius:calc(14px*var(--rad));overflow:hidden;cursor:pointer;background:#fff;display:flex;flex-direction:column}.ivcard:hover{border-color:#111}
-.ivcard.on{border-color:#111;box-shadow:inset 0 0 0 1px #111}
+.ivcard.on{border-color:#111}
+.ivcard.on::after{content:"";position:absolute;inset:0;z-index:4;border:1px solid #111;border-radius:inherit;pointer-events:none}
 .ivph{position:relative;aspect-ratio:4/3;background:#f7f7f7 center/cover no-repeat;display:flex;align-items:center;justify-content:center}
 .ivck,.ivmore{position:absolute;z-index:2}
 .ivck{top:8px;left:8px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.94);border-radius:6px;opacity:0;pointer-events:none}
@@ -386,6 +387,7 @@ a.kpi.tap:hover,a.lc.tap:hover,.kcard.tap:hover{border-color:#111}a.bar.tap:hove
   .ivbar{min-width:0;max-width:100%}
   .ivck,.ivmore{opacity:1;pointer-events:auto}
   .ivcard:has(>.ivmore){padding-bottom:calc(10px*var(--sp))}
+  .ivcard.on::after{border-width:2px;border-bottom-width:1px}
   .ivsheet{background:#fff}.ivsbox{width:100%}}
 .mats .rvchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.mats .fchip{white-space:nowrap}
 .rvrow.mrow{grid-template-columns:1fr auto}.mrow .kd{white-space:normal}.mq{text-align:right}.mq b{font-family:var(--head);font-weight:500;font-size:calc(22px*var(--hs));display:block;line-height:1}
