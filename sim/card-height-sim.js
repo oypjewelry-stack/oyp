@@ -16,13 +16,14 @@ const inv = read('inv.js');
 const css = read('app.css');
 const index = read('staff/index.html');
 const card = inv.slice(inv.indexOf('function ivCard'), inv.indexOf('function ivFitPills'));
-eq(index.includes('inv.js?v=36') && index.includes('app.css?v=70'), 'changed files are cache-busted');
-eq(read('index.html').includes('app.css?v=30') && !read('index.html').includes('app.css?v=70'), 'the customer page stays on app.css?v=30');
+eq(index.includes('inv.js?v=36') && index.includes('app.css?v=71'), 'changed files are cache-busted');
+eq(read('index.html').includes('app.css?v=30') && !read('index.html').includes('app.css?v=71'), 'the customer page stays on app.css?v=30');
 eq(card.includes('title="${esc(desc)}"') && card.includes("esc(desc || 'No details yet')") && card.includes('class="ivsp"') && card.includes('class="ivmoney"'), 'the card keeps the full description, a specs line, and a price line');
 eq(inv.includes('function ivFitPills') && inv.includes("badge.textContent = '+' + n") && inv.includes('ivFitPills(main)'), 'pills that do not fit become +N');
 eq(css.includes('.ivcard .kd{display:-webkit-box') && css.includes('-webkit-line-clamp:2') && css.includes('min-height:2.6em') && css.includes('.ivcard .ivb{display:flex;flex-direction:column') && css.includes('height:180px') && css.includes('.ivcard{flex-direction:row') && css.includes('height:196px'), 'desktop and phone cards use a fixed body height and a two-line description');
 eq(css.includes('.ivcard .kf{flex-wrap:nowrap') && css.includes('.ivcard .ivmoney{margin-top:auto') && css.includes('.ivcard .ivph{flex:none;width:100%}'), 'the pill row stays one line, the price pins to the bottom, and the photo box does not collapse');
-eq(inv.includes("review: ['REVIEW'") && inv.includes("debug: ['DEBUG'") && inv.includes('size: 300, legacy: \'inv\', fallback: cost') && css.includes('.ivcard.on{border-color:#111'), 'REVIEW, DEBUG, photo tiers, and selection stay');
+eq(inv.includes("review: ['REVIEW'") && inv.includes("debug: ['DEBUG'") && inv.includes('size: 300, legacy: \'inv\', fallback: cost') && css.includes('.ivcard.on{border-color:#111}'), 'REVIEW, DEBUG, photo tiers, and selection stay');
+eq(css.includes('.ivcard.on::after{content:"";position:absolute;inset:0;z-index:4;border:1px solid #111;border-radius:inherit;pointer-events:none}') && css.includes('.ivcard.on::after{border-width:2px;border-bottom-width:1px}') && !css.includes('.ivcard.on{border-color:#111;box-shadow:inset 0 0 0 1px #111}'), 'the selected ring is 2px over the photo, and the phone row does not double its bottom line');
 eq(!css.includes('.ivsheet .kd{display:-webkit-box') && inv.includes('<p class="kd">${esc(j.description || \'No details\')}</p>'), 'opening a JO still shows the whole description');
 
 function get(url) {
