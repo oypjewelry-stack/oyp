@@ -16,7 +16,7 @@ const inv = read('inv.js');
 const css = read('app.css');
 const index = read('staff/index.html');
 const card = inv.slice(inv.indexOf('function ivCard'), inv.indexOf('function ivFitPills'));
-eq(index.includes('inv.js?v=36') && index.includes('app.css?v=70'), 'changed files are cache-busted');
+eq(index.includes('inv.js?v=37') && index.includes('app.css?v=70'), 'changed files are cache-busted');
 eq(read('index.html').includes('app.css?v=30') && !read('index.html').includes('app.css?v=70'), 'the customer page stays on app.css?v=30');
 eq(card.includes('title="${esc(desc)}"') && card.includes("esc(desc || 'No details yet')") && card.includes('class="ivsp"') && card.includes('class="ivmoney"'), 'the card keeps the full description, a specs line, and a price line');
 eq(inv.includes('function ivFitPills') && inv.includes("badge.textContent = '+' + n") && inv.includes('ivFitPills(main)'), 'pills that do not fit become +N');

@@ -22,7 +22,7 @@
 </section>
 <div id="toast" class="toast hidden"></div>
 <pre id="out" style="display:none"></pre>
-<script src="../swipe.js?v=4"></script>
+<script src="../swipe.js?v=5"></script>
 <script>
 (function () {
   var q = new URLSearchParams(location.search);
@@ -106,7 +106,7 @@
         { label: 'Done', attrs: { 'data-td': 'done', 'data-id': id } }
       ];
     } });
-    if (name === 'inv') OYPSwipe.mount(main.querySelector('#ivGrid'), { item: '.ivcard', ignore: '.ivmore', off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
+    if (name === 'inv') OYPSwipe.mount(main.querySelector('#ivGrid'), { item: '.ivcard', ignore: '.ivmore', corner: false, off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
     if (name === 'prod') OYPSwipe.mount(main.querySelector('#pBoard'), { item: '.pcard', ignore: '.pck, [data-move]', off: function () { return document.body.dataset.sel === '1'; }, actions: function () { return [{ label: 'Archive', undoable: true }]; } });
     if (name === 'review') OYPSwipe.mount(main.querySelector('.rvrows'), { item: '.rvrow[data-jo]', ignore: '.ck', actions: function () { return [{ label: 'Archive', undoable: true }]; } });
     if (name === 'mats') OYPSwipe.mount(main.querySelector('.rvrows'), { item: '.mrow', actions: function () { return [{ label: 'Archive', undoable: true }]; } });
@@ -182,9 +182,9 @@
   pointer(card.querySelector('.kd'), -140, 0);
   check(card.closest('.swclip').classList.contains('open') && card.closest('.swclip').querySelector('.swbtn').textContent === 'Archive', 'an inventory tile reveals Archive');
   OYPSwipe.close();
+  check(!card.querySelector('.swx') && !card.parentNode.querySelector('.swx'), 'inventory has no corner control');
   document.body.dataset.sel = '1';
   OYPSwipe.sync();
-  check(getComputedStyle(card.parentNode.querySelector('.swx')).display === 'none', 'Select hides the corner control');
   pointer(card.querySelector('.kd'), -140, 0);
   check(!card.closest('.swclip').classList.contains('open'), 'Select turns swipe off');
   document.body.dataset.sel = '';
@@ -202,7 +202,10 @@
   check(pcard.closest('.swclip').classList.contains('open'), 'a left drag on a production card opens Archive');
   if (!phoneProd) check(pcard.draggable === true || pcard.getAttribute('draggable') === 'true', 'the kanban drag is restored after the swipe');
   OYPSwipe.close(pcard);
+  var px = pcard.querySelector('.swx') || pcard.parentNode.querySelector('.swx');
   document.body.dataset.sel = '1';
+  OYPSwipe.sync();
+  check(px && getComputedStyle(px).display === 'none', 'Select hides the corner control');
   pointer(pcard.querySelector('.kd'), -130, 0);
   check(!pcard.closest('.swclip').classList.contains('open'), 'production Select turns swipe off');
   document.body.dataset.sel = '';
@@ -256,6 +259,11 @@
   check(cornerRan === 1 && opened === 0, 'the corner control runs Archive and does not open the card');
   pointer(xbtn, -90, 0);
   check(!host.querySelector('.swclip').classList.contains('open'), 'a drag on the corner control does not swipe');
+  var hostOff = document.createElement('div');
+  hostOff.innerHTML = '<div class="ivcard tap" data-jo="26-428"><div class="ivph"></div><div class="ivb"><div class="kjo">26-428</div></div><button type="button" class="ivmore" aria-label="Actions">⋯</button></div>';
+  main.appendChild(hostOff);
+  OYPSwipe.mount(hostOff, { item: '.ivcard', corner: false, actions: function () { return [{ label: 'Archive', undoable: true, run: function () { cornerRan++; } }]; } });
+  check(!hostOff.querySelector('.swx') && hostOff.querySelector('.swbtn').textContent === 'Archive' && hostOff.querySelector('.ivmore'), 'corner:false skips the corner control and keeps the swipe and the menu');
 
   var del = document.createElement('div');
   del.innerHTML = '<div class="row">Gone</div>';
@@ -322,13 +330,17 @@
         check(a.fontFamily === b.fontFamily && a.fontSize === b.fontSize && a.fontWeight === b.fontWeight, name + ' buttons match the Select pill face');
       }
       OYPSwipe.close(row);
-      if (name === 'todo' || name === 'print' || name === 'consign') {
+      if (name === 'todo' || name === 'print' || name === 'consign' || name === 'inv') {
         check(!main.querySelector('.swx'), name + ' has no corner control');
+        if (name === 'inv') {
+          check(main.querySelectorAll('.ivmore').length >= 2, 'inventory keeps the actions menu');
+          check(!!main.querySelector('.swbtn') && main.querySelector('.swbtn').textContent === 'Archive', 'inventory still swipes Archive');
+        }
         return;
       }
       var marks = main.querySelectorAll('.swx');
       check(marks.length >= 2, name + ' puts a corner control on every row');
-      if (name === 'inv' || name === 'prod') check(!!main.querySelector('.swclip.swphoto') === fine, name + (fine ? ' overlays the corner control on the photo' : ' does not treat the phone thumb as a full photo'));
+      if (name === 'prod') check(!!main.querySelector('.swclip.swphoto') === fine, name + (fine ? ' overlays the corner control on the photo' : ' does not treat the phone thumb as a full photo'));
       [].forEach.call(marks, function (el) {
         check(el.getAttribute('aria-label') === expect[name] && el.getAttribute('title') === expect[name], name + ' corner control is named ' + expect[name]);
         var box = el.getBoundingClientRect();

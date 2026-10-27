@@ -2,9 +2,11 @@
    an 8px move picks an axis, a tap still clicks, and touch and mouse both use pointer events.
    One row open at a time. The buttons behind the row are only actions the list already had.
    On a fine pointer, a row whose swipe removes it also gets a corner ×, unless the row
-   already shows a button for that same action. The × runs the same action as the swipe
-   (the same confirm, the same Undo). A full-width photo keeps its width and the × sits
-   on the photo. Text rows keep a gap for it. Phones keep the swipe only. */
+   already shows a button for that same action, or the list passes corner:false.
+   The × runs the same action as the swipe (the same confirm, the same Undo). A full-width
+   photo keeps its width and the × sits on the photo. Text rows keep a gap for it.
+   Phones keep the swipe only. Inventory cards pass corner:false: ⋯ already archives
+   and deletes, so they do not get the photo bubble. */
 (function (root) {
 'use strict';
 var THRESH = 8;
@@ -213,7 +215,7 @@ function onAction(e, action, row) {
     try { action.run(row, action); } catch (err) {}
   }
 }
-function wrap(row, actions) {
+function wrap(row, actions, opt) {
   var parent = row.parentNode;
   if (!parent) return null;
   var clip = root.document.createElement('div');
@@ -237,7 +239,7 @@ function wrap(row, actions) {
   face.appendChild(row);
   row.addEventListener('dragstart', onDragStart);
   var gone = dismissAction(actions);
-  if (gone) addCorner(clip, face, row, gone);
+  if (gone && !(opt && opt.corner === false)) addCorner(clip, face, row, gone);
   return clip;
 }
 function actionText(el) {
@@ -314,7 +316,7 @@ function decorate(container, opt) {
     var actions = [];
     try { actions = opt.actions(row) || []; } catch (e) { actions = []; }
     if (!actions.length) continue;
-    wrap(row, actions);
+    wrap(row, actions, opt);
   }
 }
 function ignored(e, opt) {
