@@ -22,8 +22,8 @@ eq(!nav.NAV.admin.some(n => n[0] === 'look'), 'the shared scanner menu has no Ne
 const ada = { role: 'admin', username: 'ada', display_name: 'Ada' };
 const menu = nav.menuHtml(ada, 'jos', '');
 const side = nav.sideHtml(ada, 'jos', '');
-eq(menu.indexOf('Needs a look') < 0 && menu.indexOf('href="#/look"') < 0 && menu.includes('data-ncount="review"') && menu.includes('href="#/jos"') && menu.includes('class="on"'), 'the phone menu count sits on Inventory');
-eq(side.indexOf('Needs a look') < 0 && side.includes('data-ncount="review"'), 'the desktop menu count sits on Inventory');
+eq(menu.indexOf('Needs a look') < 0 && menu.indexOf('href="#/look"') < 0 && !menu.includes('data-ncount="review"') && menu.includes('href="#/jos"') && menu.includes('class="on"'), 'the phone menu has no review count on Inventory');
+eq(side.indexOf('Needs a look') < 0 && !side.includes('data-ncount="review"'), 'the desktop menu has no review count on Inventory');
 eq(nav.menuHtml({ role: 'staff', username: 'ann', display_name: 'Ann' }, '', '').indexOf('Needs a look') < 0, 'staff menu stays without Needs a look');
 eq(menu.indexOf('Consignment') < menu.indexOf('>Scanner<') && menu.indexOf('>To review<') < 0, 'Consignment stays before Scanner and To review is gone');
 
@@ -39,8 +39,8 @@ eq(read('inv.js').includes('data-mtab="stock"') && read('inv.js').includes('data
 eq(!scanApp.includes("['prices', 'Material prices']"), 'the scanner fallback menu drops Material prices');
 eq(app.includes('joInboxList: 1') && app.includes('joInboxPhoto: 1') && app.includes('joInboxStatus: 1'), 'list, photo, and status are reads');
 eq(!/joInboxConfirm\s*:/.test(app) && !/joInboxFix\s*:/.test(app) && !/joInboxDiscard\s*:/.test(app) && !/joInboxPush\s*:/.test(app), 'confirm, fix, discard, and push stay writes so the page cache clears');
-eq(index.includes('joinbox.js?v=3') && index.includes('joinbox.css?v=3') && index.includes('nav.js?v=80') && index.includes('app.js?v=44'), 'the new page and nav.js are cache-busted');
-eq(read('staff/print-test.html').includes('nav.js?v=80') && scanHtml.includes('https://oypjewelry.com/nav.js?v=80'), 'print test and the scanner load the same nav.js');
+eq(index.includes('joinbox.js?v=3') && index.includes('joinbox.css?v=3') && index.includes('nav.js?v=81') && index.includes('app.js?v=45'), 'the new page and nav.js are cache-busted');
+eq(read('staff/print-test.html').includes('nav.js?v=81') && scanHtml.includes('https://oypjewelry.com/nav.js?v=81'), 'print test and the scanner load the same nav.js');
 eq(scanApp.includes("grp('Needs a look', bad)") && scanApp.includes('class="jocrop"') && scanApp.includes('function openJoView'), 'the scanner Needs a look rows, crop, and zoom viewer are unchanged');
 
 eq(J.isMissing({ ok: false, error: 'Unknown action' }) && J.isMissing({ ok: false, error: 'Unknown action: joInboxList' }) && !J.isMissing({ ok: false, error: 'Not allowed', code: 'FORBIDDEN' }) && !J.isMissing({ ok: true }), 'an unknown action is the missing backend, and a refusal is not');
