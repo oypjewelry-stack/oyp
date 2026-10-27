@@ -114,23 +114,23 @@ function readableTag(img) {
   return box.y >= img.labelH - box.size - L.px(3);
 }
 eq(clearMargin(wide) && clearMargin(longStones), 'tag ink stays about 1 mm inside the flag edges');
-function sideMargins(img) {
+function groupCentered(img, msg) {
   const x0 = img.offsetX;
-  let left = -1, right = -1;
+  const left = img.qrBox.x - x0;
+  let right = left + img.qrBox.size - 1;
   for (let x = 0; x < img.labelW; x++) for (let y = 0; y < img.labelH; y++) {
-    if (img.data[(y * img.width + x0 + x) * 4] === 0) {
-      if (left < 0) left = x;
-      right = x;
-    }
+    if (img.data[(y * img.width + x0 + x) * 4] === 0 && x > right) right = x;
   }
-  return { left: left, right: img.labelW - 1 - right };
+  const mid = (left + right) / 2;
+  eq(img.qrBox.y >= L.px(3) && img.qrBox.y + img.qrBox.size <= img.labelH - L.px(3) && Math.abs(mid - (img.labelW - 1) / 2) <= 1, msg);
 }
-function sameMargin(img, msg) {
-  const m = sideMargins(img);
-  eq(m.left >= 0 && Math.abs(m.left - m.right) <= 1, msg);
-}
-sameMargin(L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21' }), 'B31 JO card left and right ink margins match');
-sameMargin(L.render({ kind: 'jo_card', model: 'B31', jo: '26-1287', due: '2026-10-21' }), 'a long JO card keeps equal side margins');
+const vaultCard = L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', due: '2026-10-21', location: 'vault' });
+groupCentered(vaultCard, 'the JO number and the QR are centered as one group, and the quiet zone stays inside the feed');
+eq(vaultCard.lines.join(' ').indexOf('vault') < 0 && vaultCard.lines.indexOf('26-287') === 0, 'the JO sticker does not print the location');
+groupCentered(L.render({ kind: 'jo_card', model: 'B31', jo: '26-1287', due: '2026-10-21', location: 'vault' }), 'a long JO stays centered with its QR');
+const vaultLay = L.render({ kind: 'jo_card', model: 'B31', jo: '26-287', location: 'vault', name: 'Pearl stud', weight_g: 4.2, layout: L.normalizeLayout('jo_card', null) });
+groupCentered(vaultLay, 'a saved JO layout centers the QR with the number');
+eq(vaultLay.lines.indexOf('vault') < 0 && vaultLay.lines.indexOf('Pearl stud') >= 0 && vaultLay.lines.indexOf('4.2g') >= 0 && vaultLay.lines.indexOf('26-287') >= 0, 'a saved JO layout keeps the name and the weight and leaves the location off');
 const fullTag = L.render({
   kind: 'jewelry_tag', model: 'B1', price: 11500, name: 'Silver Necklace', item_type: 'Earring',
   metal: 'Gold', karat: '14KWG', stones: 'Cubic Zirconia 1.25mm x 30 Cubic Zirconia 2.75mm x 3',
@@ -539,9 +539,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=39') && index.includes('print-label.js?v=23') && index.includes('nav.js?v=80') && index.includes('app.js?v=44') && index.includes('settings.js?v=22') && index.includes('print.css?v=25') && index.includes('app.css?v=70') && index.includes('settings.css?v=12') && index.includes('inv.js?v=36') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=25') && read('sim/swipe-preview.html').includes('print.css?v=25'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=23') && read('nav.js').includes('print.js?v=39') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=39') && read('staff/print-test.html').includes('print-label.js?v=23') && read('staff/print-test.html').includes('print.css?v=25') && read('staff/print-test.html').includes('nav.js?v=80') && read('staff/print-test.html').includes('app.css?v=70'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=39') && index.includes('print-label.js?v=24') && index.includes('nav.js?v=81') && index.includes('app.js?v=44') && index.includes('settings.js?v=22') && index.includes('print.css?v=25') && index.includes('app.css?v=70') && index.includes('settings.css?v=12') && index.includes('inv.js?v=36') && index.includes('production.js?v=15') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=23') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=25') && read('sim/swipe-preview.html').includes('print.css?v=25'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=24') && read('nav.js').includes('print.js?v=39') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=39') && read('staff/print-test.html').includes('print-label.js?v=24') && read('staff/print-test.html').includes('print.css?v=25') && read('staff/print-test.html').includes('nav.js?v=81') && read('staff/print-test.html').includes('app.css?v=70'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
