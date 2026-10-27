@@ -34,7 +34,7 @@ eq(photos.includes('indexedDB') && photos.includes('localStorage') && photos.inc
 eq(app.includes('photoThumbs: 1') && app.includes('photoFile: 1'), 'photo reads do not clear the page cache');
 const cached = app.slice(app.indexOf('const CACHED'), app.indexOf('const READS'));
 eq(!/photoThumbs|photoFile/.test(cached), 'photo answers are not stored with the page cache');
-eq(index.includes('sketchclean.js?v=1') && index.indexOf('sketchclean.js?v=1') < index.indexOf('photos.js?v=16') && index.includes('photos.js?v=16') && index.includes('inv.js?v=36') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=44') && index.includes('app.css?v=69') && index.includes('nav.js?v=80'), 'changed files are cache-busted');
+eq(index.includes('sketchclean.js?v=1') && index.indexOf('sketchclean.js?v=1') < index.indexOf('photos.js?v=16') && index.includes('photos.js?v=16') && index.includes('inv.js?v=36') && index.includes('production.js?v=15') && index.includes('review.js?v=23') && index.includes('app.js?v=45') && index.includes('app.css?v=70') && index.includes('nav.js?v=81'), 'changed files are cache-busted');
 eq(fast.includes('photoThumbs: 1, photoFile: 1') && fast.includes('NOT added to FAST.CACHE'), 'Fast.gs keeps the new actions as fresh reads');
 eq(steps.includes('PASTE_STEPS') && steps.includes('Manage deployments') && steps.includes('New version'), 'paste steps tell the owner to deploy a new version');
 eq(steps.includes('Replace that file') && steps.includes('Page 1 is never') && steps.includes('drawings folder'), 'the new paste steps replace PhotoFast and describe the stand-in');
@@ -58,7 +58,7 @@ eq(inv.includes('viewBox="0 0 24 24"') && inv.includes('stroke="currentColor"') 
 const cardClick = inv.slice(inv.indexOf('el.onclick = e =>'), inv.indexOf('ivWireSheet(main);'));
 eq(cardClick.includes('ivMountSheet(main)') && !cardClick.includes('ivOpenCard'), 'tapping an inventory item stays on Inventory');
 eq(inv.includes('>REVIEW<') && inv.includes('function ivOpenViewer') && inv.includes('OYPReview.mount') && inv.includes("review: ['REVIEW'") && inv.includes("debug: ['DEBUG'"), 'a pending JO is reviewed in Inventory and a photo opens large');
-eq(read('app.js').includes("cur0 === 'review'") && read('app.js').includes("cur0 === 'look'") && read('nav.js').includes('data-ncount="review"') && !read('nav.js').includes("['review', 'To review']") && !read('nav.js').includes("['look', 'Needs a look']"), 'old review and look links open Inventory and the menu count sits on Inventory');
+eq(read('app.js').includes("cur0 === 'review'") && read('app.js').includes("cur0 === 'look'") && !read('nav.js').includes('data-ncount="review"') && !read('app.js').includes('data-ncount="review"') && !read('nav.js').includes("['review', 'To review']") && !read('nav.js').includes("['look', 'Needs a look']"), 'old review and look links open Inventory, and Inventory has no menu count');
 eq(review.includes('function bindJob') && review.includes('mark_reviewed: mark') && review.includes('async function mount(host'), 'inline review uses the review page save');
 eq(!read('count.js').includes('fallback'), 'inventory count does not ask for a card scan');
 ['track.js', 'my/my.js', 'shop/shop.js'].forEach(f => eq(!read(f).includes('photoThumbs'), f + ' does not ask for staff photos'));

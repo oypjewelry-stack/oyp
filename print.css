@@ -39,7 +39,7 @@ a[data-oyp-printer] .oyp-pr-dot.busy,a[data-oyp-printer]:link .oyp-pr-dot.busy,a
 .oyp-kind{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;padding:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));padding-left:calc(12px + env(safe-area-inset-left,0px));padding-right:calc(12px + env(safe-area-inset-right,0px))}
 .oyp-kindbox{background:#fff;width:min(360px,100%);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
 .oyp-kindbox .lab{margin:0 0 4px}
-.oyp-kindbox .pill.sm{height:34px;min-height:34px;width:100%;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center}
+.oyp-kindbox .pill.sm{height:34px;min-height:34px;width:100%;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;font-size:var(--d-btnsm-fp,calc(14px*var(--hs)));font-weight:var(--d-btnsm-g,500)}
 .oyp-kindbox button{touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 50ms}
 .oyp-kindbox button:active,.oyp-kindbox button.is-down{transform:scale(.97)}
 @media (prefers-reduced-motion:reduce){.oyp-kindbox button{transition:none}.oyp-kindbox button:active,.oyp-kindbox button.is-down{transform:none;opacity:.72}}

@@ -35,7 +35,7 @@ eq(!/\.dcard>\.dtitle h3\{[^}]*font-size:\s*19px/.test(css), 'section titles are
 eq(css.includes('--d-htodo-fp') && css.includes('--d-hboard-fp') && css.includes('--d-hloc-fp') && css.includes('--d-hsales-fp') && css.includes('--d-hconsign-fp') && css.includes('--d-hmsgs-fp') && css.includes('--d-hpay-fp') && css.includes('--d-hkpi-fp'), 'each dashboard title has its own size');
 eq(css.includes('.dcard[data-dsec="todo"]>.dtitle h3') && css.includes('.dcard[data-dsec="board"]>.dtitle h3') && !css.includes('--d-hmenu-fp,var(--d-htodo'), 'a dashboard title does not share the menu header size');
 eq(settings.includes('Dashboard headers') && settings.includes("['hkpi', 'htodo', 'hboard', 'hloc', 'hsales', 'hconsign', 'hmsgs', 'hpay']"), 'the controls live in Design');
-eq(index.includes('app.js?v=44') && index.includes('app.css?v=69') && index.includes('dash.js?v=35') && index.includes('settings.js?v=22') && index.includes('design.js?v=6') && index.includes('todo.css?v=8') && index.includes('todo.js?v=6'), 'changed assets are cache-busted');
+eq(index.includes('app.js?v=45') && index.includes('app.css?v=70') && index.includes('dash.js?v=35') && index.includes('settings.js?v=22') && index.includes('design.js?v=6') && index.includes('todo.css?v=8') && index.includes('todo.js?v=6'), 'changed assets are cache-busted');
 
 const props = {};
 const store = {};

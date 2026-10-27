@@ -201,9 +201,8 @@ function writeNavOrder(u, keys, canon) {
 }
 function orderedNav(u) { return window.OYPNav.ordered(u); }
 function navLink(k, t, page) {
-  const count = k === 'jos' ? '<span class="ncount" data-ncount="review" hidden></span>' : '';
   if (k === 'scanner') return `<a href="#/scanner" data-nkey="scanner" class="${page === 'scanner' ? 'on' : ''}">${esc(t)}</a>`;
-  return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}${count}</a>`;
+  return `<a href="#/${k}" data-nkey="${esc(k)}" class="${k === page ? 'on' : ''}">${esc(t)}${DONE[k] ? '' : '<small>soon</small>'}</a>`;
 }
 function navLabel(a) {
   const t = [];
