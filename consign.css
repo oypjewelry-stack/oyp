@@ -21,9 +21,14 @@ td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
 .cspay{margin-top:calc(8px*var(--sp))}
 .dcowed{max-width:280px;margin:0 0 calc(14px*var(--sp))}
 .csacts{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp));align-items:center;margin:calc(12px*var(--sp)) 0}
-.csnote{min-height:0;margin:0 0 calc(8px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.35}
+.csnote{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:0;margin:0 0 calc(8px*var(--sp));font-family:var(--label);font-weight:500;font-size:calc(14px*var(--fs));line-height:1.35}
 .csnote:empty{display:none}
-.csnote.ok{color:#245c2b}.csnote.dup{color:#7a5b00}.csnote.bad{color:#b00020}
+.csnote.ok,.csnote.scan{color:#245c2b}.csnote.dup{color:#7a5b00}.csnote.bad{color:#b00020}
+.csnote .cslab{line-height:1.35}
+.csnote .cssub{font-weight:400;color:#666}
+.csdot{width:9px;height:9px;border-radius:50%;flex:none}
+.csdot.ok{background:#1b7f3a}
+.csdot.bad{background:#b00020}
 .csflash.ok{box-shadow:0 0 0 2px #245c2b;background:#e9f4ea}
 .csflash.dup{box-shadow:0 0 0 2px #9a7b2f;background:#fff8e8}
 .csflash.bad{box-shadow:0 0 0 2px #b00020;background:#fdecec}
@@ -42,6 +47,7 @@ td .csmoney,.csheet .csmoney{font-size:calc(12px*var(--fs))}
 .csitems{border-top:1px solid #eee;margin:calc(8px*var(--sp)) 0}
 .csitems>.dgrp{display:flex;justify-content:space-between;margin:calc(8px*var(--sp)) 0 calc(2px*var(--sp))}
 .csitem{display:flex;align-items:center;gap:calc(12px*var(--sp));padding:calc(10px*var(--sp)) 0;border-bottom:1px solid #eee}
+.csitem.loading{opacity:.72}
 .csitemmain{flex:1;min-width:0}
 .csitem .muted{display:block}
 .csitem .csval{flex:none}
