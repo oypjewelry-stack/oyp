@@ -762,7 +762,7 @@ function placeQr(mods, x, y, request, bounds) {
 function paintLayout(img, layout, opts, kind, bounds) {
   var fields = layoutFields(kind);
   var runs = [], placed = [], lines = [];
-  var specPx = 0, joPx = 0, qrInfo = null, i, field, el, text, x, y, w, size, wrapN, bold, block, cursor, li, m, tw, tx, lineH;
+  var specPx = 0, joPx = 0, qrInfo = null, pendingQr = null, i, field, el, text, x, y, w, size, wrapN, bold, block, cursor, li, m, tw, tx, lineH;
   for (i = 0; i < fields.length; i++) {
     field = fields[i];
     el = layout[field.id];
@@ -792,7 +792,10 @@ function paintLayout(img, layout, opts, kind, bounds) {
       if (boxBounds.flag && x >= boxBounds.x + boxBounds.w) boxBounds = { x: boxBounds.x + boxBounds.w, y: 0, w: img.w - (boxBounds.x + boxBounds.w), h: img.h };
       if (text) {
         var mods = makeQr(text), fit = placeQr(mods, x, y, w, boxBounds);
-        img.qr(mods, fit.x, fit.y, fit.mod, fit.quiet);
+        /* The JO sticker recenters this square with the number before drawing.
+           Jewelry draws here, so a drag on the tag still lands where it was placed. */
+        if (kind === 'jo_card') pendingQr = { mods: mods, x: fit.x, y: fit.y, mod: fit.mod, quiet: fit.quiet, size: fit.size };
+        else img.qr(mods, fit.x, fit.y, fit.mod, fit.quiet);
         qrInfo = { x: fit.x, y: fit.y, size: fit.size, text: text };
         x = fit.x; y = fit.y; w = fit.size;
       }
@@ -874,6 +877,18 @@ function paintLayout(img, layout, opts, kind, bounds) {
     }
     placed.push({ id: field.id, x: x, y: y, w: w, h: Math.max(8, cursor - y) });
   }
+  if (kind === 'jo_card') {
+    var shift = joGroupShift(img.w, pendingQr, runs, bounds);
+    if (shift) {
+      for (i = 0; i < runs.length; i++) runs[i].x += shift;
+      if (pendingQr) pendingQr.x += shift;
+      if (qrInfo) qrInfo.x += shift;
+      for (i = 0; i < placed.length; i++) {
+        if (placed[i].id === 'qr' || placed[i].id === 'jo' || placed[i].id === 'name' || placed[i].id === 'weight') placed[i].x += shift;
+      }
+    }
+    if (pendingQr) img.qr(pendingQr.mods, pendingQr.x, pendingQr.y, pendingQr.mod, pendingQr.quiet);
+  }
   stampLocal(img, runs);
   return { lines: lines, placed: placed, specPx: specPx, joPx: joPx, qr: qrInfo };
 }
@@ -909,6 +924,40 @@ function feedBounds(w, h, shiftY) {
   var y1 = Math.min(h, h - (shiftY || 0)) - inset;
   if (y1 < y0) y1 = y0;
   return { x: 0, y: y0, w: w, h: Math.max(1, y1 - y0) };
+}
+/* Last dark column of a run drawn at x = 0. Same 4× cut as the stamp. */
+function runInkRight(run) {
+  if (!run || !run.text) return run ? run.x : 0;
+  return run.x + inkSpan(run.text, run.size, run.track || 0, run.family || '').right;
+}
+/* Shift a JO sticker's QR square and its words so the pair is centered on the
+   30 mm width. The number stays beside the QR. bounds keeps the quiet zone
+   on the label; the feed inset is the caller's job and is not moved here. */
+function joGroupShift(labelW, qr, runs, bounds) {
+  var left = qr ? qr.x : Infinity;
+  var right = qr ? qr.x + qr.size - 1 : -1;
+  var i, edge, dx, nx, nLeft, nRight;
+  for (i = 0; i < runs.length; i++) {
+    if (runs[i].x < left) left = runs[i].x;
+    edge = runInkRight(runs[i]);
+    if (edge > right) right = edge;
+  }
+  if (!(right >= left) || !isFinite(left)) return 0;
+  dx = Math.round((labelW - (right - left + 1)) / 2 - left);
+  function clampQr() {
+    if (!qr || !bounds) return;
+    nx = qr.x + dx;
+    if (nx < bounds.x) dx += bounds.x - nx;
+    nx = qr.x + dx;
+    if (nx + qr.size > bounds.x + bounds.w) dx -= (nx + qr.size) - (bounds.x + bounds.w);
+  }
+  clampQr();
+  nLeft = left + dx;
+  nRight = right + dx;
+  if (nLeft < 0) dx -= nLeft;
+  if (nRight > labelW - 1) dx -= nRight - (labelW - 1);
+  clampQr();
+  return dx;
 }
 function drawJewelryLayout(img, box, opts) {
   var contentW = box.labelH, contentH = box.labelW;
@@ -1210,8 +1259,8 @@ function render(opts) {
     /* The bitmap is the full 20 mm feed, and the gap cuts the trailing rows.
        A code that fills that height loses its bottom. Four millimetres of
        clear feed leaves the quiet zone inside the 3 mm the gap needs, including
-       the B31's 0.5 mm shift. The left ink margin is repeated on the right,
-       and the JO shrinks into the width that is left. */
+       the B31's 0.5 mm shift. The number is sized for the column beside the QR,
+       then that pair is centered on the 30 mm sticker. Location is not a field. */
     var mods2 = jo ? makeQr(jo) : null;
     var cardRoom = feedBounds(box.labelW, box.labelH, shiftY);
     var qrMax = box.labelH - px(4) * 2;
@@ -1297,10 +1346,25 @@ function render(opts) {
     var qrY2 = qpix2 ? Math.round((box.labelH - qpix2) / 2) : 0;
     var qrX2 = pad;
     if (mods2) {
-      if (qrX2 < cardRoom.x) qrX2 = cardRoom.x;
       if (qrY2 < cardRoom.y) qrY2 = cardRoom.y;
-      if (qrX2 + qpix2 > cardRoom.x + cardRoom.w) qrX2 = cardRoom.x + cardRoom.w - qpix2;
       if (qrY2 + qpix2 > cardRoom.y + cardRoom.h) qrY2 = cardRoom.y + cardRoom.h - qpix2;
+    }
+    var localRuns = [];
+    for (fi2 = 0; fi2 < runs.length; fi2++) {
+      localRuns.push({ text: runs[fi2].text, x: runs[fi2].x - x0, size: runs[fi2].size, track: runs[fi2].track, family: runs[fi2].family });
+    }
+    var cardShift = joGroupShift(box.labelW, mods2 ? { x: qrX2, size: qpix2 } : null, localRuns, cardRoom);
+    if (cardShift) {
+      qrX2 += cardShift;
+      for (fi2 = 0; fi2 < runs.length; fi2++) runs[fi2].x += cardShift;
+    }
+    if (mods2) {
+      var qrHeld = qrX2;
+      if (qrX2 < cardRoom.x) qrX2 = cardRoom.x;
+      if (qrX2 + qpix2 > cardRoom.x + cardRoom.w) qrX2 = cardRoom.x + cardRoom.w - qpix2;
+      if (qrX2 !== qrHeld) {
+        for (fi2 = 0; fi2 < runs.length; fi2++) runs[fi2].x += qrX2 - qrHeld;
+      }
       qrBox = { x: x0 + qrX2, y: qrY2, size: qpix2 };
     }
     stampText(img, runs, box);
