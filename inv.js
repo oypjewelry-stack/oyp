@@ -565,6 +565,7 @@ function ivWire(main) {
   if (grid && ivEdit() && window.OYP.swipe) window.OYP.swipe(grid, {
     item: '.ivcard',
     ignore: '.ivmore, .ivck',
+    corner: false,
     off: () => IV.choose || IV.sel.size > 0,
     actions: function (row) {
       const jo = row.getAttribute('data-jo');
