@@ -72,8 +72,7 @@ function navParts(user, page, home) {
   home = home || '';
   function link(k, t) {
     if (k === 'scanner') return '<a href="' + home + '#/scanner"' + (page === 'scanner' ? ' class="on"' : '') + ' data-nkey="scanner">' + escNav(t) + '</a>';
-    var count = k === 'jos' ? '<span class="ncount" data-ncount="review" hidden></span>' : '';
-    return '<a href="' + home + '#/' + k + '"' + (k === page ? ' class="on"' : '') + ' data-nkey="' + escNav(k) + '">' + escNav(t) + (DONE[k] ? '' : '<small>soon</small>') + count + '</a>';
+    return '<a href="' + home + '#/' + k + '"' + (k === page ? ' class="on"' : '') + ' data-nkey="' + escNav(k) + '">' + escNav(t) + (DONE[k] ? '' : '<small>soon</small>') + '</a>';
   }
   if (!user) return '<a href="' + SCANNER + '">Card scanner</a>';
   if ((user.role === 'staff' || !OFFICE_NAV[user.role]) && !(user.role === 'staff' && OFFICE_NAV.staff)) return '<a href="' + scannerLink(user.role) + '">Scan JO card</a>' + printerItemHtml();
@@ -136,7 +135,7 @@ if (typeof document !== 'undefined' && document.createElement && document.addEve
   src = cs && (cs.src || '');
   var base = src ? src.replace(/[^/]*$/, '') : '';
   if (base && !document.querySelector('script[src*="print.js"]')) {
-    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=23', 'print.js?v=39'].forEach(function (rel) {
+    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=23', 'print.js?v=40'].forEach(function (rel) {
       var ps = document.createElement('script');
       ps.src = base + rel;
       ps.async = false;
