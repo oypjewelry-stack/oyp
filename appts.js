@@ -24,6 +24,7 @@ const openDay = day => { while (dow(day) === 0 || dow(day) === 6) day = addD(day
 const monday = day => addD(day, -((dow(day) + 6) % 7));
 const dLab = (day, long) => DN[dow(day)] + (long ? ', ' : ' ') + MN[Number(day.slice(5, 7)) - 1] + ' ' + Number(day.slice(8)) + (long && day.slice(0, 4) !== todayPH().slice(0, 4) ? ', ' + day.slice(0, 4) : '');
 const narrow = () => innerWidth < 760;
+const apChev = dir => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${dir < 0 ? 'M16 6L8 12L16 18' : 'M8 6L16 12L8 18'}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const $ = id => document.getElementById(id);
 const isWe = day => S.r && S.r.hours && S.r.hours.days ? !S.r.hours.days.includes(dow(day)) : dow(day) === 0 || dow(day) === 6; // closed weekday (Settings: open days)
 const DN3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -95,7 +96,7 @@ function draw(main) {
     <div class="dhead aphead"><h2>Appointments</h2>${r.setup ? '<button class="pill sm" id="apNew">+ NEW</button>' : ''}</div>
     ${r.setup ? '' : '<div class="apwarn">Almost ready: run <b>setupAppointments</b> once in Apps Script (see the instructions). Until then nothing can be booked.</div>'}
     <div class="aptools"><div class="seg apseg">${['day', 'week', 'month'].map(v => `<button class="${S.view === v ? 'on' : ''}" data-v="${v}">${v.toUpperCase()}</button>`).join('')}</div>
-      <div class="apnav"><button class="apar" data-go="-1" aria-label="Previous">‹</button><b class="aplab">${esc(lab)}</b><button class="apar" data-go="1" aria-label="Next">›</button>
+      <div class="apnav"><button class="apar" data-go="-1" aria-label="Previous">${apChev(-1)}</button><b class="aplab">${esc(lab)}</b><button class="apar" data-go="1" aria-label="Next">${apChev(1)}</button>
       <button class="lnk aptoday" data-go="0">Today</button></div></div>
     ${staffFilter}
     <div class="aplegend">${TYPES.map(([k, l]) => `<span><i class="apdot t-${k}"></i>${l}</span>`).join('')}<span><i class="apdot rq"></i>Requested</span><span class="muted">Store hours ${hrsTxt(S.r.hours)}</span><button class="fchip apcx ${S.showCx ? 'on' : ''}" data-cx aria-pressed="${S.showCx}">Show cancelled${nCx ? `<b>${nCx}</b>` : ''}</button></div>
