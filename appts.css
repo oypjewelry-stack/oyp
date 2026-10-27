@@ -3,6 +3,9 @@
 .apwarn{border:1px solid var(--gold);background:#fffdf6;border-radius:calc(12px*var(--rad));padding:calc(12px*var(--sp)) calc(14px*var(--sp));margin:calc(8px*var(--sp)) 0 calc(14px*var(--sp));font-size:calc(14px*var(--fs));line-height:1.45}
 .aptools{display:flex;align-items:center;gap:calc(16px*var(--sp));flex-wrap:wrap;margin:calc(6px*var(--sp)) 0 calc(12px*var(--sp))}.apseg{width:auto;border-radius:calc(22px*var(--rad))}.apseg button{padding:calc(10px*var(--sp)) calc(18px*var(--sp));min-width:76px}
 .apnav{display:flex;align-items:center;gap:calc(10px*var(--sp))}.apar{width:var(--d-arrow-hp,38px);height:var(--d-arrow-hp,38px);border-radius:50%;border:1px solid #ddd;background:#fff;font-size:var(--d-arrow-fp,calc(20px*var(--fs)));line-height:1;cursor:pointer;color:var(--d-arrow-c,#111)}
+.apnav .apar{display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1}
+.apnav .apar svg{display:block;width:16px;height:16px;flex:none}
+#apNew{background:var(--gold);color:#111}
 .apstafff{display:flex;flex-wrap:wrap;gap:calc(8px*var(--sp)) calc(14px*var(--sp));align-items:center;margin:0 0 calc(12px*var(--sp))}
 .apchk{display:inline-flex;align-items:center;gap:calc(6px*var(--sp));font-family:var(--label);font-weight:500;font-size:calc(12px*var(--fs));letter-spacing:.04em;text-transform:uppercase;cursor:pointer;color:#111}
 .apchk input{width:18px;height:18px;accent-color:#111;margin:0}
