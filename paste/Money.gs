@@ -50,6 +50,7 @@ function stripMoney_(value, user) {
   var keys = Object.keys(value), n, k;
   for (n = 0; n < keys.length; n++) {
     k = keys[n];
+    if ((k === 'quotes' || k === 'accepted') && value[k] && typeof value[k] === 'object') stripQuoteTotals_(value[k]);
     if (MONEY_KEYS[k]) { delete value[k]; continue; }
     if (k === 'can' && value.can && typeof value.can === 'object') {
       value.can.cost = false;
@@ -62,6 +63,20 @@ function stripMoney_(value, user) {
     stripMoney_(value[k], user);
   }
   return value;
+}
+/* portalSteps quotes and accepted quotes carry a peso total. A to-do total is a count and stays. */
+function stripQuoteTotals_(bag) {
+  var list, i, one, ids;
+  if (Object.prototype.toString.call(bag) === '[object Array]') list = bag;
+  else {
+    list = [];
+    ids = Object.keys(bag);
+    for (i = 0; i < ids.length; i++) list.push(bag[ids[i]]);
+  }
+  for (i = 0; i < list.length; i++) {
+    one = list[i];
+    if (one && typeof one === 'object') delete one.total;
+  }
 }
 
 function rejectMoneyWrite_(req, user) {
@@ -117,6 +132,7 @@ function moneyOut_(req, s, out) {
 
 /* Called from Code.gs doPost before fastAction_ or handleAction_ runs. */
 function moneyGate_(req, run) {
+  if (typeof fastInstall_ === 'function') { try { fastInstall_(); } catch (eF) {} }
   var denied = moneyPrepare_(req, moneyUser_(req, null));
   if (denied) return denied;
   var out = run();

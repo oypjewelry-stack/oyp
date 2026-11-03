@@ -72,6 +72,7 @@ eq(authFinds[0][1].includes('moneyGate_(req, function () { return typeof fastAct
 eq(authFinds[1][0] === '  if (!s) return { ok: false, error: \'Not signed in\', code: \'NO_SESSION\' };', 'moneyPrepare_ is placed after the signed-in check');
 eq(authFinds[1][1].includes('moneyPrepare_(req, s.user)'), 'the prepare call uses s.user');
 eq(read('markq.js').includes('function quoteMoney') && read('review.js').includes('hideQuote ? undefined : q.total'), 'Review hides a quote total for a role that cannot see money');
+eq(/function moneyGate_\(req, run\) \{\n  if \(typeof fastInstall_ === 'function'\) \{ try \{ fastInstall_\(\); \} catch \(eF\) \{\} \}/.test(money), 'moneyGate_ installs the fast session cache before it reads the user');
 
 const gs = {};
 vm.createContext(gs);
@@ -148,9 +149,18 @@ function sessionFrom_(session) {
   return null;
 }
 gs.sessionFrom_ = sessionFrom_;
+let fastInstalls = 0;
+gs.fastInstall_ = function () { fastInstalls += 1; };
+const portalSteps = {
+  ok: true,
+  quotes: { '26-426': { version: 2, total: 12800, state: 'open', sig: 'abc' } },
+  accepted: { '26-418': { version: 1, total: 9000, locked: true } },
+  todo: { total: 4, items: [{ id: 't1', text: 'Call Ana' }] }
+};
 function fastAction_(req) {
   if (req.action === 'dashboard') return dcacheRead_('dashboard', () => JSON.parse(JSON.stringify(dash)));
   if (req.action === 'priceGet') return dcacheRead_('priceGet', () => JSON.parse(JSON.stringify(prices)));
+  if (req.action === 'portalSteps') return dcacheRead_('portalSteps', () => JSON.parse(JSON.stringify(portalSteps)));
   return handleAction_(req);
 }
 function doPost(req) {
@@ -193,6 +203,13 @@ const denied = doPost({ action: 'costSave', session: 'sess-susan', set: { client
 eq(denied.code === 'FORBIDDEN', 'costSave is denied by name');
 const adaPrice = doPost({ action: 'priceGet', session: 'sess-ada' });
 eq(adaPrice.items[0].rate === 3450 && adaPrice.markups.standard === 2.2, 'admin priceGet is unchanged');
+const beforeInstall = fastInstalls;
+const susanSteps = doPost({ action: 'portalSteps', session: 'sess-susan' });
+eq(fastInstalls === beforeInstall + 1, 'moneyGate_ runs fastInstall_ once per call');
+eq(susanSteps.quotes['26-426'].version === 2 && susanSteps.quotes['26-426'].sig === 'abc' && susanSteps.quotes['26-426'].total == null && susanSteps.accepted['26-418'].locked === true && susanSteps.accepted['26-418'].total == null && susanSteps.todo.total === 4 && susanSteps.todo.items[0].text === 'Call Ana', 'portalSteps drops quote totals and keeps the to-do count');
+eq(JSON.parse(shared.portalSteps).quotes['26-426'].total === 12800 && JSON.parse(shared.portalSteps).todo.total === 4, 'the cached portalSteps answer still has the quote total');
+const adaSteps = doPost({ action: 'portalSteps', session: 'sess-ada' });
+eq(adaSteps.quotes['26-426'].total === 12800 && adaSteps.accepted['26-418'].total === 9000 && adaSteps.todo.total === 4, 'admin portalSteps quote totals are unchanged');
 const kept = { jobs: [{ jo: '26-426', cost: 5 }] };
 const sent = gs.moneyOut_({ action: 'invList' }, { user: susan }, kept);
 eq(kept.jobs[0].cost === 5 && sent.jobs[0].cost == null && sent.jobs[0].jo === '26-426', 'moneyOut_ strips a copy and leaves the cached object alone');
