@@ -232,9 +232,9 @@ function panel(j) {
     ${backBtn()}
     <div class="dhead"><h2>JO ${esc(headJo(j))}${j.version ? ` <span class="chip big" title="Latest version of this JO${(j.versions || []).length > 1 ? ' (' + esc(j.versions.join(', ')) + ')' : ''}">Version ${esc(j.version)}</span>` : ''}${j.location === 'archived' ? ' <span class="chip arch big" title="JO on record, no physical piece">Archived</span>' : ''}</h2><span class="lab">${j.type === 'revision' && j.parent_jo ? 'Revision of ' + esc(j.parent_jo) : j.pages.length + ' page' + (j.pages.length === 1 ? '' : 's')}</span></div>
     ${shotsHtml(j)}
-    <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Where is it now?</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
+    <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Location</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
       <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(locLabel(l[0]))}</button>`).join('')}</div></div>
-    <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">What is it?</span>${flag('item_type')}</div>
+    <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">Type</span>${flag('item_type')}</div>
       <div class="kinds">${S.itemTypes.map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}</div></div>
     <div class="fgrid">
       <div class="fsec full ${fcls('client') || fcls('client_id')}"><div class="flab"><span class="lab">Client</span>${flag('client') || flag('client_id')}</div>
