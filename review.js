@@ -357,7 +357,8 @@ function stepsSec(j) {
   const head = '<div class="flab"><span class="lab">Steps the client sees</span></div>';
   if (!S.steps) return `<div class="fsec full stepsec">${head}<p class="muted fnote">Pick which steps clients see on Track my order once the Portal update is pasted in Apps Script.</p></div>`;
   const ca = S.steps.client && S.steps.client[j.jo], ap = ca && ca.approved; // Portal.gs v3: what the client did online
-  const act = ca ? `<div class="cact">${ap ? `<span class="chip ok">Client approved quote v${esc(ap.version)}${ap.amount != null ? ' · ₱' + Math.round(ap.amount).toLocaleString('en-PH') : ''} · ${esc(ap.at)}${window.OYPMarkQ ? window.OYPMarkQ.viaText(ap.via, ap.how) : ap.via === 'track' ? ' (Track my order)' : ap.via === 'account' ? ' (portal account)' : ''}</span>` : ''}${ca.questions ? `<a class="chip gold" href="#/dashboard">${ca.questions} client question${ca.questions > 1 ? 's' : ''} · see Dashboard</a>` : ''}</div>` : '';
+  const hideQuote = window.OYP.canSeeMoney && window.OYP.canSeeMoney() === false;
+  const act = ca ? `<div class="cact">${ap ? `<span class="chip ok">Client approved quote v${esc(ap.version)}${!hideQuote && ap.amount != null ? ' · ₱' + Math.round(ap.amount).toLocaleString('en-PH') : ''} · ${esc(ap.at)}${window.OYPMarkQ ? window.OYPMarkQ.viaText(ap.via, ap.how) : ap.via === 'track' ? ' (Track my order)' : ap.via === 'account' ? ' (portal account)' : ''}</span>` : ''}${ca.questions ? `<a class="chip gold" href="#/dashboard">${ca.questions} client question${ca.questions > 1 ? 's' : ''} · see Dashboard</a>` : ''}</div>` : '';
   // Portal.gs v3.2: executives / admin can record the client's approval of the sent quote (in person / phone / chat / Telegram)
   const oq = S.steps.quotes && S.steps.quotes[j.jo], mq = oq && window.OYPMarkQ ? window.OYPMarkQ.box(j.jo, oq) : '';
   // Portal.gs v3.4: "Re-open for changes" on the approved quote (reverses the cost lock); only when the server sends accepted
@@ -488,7 +489,8 @@ function bindJob(main, j, opt) {
   if (S.steps) drawSteps();
   if (S.steps && S.steps.quotes && S.steps.quotes[j.jo] && window.OYPMarkQ) window.OYPMarkQ.wire(main, j.jo, S.steps.quotes[j.jo], (r, how) => { // the chip stays after a redraw
     const q = S.steps.quotes[j.jo]; delete S.steps.quotes[j.jo]; S.steps.client = S.steps.client || {};
-    S.steps.client[j.jo] = Object.assign({}, S.steps.client[j.jo], { approved: { version: q.version, at: 'just now', via: 'staff', how, amount: q.total } });
+    var hideQuote = window.OYP.canSeeMoney && window.OYP.canSeeMoney() === false;
+    S.steps.client[j.jo] = Object.assign({}, S.steps.client[j.jo], { approved: { version: q.version, at: 'just now', via: 'staff', how, amount: hideQuote ? undefined : q.total } });
     delete costCache[j.jo]; costBox(main, j.jo); }); // v3.4: the approval locked the cost: show the fresh locked-cost card
   const aq0 = S.steps && !(S.steps.quotes && S.steps.quotes[j.jo]) && S.steps.accepted && S.steps.accepted[j.jo];
   if (aq0 && window.OYPMarkQ && window.OYPMarkQ.wireReopen) window.OYPMarkQ.wireReopen(main, j.jo, aq0, r => { // the chip stays after a redraw

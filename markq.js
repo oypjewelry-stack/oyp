@@ -11,6 +11,10 @@
 const HOW = [['in_person', 'In person'], ['phone', 'Phone'], ['chat', 'Chat'], ['telegram', 'Telegram']];
 const HOWL = { in_person: 'in person', phone: 'phone', chat: 'chat', telegram: 'Telegram' };
 const peso = n => n == null ? '' : '₱' + Math.round(Number(n) || 0).toLocaleString('en-PH');
+function quoteMoney(n) {
+  if (window.OYP.canSeeMoney && window.OYP.canSeeMoney() === false) return '';
+  return n != null ? ' · ' + peso(n) : '';
+}
 // q = portalSteps quotes[jo] = {version, total, state: open|expired, sent, valid_until, sig}
 function box(jo, q) {
   const { esc } = window.OYP, exp = q.state === 'expired';
@@ -18,7 +22,7 @@ function box(jo, q) {
     <div class="mqhd"><span class="chip gold">Quote v${esc(q.version)} sent · waiting for the client</span>${exp ? `<span class="chip">Expired ${esc(q.valid_until)}</span>` : ''}</div>
     <button class="pill outline sm mqOpen" type="button">MARK APPROVED BY CLIENT</button>
     <div class="mqform hidden">
-      <p class="mqq"><b>Client approved quote v${esc(q.version)}${q.total != null ? ' · ' + esc(peso(q.total)) : ''} for JO ${esc(jo)}?</b></p>
+      <p class="mqq"><b>Client approved quote v${esc(q.version)}${quoteMoney(q.total)} for JO ${esc(jo)}?</b></p>
       <span class="lab">How did the client approve?</span>
       <div class="mqhow">${HOW.map(([k, l]) => `<button type="button" class="fchip mqHow" data-how="${k}">${esc(l)}</button>`).join('')}</div>
       ${exp ? `<label class="mqexp"><input type="checkbox" class="mqExp"> This quote expired on ${esc(q.valid_until)}. Approve it anyway.</label>` : ''}
@@ -57,7 +61,7 @@ function reopenBox(jo, a) {
     <div class="mqhd"><span class="chip ${a.locked ? 'dark' : ''}">${a.locked ? '🔒 Cost locked' + (a.locked_on ? ' ' + esc(a.locked_on) : '') : 'Cost not locked'}</span></div>
     <button class="pill outline sm mqrOpen" type="button">RE-OPEN FOR CHANGES</button>
     <div class="mqform hidden">
-      <p class="mqq"><b>Re-open quote v${esc(a.version)}${a.total != null ? ' · ' + esc(peso(a.total)) : ''} on JO ${esc(jo)} for changes?</b></p>
+      <p class="mqq"><b>Re-open quote v${esc(a.version)}${quoteMoney(a.total)} on JO ${esc(jo)} for changes?</b></p>
       <p class="fnote muted">${a.locked ? 'The cost lock is reversed (kept in the history with your name and the time). ' : ''}The quote becomes “reopened”: the client sees no quote until you save a NEW version, mark it sent and the client approves it again, which locks the cost again. Nothing is sent to the client.</p>
       <label class="lab">Why? (optional)<input class="mqrWhy" maxlength="200" placeholder="e.g. client wants 18K instead"></label>
       <div class="fbtns"><button type="button" class="pill sm mqrGo">CONFIRM RE-OPEN</button><button type="button" class="lnk mqrNo">Cancel</button></div>

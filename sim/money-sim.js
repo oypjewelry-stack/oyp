@@ -66,17 +66,12 @@ const money = read('paste/Money.gs');
 eq(money.includes('function moneyHidden_') && money.includes('function stripMoney_') && money.includes('function rejectMoneyWrite_') && money.includes('function moneyPrepare_') && money.includes('function moneyOut_') && money.includes('function moneyUser_'), 'Money.gs prepares writes and strips the doPost copy');
 const authPatch = read('paste/Auth.gs.money.patch.txt');
 const authFinds = blocks(authPatch);
-eq(authFinds.length === 1 && authFinds[0][0] === '  var out = handleAction_(req);', 'the Auth patch has one FIND, the doPost assignment');
-eq(authPatch.includes('find the line in doPost that contains handleAction_(') && authPatch.includes('Do not rename handleAction_'), 'the fallback is the line in doPost that contains handleAction_(');
-eq(authPatch.includes('moneyPrepare_(req, s.user)'), 'moneyPrepare_ stays at the top of handleAction_');
-const quoted = [];
-fs.readdirSync(path.join(root, 'paste')).forEach(name => {
-  if (name === 'Auth.gs.money.patch.txt') return;
-  read('paste/' + name).split('\n').forEach(line => {
-    if (line.includes('handleAction_(')) quoted.push(name + ': ' + line.trim());
-  });
-});
-eq(quoted.length === 0, 'no other paste file quotes a doPost line that calls handleAction_');
+eq(authFinds.length === 2, 'the money paste is two FIND blocks');
+eq(authFinds[0][0] === '  if (req.action) return json_(typeof fastAction_ === \'function\' ? fastAction_(req) : handleAction_(req));', 'the Code.gs FIND is the live doPost line');
+eq(authFinds[0][1].includes('moneyGate_(req, function () { return typeof fastAction_ === \'function\' ? fastAction_(req) : handleAction_(req); })'), 'the whole fastAction_ / handleAction_ ternary is wrapped');
+eq(authFinds[1][0] === '  if (!s) return { ok: false, error: \'Not signed in\', code: \'NO_SESSION\' };', 'moneyPrepare_ is placed after the signed-in check');
+eq(authFinds[1][1].includes('moneyPrepare_(req, s.user)'), 'the prepare call uses s.user');
+eq(read('markq.js').includes('function quoteMoney') && read('review.js').includes('hideQuote ? undefined : q.total'), 'Review hides a quote total for a role that cannot see money');
 
 const gs = {};
 vm.createContext(gs);
@@ -85,6 +80,8 @@ eq(gs.moneyHidden_(susan) && !gs.moneyHidden_(ada) && !gs.moneyHidden_(bea), 'th
 const stripped = gs.stripMoney_({ ok: true, jobs: [{ jo: '26-426', cost: 10, price: 20, client: 'Elena' }], can: { cost: true, price: true } }, susan);
 eq(stripped.jobs[0].cost == null && stripped.jobs[0].price == null && stripped.jobs[0].client === 'Elena' && stripped.can.cost === false, 'a list loses cost and price and keeps the client');
 eq(gs.stripMoney_({ jobs: [{ cost: 10 }] }, ada).jobs[0].cost === 10, 'admin list is not stripped');
+const extra = gs.stripMoney_({ labor: 1, unit_price_php: 2, paid_amount: 3, profit: 4, weight_g: 5, status: 'active', total: 6 }, susan);
+eq(extra.labor == null && extra.unit_price_php == null && extra.paid_amount == null && extra.profit == null && extra.weight_g === 5 && extra.status === 'active' && extra.total === 6, 'the added money keys drop and weight, status, and a to-do total stay');
 eq(gs.rejectMoneyWrite_({ set: { price: 20 } }, susan).code === 'FORBIDDEN', 'a price write is rejected');
 eq(gs.rejectMoneyWrite_({ set: { client: 'Elena' } }, susan) == null, 'a save with no money field is allowed');
 eq(gs.rejectMoneyWrite_({ item: { unit_cost: 5 } }, ada) == null, 'admin may write a cost');
@@ -141,37 +138,61 @@ function handleAction_(req, s) {
   if (req.action === 'consignList') return dcacheRead_('consignList', () => JSON.parse(JSON.stringify(consign)));
   if (req.action === 'dashboard') return dcacheRead_('dashboard', () => JSON.parse(JSON.stringify(dash)));
   if (req.action === 'invSave') return { ok: true, saved: true };
+  if (req.action === 'login') return { ok: true, user: susan, boot: [['invList', {}, { ok: true, jobs: [{ jo: '26-426', cost: 10, price: 20, weight_g: 4, status: 'active' }] }]] };
   return { ok: false, error: 'Unknown action' };
 }
-function doPost(req, s) {
-  const out = gs.moneyOut_(req, s || null, handleAction_(req, s));
-  return JSON.parse(JSON.stringify(out));
-}
-gs.sessionFrom_ = req => {
-  if (req && req.session === 'susan') return { user: susan };
-  if (req && req.session === 'bea') return { user: bea };
+function sessionFrom_(session) {
+  if (session === 'sess-susan') return { user: susan };
+  if (session === 'sess-ada') return { user: ada };
+  if (session === 'sess-bea') return { user: bea };
   return null;
-};
-const susanInv = doPost({ action: 'invList' }, { user: susan });
+}
+gs.sessionFrom_ = sessionFrom_;
+function fastAction_(req) {
+  if (req.action === 'dashboard') return dcacheRead_('dashboard', () => JSON.parse(JSON.stringify(dash)));
+  if (req.action === 'priceGet') return dcacheRead_('priceGet', () => JSON.parse(JSON.stringify(prices)));
+  return handleAction_(req);
+}
+function doPost(req) {
+  if (!req.action) return null;
+  const run = () => (typeof fastAction_ === 'function' ? fastAction_(req) : handleAction_(req));
+  return JSON.parse(JSON.stringify(gs.moneyGate_(req, run)));
+}
+function moneyKeys(value, found) {
+  found = found || [];
+  if (!value || typeof value !== 'object') return found;
+  Object.keys(value).forEach(k => {
+    if (gs.MONEY_KEYS[k]) found.push(k);
+    else moneyKeys(value[k], found);
+  });
+  return found;
+}
+const susanInv = doPost({ action: 'invList', session: 'sess-susan' });
 const stored = JSON.parse(shared.invList);
 eq(susanInv.jobs[0].jo === '26-426' && susanInv.jobs[0].weight_g === 12.5 && susanInv.jobs[0].status === 'active' && susanInv.jobs[0].cost == null && susanInv.jobs[0].price == null, 'doPost strips the inventory answer');
 eq(stored.jobs[0].cost === 4200 && stored.jobs[0].price === 12800, 'the shared cache still holds the full inventory answer');
-const adaInv = doPost({ action: 'invList' }, { user: ada });
+const adaInv = doPost({ action: 'invList', session: 'sess-ada' });
 eq(adaInv.jobs[0].price === 12800 && adaInv.jobs[0].cost === 4200 && JSON.parse(shared.invList).jobs[0].price === 12800, 'admin reads the shared cache with cost and price, and the cache is not rewritten stripped');
-const susanBoard = doPost({ action: 'prodBoard' }, { user: susan });
+const susanBoard = doPost({ action: 'prodBoard', session: 'sess-susan' });
 eq(susanBoard.board[0].cards[0].stage === 'qc' && susanBoard.sessions[0].minutes === 30 && susanBoard.labor_cost == null && susanBoard.sessions[0].cost == null && JSON.parse(shared.prodBoard).labor_cost === 900, 'doPost strips the production board and leaves the cached labor cost');
-const susanMats = doPost({ action: 'matList' }, { user: susan });
+const susanMats = doPost({ action: 'matList', session: 'sess-susan' });
 eq(susanMats.items[0].qty === 20 && susanMats.items[0].unit === 'g' && susanMats.items[0].last_cost == null && JSON.parse(shared.matList).items[0].stock_cost === 69000, 'doPost strips materials and leaves the cached stock cost');
-const susanPrice = doPost({ action: 'priceGet' }, { user: susan });
-eq(susanPrice.items[0].name === '18k yellow gold' && susanPrice.items[0].unit === 'g' && susanPrice.items[0].rate == null && susanPrice.markups == null && JSON.parse(shared.priceGet).items[0].rate === 3450, 'doPost strips rates and markups and leaves the cached price row');
-const susanConsign = doPost({ action: 'consignList' }, { user: susan });
+const susanPrice = doPost({ action: 'priceGet', session: 'sess-susan' });
+eq(susanPrice.code === 'FORBIDDEN' && !shared.priceGet, 'priceGet is denied by name before Fast.gs can cache it');
+const susanConsign = doPost({ action: 'consignList', session: 'sess-susan' });
 eq(susanConsign.items[0].jo === '26-380' && susanConsign.items[0].status === 'out' && susanConsign.items[0].weight_g === 6 && susanConsign.items[0].value == null && JSON.parse(shared.consignList).items[0].value === 9000, 'doPost strips consignment value and leaves the cached value');
-const susanDash = doPost({ action: 'dashboard' }, { user: susan });
+const susanDash = doPost({ action: 'dashboard', session: 'sess-susan' });
 eq(susanDash.counts.active_jobs === 2 && susanDash.counts.month_sales == null && susanDash.payments[0].status === 'confirmed' && susanDash.payments[0].amount == null && JSON.parse(shared.dashboard).payments[0].amount === 1000, 'doPost strips the dashboard and leaves the cached amount');
-const beaDash = doPost({ action: 'dashboard', session: 'bea' }, null);
-eq(beaDash.payments[0].amount === 1000 && beaDash.counts.month_sales === 50000, 'accounting, resolved with sessionFrom_, still receives the dashboard money');
-const denied = doPost({ action: 'invSave', set: { price: 20, client: 'Elena' } }, { user: susan });
-eq(denied.code === 'FORBIDDEN' && !shared.invSave, 'a money write is rejected at the top of handleAction_ and is not cached');
+const beaDash = doPost({ action: 'dashboard', session: 'sess-bea' });
+eq(beaDash.payments[0].amount === 1000 && beaDash.counts.month_sales === 50000, 'accounting, resolved with sessionFrom_(session), still receives the dashboard money');
+const login = doPost({ action: 'login', session: '' });
+eq(login.user && login.user.role === 'production_manager' && moneyKeys(login).length === 0 && login.boot[0][2].jobs[0].jo === '26-426' && login.boot[0][2].jobs[0].weight_g === 4, 'login boot is stripped using out.user');
+const nested = doPost({ action: 'invSave', session: 'sess-susan', meta: { note: { price: 20 } }, client: 'Elena' });
+eq(nested.code === 'FORBIDDEN' && !shared.invSave, 'a money key anywhere in the request is rejected');
+const denied = doPost({ action: 'costSave', session: 'sess-susan', set: { client: 'Elena' } });
+eq(denied.code === 'FORBIDDEN', 'costSave is denied by name');
+const adaPrice = doPost({ action: 'priceGet', session: 'sess-ada' });
+eq(adaPrice.items[0].rate === 3450 && adaPrice.markups.standard === 2.2, 'admin priceGet is unchanged');
 const kept = { jobs: [{ jo: '26-426', cost: 5 }] };
 const sent = gs.moneyOut_({ action: 'invList' }, { user: susan }, kept);
 eq(kept.jobs[0].cost === 5 && sent.jobs[0].cost == null && sent.jobs[0].jo === '26-426', 'moneyOut_ strips a copy and leaves the cached object alone');

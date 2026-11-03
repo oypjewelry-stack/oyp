@@ -6,11 +6,10 @@
  * moneyHidden_, so Payments, Quotes, and Balances stay as they are.
  * A production manager and plain staff are moneyHidden_.
  *
- * doPost is the choke point. moneyPrepare_ runs at the top of handleAction_,
- * before any handler and before a cache write. moneyOut_ runs where doPost
- * serializes the result, on a copy, after dcacheRead_ has already stored the
- * full answer. A stripped copy is never written back. Inventory, materials,
- * production, prices, consignment, and the dashboard need no edits.
+ * Code.gs doPost wraps fastAction_ and handleAction_ with moneyGate_.
+ * moneyPrepare_ runs in handleAction_ after the signed-in check, where s.user
+ * exists, and again inside moneyGate_ before a Fast.gs cached read. moneyOut_
+ * strips a copy after that read is stored. A stripped copy is never written back.
  */
 function moneyHidden_(user) {
   var role = String(user && user.role || '');
@@ -19,14 +18,26 @@ function moneyHidden_(user) {
 
 /* Keys the staff pages actually read as money. weight_g, status, qty, jo, and
    client are not in this list. total is a to-do count as well as a price, so
-   it is not stripped; cost_total and month_sales are. */
+   it is not stripped; the Review page hides q.total itself. */
 var MONEY_KEYS = {
   cost: 1, price: 1, sell_price: 1, unit_cost: 1, last_cost: 1, stock_cost: 1,
   total_cost: 1, labor_cost: 1, material_cost: 1, cost_total: 1, today_cost_total: 1,
   margin: 1, margin_pct: 1, markup: 1, markups: 1, srp: 1, quote_amount: 1,
   your_price: 1, retail_price: 1, tag_price: 1, sold_price: 1, agreed_value: 1,
   value: 1, amount: 1, balance: 1, paid: 1, owed: 1, quoted: 1, month_sales: 1,
-  premium_pct: 1, rate: 1, rates: 1
+  premium_pct: 1, rate: 1, rates: 1,
+  labor: 1, labor_repair: 1, labor_stock: 1, unit_price_php: 1, total_php: 1,
+  price_php: 1, spot_php_g: 1, suggested_php_g: 1, srp_total: 1, quoted_cost_total: 1,
+  cost_stones: 1, cost_materials: 1, cost_labor: 1, new_rate: 1, old_rate: 1,
+  rates_used: 1, rates_json: 1, premium: 1, at_srp: 1, at_srp_pct: 1,
+  at_your_price: 1, at_your_price_pct: 1, paid_amount: 1, sales: 1, sales_month: 1,
+  stone_price: 1, selling_price: 1, profit: 1
+};
+var MONEY_ACTIONS = {
+  costRates: 1, priceGet: 1, priceHistory: 1, priceJobCost: 1, costQuotes: 1, costCalc: 1,
+  payData: 1, payReceipt: 1, settingsRate: 1, settingsPremium: 1, pricePremium: 1,
+  priceAccept: 1, priceRefresh: 1, costSave: 1, costRateSave: 1, portalMarkApproved: 1,
+  portalUnlockCost: 1
 };
 
 function stripMoney_(value, user) {
@@ -64,7 +75,7 @@ function rejectMoneyWrite_(req, user) {
     }
     Object.keys(obj).forEach(function (k) {
       if (MONEY_KEYS[k]) { found = true; delete obj[k]; return; }
-      if (k === 'set' || k === 'item' || k === 'items' || k === 'body') walk(obj[k]);
+      walk(obj[k]);
     });
   }
   walk(req);
@@ -72,27 +83,42 @@ function rejectMoneyWrite_(req, user) {
   return { ok: false, error: 'Cost and price are not for this role', code: 'FORBIDDEN' };
 }
 
-function moneyPrepare_(req, user) { return rejectMoneyWrite_(req, user); }
+function moneyPrepare_(req, user) {
+  if (moneyHidden_(user) && MONEY_ACTIONS[String(req && req.action || '')]) {
+    return { ok: false, error: 'Cost and price are not for this role', code: 'FORBIDDEN' };
+  }
+  return rejectMoneyWrite_(req, user);
+}
 
-/* Same session lookup the handlers use when s.user was not passed in.
-   Quoted from paste/InventoryCount.gs countUser_. */
+/* sessionFrom_ takes the session string, the same way PhotoFast calls sessionFrom_(req.session). */
 function moneyUser_(req, s) {
   if (s && s.user && (s.user.role || s.user.username)) return s.user;
   if (s && s.username && !s.user) return s;
   try {
-    var sess = (typeof sessionFrom_ === 'function') ? sessionFrom_(req || {}) : null;
-    if (sess && sess.user && sess.user.username) return sess.user;
+    var sess = (typeof sessionFrom_ === 'function') ? sessionFrom_(req && req.session) : null;
+    if (sess && sess.user && (sess.user.username || sess.user.role)) return sess.user;
     if (sess && sess.username) return sess;
   } catch (e) {}
   return null;
 }
 
-/* Strip a copy. The object handleAction_ returned is left intact, so a shared
-   cache that still points at it keeps cost and price for admin. */
-function moneyOut_(req, s, out) {
-  var user = moneyUser_(req, s);
+function moneyStripCopy_(user, out) {
   if (!moneyHidden_(user) || out == null || typeof out !== 'object') return out;
   var copy = out;
   try { copy = JSON.parse(JSON.stringify(out)); } catch (e2) { copy = out; }
   return stripMoney_(copy, user);
+}
+
+function moneyOut_(req, s, out) {
+  var user = moneyUser_(req, s);
+  if (req && String(req.action) === 'login' && out && out.user) user = out.user;
+  return moneyStripCopy_(user, out);
+}
+
+/* Called from Code.gs doPost before fastAction_ or handleAction_ runs. */
+function moneyGate_(req, run) {
+  var denied = moneyPrepare_(req, moneyUser_(req, null));
+  if (denied) return denied;
+  var out = run();
+  return moneyOut_(req, null, out);
 }
