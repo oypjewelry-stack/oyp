@@ -1,0 +1,137 @@
+Consignment.gs — an admin can delete one consignment sheet.
+Do not paste a new Consignment.gs over the live file. Apply each FIND / REPLACE in order.
+No new OAuth scopes. Do not add a column. Do not add consignDelete to FAST.READS, FAST.CACHE, or DCACHE.READS. It is a write.
+
+Closing a sheet is unchanged: when the last piece is returned or sold, consignItem_ still records consignClose and the rows stay. Delete is separate. It is only for role admin.
+
+Pieces whose status is still consigned go back to prev_location before the rows are removed, unless another sheet still has that JO out. A returned or sold piece is left where it already is.
+
+If a tab named Deleted, AuditLog, or Audit already exists, one row is appended there with the deleted rows as JSON. The tab is not created. When none of those tabs exist, the response includes rows so the page can offer Undo for about 10 seconds.
+
+FIND
+function isConsignAction_(a) {
+  return { consignList: 1, consignSearch: 1, consignSave: 1, consignItem: 1, consigneeSave: 1, consignPay: 1, consignSigned: 1 }[String(a || '')] === 1;
+}
+
+REPLACE WITH
+function isConsignAction_(a) {
+  return { consignList: 1, consignSearch: 1, consignSave: 1, consignItem: 1, consigneeSave: 1, consignPay: 1, consignSigned: 1, consignDelete: 1 }[String(a || '')] === 1;
+}
+
+FIND
+  var acts = { consignList: consignList_, consignSearch: consignSearch_, consignSave: consignSave_, consignItem: consignItem_, consigneeSave: consigneeSave_, consignPay: consignPay_, consignSigned: consignSigned_ };
+
+REPLACE WITH
+  var acts = { consignList: consignList_, consignSearch: consignSearch_, consignSave: consignSave_, consignItem: consignItem_, consigneeSave: consigneeSave_, consignPay: consignPay_, consignSigned: consignSigned_, consignDelete: consignDelete_ };
+
+FIND
+  if (req.action === 'consignPay' && !isExec_(user)) {
+    try { audit_(user.username, 'denied', req.action, req.device_id, 'payment from role ' + user.role); } catch (e4) {}
+    return { ok: false, error: 'Recording a payment is for executives only', code: 'FORBIDDEN' };
+  }
+  var write = req.action === 'consignSave' || req.action === 'consignItem' || req.action === 'consigneeSave' || req.action === 'consignPay' || req.action === 'consignSigned';
+
+REPLACE WITH
+  if (req.action === 'consignPay' && !isExec_(user)) {
+    try { audit_(user.username, 'denied', req.action, req.device_id, 'payment from role ' + user.role); } catch (e4) {}
+    return { ok: false, error: 'Recording a payment is for executives only', code: 'FORBIDDEN' };
+  }
+  if (req.action === 'consignDelete' && String(user.role || '') !== 'admin') {
+    try { audit_(user.username, 'denied', req.action, req.device_id, 'delete from role ' + user.role); } catch (e5) {}
+    return { ok: false, error: 'Deleting a sheet is for an admin', code: 'FORBIDDEN' };
+  }
+  var write = req.action === 'consignSave' || req.action === 'consignItem' || req.action === 'consigneeSave' || req.action === 'consignPay' || req.action === 'consignSigned' || req.action === 'consignDelete';
+
+FIND
+function consignItem_(req, user) {
+
+REPLACE WITH
+function consignPlain_(r) {
+  var o = {}, i, k, v;
+  for (i = 0; i < CONSIGN_COLS.length; i++) {
+    k = CONSIGN_COLS[i];
+    v = r[k];
+    o[k] = v == null ? '' : v;
+  }
+  return o;
+}
+function consignOutBesides_(jo, skip) {
+  var key = jobKey_(jo);
+  if (!key) return false;
+  return consignRows_().some(function (r) {
+    if (skip[consignLineId_(r)]) return false;
+    if (jobKey_(consignCell_(r, ['jo'])) !== key) return false;
+    return consignItemOpen_(consignCell_(r, ['status']));
+  });
+}
+function consignLogDeleted_(by, cid, rows) {
+  try {
+    if (typeof ss_ !== 'function') return false;
+    var book = ss_();
+    if (!book || !book.getSheetByName) return false;
+    var sh = book.getSheetByName('Deleted') || book.getSheetByName('AuditLog') || book.getSheetByName('Audit');
+    if (!sh || !sh.appendRow) return false;
+    sh.appendRow([new Date(), by || '', 'consignDelete', cid || '', JSON.stringify(rows)]);
+    return true;
+  } catch (e) { return false; }
+}
+function consignRestore_(req, user) {
+  var rows = req.restore, miss = consignMissing_();
+  if (!rows || !rows.length) return { ok: false, error: 'Nothing to put back' };
+  if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
+  var t = now_(), by = user.username, cid = jobStr_(rows[0].consignment_id), i, jo, job, seen = {}, moved = [];
+  for (i = 0; i < rows.length; i++) consignAppend_(rows[i]);
+  for (i = 0; i < rows.length; i++) {
+    if (consignNormStatus_(rows[i].status) !== 'consigned') continue;
+    jo = jobKey_(rows[i].jo);
+    if (!jo || seen[jo]) continue;
+    seen[jo] = true;
+    job = consignJob_(jo);
+    if (job && consignLoc_(job.location) !== 'consigned') {
+      consignSetLoc_(job, 'consigned', user, t);
+      moved.push(jo + ' -> consigned');
+    }
+  }
+  try { audit_(by, 'consignRestore', cid, req.device_id || '', rows.length + ' row(s)' + (moved.length ? ' · ' + moved.join('; ') : '')); } catch (e) {}
+  return { ok: true, consignment_id: cid, restored: rows.length };
+}
+function consignDelete_(req, user) {
+  if (!user || String(user.role || '') !== 'admin') return { ok: false, error: 'Deleting a sheet is for an admin', code: 'FORBIDDEN' };
+  if (req && req.restore) return consignRestore_(req, user);
+  var miss = consignMissing_(), bad = consignHeadersOk_();
+  if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
+  if (bad) return { ok: false, error: bad };
+  var cid = jobStr_(req.consignment_id);
+  if (!cid) return { ok: false, error: 'Name the sheet' };
+  var rows = [], skip = {}, i, r, jo, back, job, seenJo = {}, moved = [], copy = [], nums = [];
+  consignRows_().forEach(function (row) {
+    if (jobStr_(consignCell_(row, ['consignment_id'])) === cid) rows.push(row);
+  });
+  if (!rows.length) return { ok: false, error: 'No such sheet' };
+  for (i = 0; i < rows.length; i++) skip[consignLineId_(rows[i])] = true;
+  var t = now_(), by = user.username;
+  for (i = 0; i < rows.length; i++) {
+    r = rows[i];
+    if (consignNormStatus_(consignCell_(r, ['status'])) !== 'consigned') continue;
+    jo = jobKey_(consignCell_(r, ['jo']));
+    if (!jo || seenJo[jo]) continue;
+    seenJo[jo] = true;
+    if (consignOutBesides_(jo, skip)) continue;
+    back = consignLoc_(consignCell_(r, ['prev_location', 'previous_location'])) || 'vault';
+    if (!back || back === 'consigned') back = 'vault';
+    job = consignJob_(jo);
+    if (job) { consignSetLoc_(job, back, user, t); moved.push(jo + ' -> ' + back); }
+  }
+  for (i = 0; i < rows.length; i++) copy.push(consignPlain_(rows[i]));
+  var sh = ss_().getSheetByName(CONSIGN_TAB);
+  if (!sh || !sh.deleteRow) return { ok: false, error: 'The Consignment tab cannot remove a row' };
+  for (i = 0; i < rows.length; i++) if (rows[i]._row > 1) nums.push(rows[i]._row);
+  nums.sort(function (a, b) { return b - a; });
+  for (i = 0; i < nums.length; i++) sh.deleteRow(nums[i]);
+  var logged = consignLogDeleted_(by, cid, copy);
+  try { audit_(by, 'consignDelete', cid, req.device_id || '', copy.length + ' row(s)' + (moved.length ? ' · ' + moved.join('; ') : '')); } catch (eLog) {}
+  var res = { ok: true, consignment_id: cid, removed: copy.length, consignee: jobStr_(consignCell_(rows[0], ['consignee_name', 'consignee'])), logged: logged };
+  if (!logged) res.rows = copy;
+  return res;
+}
+function consignItem_(req, user) {

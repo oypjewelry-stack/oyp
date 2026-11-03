@@ -3,6 +3,7 @@
    A sold piece is owed by the consignee. Record payment stores paid_amount and paid_at on the line (Consignment.gs consignPay).
    Attach signed copy sends a photo or PDF (consignSigned). Attach signed return slip sends the same way with kind return. Both files stay in Drive under Consignments/<CS number>.
    A sheet closes when no piece is still consigned. Returned pieces go back to prev_location and are left out of the owed amount. Sold pieces stay owed until a payment is recorded.
+   An admin can delete a whole sheet. Pieces still marked consigned go back to prev_location first. Closing a sheet does not delete it.
    Server: Consignment.gs, one tab named Consignment, one row per piece. Run setupConsignment once. Names in the form are the distinct consignee names on that tab. */
 (() => {
 'use strict';
@@ -72,6 +73,7 @@ let scanBusy = false, qTimer = 0, scanSeq = 0, scanShown = '';
 let camGen = 0, U = null;
 
 function prices() { return !!(S.r && S.r.prices); }
+function canDelete() { return !!(U && U.role === 'admin'); }
 function moneyBits(o) {
   if (!prices() || !o || o.sold == null) return '';
   return 'Sold ' + o.sold + ' · owed ' + peso(o.owed) + ' · paid ' + peso(o.paid) + ' · balance ' + peso(o.balance);
@@ -216,9 +218,14 @@ function sheetRow(s, esc) {
   return `<tr class="csrow${s.overdue ? ' od' : ''}" data-open="${esc(s.consignment_id)}"><td><b class="cn">${esc(s.consignee || '—')}</b><br><span class="muted">${esc(s.consignment_id)}</span>${signMark(s, esc)}${money ? `<span class="csmoney">${esc(money)}</span>` : ''}</td>
     <td>${esc(day(s.date_out))}</td><td>${esc(items)}</td><td>${s.days_out == null ? '—' : esc(s.days_out)}</td>
     <td>${s.overdue ? '<span class="chip gold">Overdue</span>' : (s.status === 'closed' ? '<span class="chip">Closed</span>' : '—')}</td>
-    <td><div class="csrowacts"><button type="button" class="lnk" data-reprint="${esc(s.consignment_id)}">Reprint</button>${hasReturned(s) ? `<button type="button" class="lnk" data-rprint="${esc(s.consignment_id)}">Return slip</button>` : ''}${signButton(s, esc, 'copy')}${hasReturned(s) ? signButton(s, esc, 'return') : ''}</div></td></tr>`;
+    <td><div class="csrowacts"><button type="button" class="lnk" data-reprint="${esc(s.consignment_id)}">Reprint</button>${hasReturned(s) ? `<button type="button" class="lnk" data-rprint="${esc(s.consignment_id)}">Return slip</button>` : ''}${signButton(s, esc, 'copy')}${hasReturned(s) ? signButton(s, esc, 'return') : ''}${moreButton(s, esc)}</div></td></tr>`;
 }
 function hasReturned(s) { return (s.items || []).some(it => it.status === 'returned'); }
+function moreButton(s, esc) {
+  if (!canDelete()) return '';
+  const id = esc(s.consignment_id);
+  return `<button type="button" class="csmore" data-csmore="${id}" aria-label="Actions for ${id}" aria-haspopup="menu" aria-expanded="false">⋯</button>`;
+}
 function signButton(s, esc, kind) {
   const id = esc(s.consignment_id);
   const ret = kind === 'return';
@@ -323,7 +330,7 @@ function drawSheet(printing) {
   const money = moneyBits(s);
   return `<div class="cs">
     <button type="button" class="csback cs-noprint" id="csBack">‹ Back</button>
-    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><div class="csrowacts"><button type="button" class="pill sm" id="csPrint">REPRINT</button>${hasReturned(s) ? `<button type="button" class="pill sm outline" id="csReturn">RETURN SLIP</button>` : ''}${signButton(s, esc, 'copy')}${hasReturned(s) ? signButton(s, esc, 'return') : ''}</div></div>
+    <div class="dhead cshead cs-noprint"><h2>${esc(s.consignment_id)}</h2><div class="csrowacts"><button type="button" class="pill sm" id="csPrint">REPRINT</button>${hasReturned(s) ? `<button type="button" class="pill sm outline" id="csReturn">RETURN SLIP</button>` : ''}${signButton(s, esc, 'copy')}${hasReturned(s) ? signButton(s, esc, 'return') : ''}${canDelete() ? `<button type="button" class="pill sm outline" id="csDelete">DELETE</button>` : ''}${moreButton(s, esc)}</div></div>
     <p class="muted cs-noprint">${esc(s.consignee || '')} · out ${esc(day(s.date_out))}${money ? ' · ' + esc(money) : ''}${s.overdue ? ' · overdue' : ''}${s.status === 'closed' ? ' · closed' : ''}</p>
     ${signMark(s, esc) ? `<div class="cs-noprint">${signMark(s, esc)}</div>` : ''}
     ${sheet}
@@ -371,7 +378,7 @@ function payForm(s) {
 function head() {
   const roll = moneyBits(S.r);
   return `<div class="dhead cshead"><h2>Consignment</h2><button type="button" class="pill sm" id="csNew">CONSIGN</button></div>
-    <p class="muted">Pieces lent out. Overdue after ${((S.r && S.r.overdue_days) || 30)} days. Nothing on this page is deleted.</p>
+    <p class="muted">Pieces lent out. Overdue after ${((S.r && S.r.overdue_days) || 30)} days. Closing a sheet keeps it on this list. An admin can delete a sheet.</p>
     ${roll ? `<p class="csmoney">${window.OYP.esc(roll)}</p>` : ''}`;
 }
 function setupWarn() {
@@ -476,6 +483,12 @@ function wire(main) {
   main.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; S.mode = 'list'; S.edit = ''; draw(main); });
   main.querySelectorAll('[data-open]').forEach(tr => tr.onclick = () => go(tr.dataset.open));
   main.querySelectorAll('[data-reprint]').forEach(b => b.onclick = e => { e.stopPropagation(); openPrint(main, b.dataset.reprint); });
+  main.querySelectorAll('[data-csmore]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const s = sheetBy(b.dataset.csmore);
+    if (!s || !canDelete() || !window.OYP.popover) return;
+    window.OYP.popover(b, [{ label: 'Delete', danger: true, run: () => removeSheet(main, s) }]);
+  });
   main.querySelectorAll('[data-rprint]').forEach(b => b.onclick = e => { e.stopPropagation(); openReturn(main, b.dataset.rprint); });
   main.querySelectorAll('[data-sign]').forEach(b => b.onclick = e => {
     e.stopPropagation();
@@ -521,6 +534,7 @@ function wire(main) {
     openScan(main);
   };
   const pr = $('csPrint'); if (pr) pr.onclick = () => openPrint(main, S.id);
+  const del = $('csDelete'); if (del) del.onclick = () => { const s = sheetBy(S.id); if (s) removeSheet(main, s); };
   const rs = $('csReturn'); if (rs) rs.onclick = () => openReturn(main, S.id);
   const find = $('csFind'); if (find) find.onkeydown = e => onFindKey(e, main);
   const dop = $('csDoPrint'); if (dop) dop.onclick = () => window.print();
@@ -539,6 +553,38 @@ function wire(main) {
   focusScan();
 }
 
+async function removeSheet(main, s) {
+  if (!canDelete() || !s || S.busy) return;
+  const id = s.consignment_id;
+  const who = s.consignee || 'this consignee';
+  if (!confirm('Delete ' + id + ' for ' + who + '? The sheet is removed. Pieces still out go back to where they were.')) return;
+  S.busy = true;
+  const r = await window.OYP.call('consignDelete', { consignment_id: id });
+  S.busy = false;
+  if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not delete');
+  if (S.r && S.r.sheets) S.r.sheets = S.r.sheets.filter(x => x.consignment_id !== id);
+  if (S.id === id) { S.mode = 'list'; S.id = ''; S.pay = null; }
+  draw(main);
+  if (r.rows && r.rows.length) offerUndo(main, id, r.rows);
+  else window.OYP.toast('Deleted ' + id);
+}
+function offerUndo(main, id, rows) {
+  const el = document.getElementById('toast');
+  if (!el) return window.OYP.toast('Deleted ' + id);
+  el.innerHTML = window.OYP.esc('Deleted ' + id) + ' <button type="button" class="tdundo">Undo</button>';
+  el.classList.remove('hidden');
+  const timer = setTimeout(() => el.classList.add('hidden'), 10000);
+  const btn = el.querySelector('.tdundo');
+  if (!btn) return;
+  btn.onclick = async () => {
+    clearTimeout(timer);
+    el.classList.add('hidden');
+    const back = await window.OYP.call('consignDelete', { restore: rows });
+    if (!back || !back.ok) return window.OYP.toast((back && back.error) || 'Could not undo');
+    await reload(main);
+    window.OYP.toast('Put back ' + id);
+  };
+}
 async function savePerson(main) {
   if (S.busy) return;
   const name = ($('cgName') && $('cgName').value || '').trim();

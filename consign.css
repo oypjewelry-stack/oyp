@@ -12,6 +12,7 @@
 .csrowacts{display:flex;flex-wrap:wrap;gap:calc(4px*var(--sp)) calc(10px*var(--sp));align-items:center}
 td .csrowacts{flex-direction:column;align-items:flex-start}
 .cshead .csrowacts{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;max-width:none}
+.csmore{width:36px;height:36px;min-width:36px;min-height:36px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#111;font-size:22px;line-height:1;padding:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .cssignbits{display:flex;flex-wrap:wrap;align-items:center;gap:calc(6px*var(--sp));margin-top:calc(4px*var(--sp))}
 .csthumb{line-height:0}
 .csthumb img{width:44px;height:44px;object-fit:cover;border:1px solid #eee;border-radius:calc(8px*var(--rad));background:#fff;display:block}
