@@ -60,9 +60,12 @@ const specs = j => {
 };
 const locLab = k => window.OYP.locLabel(k, ((IV.r && IV.r.locations || []).find(l => l[0] === k) || [k, k])[1]);
 const typeLab = k => ((IV.r && IV.r.item_types || []).find(t => t[0] === k) || [k, k])[1];
+const JOB_TYPE = { new: 'New job', repair: 'Repair', revision: 'Revision', cleaning_plating: 'Cleaning/plating', stone_setting: 'Stone setting', other: 'Other' };
+const SOURCE_LAB = { owner_item: "Owner's item", oyp_stock: 'OYP stock' };
+function ivJobLab(t) { return !t ? '' : (JOB_TYPE[t] || t); }
 function ivHay(j) {
-  return [j.jo, j.parent_jo, j.description, j.client, j.metal, kar(j.karat), j.karat, j.stone_type, j.stone_size, j.grade, j.material, j.size,
-    j.item_type && typeLab(j.item_type), j.location && locLab(j.location), stageLabel(j.stage), j.type === 'repair' ? 'repair' : '',
+  return [j.jo, j.parent_jo, j.description, j.client, j.jor, j.metal, kar(j.karat), j.karat, j.stone_type, j.stone_size, j.grade, j.material, j.size,
+    j.item_type && typeLab(j.item_type), j.location && locLab(j.location), stageLabel(j.stage), ivJobLab(j.type), SOURCE_LAB[j.source] || '',
     (j.review || j.pending_review) ? 'review' : ''].join(' ').toLowerCase();
 }
 function ivShown() {
@@ -87,7 +90,7 @@ function ivFromReview(j) {
     jo: j.jo, parent_jo: j.parent_jo || '', description: j.description || '', client: ivClientName(j.client),
     metal: j.metal || '', karat: j.karat || '', stone_type: j.stone_type || '', stone_size: j.stone_size || '',
     grade: j.grade || '', material: j.material || '', size: j.size || '', weight_g: j.weight_g || '',
-    item_type: j.item_type || '', location: j.location || '', stage: '', col: '', type: j.type || '',
+    item_type: j.item_type || '', location: j.location || '', stage: '', col: '', type: j.type || '', source: j.source || '', jor: j.jor || '',
     due: j.due_date || '', review: true, pending_review: true, late: false,
     has_photo: !!(j.pages && j.pages.length), on_hand: false, version: j.version || ''
   };
@@ -96,7 +99,7 @@ function ivCopyReview(row, job) {
   if (!row || !job) return;
   const name = ivClientName(job.client);
   if (name) row.client = name;
-  ['description', 'location', 'item_type', 'type', 'metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade', 'material', 'weight_g'].forEach(k => {
+  ['description', 'location', 'item_type', 'type', 'source', 'jor', 'metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade', 'material', 'weight_g'].forEach(k => {
     if (job[k] != null) row[k] = job[k];
   });
   if (job.due_date) row.due = job.due_date;
@@ -388,7 +391,7 @@ function ivSheet(j, edit) { // details, and the review form when this JO is stil
   const pending = !!(j.review || j.pending_review), inline = pending && edit;
   const facts = `<p class="kd">${esc(j.description || 'No details')}</p>
     <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}
-      ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('Job', j.type === 'repair' ? 'Repair' : j.type === 'revision' ? 'Revision' : j.type ? 'New job' : '')}
+      ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('JOR', j.jor)}${f('Job', ivJobLab(j.type))}${f('Source', SOURCE_LAB[j.source] || '')}
       ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
       ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>`;
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>

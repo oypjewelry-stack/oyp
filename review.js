@@ -3,10 +3,12 @@
    to overwrite a field someone else changed since this form opened (CONFLICT). */
 (() => {
 'use strict';
-const FIELDS = [['client', 'Client'], ['due_date', 'Due date'], ['type', 'Type'], ['metal', 'Metal'], ['karat', 'Karat'], ['description', 'Description']];
+const FIELDS = [['client', 'Client'], ['due_date', 'Due date'], ['type', 'Type of job'], ['metal', 'Metal'], ['karat', 'Karat'], ['description', 'Description']];
 const KIND_EXTRA = { jewelry: ['size'] }; // shown, never flagged
 const SPECIFIC = ['metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade', 'material', 'weight_g'];
-const TYPES = [['new', 'New job'], ['repair', 'Repair'], ['revision', 'Revision']];
+const TYPES = [['new', 'New job'], ['repair', 'Repair'], ['cleaning_plating', 'Cleaning/plating'], ['stone_setting', 'Stone setting'], ['other', 'Other']];
+const SOURCES = [['owner_item', "Owner's item"], ['oyp_stock', 'OYP stock']];
+const OLD_TYPE = { '': 1, new: 1, repair: 1, revision: 1 }; // revision is no longer a choice; an old row may still be saved unchanged
 const STATUS = [['', 'Automatic (from location)'], ['draft', 'Draft'], ['active', 'Active'], ['done', 'Done'], ['picked_up', 'Picked up'], ['cancelled', 'Cancelled']];
 const photoCache = {};
 // A JO opened from a dashboard list (dash.js) that is not a draft: shown in the same panel, fetched with dashDrill {what:'job'} (DashboardDrill.gs).
@@ -241,9 +243,11 @@ function panel(j) {
         <div id="fClient" class="cpick">${j.client ? `<div class="csel"><b>${esc(j.client.name)}</b>${j.client.phone ? ` <span class="muted">${esc(j.client.phone)}</span>` : ''}<button class="lnk" data-cclear>Change</button></div>` : ''}
         <div class="csearch ${j.client ? 'hidden' : ''}"><input id="fCq" placeholder="Search a client by name${S.canPhone ? ' or phone' : ''}" autocomplete="off"><div id="fCres" class="cres"></div>
           <div class="cnew"><span class="lab">or add a new client</span><div class="row2 ${S.cc ? 'one' : ''}"><input id="fNn" placeholder="Name">${S.cc ? '' : '<input id="fNp" placeholder="Phone" inputmode="tel">'}</div>${S.cc ? '<span class="muted sm">Type their mobile or email under Client contact.</span>' : ''}</div></div></div></div>
+      <div class="fsec"><div class="flab"><span class="lab">JOR</span></div><input id="f_jor" value="${esc(j.jor || '')}" placeholder="0247" autocomplete="off" inputmode="text"></div>
       ${contactSec(j)}
       <div class="fsec ${fcls('due_date')}"><div class="flab"><span class="lab">Due date</span>${flag('due_date')}</div><input type="date" id="f_due_date" value="${esc(j.due_date)}"></div>
-      <div class="fsec ${fcls('type')}"><div class="flab"><span class="lab">Type</span>${flag('type')}</div><div class="seg">${TYPES.map(t => `<button class="${j.type === t[0] ? 'on' : ''}" data-type="${t[0]}">${esc(t[1])}</button>`).join('')}</div></div>
+      <div class="fsec full ${fcls('type')}"><div class="flab"><span class="lab">Type of job</span>${flag('type')}</div><div class="locs">${TYPES.map(t => `<button class="loc ${j.type === t[0] ? 'on' : ''}" data-type="${t[0]}">${esc(t[1])}</button>`).join('')}${j.type === 'revision' ? '<span class="loc on tylegacy" title="Older jobs only. Pick a type of job to replace it.">Revision</span>' : ''}</div></div>
+      <div class="fsec full"><div class="flab"><span class="lab">Source</span></div><div class="seg">${SOURCES.map(t => `<button class="${j.source === t[0] ? 'on' : ''}" data-source="${t[0]}">${esc(t[1])}</button>`).join('')}</div></div>
       <div class="fsec full kindsec" data-for="metal,karat,size,stone_type,stone_size,grade,material,weight_g"><div class="kindgrid">
         ${fld('metal', 'Metal', `<input id="f_metal" list="dlMetal" value="${esc(j.metal)}" placeholder="Gold, Silver…">`)}
         ${fld('karat', 'Karat', `<input id="f_karat" list="dlKarat" value="${esc(j.karat)}" placeholder="18k, 925…">`)}
@@ -421,7 +425,7 @@ function bindJob(main, j, opt) {
   if (window.OYPPhotos && j.pages && j.pages.length) window.OYPPhotos.prefetch(j.jo, j.pages.map(p => p.file_id), 'scan', 'job');
   costBox(main, j.jo);
   const isExt = S.ext && S.ext.jo === j.jo;
-  const st = { location: j.location, type: j.type, client_id: j.client_id, item_type: j.item_type, newClient: null };
+  const st = { location: j.location, type: j.type, source: j.source || '', client_id: j.client_id, item_type: j.item_type, newClient: null };
   const saved0 = savedSteps(j.jo); st.steps = saved0 ? saved0.split(',') : defSteps(j.type); st.stepsTouched = false;
   const drawSteps = () => { const box = $('#fSteps'); if (!box) return; const { esc } = window.OYP;
     box.innerHTML = S.steps.all.map(([k, l]) => { const lock = S.steps.always.includes(k), on = lock || st.steps.includes(k);
@@ -459,8 +463,9 @@ function bindJob(main, j, opt) {
   main.querySelectorAll('[data-big]').forEach(b => b.onclick = () => openShot(main, j, b.dataset.big, 'scan'));
   if (j && !j.stub) fillDrivePhotos(main, j);
   main.querySelectorAll('[data-loc]').forEach(b => b.onclick = () => { st.location = b.dataset.loc; main.querySelectorAll('[data-loc]').forEach(x => x.classList.toggle('on', x === b)); filled(b); });
-  main.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { st.type = st.type === b.dataset.type ? '' : b.dataset.type; main.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x.dataset.type === st.type)); if (st.type) filled(b);
-    if (S.steps && !saved0 && !st.stepsTouched) { st.steps = defSteps(st.type); drawSteps(); } }); // not saved yet: the default follows the type
+  main.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { st.type = st.type === b.dataset.type ? '' : b.dataset.type; main.querySelectorAll('[data-type]').forEach(x => x.classList.toggle('on', x.dataset.type === st.type)); const leg = main.querySelector('.tylegacy'); if (leg) leg.hidden = st.type !== 'revision'; if (st.type) filled(b);
+    if (S.steps && !saved0 && !st.stepsTouched) { st.steps = defSteps(st.type); drawSteps(); } }); // not saved yet: the default follows the type. Revision is not a choice.
+  main.querySelectorAll('[data-source]').forEach(b => b.onclick = () => { st.source = st.source === b.dataset.source ? '' : b.dataset.source; main.querySelectorAll('[data-source]').forEach(x => x.classList.toggle('on', x.dataset.source === st.source)); });
   const cc = $('[data-cclear]'); if (cc) cc.onclick = () => { $('.csel').classList.add('hidden'); $('.csearch').classList.remove('hidden'); $('#fCq').focus(); };
   let tq; $('#fCq').oninput = e => { clearTimeout(tq); const q = e.target.value; tq = setTimeout(async () => {
     const r = await call('jobClientSearch', { q }); if (!r.ok) return;
@@ -469,8 +474,9 @@ function bindJob(main, j, opt) {
   }, 250); };
   const fcp = $('#fc_phone'); if (fcp) fcp.addEventListener('blur', () => { fcp.value = fmtPhone(fcp.value); });
   const save = async mark => {
-    const set = { location: st.location, item_type: st.item_type, type: st.type, client_id: st.client_id };
+    const set = { location: st.location, item_type: st.item_type, type: st.type, source: st.source || '', client_id: st.client_id };
     ['due_date', 'description'].concat(kindFields(st.item_type)).forEach(k => { set[k] = $('#f_' + k).value; }); // hidden fields are left as they are
+    if ($('#f_jor')) set.jor = $('#f_jor').value.trim();
     if ($('#f_status').value) set.status = $('#f_status').value;
     const seen = {}; Object.keys(set).forEach(k => { seen[k] = j[k] == null ? '' : j[k]; });
     const nn = $('#fNn').value.trim(), np = $('#fNp') ? $('#fNp').value.trim() : '';
@@ -494,11 +500,22 @@ function bindJob(main, j, opt) {
       delete S.ccDraft[j.jo]; delete set.client_id; if (cr.contact) S.contact[j.jo] = cr.contact;
     }
     const later = ccOn && !ccFirst; if (later) body.mark_reviewed = false; // mark reviewed only once the contact is saved too
+    const namesField = e => { e = String(e || '').toLowerCase(); return e.indexOf('unknown field') >= 0 || e.indexOf('source') >= 0 || e.indexOf('jor') >= 0 || e.indexOf('cleaning_plating') >= 0 || e.indexOf('stone_setting') >= 0 || e.indexOf('owner_item') >= 0 || e.indexOf('oyp_stock') >= 0; };
+    let dropped = [];
     let r = await call('jobReviewSave', body);
+    if (!r.ok && r.code !== 'CONFLICT' && (r.code === 'FIELD' || namesField(r.error))) {
+      const set2 = Object.assign({}, set), seen2 = Object.assign({}, seen), err = String(r.error || '').toLowerCase();
+      const drop = (key, lab) => { if (!Object.prototype.hasOwnProperty.call(set2, key)) return; delete set2[key]; delete seen2[key]; dropped.push(lab); };
+      if (err.indexOf('source') >= 0 || err.indexOf('owner_item') >= 0 || err.indexOf('oyp_stock') >= 0 || r.code === 'FIELD') drop('source', 'Source');
+      if (err.indexOf('jor') >= 0 || r.code === 'FIELD') drop('jor', 'JOR');
+      if (set2.type && !OLD_TYPE[set2.type] && (err.indexOf('type') >= 0 || err.indexOf(String(set2.type)) >= 0)) drop('type', 'Type of job');
+      if (dropped.length) { body.set = set2; body.seen = seen2; r = await call('jobReviewSave', body); }
+    }
     if (!r.ok) {
       if (r.code === 'CONFLICT') { S.conflicts = {}; r.conflicts.forEach(c => { S.conflicts[c.field] = c.now; }); await rerender(); toast(r.error); return; }
       return toast(r.error);
     }
+    if (r.skipped && r.skipped.length) r.skipped.forEach(k => { const lab = k === 'source' ? 'Source' : k === 'jor' ? 'JOR' : k === 'type' ? 'Type of job' : k; if (dropped.indexOf(lab) < 0) dropped.push(lab); });
     if (later) {
       const cr = await saveCC((r.job && r.job.client_id) || ''); if (!cr.ok) return ccFail(cr, true);
       delete S.ccDraft[j.jo];
@@ -512,7 +529,7 @@ function bindJob(main, j, opt) {
       }
     }
     S.conflicts = {}; const idx = S.jobs.findIndex(x => x.jo === j.jo);
-    toast(mark ? 'JO ' + j.jo + ' reviewed' : 'Saved');
+    toast((mark ? 'JO ' + j.jo + ' reviewed' : 'Saved') + (dropped.length ? '. Not stored until JobSync is pasted: ' + dropped.join(', ') : ''));
     if (mark) gone.add(j.jo);
     if (opt.embedded) {
       if (mark) S.jobs = (S.jobs || []).filter(x => x.jo !== j.jo);
