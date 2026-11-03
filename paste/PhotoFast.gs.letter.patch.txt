@@ -1,0 +1,70 @@
+PASTE INTO: PhotoFast.gs
+
+No new OAuth scopes. Do not add any scopes. Do not replace the file. paste/PhotoFast.gs is the copy these FIND blocks are quoted from. Each FIND is in that file once.
+
+26-380 and 26-380B are different jobs. pfKey_ must not call jobKey_ or normJO_. Those drop a trailing letter, so a card named 26-380B-2a.jpg never matches key 26-380. The key stays exact: 26-380 matches only 26-380-<page><a|b>, and 26-380B matches only 26-380B-<page><a|b>.
+
+FIND
+function pfKey_(s) {
+  if (typeof jobKey_ === 'function') return jobKey_(s);
+  if (typeof normJO_ === 'function') return normJO_(s);
+  return String(s || '').trim().toUpperCase();
+}
+
+REPLACE WITH
+function pfKey_(s) {
+  var t = String(s || '').trim().toUpperCase().replace(/\s+/g, '');
+  var m = t.match(/^(\d{2})-(\d{3,4})([A-Z])?$/);
+  if (m) return m[1] + '-' + m[2] + (m[3] || '');
+  return t;
+}
+
+FIND
+/* <JO>-<page><a|b>, optional extension. 26-425-2A.JPG matches. CHECK-26-425-2a.jpg does not. */
+function pfCardParts_(joKey, fileName) {
+  var base = String(fileName || '').replace(/\.[^.]+$/, '');
+  var m = base.match(new RegExp('^' + pfEsc_(joKey) + '-(\\d+)([ab])$', 'i'));
+  if (!m) return null;
+  var page = parseInt(m[1], 10);
+  if (!(page > 0)) return null;
+  return { page: page, side: m[2].toLowerCase() };
+}
+
+REPLACE WITH
+/* Exact JO, then -<page><a|b>. 26-380 matches only 26-380-2a. 26-380B matches only 26-380B-2a. CHECK-26-425-2a.jpg does not match. */
+function pfCardParts_(joKey, fileName) {
+  joKey = pfKey_(joKey);
+  var base = String(fileName || '').replace(/\.[^.]+$/, '');
+  var m = base.match(new RegExp('^' + pfEsc_(joKey) + '-(\\d+)([ab])$', 'i'));
+  if (!m) return null;
+  var page = parseInt(m[1], 10);
+  if (!(page > 0)) return null;
+  return { page: page, side: m[2].toLowerCase() };
+}
+
+FIND
+function pfCards_(jo, job) {
+  var key = pfKey_(jo), j = job || null, hit, folder, files, out = [], seen = 0, f, parts, id;
+
+REPLACE WITH
+function pfCards_(jo, job) {
+  // key is the exact JO: 26-380B matches only 26-380B-<page><a|b>
+  var key = pfKey_(jo), j = job || null, hit, folder, files, out = [], seen = 0, f, parts, id;
+
+FIND
+  if (new RegExp('^' + pfEsc_(joKey) + '([A-Z])?-p\\d+', 'i').test(name)) return false;
+  if (pfCardParts_(joKey, name)) return false;
+
+REPLACE WITH
+  joKey = pfKey_(joKey);
+  if (new RegExp('^' + pfEsc_(joKey) + '-p\\d+', 'i').test(name)) return false;
+  if (pfCardParts_(joKey, name)) return false;
+
+FIND
+function pfColIds_(j, scans, key) {
+  var out = [], raw = [], i, id, f;
+
+REPLACE WITH
+function pfColIds_(j, scans, key) {
+  key = pfKey_(key);
+  var out = [], raw = [], i, id, f;

@@ -1,0 +1,69 @@
+PASTE INTO: JobSync.gs
+
+No new OAuth scopes. Do not add any scopes. Do not replace the file. Do not change jobParse_.
+
+paste/JobSync.gs.txt in this repo is only jobParse_. It does not contain jobKey_, jobMergeVersions_, or the review save, so this file has no FIND block. A FIND quoted from that file would change jobParse_, which this paste must not do. Replace the whole live function when the name matches. Do not leave the old body under the new one.
+
+26-380 and 26-380B are different keys. jobKey_ keeps the trailing letter.
+
+jobMergeVersions_ used to put every lettered row on the base number and let the highest letter win. Stop that. Merge only a true revision: type is revision, or parent_jo is set. A sibling on the same JOR stays its own JobOrders row, with its own client, description, and dates.
+
+The save must write the row whose jo equals the requested jo. After jobKey_ keeps the letter, look the row up with jobRowFor_. If it returns nothing, do not write the base row and do not create 26-380 while saving 26-380B. Leave the jo cell as that exact key.
+
+function jobKey_(s) {
+  var raw = String(s == null ? '' : s).trim();
+  var t = raw.toUpperCase().replace(/\s+/g, '');
+  var m = t.match(/^(\d{2})-(\d{3,4})([A-Z])?$/);
+  if (m) return m[1] + '-' + m[2] + (m[3] || '');
+  return raw;
+}
+
+function jobIsRevision_(j) {
+  if (!j) return false;
+  if (String(j.type || '').toLowerCase() === 'revision') return true;
+  return !!String(j.parent_jo || '').trim();
+}
+
+function jobMergeVersions_(rows) {
+  var out = [], grouped = {}, i, j, key, m, base, lettered, bucket, best, n, bKey, merged, hit;
+  rows = rows || [];
+  for (i = 0; i < rows.length; i++) {
+    j = rows[i] || {};
+    key = jobKey_(j.jo);
+    m = String(key).match(/^(\d{2}-\d{3,4})([A-Z])?$/);
+    base = m ? m[1] : '';
+    lettered = !!(m && m[2]);
+    if (!(lettered && jobIsRevision_(j))) { out.push(j); continue; }
+    if (String(j.parent_jo || '').trim()) base = jobKey_(j.parent_jo);
+    if (!base) { out.push(j); continue; }
+    if (!grouped[base]) grouped[base] = [];
+    grouped[base].push(j);
+  }
+  Object.keys(grouped).forEach(function (baseKey) {
+    bucket = grouped[baseKey];
+    best = bucket[0];
+    for (n = 1; n < bucket.length; n++) {
+      bKey = jobKey_(bucket[n].jo);
+      if (bKey > jobKey_(best.jo)) best = bucket[n];
+    }
+    merged = {};
+    Object.keys(best).forEach(function (k) { merged[k] = best[k]; });
+    merged.jo = baseKey;
+    merged.version = jobKey_(best.jo).slice(baseKey.length);
+    hit = false;
+    for (n = 0; n < out.length; n++) {
+      if (jobKey_(out[n] && out[n].jo) === baseKey && !jobIsRevision_(out[n])) { out[n] = merged; hit = true; break; }
+    }
+    if (!hit) out.push(merged);
+  });
+  return out;
+}
+
+function jobRowFor_(rows, jo) {
+  var want = jobKey_(jo), i;
+  if (!want) return null;
+  for (i = 0; i < (rows || []).length; i++) {
+    if (rows[i] && jobKey_(rows[i].jo) === want) return rows[i];
+  }
+  return null;
+}
