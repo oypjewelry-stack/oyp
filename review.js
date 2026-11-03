@@ -6,8 +6,8 @@
 const FIELDS = [['client', 'Client'], ['due_date', 'Due date'], ['type', 'Type of job'], ['metal', 'Metal'], ['karat', 'Karat'], ['description', 'Description']];
 const METAL = ['metal', 'karat'];
 const ITEM_KINDS = [
-  ['earring', 'Earring', METAL], ['ring', 'Ring', METAL], ['necklace', 'Necklace', METAL], ['chain', 'Chain', METAL],
-  ['pendant', 'Pendant', METAL], ['bracelet', 'Bracelet', METAL], ['cufflink', 'Cufflink', METAL], ['nut', 'Nut', METAL],
+  ['earring', 'Earring', []], ['ring', 'Ring', []], ['necklace', 'Necklace', []], ['chain', 'Chain', []],
+  ['pendant', 'Pendant', []], ['bracelet', 'Bracelet', []], ['cufflink', 'Cufflink', []], ['nut', 'Nut', []],
   ['other', 'Others', []]
 ];
 const LEGACY_KIND = { jewelry: 'Jewelry', loose_stone: 'Loose stone', pearl: 'Pearl', raw_material: 'Raw material' };
@@ -45,7 +45,10 @@ function kindRow(code) {
 function kindFieldsFor(k) {
   const row = kindRow(k);
   const base = row && Array.isArray(row[2]) ? row[2] : [];
-  return base.concat(KIND_EXTRA[k] || []);
+  const shown = base.concat(KIND_EXTRA[k] || []);
+  // New kinds do not require metal or karat. The fields stay on the form.
+  if (ITEM_KINDS.some(t => t[0] === k)) ['metal', 'karat'].forEach(f => { if (shown.indexOf(f) < 0) shown.push(f); });
+  return shown;
 }
 const cur = () => {
   if (!S.open) return null;
