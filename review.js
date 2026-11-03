@@ -4,7 +4,15 @@
 (() => {
 'use strict';
 const FIELDS = [['client', 'Client'], ['due_date', 'Due date'], ['type', 'Type of job'], ['metal', 'Metal'], ['karat', 'Karat'], ['description', 'Description']];
-const KIND_EXTRA = { jewelry: ['size'] }; // shown, never flagged
+const METAL = ['metal', 'karat'];
+const ITEM_KINDS = [
+  ['earring', 'Earring', METAL], ['ring', 'Ring', METAL], ['necklace', 'Necklace', METAL], ['chain', 'Chain', METAL],
+  ['pendant', 'Pendant', METAL], ['bracelet', 'Bracelet', METAL], ['cufflink', 'Cufflink', METAL], ['nut', 'Nut', METAL],
+  ['other', 'Others', []]
+];
+const LEGACY_KIND = { jewelry: 'Jewelry', loose_stone: 'Loose stone', pearl: 'Pearl', raw_material: 'Raw material' };
+const LEGACY_FIELDS = { jewelry: METAL, loose_stone: ['stone_type', 'stone_size', 'grade'], pearl: ['stone_type', 'stone_size'], raw_material: ['material', 'weight_g'] };
+const KIND_EXTRA = { jewelry: ['size'], earring: ['size'], ring: ['size'], necklace: ['size'], chain: ['size'], pendant: ['size'], bracelet: ['size'], cufflink: ['size'], nut: ['size'] }; // shown, never flagged. Same extra as jewelry.
 const SPECIFIC = ['metal', 'karat', 'size', 'stone_type', 'stone_size', 'grade', 'material', 'weight_g'];
 const TYPES = [['new', 'New job'], ['repair', 'Repair'], ['cleaning_plating', 'Cleaning/plating'], ['stone_setting', 'Stone setting'], ['other', 'Other']];
 const SOURCES = [['owner_item', "Owner's item"], ['oyp_stock', 'OYP stock']];
@@ -15,6 +23,35 @@ const photoCache = {};
 function joBits(s) { // sticker QR: 26-287B is this JO, not a search that misses 26-287
   const m = String(s || '').trim().toUpperCase().replace(/\s+/g, '').match(/^(\d{2})-(\d{3,4})([A-Z])?$/);
   return m ? { base: m[1] + '-' + m[2], letter: m[3] || '', text: m[1] + '-' + m[2] + (m[3] || '') } : null;
+}
+function kindChoices() {
+  const known = {};
+  ITEM_KINDS.forEach(t => { known[t[0]] = 1; });
+  const extras = [];
+  (S.itemTypes || []).forEach(t => {
+    if (!t || !t[0] || known[t[0]] || LEGACY_KIND[t[0]]) return;
+    extras.push(t);
+  });
+  return ITEM_KINDS.filter(t => t[0] !== 'other').concat(extras).concat([ITEM_KINDS[ITEM_KINDS.length - 1]]);
+}
+function kindRow(code) {
+  const choice = kindChoices().find(t => t[0] === code);
+  if (choice) return choice;
+  const raw = (S.itemTypes || []).find(t => t && t[0] === code);
+  if (raw) return raw;
+  if (LEGACY_FIELDS[code]) return [code, LEGACY_KIND[code] || code, LEGACY_FIELDS[code]];
+  return null;
+}
+function kindFieldsFor(k) {
+  const row = kindRow(k);
+  const base = row && Array.isArray(row[2]) ? row[2] : [];
+  return base.concat(KIND_EXTRA[k] || []);
+}
+function legacyKindChip(code) {
+  if (!LEGACY_KIND[code]) return '';
+  const raw = (S.itemTypes || []).find(t => t && t[0] === code);
+  const { esc } = window.OYP;
+  return `<span class="loc on kindlegacy" title="Older items only. Pick a type of item to replace it.">${esc(raw && raw[1] ? raw[1] : LEGACY_KIND[code])}</span>`;
 }
 const cur = () => {
   if (!S.open) return null;
@@ -236,8 +273,8 @@ function panel(j) {
     ${shotsHtml(j)}
     <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Location</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
       <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(locLabel(l[0]))}</button>`).join('')}</div></div>
-    <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">Type</span>${flag('item_type')}</div>
-      <div class="kinds">${S.itemTypes.map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}</div></div>
+    <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">Type of item</span>${flag('item_type')}</div>
+      <div class="kinds">${kindChoices().map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}${legacyKindChip(j.item_type)}</div></div>
     <div class="fgrid">
       <div class="fsec full ${fcls('client') || fcls('client_id')}"><div class="flab"><span class="lab">Client</span>${flag('client') || flag('client_id')}</div>
         <div id="fClient" class="cpick">${j.client ? `<div class="csel"><b>${esc(j.client.name)}</b>${j.client.phone ? ` <span class="muted">${esc(j.client.phone)}</span>` : ''}<button class="lnk" data-cclear>Change</button></div>` : ''}
@@ -442,8 +479,8 @@ function bindJob(main, j, opt) {
   if (aq0 && window.OYPMarkQ && window.OYPMarkQ.wireReopen) window.OYPMarkQ.wireReopen(main, j.jo, aq0, r => { // the chip stays after a redraw
     delete S.steps.accepted[j.jo]; S.steps.client = S.steps.client || {};
     S.steps.client[j.jo] = Object.assign({}, S.steps.client[j.jo], { approved: null, reopened: { version: aq0.version, at: 'just now', by: 'you' } }); delete costCache[j.jo]; costBox(main, j.jo); });
-  const kindFields = k => { const t = S.itemTypes.find(x => x[0] === k); return t ? t[2].concat(KIND_EXTRA[k] || []) : []; };
-  const flagged = k => { const t = S.itemTypes.find(x => x[0] === st.item_type); return !!t && t[2].includes(k); };
+  const kindFields = kindFieldsFor;
+  const flagged = k => { const t = kindRow(st.item_type); return !!t && Array.isArray(t[2]) && t[2].includes(k); };
   const applyKind = () => {
     const show = kindFields(st.item_type);
     main.querySelectorAll('[data-f1]').forEach(el => {
@@ -456,7 +493,7 @@ function bindJob(main, j, opt) {
     const ks = main.querySelector('.kindsec'); if (ks) ks.classList.toggle('hidden', !show.length);
   };
   applyKind();
-  main.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { st.item_type = b.dataset.kind; main.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('on', x === b)); filled(b); applyKind(); });
+  main.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { st.item_type = b.dataset.kind; main.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('on', x.dataset.kind === st.item_type)); const leg = main.querySelector('.kindlegacy'); if (leg) leg.hidden = !LEGACY_KIND[st.item_type]; filled(b); applyKind(); });
   const filled = el => { const f = el.closest('.fsec'); if (f) { f.classList.remove('miss'); const fl = f.querySelector('.flag:not(.c)'); if (fl) fl.remove(); } };
   main.querySelectorAll('.rvp input, .rvp textarea').forEach(el => el.addEventListener('input', () => { if (el.value.trim() && !['fCq'].includes(el.id)) filled(el); }));
   const back = $('[data-back]'); if (back) back.onclick = () => { S.open = null; draw(main); };
@@ -500,7 +537,7 @@ function bindJob(main, j, opt) {
       delete S.ccDraft[j.jo]; delete set.client_id; if (cr.contact) S.contact[j.jo] = cr.contact;
     }
     const later = ccOn && !ccFirst; if (later) body.mark_reviewed = false; // mark reviewed only once the contact is saved too
-    const namesField = e => { e = String(e || '').toLowerCase(); return e.indexOf('unknown field') >= 0 || e.indexOf('source') >= 0 || e.indexOf('jor') >= 0 || e.indexOf('cleaning_plating') >= 0 || e.indexOf('stone_setting') >= 0 || e.indexOf('owner_item') >= 0 || e.indexOf('oyp_stock') >= 0; };
+    const namesField = e => { e = String(e || '').toLowerCase(); return e.indexOf('unknown field') >= 0 || e.indexOf('source') >= 0 || e.indexOf('jor') >= 0 || e.indexOf('item_type') >= 0 || e.indexOf('cleaning_plating') >= 0 || e.indexOf('stone_setting') >= 0 || e.indexOf('owner_item') >= 0 || e.indexOf('oyp_stock') >= 0; };
     let dropped = [];
     let r = await call('jobReviewSave', body);
     if (!r.ok && r.code !== 'CONFLICT' && (r.code === 'FIELD' || namesField(r.error))) {
@@ -508,14 +545,15 @@ function bindJob(main, j, opt) {
       const drop = (key, lab) => { if (!Object.prototype.hasOwnProperty.call(set2, key)) return; delete set2[key]; delete seen2[key]; dropped.push(lab); };
       if (err.indexOf('source') >= 0 || err.indexOf('owner_item') >= 0 || err.indexOf('oyp_stock') >= 0 || r.code === 'FIELD') drop('source', 'Source');
       if (err.indexOf('jor') >= 0 || r.code === 'FIELD') drop('jor', 'JOR');
-      if (set2.type && !OLD_TYPE[set2.type] && (err.indexOf('type') >= 0 || err.indexOf(String(set2.type)) >= 0)) drop('type', 'Type of job');
+      if (set2.item_type && !LEGACY_KIND[set2.item_type] && set2.item_type !== 'other' && !(S.itemTypes || []).some(t => t && t[0] === set2.item_type) && (err.indexOf('item_type') >= 0 || err.indexOf(String(set2.item_type)) >= 0)) drop('item_type', 'Type of item');
+      if (set2.type && !OLD_TYPE[set2.type] && (err.indexOf('item_type') < 0 && err.indexOf('type') >= 0 || err.indexOf(String(set2.type)) >= 0)) drop('type', 'Type of job');
       if (dropped.length) { body.set = set2; body.seen = seen2; r = await call('jobReviewSave', body); }
     }
     if (!r.ok) {
       if (r.code === 'CONFLICT') { S.conflicts = {}; r.conflicts.forEach(c => { S.conflicts[c.field] = c.now; }); await rerender(); toast(r.error); return; }
       return toast(r.error);
     }
-    if (r.skipped && r.skipped.length) r.skipped.forEach(k => { const lab = k === 'source' ? 'Source' : k === 'jor' ? 'JOR' : k === 'type' ? 'Type of job' : k; if (dropped.indexOf(lab) < 0) dropped.push(lab); });
+    if (r.skipped && r.skipped.length) r.skipped.forEach(k => { const lab = k === 'source' ? 'Source' : k === 'jor' ? 'JOR' : k === 'type' ? 'Type of job' : k === 'item_type' ? 'Type of item' : k; if (dropped.indexOf(lab) < 0) dropped.push(lab); });
     if (later) {
       const cr = await saveCC((r.job && r.job.client_id) || ''); if (!cr.ok) return ccFail(cr, true);
       delete S.ccDraft[j.jo];

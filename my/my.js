@@ -13,6 +13,8 @@ const toast = t => { const el = document.getElementById('toast'); el.textContent
 const v = id => document.getElementById(id).value.trim();
 const field = (id, lab, type = 'text', extra = '') => `<label class="field"><span class="lab">${lab}</span><input id="${id}" type="${type}" ${extra}></label>`;
 const pinField = (id, lab) => field(id, lab, 'password', 'class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"');
+const ITEM_LAB = { earring: 'Earring', ring: 'Ring', necklace: 'Necklace', chain: 'Chain', pendant: 'Pendant', bracelet: 'Bracelet', cufflink: 'Cufflink', nut: 'Nut', other: 'Others', jewelry: 'Jewelry', loose_stone: 'Loose stone', pearl: 'Pearl', raw_material: 'Raw material' };
+const itemLab = k => ITEM_LAB[k] || k;
 let jobs = [];
 async function busy(btn, fn) { btn.disabled = true; try { await fn(); } finally { btn.disabled = false; } }
 function err(t) { document.getElementById('err').textContent = t || ''; }
@@ -225,7 +227,7 @@ function detail(j) {
   app.classList.add('wide'); window.scrollTo(0, 0);
   const specs = [j.metal && j.karat ? `${j.metal} · ${j.karat}` : j.metal, j.size && 'Size ' + j.size, j.due_date && 'Due ' + j.due_date].filter(Boolean);
   app.innerHTML = `<button class="back" id="bk">‹ My orders</button><div class="detail2"><div id="hero"></div><div>
-  <h1>${esc(j.description || 'Order ' + j.jo)}</h1><p class="grey">Order ${esc(j.jo)}${j.item_type ? ' · ' + esc(j.item_type) : ''}</p>
+  <h1>${esc(j.description || 'Order ' + j.jo)}</h1><p class="grey">Order ${esc(j.jo)}${j.item_type ? ' · ' + esc(itemLab(j.item_type)) : ''}</p>
   ${j.specs ? OYPTrack.specs(j) : specs.length ? `<p class="sec">Details</p><ul class="specs">${specs.map(s => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
   <p class="sec">Progress</p><ul class="steps">${(j.stages.length ? j.stages : [{ label: j.stage || 'In progress', status: 'doing' }]).map(s => `<li class="${esc(s.status)}"><i></i>${esc(s.label)}${s.status === 'doing' ? ' — in progress' : ''}</li>`).join('')}</ul>
   ${OYPTrack.money(j)}
