@@ -458,13 +458,19 @@ function ivRange(jo, shift) {
   IV.anchor = jo;
 }
 function ivJobs(jos) { return jos.map(jo => IV.r.jobs.find(j => j.jo === jo)).filter(Boolean); }
+function ivIsRevision(j) {
+  if (!j) return false;
+  if (String(j.type || '').toLowerCase() === 'revision') return true;
+  return !!String(j.parent_jo || '').trim();
+}
 function ivPrintJo(j) {
   const raw = String(j && j.jo || '');
   const p = joParts(raw);
   if (!p) return raw;
   if (p.letter) return p.base + p.letter;
+  if (!ivIsRevision(j)) return raw;
   const v = String(j.version || '').trim().toUpperCase();
-  return /^[A-Z]$/.test(v) ? p.base + v : p.base;
+  return /^[A-Z]$/.test(v) ? p.base + v : raw;
 }
 async function ivBulk(main, jos, location, kind) {
   const list = ivJobs(jos).filter(j => (location === '' ? j.location === 'archived' : j.location !== location));
@@ -1460,8 +1466,8 @@ window.OYPInv = { renderJos: (m, u) => {
    page cannot call that up, so this page does not draw a keyboard button.
    A sticker's QR is the JO itself (26-287 or 26-287A) or a link / prefixed text that contains one
    (jo=26-287, or a path ending in /26-287). The same read is in consign.js.
-   A sticker QR is the JO with its version letter (26-287B). That scan selects the 26-287B tile.
-   A scan with no letter still folds to the base. If several tiles share that base, the newest letter is the one selected. */
+   A sticker QR is the JO with its letter (26-380B). That scan selects the 26-380B tile only.
+   26-380 and 26-380B are different jobs. A letter is not a version of the base unless the row is a revision (type revision, or parent_jo set). */
 const SCAN_GAP = 50, SCAN_ENTER = 80, SCAN_HARD_ENTER = 400, SCAN_MAX = 400;
 let scanBuf = '', scanAt = 0, scanHard = false, qLastAt = 0, qBurstLen = 0, qHard = false;
 function ivSoftOpen() {
@@ -1541,24 +1547,16 @@ function joParts(s) {
   const p = joFromScan(s);
   return p ? { base: p.base, letter: p.letter } : null;
 }
-function ivVer(j) {
-  const p = joParts(j.jo), v = String(j.version || (p && p.letter) || '').toUpperCase();
-  return v.length === 1 ? v.charCodeAt(0) : 0;
-}
-function ivFindBase(base) {
-  const hits = (IV.r.jobs || []).filter(j => { const p = joParts(j.jo); return p && p.base === base; });
-  hits.sort((a, b) => ivVer(b) - ivVer(a) || (joParts(a.jo).letter ? 1 : 0) - (joParts(b.jo).letter ? 1 : 0));
-  return hits[0] || null;
-}
 function ivFindScan(p) {
-  if (p && p.letter) {
-    const full = p.base + p.letter;
-    const exact = (IV.r.jobs || []).find(j => String(j.jo).toUpperCase() === full);
-    if (exact) return exact;
-  }
-  return ivFindBase(p.base);
+  if (!p) return null;
+  const full = (p.base + (p.letter || '')).toUpperCase();
+  return (IV.r.jobs || []).find(j => String(j.jo).toUpperCase() === full) || null;
 }
-function ivById(id) { return id ? ((IV.r.jobs || []).find(j => j.jo === id) || ivFindBase(id)) : null; }
+function ivById(id) {
+  if (!id) return null;
+  const want = String(id).toUpperCase();
+  return (IV.r.jobs || []).find(j => String(j.jo).toUpperCase() === want) || null;
+}
 function ivScanOn() { return !!(IV.r && ivEdit() && IV.view !== 'count' && /^#\/jos(?:$|[/?])/.test(location.hash)); }
 function ivField(el) { return !!(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)); }
 function ivCaretEnd(el) {

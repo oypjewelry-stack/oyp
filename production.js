@@ -21,20 +21,23 @@ function joScan(raw) { // a sticker QR is the whole field: 26-287B stays distinc
   const m = u.match(/^(\d{2})-(\d{3,4})([A-Z])?$/);
   return m ? { base: m[1] + '-' + m[2], letter: m[3] || '', text: m[1] + '-' + m[2] + (m[3] || '') } : null;
 }
-function onThis(jo) { const a = route().arg, p = joScan(a), id = String(jo || '').toUpperCase(); return a === jo || !!(p && p.letter && (p.base === id || p.text === id)); }
+function onThis(jo) { return String(route().arg || '').toUpperCase() === String(jo || '').toUpperCase(); }
 function oneLetter(v) { const s = String(v || '').trim().toUpperCase(); return /^[A-Z]$/.test(s) ? s : ''; }
 function clientName(v) { if (!v) return ''; if (typeof v === 'string') return v.trim(); if (typeof v === 'object' && v.name) return String(v.name).trim(); return ''; }
-/* The board stores the base JO. A child or revision is the one letter on the card, the scan, or the route (26-287B). */
+function isRevision(c) {
+  if (!c) return false;
+  if (String(c.type || '').toLowerCase() === 'revision') return true;
+  return !!String(c.parent_jo || '').trim();
+}
+/* 26-380 and 26-380B are different jobs. A letter is added only for a real revision. */
 function joShown(c, pagesVersion) {
   const jo = String(c && c.jo || ''), p = joScan(jo);
   if (!p) return jo;
-  if (p.letter) return p.text;
+  if (p.letter || !isRevision(c)) return p.letter ? p.text : jo;
   const letter = oneLetter(c && c.version) || oneLetter(c && c.letter) || oneLetter(pagesVersion) || oneLetter(c && c.photo && c.photo.version);
   return letter ? p.base + letter : p.text;
 }
 function headJo(c, pagesVersion) {
-  const p = joScan(route().arg), jo = String(c && c.jo || '');
-  if (p && p.letter && (jo.toUpperCase() === p.base || jo.toUpperCase() === p.text)) return p.text;
   return joShown(c, pagesVersion);
 }
 /* Delayed is only a target date that has passed (this step or the whole JO). Days in the step, and the client's due date, do not count. Pickup is not Delayed. */
