@@ -80,6 +80,12 @@ window.OYPConsign.render(document.getElementById('main'), { role: role, username
     var more = document.querySelector('[data-csmore]');
     if (more) more.click();
   }
+  if (view === 'confirm') {
+    var row = document.querySelector('tr[data-open]');
+    if (row && row.onclick) row.onclick();
+    var del = document.getElementById('csDelete');
+    if (del) del.click();
+  }
   document.documentElement.setAttribute('data-ready', view);
 });
 </script>

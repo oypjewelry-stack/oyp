@@ -562,28 +562,9 @@ async function removeSheet(main, s) {
   const r = await window.OYP.call('consignDelete', { consignment_id: id });
   S.busy = false;
   if (!r || !r.ok) return window.OYP.toast((r && r.error) || 'Could not delete');
-  if (S.r && S.r.sheets) S.r.sheets = S.r.sheets.filter(x => x.consignment_id !== id);
   if (S.id === id) { S.mode = 'list'; S.id = ''; S.pay = null; }
-  draw(main);
-  if (r.rows && r.rows.length) offerUndo(main, id, r.rows);
-  else window.OYP.toast('Deleted ' + id);
-}
-function offerUndo(main, id, rows) {
-  const el = document.getElementById('toast');
-  if (!el) return window.OYP.toast('Deleted ' + id);
-  el.innerHTML = window.OYP.esc('Deleted ' + id) + ' <button type="button" class="tdundo">Undo</button>';
-  el.classList.remove('hidden');
-  const timer = setTimeout(() => el.classList.add('hidden'), 10000);
-  const btn = el.querySelector('.tdundo');
-  if (!btn) return;
-  btn.onclick = async () => {
-    clearTimeout(timer);
-    el.classList.add('hidden');
-    const back = await window.OYP.call('consignDelete', { restore: rows });
-    if (!back || !back.ok) return window.OYP.toast((back && back.error) || 'Could not undo');
-    await reload(main);
-    window.OYP.toast('Put back ' + id);
-  };
+  window.OYP.toast('Deleted ' + id);
+  await reload(main);
 }
 async function savePerson(main) {
   if (S.busy) return;

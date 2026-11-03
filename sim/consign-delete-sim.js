@@ -37,7 +37,7 @@ const page = read('consign.js');
 eq(page.includes('An admin can delete a sheet') && !page.includes('Nothing on this page is deleted'), 'the intro no longer says nothing is deleted');
 eq(page.includes("confirm('Delete ' + id + ' for ' + who + '? The sheet is removed. Pieces still out go back to where they were.')"), 'delete asks, and names the CS number and the consignee');
 eq(page.includes('data-csmore') && page.includes('id="csDelete"') && page.includes("label: 'Delete'"), 'delete is in the sheet menu and on the detail view');
-eq(page.includes("U.role === 'admin'") && page.includes(', 10000)'), 'only an admin sees delete, and undo stays up for 10 seconds');
+eq(page.includes("U.role === 'admin'") && page.includes('await reload(main)') && !page.includes('offerUndo'), 'only an admin sees delete, and a successful delete reloads the list');
 eq(read('staff/index.html').includes('consign.js?v=13') && read('staff/index.html').includes('consign.css?v=12'), 'consign.js and consign.css are cache-busted');
 
 function world(opts) {
@@ -106,16 +106,17 @@ const baseJobs = [
   { jo: '26-281', location: 'vault', status: 'active' }
 ];
 
-const open = world({ lines: baseLines, jobs: baseJobs });
+const open = world({ lines: baseLines, jobs: baseJobs, auditLog: true });
 const denied = open.sandbox.handleConsign_({ action: 'consignDelete', consignment_id: 'CS-261002-01' }, susan);
 eq(denied.code === 'FORBIDDEN' && open.lines.length === 2 && open.jobs[0].location === 'consigned', 'a production manager cannot delete a sheet');
 
 const gone = open.sandbox.handleConsign_({ action: 'consignDelete', consignment_id: 'CS-261002-01' }, ada);
-eq(gone.ok === true && gone.logged === false && gone.removed === 2 && gone.consignee === 'Ana R.' && gone.rows && gone.rows.length === 2, 'with no Deleted or audit tab the response keeps the rows');
+eq(gone.ok === true && gone.logged === true && gone.removed === 2 && gone.consignee === 'Ana R.' && gone.rows == null, 'AuditLog keeps the copy, so the response does not carry an undo payload');
 eq(open.lines.length === 0 && open.jobs[0].location === 'vault' && open.jobs[1].location === 'vault', 'the consigned piece goes back to vault and the returned piece stays');
 eq(open.audits.some(a => a[1] === 'consignDelete' && a[2] === 'CS-261002-01'), 'the delete is audited');
-const back = open.sandbox.handleConsign_({ action: 'consignDelete', restore: gone.rows }, ada);
-eq(back.ok === true && back.restored === 2 && open.lines.length === 2 && open.lines[0].consignment_id === 'CS-261002-01' && open.jobs[0].location === 'consigned' && open.jobs[1].location === 'vault', 'undo puts the sheet back and the consigned piece out again');
+const logRow = open.auditLog.appends[0];
+const loggedRows = JSON.parse(logRow[5]);
+eq(logRow[0] === '2026-11-03T08:00:00.000Z' && logRow[1] === 'ada' && logRow[2] === 'consignDeleteRows' && logRow[3] === 'CS-261002-01' && logRow[4] === '' && loggedRows.length === 2 && loggedRows[0].jo === '26-280', 'AuditLog gets at, actor, action, target, device_id, and the rows in detail');
 
 const shared = world({
   lines: baseLines.concat([{ ci_id: 'ci-9', consignment_id: 'CS-261003-02', consignee_name: 'Bea', status: 'consigned', jo: '26-280', prev_location: 'showroom' }]),
@@ -124,15 +125,9 @@ const shared = world({
 const part = shared.sandbox.consignDelete_({ consignment_id: 'CS-261002-01' }, ada);
 eq(part.ok === true && shared.lines.length === 1 && shared.lines[0].consignment_id === 'CS-261003-02' && shared.jobs[0].location === 'consigned', 'a JO still out on another sheet stays consigned');
 
-const logged = world({ lines: baseLines, jobs: baseJobs, deleted: true });
-const hid = logged.sandbox.consignDelete_({ consignment_id: 'CS-261002-01' }, ada);
-eq(hid.ok === true && hid.logged === true && hid.rows == null && logged.deleted.appends.length === 1, 'a Deleted tab receives the rows and the response does not need a copy');
-const dumped = JSON.parse(logged.deleted.appends[0][4]);
-eq(dumped.length === 2 && dumped[0].jo === '26-280' && dumped[1].status === 'returned', 'the Deleted row is the sheet JSON');
-
-const auditOnly = world({ lines: baseLines, jobs: baseJobs, auditLog: true });
-const viaAudit = auditOnly.sandbox.consignDelete_({ consignment_id: 'CS-261002-01' }, ada);
-eq(viaAudit.logged === true && auditOnly.auditLog.appends.length === 1 && viaAudit.rows == null, 'AuditLog is used when there is no Deleted tab');
+const noLog = world({ lines: baseLines, jobs: baseJobs });
+const bare = noLog.sandbox.consignDelete_({ consignment_id: 'CS-261002-01' }, ada);
+eq(bare.ok === true && bare.logged === false && bare.rows && bare.rows.length === 2 && noLog.lines.length === 0, 'without AuditLog the delete still removes the sheet');
 
 const missing = world({ lines: [], jobs: baseJobs });
 eq(missing.sandbox.consignDelete_({ consignment_id: 'CS-261002-01' }, ada).error === 'No such sheet', 'a missing sheet is refused');

@@ -6,7 +6,7 @@ Closing a sheet is unchanged: when the last piece is returned or sold, consignIt
 
 Pieces whose status is still consigned go back to prev_location before the rows are removed, unless another sheet still has that JO out. A returned or sold piece is left where it already is.
 
-If a tab named Deleted, AuditLog, or Audit already exists, one row is appended there with the deleted rows as JSON. The tab is not created. When none of those tabs exist, the response includes rows so the page can offer Undo for about 10 seconds.
+AuditLog is already in the live spreadsheet. The deleted rows are appended there as JSON in the detail column. The page does not offer Undo.
 
 FIND
 function isConsignAction_(a) {
@@ -69,35 +69,14 @@ function consignLogDeleted_(by, cid, rows) {
     if (typeof ss_ !== 'function') return false;
     var book = ss_();
     if (!book || !book.getSheetByName) return false;
-    var sh = book.getSheetByName('Deleted') || book.getSheetByName('AuditLog') || book.getSheetByName('Audit');
+    var sh = book.getSheetByName('AuditLog');
     if (!sh || !sh.appendRow) return false;
-    sh.appendRow([new Date(), by || '', 'consignDelete', cid || '', JSON.stringify(rows)]);
+    sh.appendRow([now_(), by || '', 'consignDeleteRows', cid || '', '', JSON.stringify(rows)]);
     return true;
   } catch (e) { return false; }
 }
-function consignRestore_(req, user) {
-  var rows = req.restore, miss = consignMissing_();
-  if (!rows || !rows.length) return { ok: false, error: 'Nothing to put back' };
-  if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
-  var t = now_(), by = user.username, cid = jobStr_(rows[0].consignment_id), i, jo, job, seen = {}, moved = [];
-  for (i = 0; i < rows.length; i++) consignAppend_(rows[i]);
-  for (i = 0; i < rows.length; i++) {
-    if (consignNormStatus_(rows[i].status) !== 'consigned') continue;
-    jo = jobKey_(rows[i].jo);
-    if (!jo || seen[jo]) continue;
-    seen[jo] = true;
-    job = consignJob_(jo);
-    if (job && consignLoc_(job.location) !== 'consigned') {
-      consignSetLoc_(job, 'consigned', user, t);
-      moved.push(jo + ' -> consigned');
-    }
-  }
-  try { audit_(by, 'consignRestore', cid, req.device_id || '', rows.length + ' row(s)' + (moved.length ? ' · ' + moved.join('; ') : '')); } catch (e) {}
-  return { ok: true, consignment_id: cid, restored: rows.length };
-}
 function consignDelete_(req, user) {
   if (!user || String(user.role || '') !== 'admin') return { ok: false, error: 'Deleting a sheet is for an admin', code: 'FORBIDDEN' };
-  if (req && req.restore) return consignRestore_(req, user);
   var miss = consignMissing_(), bad = consignHeadersOk_();
   if (miss.length) return { ok: false, error: 'Run setupConsignment first' };
   if (bad) return { ok: false, error: bad };
