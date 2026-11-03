@@ -1,0 +1,82 @@
+PASTE INTO: JobSync.gs
+
+No new OAuth scopes. Do not add any scopes. Do not replace JobSync.gs. The live file is not in this repo, so these are find-and-replace edits on the copy that is already deployed.
+
+This adds three things the staff JO form now sends on jobReviewSave:
+- type may be new, repair, cleaning_plating, stone_setting, or other. revision is no longer a choice, but an old row whose type is already revision must still load and save.
+- source is owner's item (owner_item) or OYP stock (oyp_stock). Empty is allowed. It is not a required field.
+- jor is the client's JOR number, free text (for example 0247). Empty is allowed. It is not a required field.
+
+JobOrders does not have a jor column in this repo. If the sheet already has jor, jor_no, jor_number, or jor#, the save writes that column. Otherwise the setup below adds a header named jor. source is new; the setup adds that header when it is missing.
+
+jobSet_ already skips a header that is not on the row. A save before this paste, or before the headers exist, must not fail the rest of the card. Keep the existing rejection for a key JobSync does not know:
+
+    { ok: false, code: 'FIELD', error: 'Unknown field: ' + key }
+
+The page sees code FIELD, saves again without source, jor, and a type it has not seen before, and tells the staff those parts were not stored. After this paste, do not return that error for source, jor, or the type values below.
+
+An empty source or jor is valid. Do not add either key to the missing-details list.
+
+Paste steps:
+1. Open JobSync.gs in the Apps Script project that serves the staff site.
+2. Find the list of type values that contains new, repair, and revision (the JOB_EDIT entry for type, or the check inside jobReviewSave_). Replace that list with:
+
+    ['new', 'repair', 'cleaning_plating', 'stone_setting', 'other', 'revision']
+
+   revision stays in the list so an old JO can be saved without changing it. The form no longer offers it.
+3. On JOB_EDIT, add source and jor next to the other optional text fields (same shape as due_date: not required). If JOB_EDIT is only a list of column names, add the two names. Empty is allowed. source may only be '', owner_item, or oyp_stock. jor is trimmed text, at most 40 characters.
+4. If a key is still rejected with anything other than code FIELD and the words "Unknown field:", change that rejection to:
+
+    return { ok: false, code: 'FIELD', error: 'Unknown field: ' + key };
+
+   Leave CONFLICT as it is.
+5. Paste jobEnsureExtraCols_ and jobExtraSkip_ below, next to the other JobOrders helpers. At the start of jobReviewSave_ (and of jobReviewList_, if that reads the same header cache):
+
+    var extraCols = jobEnsureExtraCols_();
+
+   When writing the row, copy set.jor into extraCols.jor (the header jor, or jor_no, jor_number, or jor# when one of those is already on row 1). Copy set.source into source.
+6. In the object jobReviewSave_ returns on success, include skipped: jobExtraSkip_(set, extraCols). Call that after jobEnsureExtraCols_(), not inside it. The page shows a note when that list is not empty. Do not fail the save for a skipped key. If jobHeader_ caches row 1, the first save after the headers are added may report source and jor as skipped; the next save writes them.
+7. In jobParse_, directly under the line that sets type_hint to repair, add the two hints below. Leave the repair line as it is. These hints stay in OcrLog, the same as type_hint today. JoInbox does not store this type.
+8. Save and deploy the web app (same deployment, new version). Open a REVIEW card, set Type of job to Cleaning/plating, Source to Owner's item, and JOR to 0247, and save. JobOrders gains source and jor only if those headers were missing, and those three cells are filled. An old row with type revision still opens with Revision selected, and a save that does not change the type leaves revision in the cell.
+
+jobParse_ addition, under the existing repair hint:
+
+    else if (/\bCLEANING\b/.test(u) && /\bPLATING\b/.test(u)) p.type_hint = 'cleaning_plating';
+    else if (/\bSTONE\s*SETTING\b/.test(u)) p.type_hint = 'stone_setting';
+
+The repair test stays first. A card that says both REPAIR and CLEANING / PLATING keeps type_hint repair.
+
+COPY FROM HERE
+
+/**
+ * JobOrders headers for the JO form. Adds source and jor at the end of row 1
+ * when they are missing. Reuses jor_no, jor_number, or jor# instead of adding jor.
+ * Does not clear any cell. No new OAuth scopes.
+ */
+function jobEnsureExtraCols_() {
+  var sh = ss_().getSheetByName('JobOrders');
+  var out = { source: 'source', jor: 'jor' };
+  if (!sh || typeof jobHeader_ !== 'function') return out;
+  var header = jobHeader_(sh) || [];
+  var low = header.map(function (h) { return String(h || '').trim().toLowerCase(); });
+  function has(name) { return low.indexOf(name) >= 0; }
+  var names = ['jor', 'jor_no', 'jor_number', 'jor#'], i, col = '';
+  for (i = 0; i < names.length; i++) if (has(names[i])) { col = names[i]; break; }
+  var last = header.length;
+  if (!has('source')) { last++; sh.getRange(1, last).setValue('source'); }
+  if (!col) { last++; sh.getRange(1, last).setValue('jor'); col = 'jor'; }
+  out.jor = col;
+  return out;
+}
+
+/** Keys the form may send before the matching header exists. jobSet_ skips a missing header; the page tells staff. */
+function jobExtraSkip_(set, cols) {
+  var sh = ss_().getSheetByName('JobOrders');
+  var header = (sh && typeof jobHeader_ === 'function') ? (jobHeader_(sh) || []) : [];
+  var low = header.map(function (h) { return String(h || '').trim().toLowerCase(); });
+  var skipped = [];
+  cols = cols || { source: 'source', jor: 'jor' };
+  if (set && Object.prototype.hasOwnProperty.call(set, 'source') && low.indexOf('source') < 0) skipped.push('source');
+  if (set && Object.prototype.hasOwnProperty.call(set, 'jor') && low.indexOf(String(cols.jor || 'jor').toLowerCase()) < 0) skipped.push('jor');
+  return skipped;
+}

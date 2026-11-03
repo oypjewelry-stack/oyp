@@ -128,7 +128,7 @@ function pieceType(opts) {
   var t = textOf(opts.item_type || opts.piece_type || '');
   if (!t) {
     t = textOf(opts.type);
-    if (/^(jewelry tag|jewelry_tag|jo card|jo_card|repair|revision|new|new job)$/i.test(t)) t = '';
+    if (/^(jewelry tag|jewelry_tag|jo card|jo_card|repair|revision|new|new job|cleaning\/plating|cleaning_plating|stone setting|stone_setting|other|owner's item|owner_item|oyp stock|oyp_stock)$/i.test(t)) t = '';
   }
   return upOf(t);
 }
