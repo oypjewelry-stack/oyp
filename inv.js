@@ -358,7 +358,7 @@ function ivCard(j, can, edit) {
   const desc = j.description || '';
   const tip = desc ? ` title="${esc(desc)}"` : '';
   return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}${IV.sketch[j.jo] ? ' sketch' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${ck}</div>
-    <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(ivItemLab(j.item_type))}</span>` : ''}</div>
+    <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm ivof">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(ivItemLab(j.item_type))}</span>` : ''}</div>
     <div class="kd"${tip}>${esc(desc || 'No details yet')}</div><div class="ivsp">${esc(sp)}</div>
     <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : '<div class="ivmoney"></div>'}</div>${more}</div>`;
 }
