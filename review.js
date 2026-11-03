@@ -47,24 +47,29 @@ function kindFieldsFor(k) {
   const base = row && Array.isArray(row[2]) ? row[2] : [];
   return base.concat(KIND_EXTRA[k] || []);
 }
+function isRevision(j) {
+  if (!j) return false;
+  if (String(j.type || '').toLowerCase() === 'revision') return true;
+  return !!String(j.parent_jo || '').trim();
+}
 const cur = () => {
   if (!S.open) return null;
   const exact = S.jobs.find(j => j.jo === S.open);
   if (exact) return exact;
   const p = joBits(S.open);
-  const base = p && p.letter ? S.jobs.find(j => j.jo === p.base) : null;
-  if (base) return base;
-  return S.ext && (S.ext.jo === S.open || (p && p.letter && S.ext.jo === p.base)) ? S.ext : null;
+  // A lettered JO is its own row. Only a real revision may open on the base record.
+  if (p && p.letter) {
+    const base = S.jobs.find(j => j.jo === p.base && isRevision(j));
+    if (base && !S.jobs.some(j => j.jo === p.text)) return base;
+  }
+  return S.ext && S.ext.jo === S.open ? S.ext : null;
 };
 function openIs(j) {
   if (!j || !S.open) return false;
-  if (S.open === j.jo) return true;
-  const p = joBits(S.open);
-  return !!(p && p.letter && j.jo === p.base && !S.jobs.some(x => x.jo === p.text));
+  return S.open === j.jo;
 }
 function headJo(j) {
-  const p = joBits(S.open), jo = j ? j.jo : '';
-  return p && p.letter && (jo === p.base || jo === p.text) ? p.text : jo;
+  return j && j.jo ? j.jo : '';
 }
 let S = { steps: null, stepsState: 'old', ext: null, back: null, jobs: [], locations: [], filter: 'noloc', sel: new Set(), open: null, conflicts: {}, q: '', contact: null, cc: null, ccDraft: {}, embed: false };
 const gone = new Set(); // marked reviewed this visit, so a stale list cannot put the JO back in the queue
@@ -210,7 +215,7 @@ function searchAll(main) {
 }
 function shown() {
   const f = views[S.filter][1], q = S.q.trim().toUpperCase(), p = joBits(q);
-  return S.jobs.filter(j => f(j) && (!q || j.jo.includes(q) || (p && p.letter && j.jo === p.base) || (j.client && j.client.name.toUpperCase().includes(q)) || j.description.toUpperCase().includes(q)));
+  return S.jobs.filter(j => f(j) && (!q || j.jo.includes(q) || (p && isRevision(j) && j.jo === p.base) || (j.client && j.client.name.toUpperCase().includes(q)) || j.description.toUpperCase().includes(q)));
 }
 
 function draw(main) {
@@ -512,7 +517,7 @@ function bindJob(main, j, opt) {
     if ($('#f_status').value) set.status = $('#f_status').value;
     const seen = {}; Object.keys(set).forEach(k => { seen[k] = j[k] == null ? '' : j[k]; });
     const nn = $('#fNn').value.trim(), np = $('#fNp') ? $('#fNp').value.trim() : '';
-    const body = { jo: j.jo, set, seen, mark_reviewed: mark };
+    const body = { jo: j.jo, set, seen, mark_reviewed: mark }; // j.jo is this row, letter included (26-380B is not 26-380)
     // contact typed? (only what changed from what the card showed)
     const c0 = (S.contact && S.contact[j.jo]) || {}, cc = {};
     [['phone', '#fc_phone'], ['email', '#fc_email']].forEach(([k, id]) => { const el = $(id); if (el && el.value.trim() !== String(c0[k] || '').trim()) cc[k] = k === 'phone' ? fmtPhone(el.value) : el.value.trim(); });
