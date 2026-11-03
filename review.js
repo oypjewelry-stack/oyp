@@ -301,7 +301,7 @@ function panel(j) {
     <datalist id="dlMetal"><option>Gold</option><option>Silver</option><option>Platinum</option><option>Palladium</option><option>Two-tone</option><option>Other</option></datalist>
     <datalist id="dlKarat"><option>24k</option><option>22k</option><option>18k</option><option>14k</option><option>10k</option><option>925</option><option>999</option></datalist>
     <div id="rvCost"></div>
-    <div class="fbtns">${ext && j.review_state !== 'draft' ? '' : '<button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button>'}<button class="pill outline" id="fSave">SAVE</button>${S.embed || ext ? '' : '<button class="lnk" id="fNext">Next card ›</button>'}</div>
+    <div class="fbtns">${j.editMode ? '<button class="pill" id="fSave">SAVE</button><button type="button" class="pill outline" id="fCancel">Cancel</button>' : `${ext && j.review_state !== 'draft' ? '' : '<button class="pill" id="fDone">SAVE &amp; MARK REVIEWED</button>'}<button class="pill outline" id="fSave">SAVE</button>${S.embed || ext ? '' : '<button class="lnk" id="fNext">Next card ›</button>'}`}</div>
     <p class="muted fnote">${j.scanned_at ? 'Scanned ' + esc(new Date(j.scanned_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })) + ' PHT · ' : ''}Saving never replaces something another person changed in the meantime.</p>
   </div>`;
 }
@@ -437,11 +437,20 @@ async function ensureReview() {
 }
 async function mount(host, jo, hooks) {
   hooks = hooks || {};
-  const r = await ensureReview();
+  let r = null;
+  try { r = await ensureReview(); } catch (e) { r = null; }
   if (!host || host.isConnected === false) return;
-  if (!r || !r.ok) { host.innerHTML = '<p class="muted">The review form could not be loaded.</p>'; return; }
-  const j = (S.jobs || []).find(x => x.jo === jo);
-  if (!j) {
+  if (hooks.locations && hooks.locations.length) S.locations = hooks.locations;
+  if (hooks.itemTypes && hooks.itemTypes.length) S.itemTypes = hooks.itemTypes;
+  if (!S.locations) S.locations = [];
+  if (!S.itemTypes) S.itemTypes = [];
+  if ((!r || !r.ok) && !hooks.job) { host.innerHTML = '<p class="muted">The review form could not be loaded.</p>'; return; }
+  let j = (S.jobs || []).find(x => x.jo === jo);
+  if (hooks.edit) {
+    const base = hooks.job || j;
+    if (!base) { host.innerHTML = '<p class="muted">This JO could not be opened for editing.</p>'; return; }
+    j = Object.assign({}, base, { review_state: 'reviewed', editMode: true, missing: base.missing || [], pages: base.pages || [] });
+  } else if (!j) {
     host.innerHTML = '<p class="muted">This JO is not in the review queue.</p>';
     if (hooks.onMissing) hooks.onMissing();
     return;
@@ -449,7 +458,7 @@ async function mount(host, jo, hooks) {
   S.embed = true;
   S.open = jo;
   host.innerHTML = panel(j);
-  bindJob(host, j, { embedded: true, onDone: hooks.onDone, redraw: () => mount(host, jo, hooks) });
+  bindJob(host, j, { embedded: true, editMode: !!hooks.edit, onDone: hooks.onDone, onCancel: hooks.onCancel, redraw: () => mount(host, jo, hooks) });
 }
 function bindJob(main, j, opt) {
   opt = opt || {};
@@ -516,6 +525,7 @@ function bindJob(main, j, opt) {
     const seen = {}; Object.keys(set).forEach(k => { seen[k] = j[k] == null ? '' : j[k]; });
     const nn = $('#fNn').value.trim(), np = $('#fNp') ? $('#fNp').value.trim() : '';
     const body = { jo: j.jo, set, seen, mark_reviewed: mark };
+    if (opt.editMode) { body.mark_reviewed = false; body.keep_reviewed = true; } // a reviewed JO stays reviewed
     // contact typed? (only what changed from what the card showed)
     const c0 = (S.contact && S.contact[j.jo]) || {}, cc = {};
     [['phone', '#fc_phone'], ['email', '#fc_email']].forEach(([k, id]) => { const el = $(id); if (el && el.value.trim() !== String(c0[k] || '').trim()) cc[k] = k === 'phone' ? fmtPhone(el.value) : el.value.trim(); });
@@ -568,9 +578,10 @@ function bindJob(main, j, opt) {
     toast((mark ? 'JO ' + j.jo + ' reviewed' : 'Saved') + (dropped.length ? '. Not stored until JobSync is pasted: ' + dropped.join(', ') : ''));
     if (mark) gone.add(j.jo);
     if (opt.embedded) {
-      if (mark) S.jobs = (S.jobs || []).filter(x => x.jo !== j.jo);
-      else if (r.job && idx >= 0) S.jobs[idx] = r.job;
-      if (opt.onDone) opt.onDone(!!mark, r.job || null);
+      if (mark && !opt.editMode) S.jobs = (S.jobs || []).filter(x => x.jo !== j.jo);
+      else if (r.job && idx >= 0 && !opt.editMode) S.jobs[idx] = r.job;
+      const doneJob = opt.editMode ? Object.assign({}, j, set, r.job || {}, { review_state: 'reviewed' }) : (r.job || null);
+      if (opt.onDone) opt.onDone(opt.editMode ? false : !!mark, doneJob);
       return;
     }
     if (isExt) S.ext = r.job; // opened from the dashboard: stay on it
@@ -578,6 +589,7 @@ function bindJob(main, j, opt) {
     rerender();
   };
   if ($('#fDone')) $('#fDone').onclick = () => save(true); $('#fSave').onclick = () => save(false);
+  if ($('#fCancel')) $('#fCancel').onclick = () => { if (opt.onCancel) opt.onCancel(); };
   if ($('#fNext')) $('#fNext').onclick = () => { const L = shown(), i = L.findIndex(x => x.jo === j.jo); const nx = L[i + 1] || L[0]; if (nx) { S.open = nx.jo; S.conflicts = {}; draw(main); } };
 
 }
