@@ -539,9 +539,9 @@ eq(/printQueue:\s*1/.test(app) && !/printQueue/.test(cached), 'printQueue is a c
 eq(!/printMark\s*:\s*1/.test(app) && !/printEnqueue\s*:\s*1/.test(app) && !/printReprint\s*:\s*1/.test(app), 'print writes are not client reads');
 eq(fast.includes('priceJobCost: 1, printQueue: 1') && !fast.includes('dashboard: 1, printQueue'), 'Fast READS gains printQueue and FAST.CACHE does not');
 eq(dash.includes('listUsers: 1, printQueue: 1') && !dash.includes("action !== 'printQueue'"), 'DashCache READS gains printQueue and the dashboard spec does not');
-eq(index.includes('print.js?v=39') && index.includes('print-label.js?v=24') && index.includes('nav.js?v=81') && index.includes('app.js?v=44') && index.includes('settings.js?v=22') && index.includes('print.css?v=25') && index.includes('app.css?v=72') && index.includes('settings.css?v=12') && index.includes('inv.js?v=42') && index.includes('production.js?v=17') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=30') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=25') && read('sim/swipe-preview.html').includes('print.css?v=25'), 'print assets are cache-busted');
-eq(read('nav.js').includes('print-label.js?v=24') && read('nav.js').includes('print.js?v=39') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
-eq(read('staff/print-test.html').includes('print.js?v=39') && read('staff/print-test.html').includes('print-label.js?v=24') && read('staff/print-test.html').includes('print.css?v=25') && read('staff/print-test.html').includes('nav.js?v=81') && read('staff/print-test.html').includes('app.css?v=72'), 'print test loads the same print assets');
+eq(index.includes('print.js?v=40') && index.includes('print-label.js?v=24') && index.includes('nav.js?v=82') && index.includes('app.js?v=44') && index.includes('settings.js?v=22') && index.includes('print.css?v=25') && index.includes('app.css?v=72') && index.includes('settings.css?v=12') && index.includes('inv.js?v=42') && index.includes('production.js?v=17') && index.includes('production.css?v=12') && index.includes('photos.js?v=16') && index.includes('review.js?v=30') && index.includes('count.js?v=3') && index.includes('count.css?v=2') && read('print.js').includes('print.css?v=25') && read('sim/swipe-preview.html').includes('print.css?v=25'), 'print assets are cache-busted');
+eq(read('nav.js').includes('print-label.js?v=24') && read('nav.js').includes('print.js?v=40') && read('nav.js').includes('scan-zones.js?v=21') && read('nav.js').includes('menuHtml'), 'the scanner injects the current label renderer');
+eq(read('staff/print-test.html').includes('print.js?v=40') && read('staff/print-test.html').includes('print-label.js?v=24') && read('staff/print-test.html').includes('print.css?v=25') && read('staff/print-test.html').includes('nav.js?v=82') && read('staff/print-test.html').includes('app.css?v=72'), 'print test loads the same print assets');
 function assetVer(src, file) {
   const m = String(src).match(new RegExp(file.replace(/\./g, '\\.') + '\\?v=(\\d+)'));
   return m ? m[1] : '';
@@ -779,6 +779,7 @@ function bootPrint(opts) {
   const notes = [];
   const held = [];
   const pages = (opts.pages || []).slice();
+  const inits = (opts.inits || []).slice();
   const timers = [];
   let timerSeq = 1;
   let gattConnects = 0;
@@ -803,10 +804,15 @@ function bootPrint(opts) {
     });
   }
   function Task(name) { this.name = name; tasks.push(name); }
-  Task.prototype.printInit = function () { return Promise.resolve(); };
+  Task.prototype.printInit = function () {
+    const step = inits.length ? inits.shift() : 'ok';
+    if (step === 'unsupported') return Promise.reject(new Error('Feature not supported'));
+    return Promise.resolve();
+  };
   Task.prototype.printPage = function () {
     timeline.push({ ev: 'send', t: vnow });
     const step = pages.length ? pages.shift() : 'ok';
+    if (step === 'unsupported') return Promise.reject(new Error('Feature not supported'));
     if (step === 'e4') return Promise.reject(new Error('Timeout waiting response (waited for e4)'));
     if (step === 'hang') return new Promise(function () {});
     if (step === 'hold') return new Promise(function (resolve) { held.push({ mark: 'page', resolve: resolve }); });
@@ -830,6 +836,7 @@ function bootPrint(opts) {
     var self = this;
     clients.push(this);
     this.beats = 0;
+    this.fetchRfidOnPrintEnd = true;
     this._on = {};
     this.pages = [];
     this.protocol = {
@@ -846,6 +853,8 @@ function bootPrint(opts) {
   }
   Client.prototype.connect = function (options) {
     connects.push(options || null);
+    /* niimbluelib starts the heartbeat on its connect event, before the page's beat(). */
+    if (this.startHeartbeat) this.startHeartbeat();
     const name = nextName.length ? nextName.shift() : ((options && options.authorizedDevice && options.authorizedDevice.name) || '');
     const info = name ? { deviceName: name } : undefined;
     if (opts.holdConnect && connects.length > (opts.holdConnectAfter || 0)) {
@@ -1089,6 +1098,61 @@ drain().then(function () {
     eq(saved.taskByModel && saved.taskByModel.B31 === 'D110M_V4' && saved.task === 'auto', 'Auto remembers the task that finished and leaves the manual choice alone');
     eq(e4.calls.some(b => b.mark === 'printed') && !e4.calls.some(b => b.mark === 'failed'), 'the retry is not marked failed');
     eq(e4.notes.indexOf('Printing…') >= 0 && e4.notes.indexOf('Printed') >= 0, 'a print says when it starts and when it finishes');
+  });
+}).then(function () {
+  const late = bootPrint({
+    models: ['B31'],
+    drive: true,
+    manualTime: true,
+    inits: ['unsupported', 'ok'],
+    queue: queued,
+    store: { oypPrint: JSON.stringify({ auto: true, model: 'B31', task: 'D110M_V4' }) }
+  });
+  late.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    const client = late.clients[0];
+    eq(client && client.fetchRfidOnPrintEnd === false, 'a connected B31 does not fetch RFID after each print');
+    eq(late.tasks.length === 1 && client.pages.length === 0, 'a Feature not supported error during printInit sends no bitmap');
+    late.flush(400);
+    return drain().then(function () {
+      eq(late.tasks.length === 2 && late.tasks[0] === 'D110M_V4' && late.tasks[1] === 'D110M_V4' && client.pages.length === 1, 'the same task is tried once more after 400ms, and the bitmap is sent once');
+      eq(late.calls.some(b => b.mark === 'printed') && !late.calls.some(b => b.mark === 'failed'), 'the sticker after the stale reply is marked printed');
+    });
+  });
+}).then(function () {
+  const started = bootPrint({
+    models: ['B31'],
+    drive: true,
+    manualTime: true,
+    pages: ['unsupported'],
+    queue: queued,
+    store: { oypPrint: JSON.stringify({ auto: true, model: 'B31', task: 'D110M_V4' }) }
+  });
+  started.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    started.flush(400);
+    return drain().then(function () {
+      eq(started.tasks.length === 1 && started.clients[0].pages.length === 1 && started.calls.some(b => b.mark === 'failed') && !started.calls.some(b => b.mark === 'printed'), 'Feature not supported after the page starts is not printed again');
+    });
+  });
+}).then(function () {
+  const twice = bootPrint({
+    models: ['B31'],
+    drive: true,
+    manualTime: true,
+    inits: ['unsupported', 'unsupported'],
+    queue: queued,
+    store: { oypPrint: JSON.stringify({ auto: true, model: 'B31', task: 'D110M_V4' }) }
+  });
+  twice.sandbox.OYPPrint.connect('bluetooth');
+  return drain().then(function () {
+    twice.flush(400);
+    return drain().then(function () {
+      twice.flush(400);
+      return drain().then(function () {
+        eq(twice.tasks.length === 2 && twice.clients[0].pages.length === 0 && twice.calls.some(b => b.mark === 'failed'), 'a second Feature not supported error stops, with no bitmap sent');
+      });
+    });
   });
 }).then(function () {
   const manual = bootPrint({

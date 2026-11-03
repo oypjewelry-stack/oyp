@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 39;
+var PRINT_JS = 40;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -545,6 +545,10 @@ function rememberTask(name, link) {
 function isPageEndTimeout(err) {
   return /waited for e4/i.test(String((err && err.message) || err || ''));
 }
+/* niimbluelib turns a 0x00 reply into this error for whichever command is waiting. */
+function isFeatureUnsupported(err) {
+  return /feature not supported/i.test(String((err && err.message) || err || ''));
+}
 function isTimeout(err) {
   var m = String((err && err.message) || err || '');
   return /waited for e4|print timed out|timed out|timeout waiting/i.test(m);
@@ -669,7 +673,10 @@ function runTask(name, encoded, link, kind) {
     return task.printEnd ? withTimeout(Promise.resolve(task.printEnd()), END_MS, 'print end').catch(function () {}) : null;
   };
   var tSend = clock();
+  /* printInit is density, label type, and print start. printPage begins with pageStart and then the bitmap. */
+  var phase = 'init';
   var attempt = Promise.resolve(task.printInit()).then(function () {
+    phase = 'page';
     return task.printPage(encoded, 1);
   }).then(function () {
     logMs('send', clock() - tSend, name);
@@ -688,6 +695,7 @@ function runTask(name, encoded, link, kind) {
   return withTimeout(attempt, ATTEMPT_MS, 'Print timed out').then(function () {
     return Promise.resolve(end()).then(function () { rememberTask(name, link); });
   }, function (err) {
+    if (phase === 'init' && err && typeof err === 'object') { try { err.beforePage = true; } catch (eFlag) {} }
     return Promise.resolve(end()).then(function () { throw err; });
   });
 }
@@ -695,10 +703,15 @@ function sendEncoded(encoded, link, kind) {
   link = link || state;
   if (!link.client) return Promise.reject(new Error('Not connected'));
   if (tagBlocked(kind, link)) return Promise.reject(new Error('Connect the B1 to print jewelry tags'));
-  var names = taskChoices(link), i = 0;
+  var names = taskChoices(link), i = 0, retried = false;
   function once() {
     return runTask(names[i], encoded, link, kind).catch(function (err) {
       if (i + 1 < names.length && isPageEndTimeout(err)) { i += 1; return once(); }
+      /* One wait. The stale 0x00 belongs to the previous sticker's RFID read, and only the next printInit has run. */
+      if (!retried && err && err.beforePage && isFeatureUnsupported(err)) {
+        retried = true;
+        return new Promise(function (resolve) { setTimeout(resolve, 400); }).then(once);
+      }
       throw err;
     });
   }
@@ -2731,6 +2744,8 @@ function stopPoll() {
 function beat(link) {
   var c = link && link.client;
   if (!c || !link.connected) return;
+  /* B31 answers the post-print RFID read with not-supported. Leave it off, including when the heartbeat is already running. */
+  c.fetchRfidOnPrintEnd = false;
   /* Already running. Starting again would reset the failure count and hide a dead radio. */
   if (c.heartbeatTimer) return;
   logMs('link heartbeat', 0, 'start ' + (link.deviceName || link.model || ''));
