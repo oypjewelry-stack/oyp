@@ -25,7 +25,7 @@ const PASTE_NOTE = 'This page needs the InventoryPages paste in Apps Script (see
 const BULK_NOTE = 'Moving and archiving needs the InvBulk paste in Apps Script (see paste/InvBulk.gs.txt).';
 
 /* =================== Inventory (#/jos) =================== */
-const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, sketch: {}, open: null, at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [], extra: 0, dropped: new Set(), revSeq: 0, want: '', dbgSeq: 0 };
+const IV = { r: null, view: 'all', stage: '', loc: '', type: '', q: '', thumbs: {}, sketch: {}, open: null, revise: '', at: 0, sel: new Set(), anchor: '', picking: false, choose: false, suppress: false, busy: false, offer: '', scanned: [], extra: 0, dropped: new Set(), revSeq: 0, want: '', dbgSeq: 0 };
 let ivPhotoKey = null, ivPhotoDown = null;
 function ivPhotoListen(key, down) {
   if (ivPhotoKey) document.removeEventListener('keydown', ivPhotoKey, true);
@@ -168,6 +168,20 @@ function ivPaintNav() {
   });
   document.querySelectorAll('[data-ivcount="debug"]').forEach(el => { el.textContent = String(lookN); });
 }
+function ivReviewShape(j) { // the inventory row, in the shape the review form already edits
+  if (!j) return null;
+  const name = ivClientName(j.client);
+  return {
+    jo: j.jo, parent_jo: j.parent_jo || '', description: j.description || '',
+    client: j.client && typeof j.client === 'object' ? j.client : (name ? { name: name, phone: j.phone || '' } : null),
+    client_id: j.client_id || '', metal: j.metal || '', karat: j.karat || '', stone_type: j.stone_type || '',
+    stone_size: j.stone_size || '', grade: j.grade || '', material: j.material || '', size: j.size || '',
+    weight_g: j.weight_g || '', item_type: j.item_type || '', location: j.location || '', type: j.type || '',
+    source: j.source || '', jor: j.jor || '', due_date: j.due_date || j.due || '', status: j.status || '',
+    review_state: 'reviewed', missing: Array.isArray(j.missing) ? j.missing : [],
+    pages: Array.isArray(j.pages) ? j.pages : [], version: j.version || ''
+  };
+}
 function ivApplyReview(main, jo, mark, job) {
   const row = IV.r && IV.r.jobs.find(x => x.jo === jo);
   ivCopyReview(row, job);
@@ -175,17 +189,27 @@ function ivApplyReview(main, jo, mark, job) {
     IV.dropped.add(jo);
     if (row) { row.review = false; row.pending_review = false; }
     if (window.OYPReview && window.OYPReview.drop) window.OYPReview.drop(jo);
+  } else if (row && IV.revise === jo) {
+    row.review = false;
+    row.pending_review = false;
   }
+  if (IV.revise === jo) IV.revise = '';
   ivDraw(main);
 }
-async function ivMountReview(main, j) {
+async function ivMountReview(main, j, edit) {
   const host = main.querySelector('#ivRev');
   if (!host || !j || !window.OYPReview || !window.OYPReview.mount) return;
   const seq = ++IV.revSeq, jo = j.jo;
   try {
     await window.OYPReview.mount(host, jo, {
+      edit: !!edit,
+      job: edit ? ivReviewShape(j) : null,
+      locations: (IV.r && IV.r.locations) || [],
+      itemTypes: (IV.r && IV.r.item_types) || [],
       onDone: (mark, job) => { if (seq !== IV.revSeq || !window.OYP.here()()) return; ivApplyReview(main, jo, mark, job); },
+      onCancel: () => { if (seq !== IV.revSeq) return; IV.revise = ''; ivMountSheet(main); },
       onMissing: () => {
+        if (edit) return;
         IV.dropped.add(jo);
         const row = IV.r && IV.r.jobs.find(x => x.jo === jo);
         if (row) { row.review = false; row.pending_review = false; }
@@ -406,14 +430,16 @@ function ivSheet(j, edit) { // details, and the review form when this JO is stil
   if (!j) return ''; const { esc } = window.OYP;
   const f = (lab, v) => v ? `<div class="ivf"><span class="lab">${esc(lab)}</span><b>${esc(v)}</b></div>` : '';
   const can = (IV.r && IV.r.can) || {}, sketch = !!IV.sketch[j.jo];
-  const pending = !!(j.review || j.pending_review), inline = pending && edit;
+  const pending = !!(j.review || j.pending_review), revising = edit && IV.revise === j.jo, inline = (pending && edit) || revising;
   const facts = `<p class="kd">${esc(j.description || 'No details')}</p>
     <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}
       ${f('Type of item', j.item_type ? ivItemLab(j.item_type) : '')}${f('JOR', j.jor)}${f('Job', ivJobLab(j.type))}${f('Source', SOURCE_LAB[j.source] || '')}
       ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
       ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>`;
+  const headLab = inline && pending ? 'Review' : edit ? 'Details' : 'View only';
+  const editBtn = edit && !inline ? '<button type="button" class="pill sm" id="ivEdit">Edit</button>' : '';
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
-    <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="lab">${inline ? 'Review' : edit ? 'Details' : 'View only'}</span></div>
+    <div class="dhead"><h2>${window.OYP.piece(j.client, j.jo)}</h2><span class="dheadacts"><span class="lab">${headLab}</span>${editBtn}</span></div>
     ${pending ? '<p class="ivtag"><span class="chip gold tbr">REVIEW</span></p>' : ''}
     <div class="ivph big ${IV.thumbs[j.jo] ? 'has' : ''} ${sketch ? 'sketch' : ''}"></div>
     <div class="ivdraw" id="ivDraw" hidden><span class="lab">Drawings</span><div class="shots" id="ivDraws"></div></div>
@@ -583,6 +609,7 @@ function ivWire(main) {
       if (IV.suppress) { IV.suppress = false; return; }
       const j = IV.r.jobs.find(x => x.jo === el.dataset.jo); if (!j) return;
       if (ivEdit() && e.shiftKey) { ivRange(j.jo, true); IV.picking = IV.sel.size > 0; ivDraw(main); return; }
+      IV.revise = '';
       IV.open = j.jo;
       ivMountSheet(main);
     };
@@ -613,6 +640,7 @@ function ivWire(main) {
 }
 function ivCloseSheet(main) {
   IV.open = null;
+  IV.revise = '';
   IV.extra++;
   IV.revSeq++;
   const el = main.querySelector('#ivSheet');
@@ -639,22 +667,28 @@ function ivWireSheet(main) {
   const box = sheet.querySelector('.ivsbox');
   if (box) box.onclick = e => e.stopPropagation();
   if ($('#ivSX')) $('#ivSX').onclick = () => ivCloseSheet(main);
+  if ($('#ivEdit')) $('#ivEdit').onclick = () => { IV.revise = IV.open; ivMountSheet(main); };
   sheet.onclick = e => { if (e.target.id === 'ivSheet') ivCloseSheet(main); };
   const pending = IV.open && IV.r && IV.r.jobs.find(x => x.jo === IV.open);
-  if (pending && (pending.review || pending.pending_review) && ivEdit()) ivMountReview(main, pending);
+  if (pending && ivEdit() && (pending.review || pending.pending_review)) ivMountReview(main, pending, false);
+  else if (pending && ivEdit() && IV.revise === pending.jo) ivMountReview(main, pending, true);
 }
 function ivOpenMenu(main, btn) {
   const j = IV.r && IV.r.jobs.find(x => x.jo === btn.dataset.more);
   if (!j || !window.OYP.popover) return;
   const arch = j.location === 'archived';
   const moves = ivMoveLocs().map(l => ({ label: locLab(l[0]), run: () => ivBulk(main, [j.jo], l[0], 'move') }));
-  window.OYP.popover(btn, [
+  const menu = [
     { label: 'Print', run: () => { if (window.OYPPrint && window.OYPPrint.askPrint) window.OYPPrint.askPrint([ivPrintJo(j)]); else window.OYP.toast('Print is not loaded'); } },
-    { label: 'Details', run: () => { IV.open = j.jo; ivMountSheet(main); } },
+    { label: 'Details', run: () => { IV.revise = ''; IV.open = j.jo; ivMountSheet(main); } }
+  ];
+  if (ivEdit()) menu.push({ label: 'Edit', run: () => { IV.revise = j.jo; IV.open = j.jo; ivMountSheet(main); } });
+  menu.push(
     { label: 'Move location', menu: moves.length ? moves : [{ label: 'No locations', run: () => {} }] },
     { label: arch ? 'Unarchive' : 'Archive', run: () => { if (arch) ivBulk(main, [j.jo], '', 'unarchive'); else ivArchive(main, [j.jo]); } },
     { label: 'Delete', danger: true, run: () => ivDelete(main, j) }
-  ]);
+  );
+  window.OYP.popover(btn, menu);
 }
 function ivThumbs(main, L) { // piece photos, or a page-2 stand-in when this role can see costs. L kept for the call site.
   void L;
