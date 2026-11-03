@@ -59,13 +59,31 @@ const specs = j => {
   return s.filter(Boolean).join(' · ');
 };
 const locLab = k => window.OYP.locLabel(k, ((IV.r && IV.r.locations || []).find(l => l[0] === k) || [k, k])[1]);
-const typeLab = k => ((IV.r && IV.r.item_types || []).find(t => t[0] === k) || [k, k])[1];
+const ITEM_LAB = { earring: 'Earring', ring: 'Ring', necklace: 'Necklace', chain: 'Chain', pendant: 'Pendant', bracelet: 'Bracelet', cufflink: 'Cufflink', nut: 'Nut', other: 'Others', jewelry: 'Jewelry', loose_stone: 'Loose stone', pearl: 'Pearl', raw_material: 'Raw material' };
+const ITEM_LEGACY = { jewelry: 1, loose_stone: 1, pearl: 1, raw_material: 1 };
+function ivItemLab(k) {
+  if (!k) return '';
+  if (ITEM_LAB[k]) return ITEM_LAB[k];
+  const row = (IV.r && IV.r.item_types || []).find(t => t[0] === k);
+  return row && row[1] ? row[1] : k;
+}
+function ivTypeChoices(list, jobs) {
+  const order = ['earring', 'ring', 'necklace', 'chain', 'pendant', 'bracelet', 'cufflink', 'nut'];
+  const seen = {}, out = [];
+  const add = (code, label) => { if (!code || seen[code]) return; seen[code] = 1; out.push([code, label || ivItemLab(code)]); };
+  order.forEach(c => add(c, ITEM_LAB[c]));
+  (list || []).forEach(t => { if (t && t[0] && !ITEM_LEGACY[t[0]] && t[0] !== 'other' && !seen[t[0]]) add(t[0], t[1]); });
+  add('other', 'Others');
+  (list || []).forEach(t => { if (t && ITEM_LEGACY[t[0]]) add(t[0], ITEM_LAB[t[0]] || t[1]); });
+  (jobs || []).forEach(j => { if (j && j.item_type && !seen[j.item_type]) add(j.item_type, ivItemLab(j.item_type)); });
+  return out;
+}
 const JOB_TYPE = { new: 'New job', repair: 'Repair', revision: 'Revision', cleaning_plating: 'Cleaning/plating', stone_setting: 'Stone setting', other: 'Other' };
 const SOURCE_LAB = { owner_item: "Owner's item", oyp_stock: 'OYP stock' };
 function ivJobLab(t) { return !t ? '' : (JOB_TYPE[t] || t); }
 function ivHay(j) {
   return [j.jo, j.parent_jo, j.description, j.client, j.jor, j.metal, kar(j.karat), j.karat, j.stone_type, j.stone_size, j.grade, j.material, j.size,
-    j.item_type && typeLab(j.item_type), j.location && locLab(j.location), stageLabel(j.stage), ivJobLab(j.type), SOURCE_LAB[j.source] || '',
+    j.item_type && ivItemLab(j.item_type), j.location && locLab(j.location), stageLabel(j.stage), ivJobLab(j.type), SOURCE_LAB[j.source] || '',
     (j.review || j.pending_review) ? 'review' : ''].join(' ').toLowerCase();
 }
 function ivShown() {
@@ -290,7 +308,7 @@ function ivDraw(main) {
     ${ivQRow(esc)}
     ${edit && IV.offer ? `<p class="ivoffer" role="status">JO ${esc(IV.offer)} is in Inventory, hidden by the current filters. <button type="button" class="pill sm outline" id="ivUnfilter">Clear filters</button></p>` : ''}
     <div class="ivfilt"><div class="ivsels">${sel('ivStage', 'Stage', IV.stage, r.stages)}${sel('ivLoc', 'Location', IV.loc, r.locations.map(l => [l[0], locLab(l[0])]).concat([['-', 'No location yet']]))}
-      ${sel('ivType', 'Type', IV.type, r.item_types.concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
+      ${sel('ivType', 'Type', IV.type, ivTypeChoices(r.item_types, r.jobs).concat([['job:repair', 'Repair jobs']]))}${filt ? '<button class="lnk ivclr" id="ivClr">Clear</button>' : ''}</div>
       <div class="ivfiltacts"><button type="button" class="pill sm outline" id="ivChoose">${IV.choose ? 'Done' : 'Select'}</button></div></div>
     ${IV.choose && L.length ? `<label class="ivall"><input type="checkbox" id="ivAll" ${allOn ? 'checked' : ''}><span>Select all</span></label>${n ? `<span class="ivcount">${n} selected</span>` : ''}` : ''}
     <div class="ivgrid" id="ivGrid">${L.map(j => ivCard(j, can, edit)).join('') || `<p class="muted rvnone">${IV.q || filt ? 'No match.' : 'Nothing here.'}</p>`}</div>
@@ -316,7 +334,7 @@ function ivCard(j, can, edit) {
   const desc = j.description || '';
   const tip = desc ? ` title="${esc(desc)}"` : '';
   return `<div class="ivcard tap${on ? ' on' : ''}" data-jo="${esc(j.jo)}"><div class="ivph ${ph ? 'has' : ''}${IV.sketch[j.jo] ? ' sketch' : ''}" data-th="${esc(j.jo)}"${ph ? ` style="background-image:url('${ph}')"` : ''}>${ck}</div>
-    <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(typeLab(j.item_type))}</span>` : ''}</div>
+    <div class="ivb"><div class="kjo">${window.OYP.piece(j.client, j.jo)}${j.parent_jo ? `<span class="muted sm">of ${esc(j.parent_jo)}</span>` : ''}${j.item_type ? `<span class="muted sm">${esc(ivItemLab(j.item_type))}</span>` : ''}</div>
     <div class="kd"${tip}>${esc(desc || 'No details yet')}</div><div class="ivsp">${esc(sp)}</div>
     <div class="kf">${c.join('')}</div>${money.length ? `<div class="ivmoney">${money.join('')}</div>` : '<div class="ivmoney"></div>'}</div>${more}</div>`;
 }
@@ -391,7 +409,7 @@ function ivSheet(j, edit) { // details, and the review form when this JO is stil
   const pending = !!(j.review || j.pending_review), inline = pending && edit;
   const facts = `<p class="kd">${esc(j.description || 'No details')}</p>
     <div class="ivfs">${f('Client', j.client)}${f('Location', j.location ? locLab(j.location) : 'No location yet')}${f('Stage', MAKING[j.location] ? stageLabel(j.stage) : '')}
-      ${f('Type', j.item_type ? typeLab(j.item_type) : '')}${f('JOR', j.jor)}${f('Job', ivJobLab(j.type))}${f('Source', SOURCE_LAB[j.source] || '')}
+      ${f('Type of item', j.item_type ? ivItemLab(j.item_type) : '')}${f('JOR', j.jor)}${f('Job', ivJobLab(j.type))}${f('Source', SOURCE_LAB[j.source] || '')}
       ${f('Metal', [kar(j.karat), j.metal].filter(Boolean).join(' '))}${f('Stone', [j.stone_type, j.stone_size, j.grade].filter(Boolean).join(' '))}${f('Material', j.material)}
       ${f('Size', j.size)}${f('Weight', j.weight_g ? j.weight_g + ' g' : '')}${f('Due', day(j.due))}${f('Part of', j.parent_jo)}</div>`;
   return `<div class="ivsheet" id="ivSheet"><div class="ivsbox"><button class="lnk dback" id="ivSX">‹ BACK</button>
