@@ -125,7 +125,13 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;z-index:2}
 .dt .piece,.cshit .piece{display:inline-flex;vertical-align:baseline;max-width:100%}
 .kcard .kjo,.ivb .kjo,.rvi .kjo{min-width:0;overflow:hidden}
 .kcard .kjo{height:calc(22px*var(--hs));line-height:calc(22px*var(--hs));white-space:nowrap}
-.ivcard .ivb .kjo{height:calc(22px*var(--hs));line-height:calc(22px*var(--hs));flex-wrap:nowrap}
+/* Inventory cards only: the JO is the first line, the client name sits under it, and the type chip stays on the JO line. A job with no client is the JO alone. The details header is not this slot. */
+.ivcard .ivb .kjo{height:auto;min-height:calc(22px*var(--hs));line-height:calc(22px*var(--hs));flex-wrap:nowrap;align-items:flex-start}
+.ivcard .ivb .piece{flex-direction:column;align-items:flex-start;justify-content:flex-start;line-height:calc(22px*var(--hs));gap:0}
+.ivcard .ivb .piece .psep{display:none}
+.ivcard .ivb .piece .pjo{order:-1}
+.ivcard .ivb .piece .pname{order:1;max-width:100%;font-size:calc(14px*var(--hs));line-height:calc(16px*var(--hs));font-weight:400}
+.ivcard .ivb .kjo>.muted.sm{align-self:flex-start;display:inline-flex;align-items:center;box-sizing:border-box;height:calc(22px*var(--hs));margin-top:0;line-height:1}
 .rvi .piece{min-width:0}
 .tw{overflow-x:auto}.dt{max-width:none;font-size:calc(15px*var(--fs))}.dt td{padding:calc(10px*var(--sp))}.dt .r{text-align:right}.dt tr.od td{background:#fffdf6}.dmiss{font-family:var(--label);font-size:calc(12px*var(--fs));max-width:calc(1200px*var(--cw))}
 @media (max-width:760px){.kpis{grid-template-columns:1fr 1fr;gap:calc(10px*var(--sp))}.kpi{padding:calc(12px*var(--sp)) calc(14px*var(--sp))}.kpi b{font-size:calc(26px*var(--fs))}.dcard{padding:calc(14px*var(--sp)) calc(12px*var(--sp))}
@@ -134,6 +140,12 @@ html.layedit .lctile .lx{position:absolute;top:6px;right:6px;z-index:2}
   .piece .psep{display:none}
   .piece .pname,.piece .pjo{max-width:100%}
   .kcard .kjo,.ivcard .ivb .kjo,.rvi .kjo{height:calc(40px*var(--hs));line-height:calc(18px*var(--hs));white-space:normal;align-items:flex-start}}
+@media (max-width:760px){
+  .ivcard .ivb .kjo{height:auto;min-height:calc(18px*var(--hs));line-height:calc(18px*var(--hs))}
+  .ivcard .ivb .piece{line-height:calc(18px*var(--hs))}
+  .ivcard .ivb .piece .pname{font-size:calc(13px*var(--hs));line-height:calc(16px*var(--hs))}
+  .ivcard .ivb .kjo>.muted.sm{height:calc(18px*var(--hs))}
+}
 @media (max-width:760px){.kpi:last-child:nth-child(odd){grid-column:1/-1}.dt td{padding:calc(9px*var(--sp)) calc(6px*var(--sp));font-size:calc(14px*var(--fs))}.dt td:nth-child(2){white-space:nowrap}.dtitle .lab{font-size:calc(10px*var(--fs));text-align:right}}
 .dt .chip{white-space:nowrap}
 /* location counts (dashboard) */
