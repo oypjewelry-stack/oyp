@@ -383,6 +383,10 @@ function contactSec(j) {
 // Locked cost (Prices.gs priceJobCost): fetched per JO; hidden for roles without access or before that paste.
 const costCache = {};
 function costBox(main, jo) {
+  if (window.OYP.canSeeMoney && window.OYP.canSeeMoney() === false) {
+    const el = main.querySelector('#rvCost'); if (el) el.innerHTML = '';
+    return;
+  }
   if (!window.OYPPrices || !window.OYPPrices.lockedHtml) return;
   if (!costCache[jo]) costCache[jo] = window.OYP.call('priceJobCost', { jo });
   const live = window.OYP.here(); // route token: never draw into a page the user left

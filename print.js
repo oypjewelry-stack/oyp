@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 41;
+var PRINT_JS = 42;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -464,6 +464,12 @@ function withEdits(item, kind) {
   if (has('location')) out.location = edit.location;
   return out;
 }
+function priceHidden() {
+  try {
+    var u = window.OYP && window.OYP.user && window.OYP.user();
+    return !!(window.OYP && window.OYP.canSeeMoney && window.OYP.canSeeMoney(u) === false);
+  } catch (e) { return false; }
+}
 function labelOpts(item, kind, link) {
   return plainOpts(withEdits(item, kind), kind, link);
 }
@@ -482,7 +488,7 @@ function plainOpts(item, kind, link) {
     due: item.due_date || item.due || '',
     date: item.date || item.given || '',
     stage: item.current_stage || item.stage || '',
-    price: item.price,
+    price: priceHidden() ? '' : item.price,
     name: item.name || '',
     description: item.description || '',
     item_type: item.item_type || item.piece_type || '',
@@ -1015,7 +1021,7 @@ function fillFromSpec(sticker, spec) {
     if (gradeBit) bits.push(gradeBit);
     stones = bits.join(' ');
   }
-  keep('price', firstFilled(spec.price));
+  keep('price', priceHidden() ? '' : firstFilled(spec.price));
   keep('name', firstFilled(spec.name, spec.description));
   keep('item_type', firstFilled(spec.item_type, spec.piece_type));
   keep('metal', firstFilled(spec.metal));
@@ -1666,7 +1672,7 @@ function openPreview(list) {
     ['jo', 'JO', 'jo'],
     ['sku', 'SKU', 'sku'],
     ['location', 'Location', 'location']
-  ];
+  ].filter(function (row) { return row[0] !== 'price' || !priceHidden(); });
   return new Promise(function (resolve) {
     var sheet = document.createElement('div');
     var box = document.createElement('div');

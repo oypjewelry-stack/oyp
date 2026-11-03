@@ -1,0 +1,18 @@
+PASTE INTO: Todo.gs after paste/Money.gs is in the project.
+
+No new OAuth scopes. Do not add any scopes. Do not replace the file.
+Each FIND is quoted once from paste/Todo.gs.
+
+A production manager and staff do not get peso amounts on to-do lines. Accounting stays on can.prices = exec, which is already false for them unless isExec_ says so.
+
+FIND
+  can.prices = exec;
+
+REPLACE WITH
+  can.prices = exec && !(typeof moneyHidden_ === 'function' && moneyHidden_(user));
+
+FIND
+  var money = !!ctx.exec;
+
+REPLACE WITH
+  var money = !!ctx.exec && !(typeof moneyHidden_ === 'function' && moneyHidden_({ role: role }));

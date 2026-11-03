@@ -102,6 +102,8 @@ function ivShown() {
   return pinned.length ? pinned.concat(list.filter(j => !used.has(j.jo))) : list;
 }
 function ivEdit() { const u = IV.u; return !!(u && (u.role === 'admin' || u.role === 'production_manager')); }
+function ivMoney(flag) { const fn = window.OYP && window.OYP.seeMoney; return fn ? fn(IV.u, flag) : !!flag; }
+function matMoney(flag) { const fn = window.OYP && window.OYP.seeMoney; return fn ? fn(MS.u, flag) : !!flag; }
 function ivClientName(v) { if (!v) return ''; return typeof v === 'string' ? v : (v.name || ''); }
 function ivFromReview(j) {
   return {
@@ -311,7 +313,7 @@ function ivDraw(main) {
   const onHand = r.jobs.filter(j => j.on_hand && !MAKING[j.location]);
   const sumC = onHand.reduce((t, j) => t + (Number(j.cost) || 0), 0), sumP = onHand.reduce((t, j) => t + (Number(j.price) || 0), 0);
   const sum = [plural(onHand.length, 'finished piece') + ' on hand', plural(cnt('making'), 'job') + ' in production'];
-  if (can.cost) sum.push('on-hand cost ' + peso(sumC)); if (can.price) sum.push('on-hand price ' + peso(sumP));
+  if (ivMoney(can.cost)) sum.push('on-hand cost ' + peso(sumC)); if (ivMoney(can.price)) sum.push('on-hand price ' + peso(sumP));
   const sel = (id, lab, cur, opts) => `<label class="ivsel"><span class="lab">${esc(lab)}</span><select id="${id}"><option value="">Any</option>${opts.map(([k, t]) => `<option value="${esc(k)}" ${cur === k ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
   const filt = IV.stage || IV.loc || IV.type, edit = ivEdit(), n = IV.sel.size, ids = L.map(j => j.jo);
   const allOn = ids.length > 0 && ids.every(id => IV.sel.has(id));
@@ -350,8 +352,8 @@ function ivCard(j, can, edit) {
   if (j.type === 'repair') c.push('<span class="chip">Repair</span>');
   if (j.review || j.pending_review) c.push('<span class="chip gold tbr">REVIEW</span>');
   const money = [];
-  if (can.cost) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
-  if (can.price) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
+  if (ivMoney(can.cost)) money.push(j.cost != null ? `<span>Cost <b>${esc(peso(j.cost))}</b></span>` : '<span class="muted">No cost yet</span>');
+  if (ivMoney(can.price)) { if (j.price != null) money.push(`<span>Price <b>${esc(peso(j.price))}</b></span>`); if (j.margin_pct != null) money.push(`<span class="ivm">${esc(j.margin_pct)}%</span>`); }
   const sp = specs(j), ph = IV.thumbs[j.jo], on = IV.sel.has(j.jo);
   const ck = IV.choose ? `<label class="ivck"><input type="checkbox" data-ck="${esc(j.jo)}" ${on ? 'checked' : ''} aria-label="Select ${esc(j.jo)}"></label>` : '';
   const more = edit ? `<button type="button" class="ivmore" data-more="${esc(j.jo)}" aria-label="Actions for ${esc(j.jo)}" aria-haspopup="menu" aria-expanded="false">⋯</button>` : '';
@@ -1297,14 +1299,14 @@ function mDraw(main) {
   main.innerHTML = `<div class="rv mats ${MS.open || MS.adding ? 'has-open' : ''}"><div class="rvlist">
     <div class="dhead"><h2>Materials</h2>${can.edit ? '<button class="pill sm tap" id="mAdd">+ ADD STOCK</button>' : ''}</div>
     <p class="muted">Job stock: metals, loose stones, pearls and findings. Stock out always goes to a JO. Supplies (non-job) are tools, packaging and consumables, kept separately. Quantities change only through Stock in, Stock out or Count, and every change is kept in the history.</p>
-    <p class="ivsum">${esc(plural(act.length - sup, 'job stock item'))}${sup ? ' · ' + esc(plural(sup, 'supply', 'supplies')) : ''}${cnt('low') ? ` · <b class="gold">${cnt('low')} low</b>` : ''}${can.cost ? ' · job stock at last cost ' + esc(peso(tot)) : ''}</p>
+    <p class="ivsum">${esc(plural(act.length - sup, 'job stock item'))}${sup ? ' · ' + esc(plural(sup, 'supply', 'supplies')) : ''}${cnt('low') ? ` · <b class="gold">${cnt('low')} low</b>` : ''}${matMoney(can.cost) ? ' · job stock at last cost ' + esc(peso(tot)) : ''}</p>
     ${!r.setup ? '<p class="ccsum">No stock yet. The Materials and MaterialMoves tabs are made in the Sheet when the first item is saved.</p>' : ''}
     ${r.missing_cols && r.missing_cols.length ? `<p class="ccsum">Columns missing in the Sheet (not saved): ${esc(r.missing_cols.join(', '))}</p>` : ''}
     <div class="rvchips">${Object.keys(MVIEWS).filter(k => cnt(k) || k === 'all' || k === MS.view).map(k => `<button class="fchip tap ${MS.view === k ? 'on' : ''}" data-mv="${k}">${esc(MVIEWS[k])} <b>${cnt(k)}</b></button>`).join('')}</div>
     <input id="mQ" class="rvq" placeholder="Search name, metal, stone, size, location" value="${esc(MS.q)}" autocomplete="off">
     <div class="rvrows">${L.map(m => `<div class="rvrow mrow tap ${MS.open === m.mat_id && !MS.adding ? 'on' : ''}" data-mat="${esc(m.mat_id)}"><div class="rvi">
       <div class="kjo">${esc(m.name)}</div>${mspec(m) ? `<div class="kd">${esc(mspec(m))}</div>` : ''}
-      <div class="kf"><span class="chip">${esc(kindLab(m.kind))}</span>${m.location ? `<span class="chip">${esc(m.location)}</span>` : ''}${m.low ? '<span class="chip gold">Low stock</span>' : ''}${can.cost && m.last_cost != null ? `<span class="chip">${esc(peso(m.last_cost))}/${esc(m.unit)}</span>` : ''}</div></div>
+      <div class="kf"><span class="chip">${esc(kindLab(m.kind))}</span>${m.location ? `<span class="chip">${esc(m.location)}</span>` : ''}${m.low ? '<span class="chip gold">Low stock</span>' : ''}${matMoney(can.cost) && m.last_cost != null ? `<span class="chip">${esc(peso(m.last_cost))}/${esc(m.unit)}</span>` : ''}</div></div>
       <div class="mq"><b>${esc(num(m.qty))}</b><span class="lab">${esc(m.unit)}</span></div></div>`).join('') || `<p class="muted rvnone">${r.items.length ? 'Nothing in this view.' : 'No stock items yet.' + (can.edit ? ' Tap + Add stock.' : '')}</p>`}</div>
   </div><div class="rvpanel">${MS.adding ? mAddPanel() : MS.open ? mPanel(r.items.find(m => m.mat_id === MS.open)) : '<div class="rvempty"><span class="lab">Pick an item on the left</span></div>'}</div></div>`;
   mWire(main);
@@ -1318,7 +1320,7 @@ function mAddPanel() {
     <div class="fsec"><span class="lab">Kind</span><div class="seg mkinds">${MS.r.kinds.map(([c, t]) => `<button class="${c === k ? 'on' : ''}" data-mk="${c}">${esc(t)}</button>`).join('')}</div></div>
     ${inp('maName', 'Name', d.name, { metal: '18k yellow gold casting grain', stone: 'Blue sapphire, oval', pearl: 'South Sea pearl', finding: 'Lobster clasp', other: 'Item name', supply: 'Polishing compound, ring boxes, saw blades' }[k])}
     ${k === 'supply' ? '<p class="muted fnote">Supplies never become part of a piece. Their stock out needs no JO.</p>' : ''}<div class="fgrid">${MFIELDS[k].map(([f, lab, ph]) => inp('ma_' + f, lab, d[f], ph)).join('')}${unitSel('maUnit', d.unit || UNIT_DEF[k])}
-      ${inp('maQty', 'Opening quantity', d.qty, '0', 'inputmode="decimal"')}${can.cost ? inp('maCost', 'Cost per unit ₱ (optional)', d.unit_cost, '', 'inputmode="decimal"') : ''}
+      ${inp('maQty', 'Opening quantity', d.qty, '0', 'inputmode="decimal"')}${matMoney(can.cost) ? inp('maCost', 'Cost per unit ₱ (optional)', d.unit_cost, '', 'inputmode="decimal"') : ''}
       ${inp('maSup', 'Supplier (optional)', d.supplier, '')}${locIn('maLoc', d.location)}${inp('maMin', 'Low-stock alert at (optional)', d.min_qty, '', 'inputmode="decimal"')}
       <div class="full">${inp('maNotes', 'Notes (optional)', d.notes, '')}</div></div>
     <p class="err" id="mErr">${esc(MS.err)}</p>
@@ -1327,21 +1329,21 @@ function mAddPanel() {
 function mPanel(m) {
   if (!m) return ''; const { esc } = window.OYP, can = MS.r.can || {}, H = MS.hist[m.mat_id] || [], md = MS.mode;
   const row = x => `<div class="mh"><div class="mhl"><b>${esc(MOVE[x.move] || x.move)}</b>${x.qty_change ? ` <span class="${x.qty_change > 0 ? 'up' : 'dn'}">${x.qty_change > 0 ? '+' : ''}${esc(num(x.qty_change))} ${esc(x.unit)}</span>` : ''}${x.qty_after != null && x.move !== 'edit' && x.move !== 'archive' && x.move !== 'restore' ? ` <span class="muted">→ ${esc(num(x.qty_after))}</span>` : ''}
-    ${can.cost && x.unit_cost != null ? ` <span class="muted">· ${esc(peso(x.unit_cost))}/${esc(x.unit)}${x.total_cost != null ? ' = ' + esc(peso(x.total_cost)) : ''}</span>` : ''}</div>
+    ${matMoney(can.cost) && x.unit_cost != null ? ` <span class="muted">· ${esc(peso(x.unit_cost))}/${esc(x.unit)}${x.total_cost != null ? ' = ' + esc(peso(x.total_cost)) : ''}</span>` : ''}</div>
     <div class="mhs">${esc(when(x.at))} · ${esc(x.by)}${x.jo ? ' · JO ' + esc(x.jo) : ''}${x.supplier ? ' · ' + esc(x.supplier) : ''}</div>${x.note || x.detail ? `<div class="mhs">${esc([x.detail, x.note].filter(Boolean).join(' · '))}</div>` : ''}</div>`;
   return `<div class="rvp"><button class="lnk rvback" data-mx>‹ All materials</button>
     <div class="dhead"><h2>${esc(m.name)}</h2><span class="lab">${esc(kindLab(m.kind))}${m.active ? '' : ' · Archived'}</span></div>
     ${mspec(m) ? `<p class="kd">${esc(mspec(m))}</p>` : ''}
     <div class="mbig"><div><b>${esc(num(m.qty))}</b> <span>${esc(m.unit)} on hand</span></div>${m.low ? '<span class="chip gold">Low stock</span>' : ''}</div>
     <div class="ivfs">${m.location ? `<div class="ivf"><span class="lab">Location</span><b>${esc(m.location)}</b></div>` : ''}
-      ${can.cost ? `<div class="ivf"><span class="lab">Last bought at</span><b>${m.last_cost != null ? esc(peso(m.last_cost)) + ' / ' + esc(m.unit) : '—'}</b></div>` : ''}
-      ${can.cost && m.stock_cost != null ? `<div class="ivf"><span class="lab">Stock at last cost</span><b>${esc(peso(m.stock_cost))}</b></div>` : ''}
+      ${matMoney(can.cost) ? `<div class="ivf"><span class="lab">Last bought at</span><b>${m.last_cost != null ? esc(peso(m.last_cost)) + ' / ' + esc(m.unit) : '—'}</b></div>` : ''}
+      ${matMoney(can.cost) && m.stock_cost != null ? `<div class="ivf"><span class="lab">Stock at last cost</span><b>${esc(peso(m.stock_cost))}</b></div>` : ''}
       ${m.last_in_at ? `<div class="ivf"><span class="lab">Last stock in</span><b>${esc(day(m.last_in_at))}</b></div>` : ''}
       ${m.supplier ? `<div class="ivf"><span class="lab">Supplier</span><b>${esc(m.supplier)}</b></div>` : ''}${m.min_qty != null ? `<div class="ivf"><span class="lab">Alert at</span><b>${esc(num(m.min_qty))} ${esc(m.unit)}</b></div>` : ''}</div>
     ${m.notes ? `<p class="muted fnote">${esc(m.notes)}</p>` : ''}
     ${can.edit && m.active ? `<div class="mmove"><div class="seg">${[['in', 'Stock in'], ['out', 'Stock out'], ['count', 'Count']].map(([k, t]) => `<button class="${md === k ? 'on' : ''}" data-mm="${k}">${t}</button>`).join('')}</div>
       <div class="fgrid">${inp('mvQty', md === 'count' ? 'Counted quantity (' + m.unit + ')' : 'Quantity (' + m.unit + ')', '', md === 'count' ? num(m.qty) : '0', 'inputmode="decimal"')}
-      ${md === 'in' && can.cost ? inp('mvCost', 'Cost per ' + m.unit + ' ₱', '', m.last_cost != null ? String(m.last_cost) : '', 'inputmode="decimal"') : ''}
+      ${md === 'in' && matMoney(can.cost) ? inp('mvCost', 'Cost per ' + m.unit + ' ₱', '', m.last_cost != null ? String(m.last_cost) : '', 'inputmode="decimal"') : ''}
       ${md === 'in' ? inp('mvSup', 'Supplier', m.supplier, '') : ''}${md === 'out' && isJob(m) ? inp('mvJo', 'For JO (required)', '', '26-103', 'required autocomplete="off" autocapitalize="characters"') : ''}
       <div class="full">${inp('mvNote', md === 'count' ? 'Why (required)' : md === 'out' && !isJob(m) ? 'Reason' : 'Note (optional)', md === 'out' && !isJob(m) ? 'Used / consumed' : '', md === 'count' ? 'Monthly count' : md === 'out' ? (isJob(m) ? 'Given to setter' : 'Used / consumed') : 'Receipt no.')}</div>
       ${md === 'out' ? `<p class="muted fnote full">${isJob(m) ? 'Job stock always goes out to a JO that is already in the system.' : 'Supplies (non-job): no JO needed.'}</p>` : ''}</div>
@@ -1362,7 +1364,7 @@ function mWire(main) {
   main.querySelectorAll('[data-mx]').forEach(b => b.onclick = () => { MS.adding = false; MS.err = ''; if (innerWidth < 900) MS.open = null; mDraw(main); });
   if ($('#mAdd')) $('#mAdd').onclick = () => { MS.adding = true; MS.err = ''; MS.draft = {}; mDraw(main); if (innerWidth < 900) scrollTo(0, 0); };
   const keep = () => { if (!$('#maName')) return; const d = MS.draft; d.name = val('#maName'); MFIELDS[MS.kind].forEach(([f]) => { d[f] = val('#ma_' + f); });
-    d.unit = val('#maUnit'); d.qty = val('#maQty'); d.unit_cost = val('#maCost'); d.supplier = val('#maSup'); d.location = val('#maLoc'); d.min_qty = val('#maMin'); d.notes = val('#maNotes'); };
+    d.unit = val('#maUnit'); d.qty = val('#maQty'); if ($('#maCost')) d.unit_cost = val('#maCost'); d.supplier = val('#maSup'); d.location = val('#maLoc'); d.min_qty = val('#maMin'); d.notes = val('#maNotes'); };
   main.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => { keep(); MS.kind = b.dataset.mk; MS.draft.unit = UNIT_DEF[MS.kind]; mDraw(main); });
   const done = async (r, msg) => {
     if (!live()) return; // the user moved on while saving: the save stands, just don't redraw over the new page
@@ -1380,14 +1382,16 @@ function mWire(main) {
     if (r.item) MS.open = r.item.mat_id; if (msg === 'Archived' || msg === 'Restored') MS.view = 'all'; MS.adding = false; delete MS.hist[MS.open]; await renderMats(main, MS.u);
   };
   if ($('#maSave')) $('#maSave').onclick = async e => { keep(); const d = MS.draft, item = { kind: MS.kind, name: d.name, unit: d.unit, supplier: d.supplier, location: d.location, min_qty: d.min_qty, notes: d.notes };
-    MFIELDS[MS.kind].forEach(([f]) => { item[f] = d[f]; }); item.qty = d.qty; item.unit_cost = d.unit_cost;
+    MFIELDS[MS.kind].forEach(([f]) => { item[f] = d[f]; }); item.qty = d.qty; if ($('#maCost')) item.unit_cost = d.unit_cost;
     e.target.disabled = true; await done(await call('matSave', { item }), 'Stock item added'); };
   main.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => { MS.mode = b.dataset.mm; MS.err = ''; mDraw(main); });
   if ($('#mvSave')) $('#mvSave').onclick = async e => {
     const cur = MS.r.items.find(x => x.mat_id === MS.open);
     if (MS.mode === 'out' && cur && isJob(cur) && !val('#mvJo')) { MS.err = 'Type the JO number this was used for (e.g. 26-103). Job stock always goes out to a JO.'; $('#mErr').textContent = MS.err; $('#mvJo').focus(); return; }
     e.target.disabled = true;
-    await done(await call('matMove', { mat_id: MS.open, move: MS.mode, qty: val('#mvQty'), unit_cost: val('#mvCost'), supplier: val('#mvSup'), jo: val('#mvJo'), note: val('#mvNote') }),
+    const move = { mat_id: MS.open, move: MS.mode, qty: val('#mvQty'), supplier: val('#mvSup'), jo: val('#mvJo'), note: val('#mvNote') };
+    if ($('#mvCost')) move.unit_cost = val('#mvCost');
+    await done(await call('matMove', move),
       { in: 'Added to stock', out: 'Taken out of stock', count: 'Count saved' }[MS.mode]); };
   const m = MS.r.items.find(x => x.mat_id === MS.open);
   if ($('#meSave')) $('#meSave').onclick = async () => { const item = { name: val('#meName'), unit: val('#meUnit'), supplier: val('#meSup'), location: val('#meLoc'), min_qty: val('#meMin'), notes: val('#meNotes') };

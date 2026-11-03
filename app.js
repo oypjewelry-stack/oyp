@@ -86,6 +86,20 @@ function user() {
   if (!localStorage.getItem(K.s) || !exp || new Date(exp) < new Date()) return null;
   try { return JSON.parse(localStorage.getItem(K.u)); } catch (_) { return null; }
 }
+/* Cost, price, markup, material cost, and rate formulas.
+   Admin keeps them. A production manager (Susan) and plain staff do not.
+   Accounting is null: payment, quote, and balance pages keep the flags the server already sends. */
+function canSeeMoney(u) {
+  u = u || user();
+  const role = u && u.role;
+  if (role === 'admin') return true;
+  if (role === 'production_manager' || role === 'staff') return false;
+  return null;
+}
+function seeMoney(u, serverFlag) {
+  if (canSeeMoney(u) === false) return false;
+  return !!serverFlag;
+}
 function toast(t) {
   const el = $('toast'); if (!el) return;
   el.textContent = t; el.classList.remove('hidden');
@@ -737,7 +751,7 @@ function popover(anchor, items) {
   window.addEventListener('scroll', onMove, true);
 }
 window.addEventListener('hashchange', closePopover);
-window.OYP = { call, esc, toast, toastUndo, archiveJos, popover, closePopover, swipe: (window.OYPSwipe && window.OYPSwipe.mount) || function () {}, user, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
+window.OYP = { call, esc, toast, toastUndo, archiveJos, popover, closePopover, swipe: (window.OYPSwipe && window.OYPSwipe.mount) || function () {}, user, canSeeMoney, seeMoney, ROLE_LABEL, here, skel, locLabel, piece }; // here(): route token, see route() // shared with dash.js, inv.js, prices.js, pay.js, appts.js, settings.js, production.js
 // Edit layout is off on every load. The pill on each back-office page turns it on. Done saves and turns it off.
 // One switch. false hides every Edit layout pill. The pill code stays. Saved orders still apply. Flip to true to show the pills again.
 const EDIT_LAYOUT_ENABLED = false;

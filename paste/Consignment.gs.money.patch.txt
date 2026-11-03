@@ -1,0 +1,30 @@
+PASTE INTO: Consignment.gs after paste/Money.gs is in the project.
+
+No new OAuth scopes. Do not add any scopes. Do not replace the file.
+Each FIND is quoted once from paste/Consignment.gs.txt.
+
+A production manager and staff do not set or receive agreed values. Accounting is unchanged: isExec_ still decides their values.
+
+FIND
+  if (!isExec_(user) && consignSentValue_(req)) {
+
+REPLACE WITH
+  if ((!isExec_(user) || (typeof moneyHidden_ === 'function' && moneyHidden_(user))) && consignSentValue_(req)) {
+
+FIND
+  if (req.action === 'consignPay' && !isExec_(user)) {
+
+REPLACE WITH
+  if (req.action === 'consignPay' && (!isExec_(user) || (typeof moneyHidden_ === 'function' && moneyHidden_(user)))) {
+
+FIND
+    ok: true, setup: miss.length === 0, missing: miss, overdue_days: limit, today: today, prices: exec,
+
+REPLACE WITH
+    ok: true, setup: miss.length === 0, missing: miss, overdue_days: limit, today: today, prices: exec && !(typeof moneyHidden_ === 'function' && moneyHidden_(user)),
+
+FIND
+    try { val = isExec_(user) ? consignMoney_(it.value != null ? it.value : it.agreed_value) : ''; }
+
+REPLACE WITH
+    try { val = (isExec_(user) && !(typeof moneyHidden_ === 'function' && moneyHidden_(user))) ? consignMoney_(it.value != null ? it.value : it.agreed_value) : ''; }
