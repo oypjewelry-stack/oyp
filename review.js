@@ -47,12 +47,6 @@ function kindFieldsFor(k) {
   const base = row && Array.isArray(row[2]) ? row[2] : [];
   return base.concat(KIND_EXTRA[k] || []);
 }
-function legacyKindChip(code) {
-  if (!LEGACY_KIND[code]) return '';
-  const raw = (S.itemTypes || []).find(t => t && t[0] === code);
-  const { esc } = window.OYP;
-  return `<span class="loc on kindlegacy" title="Older items only. Pick a type of item to replace it.">${esc(raw && raw[1] ? raw[1] : LEGACY_KIND[code])}</span>`;
-}
 const cur = () => {
   if (!S.open) return null;
   const exact = S.jobs.find(j => j.jo === S.open);
@@ -273,8 +267,8 @@ function panel(j) {
     ${shotsHtml(j)}
     <div class="fsec ${fcls('location')}"><div class="flab"><span class="lab">Location</span>${flag('location')}</div>${j.location === 'archived' ? '<p class="muted fnote archnote">Archived: the JO stays on record and searchable, but there is no piece. Not counted as stock, not on the job board.</p>' : ''}
       <div class="locs">${S.locations.map(l => `<button class="loc ${j.location === l[0] ? 'on' : ''}" data-loc="${l[0]}">${esc(locLabel(l[0]))}</button>`).join('')}</div></div>
-    <div class="fsec ${fcls('item_type')}" id="kindPick"><div class="flab"><span class="lab">Type of item</span>${flag('item_type')}</div>
-      <div class="kinds">${kindChoices().map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}${legacyKindChip(j.item_type)}</div></div>
+    <div class="fsec ${cf.item_type ? 'conf' : (miss('item_type') || !j.item_type || LEGACY_KIND[j.item_type] ? 'miss' : '')}" id="kindPick"><div class="flab"><span class="lab">Type of item</span>${cf.item_type ? flag('item_type') : (miss('item_type') || !j.item_type || LEGACY_KIND[j.item_type] ? '<span class="flag">Missing</span>' : '')}</div>
+      <div class="kinds">${kindChoices().map(t => `<button class="loc ${j.item_type === t[0] ? 'on' : ''}" data-kind="${esc(t[0])}">${esc(t[1])}</button>`).join('')}</div></div>
     <div class="fgrid">
       <div class="fsec full ${fcls('client') || fcls('client_id')}"><div class="flab"><span class="lab">Client</span>${flag('client') || flag('client_id')}</div>
         <div id="fClient" class="cpick">${j.client ? `<div class="csel"><b>${esc(j.client.name)}</b>${j.client.phone ? ` <span class="muted">${esc(j.client.phone)}</span>` : ''}<button class="lnk" data-cclear>Change</button></div>` : ''}
@@ -493,7 +487,7 @@ function bindJob(main, j, opt) {
     const ks = main.querySelector('.kindsec'); if (ks) ks.classList.toggle('hidden', !show.length);
   };
   applyKind();
-  main.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { st.item_type = b.dataset.kind; main.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('on', x.dataset.kind === st.item_type)); const leg = main.querySelector('.kindlegacy'); if (leg) leg.hidden = !LEGACY_KIND[st.item_type]; filled(b); applyKind(); });
+  main.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { st.item_type = b.dataset.kind; main.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('on', x.dataset.kind === st.item_type)); filled(b); applyKind(); });
   const filled = el => { const f = el.closest('.fsec'); if (f) { f.classList.remove('miss'); const fl = f.querySelector('.flag:not(.c)'); if (fl) fl.remove(); } };
   main.querySelectorAll('.rvp input, .rvp textarea').forEach(el => el.addEventListener('input', () => { if (el.value.trim() && !['fCq'].includes(el.id)) filled(el); }));
   const back = $('[data-back]'); if (back) back.onclick = () => { S.open = null; draw(main); };
@@ -511,7 +505,8 @@ function bindJob(main, j, opt) {
   }, 250); };
   const fcp = $('#fc_phone'); if (fcp) fcp.addEventListener('blur', () => { fcp.value = fmtPhone(fcp.value); });
   const save = async mark => {
-    const set = { location: st.location, item_type: st.item_type, type: st.type, source: st.source || '', client_id: st.client_id };
+    const set = { location: st.location, type: st.type, source: st.source || '', client_id: st.client_id };
+    if (!LEGACY_KIND[st.item_type]) set.item_type = st.item_type || ''; // a legacy code stays in the sheet until a new button is chosen
     ['due_date', 'description'].concat(kindFields(st.item_type)).forEach(k => { set[k] = $('#f_' + k).value; }); // hidden fields are left as they are
     if ($('#f_jor')) set.jor = $('#f_jor').value.trim();
     if ($('#f_status').value) set.status = $('#f_status').value;

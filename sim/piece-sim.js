@@ -143,7 +143,7 @@ has('staff/index.html', 'production.js?v=15');
 has('staff/index.html', 'production.css?v=12');
 has('staff/index.html', 'consign.js?v=12');
 has('staff/index.html', 'consign.css?v=11');
-has('staff/index.html', 'review.js?v=26');
+has('staff/index.html', 'review.js?v=27');
 const consignSrc = live(path.join(root, 'consign.js'));
 eq(/pieceBits\(it, printing \? \{ joOnly: true \} : null\)/.test(consignSrc), 'a printed consignment sheet is the JO only');
 eq(/pieceBits\(it, \{ joOnly: true \}\)/.test(consignSrc), 'the return slip is the JO only');
