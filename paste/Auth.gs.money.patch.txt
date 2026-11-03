@@ -1,0 +1,19 @@
+PASTE INTO: Auth.gs, inside handleAction_ (the action router doPost calls).
+Do not paste a new Auth.gs over the live file. Paste paste/Money.gs first, as its own file named Money.
+
+No new OAuth scopes. Do not add any scopes.
+
+The todoList line below is quoted once from paste/Auth.gs.patch.txt. The JobSync line is quoted once from paste/Auth.gs.snapsnap.patch.txt. moneyPrepare_ rejects a money write before the handler. Move that prepare block to the first line of handleAction_ if a hook sits above todoList. moneyFinish_ strips the JSON result. Wrap any other `return handler(req, s.user)` the same way. Accounting and admin are not moneyHidden_. A production manager and staff are.
+
+FIND
+  if (a === 'todoList' && typeof todoList_ === 'function') return typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, todoList_) : todoList_(req, s.user); // Todo.gs, same cache path as the dashboard
+
+REPLACE WITH
+  if (typeof moneyPrepare_ === 'function') { var moneyDenied_ = moneyPrepare_(req, s.user); if (moneyDenied_) return moneyDenied_; }
+  if (a === 'todoList' && typeof todoList_ === 'function') return typeof moneyFinish_ === 'function' ? moneyFinish_(s.user, (typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, todoList_) : todoList_(req, s.user))) : (typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, todoList_) : todoList_(req, s.user)); // Todo.gs, same cache path as the dashboard
+
+FIND
+  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);
+
+REPLACE WITH
+  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return typeof moneyFinish_ === 'function' ? moneyFinish_(s.user, handleJob_(req, s.user)) : handleJob_(req, s.user);
