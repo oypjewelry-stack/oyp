@@ -1,19 +1,34 @@
-PASTE INTO: Auth.gs, inside handleAction_ (the action router doPost calls).
+PASTE INTO: the staff doPost (Auth.gs or Code.gs, whichever one calls handleAction_ and sends the JSON).
 Do not paste a new Auth.gs over the live file. Paste paste/Money.gs first, as its own file named Money.
+Do not rename handleAction_. Do not rename doPost.
 
 No new OAuth scopes. Do not add any scopes.
 
-The todoList line below is quoted once from paste/Auth.gs.patch.txt. The JobSync line is quoted once from paste/Auth.gs.snapsnap.patch.txt. moneyPrepare_ rejects a money write before the handler. Move that prepare block to the first line of handleAction_ if a hook sits above todoList. moneyFinish_ strips the JSON result. Wrap any other `return handler(req, s.user)` the same way. Accounting and admin are not moneyHidden_. A production manager and staff are.
+No paste file quotes a doPost line that calls handleAction_. paste/Code.gs.txt is the card scanner. Its doPost checks TOKEN and does not call handleAction_. Leave that function alone. The staff doPost is the one that serves inventory, materials, production, prices, consignment, and the dashboard.
 
-FIND
-  if (a === 'todoList' && typeof todoList_ === 'function') return typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, todoList_) : todoList_(req, s.user); // Todo.gs, same cache path as the dashboard
+Writes, at the top of handleAction_. That function already has s, and every hook uses s.user. Add this as the first lines inside handleAction_, before any action returns and before dcacheRead_ runs:
 
-REPLACE WITH
   if (typeof moneyPrepare_ === 'function') { var moneyDenied_ = moneyPrepare_(req, s.user); if (moneyDenied_) return moneyDenied_; }
-  if (a === 'todoList' && typeof todoList_ === 'function') return typeof moneyFinish_ === 'function' ? moneyFinish_(s.user, (typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, todoList_) : todoList_(req, s.user))) : (typeof dcacheRead_ === 'function' ? dcacheRead_(req, s.user, todoList_) : todoList_(req, s.user)); // Todo.gs, same cache path as the dashboard
+
+Reads, where that result is serialized. moneyOut_ strips a copy. DashCache stores dashboard, dashDrill, and todoList per role (paste/DashCache.gs.patch.txt). The todoList key also has to include the username (paste/PASTE_STEPS.txt). Fast.gs CACHE holds invList, prodBoard, matList, priceGet, and costRates. This repo does not quote that key, so treat it as shared. Stripping the outgoing copy is safe. Do not strip the value before it is cached, and do not write the stripped copy back.
 
 FIND
-  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return handleJob_(req, s.user);
+  var out = handleAction_(req);
 
 REPLACE WITH
-  if (typeof isJobAction_ === 'function' && isJobAction_(a)) return typeof moneyFinish_ === 'function' ? moneyFinish_(s.user, handleJob_(req, s.user)) : handleJob_(req, s.user);
+  var out = moneyOut_(req, typeof s !== 'undefined' ? s : null, handleAction_(req));
+
+If that line is not in doPost, find the line in doPost that contains handleAction_(. Keep the same arguments. Wrap the call and leave the JSON line as it is:
+
+  handleAction_(req) becomes moneyOut_(req, typeof s !== 'undefined' ? s : null, handleAction_(req))
+  handleAction_(req, s) becomes moneyOut_(req, s, handleAction_(req, s))
+
+If the call is inside ContentService.createTextOutput(JSON.stringify(...)), wrap the handleAction_(...) call the same way, so stringify sends the copy.
+
+If that doPost has no s, moneyOut_ resolves the user the same way a handler does when s.user was not passed. paste/InventoryCount.gs:
+
+    var sess = (typeof sessionFrom_ === 'function') ? sessionFrom_(req || {}) : null;
+    if (sess && sess.user && sess.user.username) return sess.user;
+    if (sess && sess.username) return sess;
+
+Accounting is not moneyHidden_. Admin is not moneyHidden_. A production manager and staff are.
