@@ -18,7 +18,7 @@ var ATTEMPT_MS = 45000;
 var END_MS = 4000;
 var JOB_MS = 120000;
 var LINK_MS = 10000;
-var PRINT_JS = 39;
+var PRINT_JS = 41;
 var lib = function () { return root.niimbluelib; };
 
 function deviceId() {
@@ -326,6 +326,17 @@ function printsKind(kind, link) {
   return link.model === 'B31' && k.jo_card !== false;
 }
 /* The owning model prints the sticker. Another printer is used only when that model is connected and its switch is off. */
+function sharesDevice(a, b) {
+  if (!a || !b || a === b) return false;
+  if (a.gattDevice && b.gattDevice && a.gattDevice === b.gattDevice) return true;
+  if (a.btId && b.btId && a.btId === b.btId) return true;
+  var an = String(a.deviceName || '').trim(), bn = String(b.deviceName || '').trim();
+  return !!(an && bn && an === bn);
+}
+function twinPrinting(link) {
+  var other = otherLink(link);
+  return !!(other && other.printing && sharesDevice(link, other));
+}
 function linkFor(kind) {
   var owner = ownerModel(kind);
   var list = [state, peer], i, link, own = null, ownBusy = null, alt = null, altBusy = null, ownerUp = false;
@@ -335,10 +346,10 @@ function linkFor(kind) {
     if (link.model === owner) ownerUp = true;
     if (!printsKind(kind, link)) continue;
     if (link.model === owner) {
-      if (!link.printing) own = own || link;
+      if (!link.printing && !twinPrinting(link)) own = own || link;
       else ownBusy = ownBusy || link;
     } else if (ownerUp) {
-      if (!link.printing) alt = alt || link;
+      if (!link.printing && !twinPrinting(link)) alt = alt || link;
       else altBusy = altBusy || link;
     }
   }
@@ -545,6 +556,10 @@ function rememberTask(name, link) {
 function isPageEndTimeout(err) {
   return /waited for e4/i.test(String((err && err.message) || err || ''));
 }
+/* niimbluelib turns a 0x00 reply into this error for whichever command is waiting. */
+function isFeatureUnsupported(err) {
+  return /feature not supported/i.test(String((err && err.message) || err || ''));
+}
 function isTimeout(err) {
   var m = String((err && err.message) || err || '');
   return /waited for e4|print timed out|timed out|timeout waiting/i.test(m);
@@ -669,7 +684,10 @@ function runTask(name, encoded, link, kind) {
     return task.printEnd ? withTimeout(Promise.resolve(task.printEnd()), END_MS, 'print end').catch(function () {}) : null;
   };
   var tSend = clock();
+  /* printInit is density, label type, and print start. printPage begins with pageStart and then the bitmap. */
+  var phase = 'init';
   var attempt = Promise.resolve(task.printInit()).then(function () {
+    phase = 'page';
     return task.printPage(encoded, 1);
   }).then(function () {
     logMs('send', clock() - tSend, name);
@@ -688,6 +706,7 @@ function runTask(name, encoded, link, kind) {
   return withTimeout(attempt, ATTEMPT_MS, 'Print timed out').then(function () {
     return Promise.resolve(end()).then(function () { rememberTask(name, link); });
   }, function (err) {
+    if (phase === 'init' && err && typeof err === 'object') { try { err.beforePage = true; } catch (eFlag) {} }
     return Promise.resolve(end()).then(function () { throw err; });
   });
 }
@@ -695,10 +714,15 @@ function sendEncoded(encoded, link, kind) {
   link = link || state;
   if (!link.client) return Promise.reject(new Error('Not connected'));
   if (tagBlocked(kind, link)) return Promise.reject(new Error('Connect the B1 to print jewelry tags'));
-  var names = taskChoices(link), i = 0;
+  var names = taskChoices(link), i = 0, retried = false;
   function once() {
     return runTask(names[i], encoded, link, kind).catch(function (err) {
       if (i + 1 < names.length && isPageEndTimeout(err)) { i += 1; return once(); }
+      /* One wait. The stale 0x00 belongs to the previous sticker's RFID read, and only the next printInit has run. */
+      if (!retried && err && err.beforePage && isFeatureUnsupported(err)) {
+        retried = true;
+        return new Promise(function (resolve) { setTimeout(resolve, 400); }).then(once);
+      }
       throw err;
     });
   }
@@ -2652,7 +2676,7 @@ function nextLocal(link) {
   return null;
 }
 function kickOne(link) {
-  if (!link.connected || link.printing || !wantsQueue()) return false;
+  if (!link.connected || link.printing || twinPrinting(link) || !wantsQueue()) return false;
   var next = nextLocal(link);
   if (!next) return false;
   state.inflight[next.print_id] = 1;
@@ -2731,6 +2755,8 @@ function stopPoll() {
 function beat(link) {
   var c = link && link.client;
   if (!c || !link.connected) return;
+  /* B31 answers the post-print RFID read with not-supported. Leave it off, including when the heartbeat is already running. */
+  c.fetchRfidOnPrintEnd = false;
   /* Already running. Starting again would reset the failure count and hide a dead radio. */
   if (c.heartbeatTimer) return;
   logMs('link heartbeat', 0, 'start ' + (link.deviceName || link.model || ''));
@@ -2752,22 +2778,33 @@ function slotSnap(link) {
   var keep = !!(link.expected || link.connected || link.reconnecting);
   return { transport: keep ? (link.transport || '') : '', btId: keep ? (link.btId || '') : '', model: link.model || '' };
 }
+function otherHoldsDevice(link, device) {
+  var other = otherLink(link);
+  if (!other || !device) return false;
+  if (device.id && other.btId && device.id === other.btId) return true;
+  if (other.gattDevice && (other.gattDevice === device || (device.id && other.gattDevice.id === device.id))) return true;
+  var name = String(device.name || '').trim(), held = String(other.deviceName || '').trim();
+  return !!(name && held && name === held);
+}
 function rememberBle(link) {
   var bt = root.navigator && navigator.bluetooth;
   if (!bt || typeof bt.getDevices !== 'function') return Promise.resolve();
   return Promise.resolve(bt.getDevices()).then(function (list) {
     list = list || [];
-    var used = otherLink(link).btId, i, d, fallback = '';
+    var i, d, fallback = '', blocked = false;
     if (link.btId) {
       for (i = 0; i < list.length; i++) if (list[i] && list[i].id === link.btId) { saveLinks(); return; }
     }
     for (i = 0; i < list.length; i++) {
       d = list[i];
-      if (!d || !d.id || d.id === used) continue;
+      if (!d || !d.id) continue;
+      if (otherHoldsDevice(link, d)) { blocked = true; continue; }
       if (d.gatt && d.gatt.connected) { link.btId = d.id; saveLinks(); return; }
       if (!fallback) fallback = d.id;
     }
-    if (!link.btId && list.length === 1 && list[0] && list[0].id && list[0].id !== used) link.btId = list[0].id;
+    /* The live radio belongs to the other slot. Do not keep a leftover id from an older grant. */
+    if (blocked) { saveLinks(); return; }
+    if (!link.btId && list.length === 1 && list[0] && list[0].id && !otherHoldsDevice(link, list[0])) link.btId = list[0].id;
     else if (!link.btId && fallback) link.btId = fallback;
     saveLinks();
   }).catch(function () {});
@@ -2775,12 +2812,43 @@ function rememberBle(link) {
 function watchLink(link, client) {
   if (!client || !client.on || client.__oypWatch) return;
   client.__oypWatch = true;
-  client.on('disconnect', function () {
+  var onDown = function () {
     if (link.client !== client) return;
     onLinkDown(link);
-  });
+  };
+  client.__oypDown = onDown;
+  client.on('disconnect', onDown);
+}
+function unwatchLink(client) {
+  if (!client) return;
+  if (client.__oypDown && typeof client.off === 'function') client.off('disconnect', client.__oypDown);
+  client.__oypWatch = false;
+  client.__oypDown = null;
+}
+/* The other slot already has this printer. Drop the duplicate client and leave the shared GATT connection up. */
+function releaseDuplicate(link) {
+  var client = link.client;
+  unwatchLink(client);
+  link.client = null;
+  link.connected = false;
+  link.opening = false;
+  link.reconnecting = false;
+  link.printing = false;
+  link.auto = false;
+  link.away = false;
+  link.expected = false;
+  link.gattDevice = null;
+  link.btId = '';
+  link.deviceName = '';
+  link.model = '';
+  freshAttempt(link);
+  drawChip();
 }
 function onConnected(link, transport) {
+  if (sharesDevice(link, otherLink(link))) {
+    releaseDuplicate(link);
+    return;
+  }
   var announce = !!link.opening;
   var quiet = !!link.auto;
   link.opening = false;
@@ -3129,27 +3197,41 @@ function refreshAutoNote() {
   state.autoNote = names.length ? names.join(' and ') + (names.length > 1 ? ' are' : ' is') + ' off or out of range' : '';
   drawChip();
 }
+function connectingBlind(link) {
+  return !!link && !link.btId && (link.opening || link.reconnecting);
+}
+function deviceMatch(link, device) {
+  if (!link || !device) return false;
+  var id = device.id || '';
+  if (id && link.btId === id) return true;
+  if (link.gattDevice && (link.gattDevice === device || (id && link.gattDevice.id === id))) return true;
+  var name = String(device.name || '').trim(), held = String(link.deviceName || '').trim();
+  return !!(name && held && name === held);
+}
 function deviceBusy(device) {
   var id = device && device.id || '';
   var list = [state, peer], i, link;
-  if (!id) return false;
-  if (state.autoBusy && state.autoBusy[id]) return true;
+  if (!device) return false;
+  /* btId is still empty until the connect finishes. That slot is this device until we know otherwise. */
+  if (connectingBlind(state) || connectingBlind(peer)) return true;
+  if (id && state.autoBusy && state.autoBusy[id]) return true;
   for (i = 0; i < list.length; i++) {
     link = list[i];
-    if (link.btId === id && (link.connected || link.reconnecting || link.opening)) return true;
+    if (deviceMatch(link, device) && (link.connected || link.reconnecting || link.opening)) return true;
   }
   return false;
 }
 function slotFor(device) {
-  var id = device && device.id || '';
-  var list = [state, peer], i, link;
+  var list = [state, peer], i, link, idle = null;
+  if (!device) return null;
+  if (connectingBlind(state) || connectingBlind(peer)) return null;
   for (i = 0; i < list.length; i++) {
     link = list[i];
-    if (id && link.btId === id) {
-      if (link.connected || link.reconnecting || link.opening) return null;
-      return link;
-    }
+    if (!deviceMatch(link, device)) continue;
+    if (link.connected || link.reconnecting || link.opening) return null;
+    idle = idle || link;
   }
+  if (idle) return idle;
   for (i = 0; i < list.length; i++) {
     link = list[i];
     if (link.connected || link.reconnecting || link.opening || link.btId) continue;
@@ -3218,6 +3300,7 @@ function attachGranted(device) {
 /* Previously approved printers, without the pairing chooser. One try on load, then 3s, 10s, 30s, and every 60s while the page is visible. A stuck attempt does not hold the other slot. */
 function grantReconnect(fromTimer) {
   if (!canGetDevices()) return;
+  if (connectingBlind(state) || connectingBlind(peer)) return;
   if (fromTimer && !pageVisible()) { state.autoHold = true; return; }
   state.autoHold = false;
   Promise.resolve(navigator.bluetooth.getDevices()).then(function (list) {
