@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Consignment preview</title>
+<link rel="stylesheet" href="../app.css">
+<link rel="stylesheet" href="../consign.css">
+<style>
+  body{margin:0;background:#fff}
+  header.top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #eee}
+  header .title{font-family:var(--head, Georgia, serif);font-size:22px}
+  #main{padding:18px 20px 32px}
+  .shot{max-width:720px}
+</style>
+</head><body>
+<header class="top"><span class="title">Consignment</span><img class="logo" src="../logo.png" alt="OYP Jewelry" height="36"></header>
+<main id="main" class="shot"></main>
+<script>
+window.OYP = {
+  esc: function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); },
+  call: function () { return Promise.resolve(window.SHEET); },
+  toast: function () {},
+  toastUndo: function () {},
+  here: function () { return function () { return true; }; },
+  piece: function (name, jo) {
+    var n = name && name.name ? name.name : (name || '');
+    var id = String(jo || '');
+    var bits = [];
+    if (n) bits.push('<span class="pname">' + window.OYP.esc(n) + '</span>');
+    if (n && id) bits.push('<span class="psep"> · </span>');
+    if (id) bits.push('<span class="pjo">' + window.OYP.esc(id) + '</span>');
+    return bits.length ? '<span class="piece">' + bits.join('') + '</span>' : '';
+  },
+  popover: function (anchor, items) {
+    var old = document.getElementById('shotPop');
+    if (old) old.remove();
+    var el = document.createElement('div');
+    el.id = 'shotPop';
+    el.className = 'oyp-pop';
+    el.setAttribute('role', 'menu');
+    (items || []).forEach(function (item) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'oyp-popi' + (item.danger ? ' is-danger' : '');
+      b.textContent = item.label || '';
+      el.appendChild(b);
+    });
+    document.body.appendChild(el);
+    var a = anchor.getBoundingClientRect();
+    el.style.left = Math.round(a.right - 180) + 'px';
+    el.style.top = Math.round(a.bottom + 6) + 'px';
+    anchor.setAttribute('aria-expanded', 'true');
+  },
+  closePopover: function () {}
+};
+window.SHEET = {
+  ok: true, setup: true, overdue_days: 30, today: '2026-11-03', prices: true,
+  consignees: [{ consignee_id: 'Ana R.', name: 'Ana R.', phone: '0917 555 0101' }],
+  loose: [],
+  sheets: [{
+    consignment_id: 'CS-261002-01', consignee: 'Ana R.', phone: '0917 555 0101',
+    date_out: '2026-10-04', due_date: '2026-11-03', status: 'open', days_out: 30, overdue: 1,
+    items: [
+      { line_id: 'ci-1', jo: '26-280', description: 'Sapphire cuff', status: 'consigned', overdue: 1, value: 12800 },
+      { line_id: 'ci-2', jo: '26-281', description: 'Plain band', status: 'returned', value: 2400 }
+    ]
+  }]
+};
+</script>
+<script src="../consign.js"></script>
+<script>
+var role = (new URLSearchParams(location.search).get('role')) || 'admin';
+var view = (new URLSearchParams(location.search).get('view')) || 'list';
+window.OYPConsign.render(document.getElementById('main'), { role: role, username: role === 'admin' ? 'ada' : 'susan', display_name: role === 'admin' ? 'Ada' : 'Susan' }).then(function () {
+  if (view === 'sheet' || view === 'detail') {
+    var row = document.querySelector('tr[data-open]');
+    if (row && row.onclick) row.onclick();
+  }
+  if (view === 'menu') {
+    var more = document.querySelector('[data-csmore]');
+    if (more) more.click();
+  }
+  if (view === 'confirm') {
+    var row = document.querySelector('tr[data-open]');
+    if (row && row.onclick) row.onclick();
+    var del = document.getElementById('csDelete');
+    if (del) del.click();
+  }
+  document.documentElement.setAttribute('data-ready', view);
+});
+</script>
+</body></html>
