@@ -72,7 +72,10 @@ const scanQueue = [];
 let scanBusy = false, qTimer = 0, scanSeq = 0, scanShown = '';
 let camGen = 0, U = null;
 
-function prices() { return !!(S.r && S.r.prices); }
+function prices() {
+  if (window.OYP.canSeeMoney && window.OYP.canSeeMoney(U) === false) return false;
+  return !!(S.r && S.r.prices);
+}
 function canDelete() { return !!(U && U.role === 'admin'); }
 function moneyBits(o) {
   if (!prices() || !o || o.sold == null) return '';
@@ -673,7 +676,7 @@ async function saveSheet(main) {
   const d = S.draft;
   if (!d.items.length) return window.OYP.toast('Add at least one piece');
   if (!(d.name || '').trim()) { window.OYP.toast('Type the consignee\'s name'); if ($('csName')) $('csName').focus(); return; }
-  const payload = { consignee_name: d.name.trim(), consignee_phone: d.phone || '', due_date: d.due || '', notes: d.sheetNotes || '', items: d.items.map(it => ({ jo: it.jo || '', item_id: it.item_id || '', description: it.description || '', value: prices() ? it.value : '' })) };
+  const payload = { consignee_name: d.name.trim(), consignee_phone: d.phone || '', due_date: d.due || '', notes: d.sheetNotes || '', items: d.items.map(it => { const row = { jo: it.jo || '', item_id: it.item_id || '', description: it.description || '' }; if (prices()) row.value = it.value; return row; }) };
   S.busy = true;
   const r = await window.OYP.call('consignSave', payload);
   S.busy = false;

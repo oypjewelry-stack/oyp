@@ -1,0 +1,22 @@
+Paste paste/Money.gs first, as its own file named Money.
+Do not rename doPost, fastAction_, or handleAction_. No new OAuth scopes.
+Leave the scanner doPost in paste/Code.gs.txt alone. This line is the staff doPost in Code.gs.
+
+Fast.gs cached reads and handleAction_ both go through moneyGate_, which strips a copy after the cache write. Do not write that copy back. DashCache is per role. Fast.gs CACHE (invList, prodBoard, matList, priceGet, costRates) is treated as shared.
+
+FIND
+  if (req.action) return json_(typeof fastAction_ === 'function' ? fastAction_(req) : handleAction_(req));
+
+REPLACE WITH
+  if (req.action) return json_(typeof moneyGate_ === 'function' ? moneyGate_(req, function () { return typeof fastAction_ === 'function' ? fastAction_(req) : handleAction_(req); }) : (typeof fastAction_ === 'function' ? fastAction_(req) : handleAction_(req)));
+
+Auth.gs, inside handleAction_, on the line after the signed-in check. s.user exists here. moneyPrepare_ denies money actions and money writes before a handler runs.
+
+FIND
+  if (!s) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+
+REPLACE WITH
+  if (!s) return { ok: false, error: 'Not signed in', code: 'NO_SESSION' };
+  if (typeof moneyPrepare_ === 'function') { var moneyDenied_ = moneyPrepare_(req, s.user); if (moneyDenied_) return moneyDenied_; }
+
+Accounting is not moneyHidden_. Admin is not moneyHidden_. A production manager and staff are.

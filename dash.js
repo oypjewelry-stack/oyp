@@ -731,7 +731,8 @@ function draw(main, u) {
   const { esc } = window.OYP, r = D.r, cc = D.cc, live = window.OYP.here();
   if (!r || !r.ok) return;
   const noCC = new Set(cc && cc.ok ? cc.missing_jos : []);
-  const c = r.counts || {}, can = r.can || {}, pb = c.pending_breakdown || {};
+  const c = r.counts || {}, can = Object.assign({}, r.can || {}), pb = c.pending_breakdown || {};
+  if (window.OYP.canSeeMoney && window.OYP.canSeeMoney(u) === false) { can.sales = false; can.prices = false; can.payments = false; }
   D.user = u; D.ordOn = !!(u && u.role === 'admin');
   const when = new Date(r.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const pendNote = [pb.reviews && pb.reviews + ' to review', pb.past_due && pb.past_due + ' past due', pb.payments && plural(pb.payments, 'payment') + ' to confirm'].filter(Boolean).join(' · ') || 'All clear';

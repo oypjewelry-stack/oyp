@@ -98,7 +98,7 @@ const STAFF_URL = 'https://oypjewelry.com/staff/'; // back office (oypjewelry.co
 const PRINT_TEST = 'https://oypjewelry.com/staff/print-test.html'; // label alignment page. Menu only; same text row as the other items.
 const NAV_FALLBACK = { SITE: STAFF_URL, STAFF: STAFF_URL, OFFICE_NAV: { // same full lists as nav.js OFFICE_NAV, used only if that file has not loaded
   admin: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']],
-  production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['balances', 'Balances']],
+  production_manager: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials']],
   accounting: [['dashboard', 'Dashboard'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
   staff: [['home', 'Home'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['scanner', 'Scanner']] } };
 function menuUser(N, role) {

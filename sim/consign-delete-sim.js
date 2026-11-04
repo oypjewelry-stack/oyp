@@ -38,7 +38,7 @@ eq(page.includes('An admin can delete a sheet') && !page.includes('Nothing on th
 eq(page.includes("confirm('Delete ' + id + ' for ' + who + '? The sheet is removed. Pieces still out go back to where they were.')"), 'delete asks, and names the CS number and the consignee');
 eq(page.includes('data-csmore') && page.includes('id="csDelete"') && page.includes("label: 'Delete'"), 'delete is in the sheet menu and on the detail view');
 eq(page.includes("U.role === 'admin'") && page.includes('await reload(main)') && !page.includes('offerUndo'), 'only an admin sees delete, and a successful delete reloads the list');
-eq(read('staff/index.html').includes('consign.js?v=13') && read('staff/index.html').includes('consign.css?v=12'), 'consign.js and consign.css are cache-busted');
+eq(read('staff/index.html').includes('consign.js?v=14') && read('staff/index.html').includes('consign.css?v=12'), 'consign.js and consign.css are cache-busted');
 
 function world(opts) {
   const lines = (opts.lines || []).map(r => Object.assign({}, r));
