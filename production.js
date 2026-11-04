@@ -3,7 +3,7 @@
    Delayed = past a target date Susan or an admin set (whole JO or this step). No target = never Delayed. Workers are names; Susan logs their time.
    Routes: #/production (board) · #/production/jo/<JO> (board + card detail) · #/production/workers (who has what, hours this week).
    Desktop: drag a card to the next column. Phone: one stage at a time, a Move to … button on every card (the JO's next step: a repair skips Design / Casting).
-   No money on the board for anyone. Labor cost shows only in the card detail, only when the server sends it (admin + production manager). */
+   No money on the board for anyone. Labor cost shows only in the card detail, only when the server sends it and this role may see money (admin, not a production manager). */
 (() => {
 'use strict';
 const PASTE_NOTE = 'This page needs the Production paste in Apps Script (see the instructions).';
@@ -306,7 +306,7 @@ async function openJob(jo, live) {
 }
 function wireSheetClose() { const x = $('pSX'), sh = $('pSheet'); if (x) x.onclick = () => { location.hash = '#/production'; }; if (sh) sh.onclick = e => { if (e.target.id === 'pSheet') location.hash = '#/production'; }; }
 function drawJob() {
-  const r = S.job, c = r.card, cost = !!r.can.costs, box = $('pSheetBox'); if (!box) return;
+  const r = S.job, c = r.card, cost = !!(r.can && r.can.costs) && !(window.OYP.canSeeMoney && window.OYP.canSeeMoney() === false), box = $('pSheetBox'); if (!box) return;
   const nx = (() => { const x = r.columns.find(k => k.key === (c.next !== undefined ? c.next : c.col)); return c.next !== undefined ? x || null : x && x.next ? r.columns.find(k => k.key === x.next) : null; })();
   const me = r.me_worker, runs = r.sessions.filter(s => s.running);
   const wsel = (id, val, any) => `<select id="${id}">${any ? '<option value="">Pick…</option>' : ''}${r.workers.map(w => `<option value="${w.worker_id}" ${val === w.worker_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select>`;
@@ -343,7 +343,7 @@ function drawJob() {
       ${!r.can.all && !me ? '<p class="muted">Ask Susan to link your name to a worker to use the timer.</p>' : `<button class="pill ${myRun ? '' : 'outline'} prpgo" id="pTimer">${myRun ? '■ STOP' : '▶ START'}</button>`}
     </div>
     <div class="dtitle psess"><h3>Work sessions</h3><span class="kn">${hrs(r.total_minutes)} total${cost ? ' · labor ' + peso(r.labor_cost) : ''}</span></div>
-    ${cost ? `<p class="muted prpnote">Labor cost = hours × each worker\u2019s labor rate (Settings › Prices & markups). Shown to admins and Susan only.${r.missing_rates && r.missing_rates.length ? ' No labor rate yet for ' + esc(r.missing_rates.join(', ')) + '.' : ''}</p>` : ''}
+    ${cost ? `<p class="muted prpnote">Labor cost = hours × each worker\u2019s labor rate (Settings › Prices & markups). Shown to admins only.${r.missing_rates && r.missing_rates.length ? ' No labor rate yet for ' + esc(r.missing_rates.join(', ')) + '.' : ''}</p>` : ''}
     <div class="tw"><table class="dt prptab"><thead><tr><th><span class="lab">Date</span></th><th><span class="lab">Time</span></th><th class="r"><span class="lab">Hours</span></th><th><span class="lab">Worker</span></th>${cost ? '<th class="r"><span class="lab">Labor</span></th>' : ''}<th></th></tr></thead><tbody>${sessTable}${total}</tbody></table></div>
     <details class="medit prpadd" id="pAddD"><summary><span class="lab">+ Add time by hand</span></summary>
       <div class="pform"><label class="fsec"><span class="lab">Date</span><input type="date" id="paDate" value="${r.today}" max="${r.today}"></label>
@@ -431,7 +431,7 @@ function wireWorkerForm(main, r) {
     box.innerHTML = `<div class="pwform"><h3>${w ? 'Edit ' + esc(w.name) : 'Add a worker'}</h3><div class="pform">
       <label class="fsec"><span class="lab">Name</span><input id="wfN" maxlength="40" value="${esc(w ? w.name : '')}" placeholder="e.g. Romy" autocomplete="off"></label>
       <label class="fsec"><span class="lab">Does</span><input id="wfS" maxlength="40" value="${esc(w ? w.skill : '')}" placeholder="e.g. Polishing" autocomplete="off"></label>
-      ${opts ? `<label class="fsec full"><span class="lab">Labor rate (for the cost of hours)</span><select id="wfL"><option value="">None</option>${opts}</select></label>` : ''}</div>
+      ${opts && !(window.OYP.canSeeMoney && window.OYP.canSeeMoney() === false) ? `<label class="fsec full"><span class="lab">Labor rate (for the cost of hours)</span><select id="wfL"><option value="">None</option>${opts}</select></label>` : ''}</div>
       <p class="muted pwnote">Just a name for the lists and the time log. They do not get a login; Susan logs their time.</p>
       <p class="err" id="wfErr"></p><div class="pwbtn"><button class="pill sm" id="wfGo">SAVE</button><button class="pill sm outline" id="wfNo">CANCEL</button>${w ? '<button class="lnk" id="wfHide">Hide from lists</button>' : ''}</div></div>`;
     if ($('wfL') && !w) $('wfL').onchange = e => { const o = (r.labor_options || []).find(x => x.code === e.target.value), m = o && o.label.match(/^(.*?)\s*\((.+)\)\s*$/); // "Goldsmith (Romy)" fills Romy · Goldsmith

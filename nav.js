@@ -9,7 +9,7 @@ const SCANNER = 'https://oypjewelry.com/scan/';
 // Default order with nothing saved on this device, and the order Reset returns to. A role still only sees the items it already had.
 const NAV = {
   admin: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['customers', 'Customers'], ['payments', 'Quotes / payments'], ['shop', 'Shop listings'], ['settings', 'Settings']], // 'Staff logins' hidden (Oct 18): staff accounts live in Settings › Staff accounts; #/users opens it. REVIEW, DEBUG, and COUNT live inside Inventory. Material prices is the Prices tab on Materials.
-  production_manager: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['estimate', 'Cost estimator'], ['inventory', 'Materials'], ['balances', 'Balances']],
+  production_manager: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['consignment', 'Consignment'], ['scanner', 'Scanner'], ['production', 'Production'], ['inventory', 'Materials']], // no Cost estimator, Balances, or Material prices: those are money
   accounting: [['dashboard', 'Dashboard'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory (view)'], ['payments', 'Payments'], ['quotes', 'Quotes'], ['balances', 'Balances'], ['clients', 'Clients (billing)']],
   staff: [['home', 'Home'], ['todo', 'To do'], ['appts', 'Appointments'], ['jos', 'Inventory'], ['scanner', 'Scanner']] // staff keep their simple home. Appointments and Inventory open in the back office. Inventory shows only the COUNT tab. No Production (Susan + admins only)
 };
@@ -20,7 +20,7 @@ const SCAN_NAV = {}; Object.keys(NAV).forEach(r => { SCAN_NAV[r] = NAV[r].filter
 const ROLE_LABEL = { admin: 'Admin', production_manager: 'Production manager', accounting: 'Accounting', staff: 'Staff' };
 const DONE = { production: true, settings: true, appts: true, home: true, prices: true, dashboard: true, todo: true, review: true, look: true, estimate: true, users: true, scanner: true, customers: true, shop: true, jos: true, inventory: true, count: true, payments: true, quotes: true, balances: true, clients: true, consignment: true };
 // Roles that had the Material prices menu item. Prices is now a tab on Materials; a role absent here sees only Stock.
-const MAT_PRICE_ROLES = { admin: true, production_manager: true };
+const MAT_PRICE_ROLES = { admin: true }; // production manager and staff do not open Material prices. Accounting never had it.
 const COUNT_ROLES = { admin: true, production_manager: true, staff: true }; // roles that had Inventory count. Accounting did not. A saved menu key "count" is ignored: it is no longer in the list.
 // link to the scanner that tells it whose menu to show (the role only picks menu items; every page still checks the sign-in)
 const scannerLink = role => SCANNER + (role ? '?role=' + encodeURIComponent(role) : '');
@@ -136,7 +136,7 @@ if (typeof document !== 'undefined' && document.createElement && document.addEve
   src = cs && (cs.src || '');
   var base = src ? src.replace(/[^/]*$/, '') : '';
   if (base && !document.querySelector('script[src*="print.js"]')) {
-    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=24', 'print.js?v=41'].forEach(function (rel) {
+    ['vendor/qrcode.js?v=1', 'vendor/niimbluelib-0.47.1.js?v=1', 'print-label.js?v=24', 'print.js?v=42'].forEach(function (rel) {
       var ps = document.createElement('script');
       ps.src = base + rel;
       ps.async = false;
